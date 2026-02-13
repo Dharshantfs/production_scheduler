@@ -10,4 +10,4 @@ app_license = "mit"
 
 # include js, css files in header of desk.html
 app_include_css = "/assets/production_scheduler/css/production_scheduler.css"
-app_include_js = "/assets/production_scheduler/js/production_scheduler.bundle.js"
+app_include_js = "production_scheduler.bundle.js"
