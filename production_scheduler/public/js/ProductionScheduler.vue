@@ -57,7 +57,8 @@
             :data-name="card.name"
             @click="openForm(card.name)"
           >
-            <div class="card-row">
+            <!-- Card Header: Customer + Status -->
+            <div class="card-header-row">
               <span class="card-customer">{{ card.customer }}</span>
               <span
                 class="card-status"
@@ -66,18 +67,30 @@
                 {{ card.planning_status }}
               </span>
             </div>
-            <div class="card-row text-muted">
-              <span>{{ card.party_code }}</span>
+
+            <!-- Party Code -->
+            <div class="card-party">{{ card.party_code }}</div>
+
+            <!-- Item Details Table -->
+            <div class="card-items" v-if="card.items && card.items.length">
+              <div
+                v-for="(item, idx) in card.items"
+                :key="idx"
+                class="card-item-row"
+              >
+                <span class="item-quality">{{ item.quality }}</span>
+                <span class="item-color">{{ item.color }}</span>
+                <span class="item-gsm">{{ item.gsm }} GSM</span>
+                <span class="item-qty">{{ item.qty }} Kg</span>
+              </div>
             </div>
-            <div class="card-row text-muted">
-              <span>{{ card.quality }}</span>
-              <span>{{ card.gsm }} GSM</span>
-            </div>
-            <div class="card-row">
+
+            <!-- Card Footer: Total Weight + Date -->
+            <div class="card-footer-row">
               <span class="card-weight">
                 {{ (card.total_weight / 1000).toFixed(3) }} T
               </span>
-              <span class="text-muted">{{ card.dod }}</span>
+              <span class="card-date">{{ card.dod }}</span>
             </div>
           </div>
           <div v-if="!groupedCards[unit] || groupedCards[unit].length === 0" class="empty-column">
@@ -153,7 +166,6 @@ const groupedCards = computed(() => {
 });
 
 const getUnitTotal = (unit) => {
-  // Show total for filtered cards in this unit
   const totalKg = filteredCards.value
     .filter((c) => c.unit === unit)
     .reduce((sum, c) => sum + (c.total_weight || 0), 0);
@@ -162,9 +174,9 @@ const getUnitTotal = (unit) => {
 
 const getHeaderColor = (unit) => {
   const total = getUnitTotal(unit);
-  if (total > limits[unit]) return "var(--red-500)";
-  if (total > softLimits[unit]) return "var(--orange-500)";
-  return "var(--green-500)";
+  if (total > limits[unit]) return "#e24c4c";
+  if (total > softLimits[unit]) return "#e8a317";
+  return "#28a745";
 };
 
 const openForm = (name) => {
@@ -179,7 +191,6 @@ const clearFilters = () => {
 };
 
 const fetchData = () => {
-  // Fetch a wider range to have data available for filtering
   frappe.call({
     method: "production_scheduler.api.get_kanban_board",
     args: {
@@ -238,17 +249,13 @@ const initSortable = () => {
   });
 };
 
-// Re-init sortable when filters change
 watch([filteredCards, visibleUnits], () => {
   nextTick(() => initSortable());
 });
 
 onMounted(() => {
   fetchData();
-
   nextTick(() => initSortable());
-
-  // Realtime updates
   frappe.realtime.on("doc_update", (data) => {
     if (data.doctype === "Planning sheet") {
       fetchData();

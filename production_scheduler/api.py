@@ -22,24 +22,33 @@ def get_kanban_board(start_date, end_date):
 		items = frappe.get_all(
 			"Planning Sheet Item",
 			filters={"parent": sheet.name},
-			fields=["unit", "gsm", "weight_per_roll", "qty", "item_name"]
+			fields=["unit", "gsm", "weight_per_roll", "qty", "item_name", "color", "quality"],
+			order_by="idx"
 		)
 
-		total_weight = 0.0
-		unit = ""
-		gsm = ""
-		quality = ""
+		if not items:
+			continue
 
-		if items:
-			# Get unit from the first item (all items in a sheet share the same unit)
-			unit = items[0].get("unit") or ""
-			gsm = items[0].get("gsm") or ""
-			quality = items[0].get("item_name") or ""
-			for item in items:
-				total_weight += flt(item.weight_per_roll) * flt(item.qty)
-
+		# Get unit from the first item
+		unit = items[0].get("unit") or ""
 		if not unit:
-			continue  # Skip sheets with no unit assigned
+			continue
+
+		total_weight = 0.0
+		item_details = []
+		for item in items:
+			item_qty = flt(item.qty)
+			item_weight = flt(item.weight_per_roll)
+			total_weight += item_weight * item_qty
+
+			item_details.append({
+				"item_name": item.item_name or "",
+				"quality": item.quality or "",
+				"color": item.color or "",
+				"gsm": item.gsm or "",
+				"qty": item_qty,
+				"weight": item_weight,
+			})
 
 		data.append({
 			"name": sheet.name,
@@ -49,8 +58,7 @@ def get_kanban_board(start_date, end_date):
 			"dod": str(sheet.dod) if sheet.dod else "",
 			"unit": unit,
 			"total_weight": total_weight,
-			"quality": quality,
-			"gsm": gsm
+			"items": item_details,
 		})
 
 	return data
@@ -92,7 +100,6 @@ def update_schedule(doc_name, unit, date, index=0):
 	current_weight_tons = current_weight / 1000.0
 
 	# Get existing weight in target unit for that date
-	# Find all Planning sheets with items assigned to this unit on the target date
 	existing_sheets = frappe.get_all(
 		"Planning sheet",
 		filters={

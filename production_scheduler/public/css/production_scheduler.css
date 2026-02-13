@@ -75,14 +75,14 @@
 .kanban-column {
     background-color: var(--gray-100);
     border-radius: var(--border-radius-md);
-    width: 300px;
-    min-width: 300px;
+    width: 320px;
+    min-width: 320px;
     display: flex;
     flex-direction: column;
 }
 
 .kanban-column-header {
-    padding: 10px;
+    padding: 10px 12px;
     background-color: var(--card-bg);
     border-top: 4px solid transparent;
     border-bottom: 1px solid var(--border-color);
@@ -109,15 +109,16 @@
     min-height: 200px;
 }
 
+/* Card Styles */
 .kanban-card {
     background-color: var(--card-bg);
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-sm);
-    padding: 10px;
+    padding: 10px 12px;
     margin-bottom: 10px;
     cursor: grab;
     box-shadow: var(--shadow-xs);
-    transition: transform 0.1s;
+    transition: transform 0.1s, box-shadow 0.15s;
 }
 
 .kanban-card:hover {
@@ -128,37 +129,113 @@
     cursor: grabbing;
 }
 
-.card-row {
+/* Card Header */
+.card-header-row {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 5px;
-    font-size: 12px;
+    align-items: center;
+    margin-bottom: 4px;
 }
 
 .card-customer {
     font-weight: 600;
+    font-size: 13px;
     color: var(--text-color);
+}
+
+.card-party {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
+/* Item Detail Rows */
+.card-items {
+    border-top: 1px solid var(--border-color);
+    padding-top: 6px;
+    margin-bottom: 6px;
+}
+
+.card-item-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    padding: 3px 0;
+    gap: 6px;
+    border-bottom: 1px dashed var(--gray-200);
+}
+
+.card-item-row:last-child {
+    border-bottom: none;
+}
+
+.item-quality {
+    flex: 1;
+    font-weight: 500;
+    color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.item-color {
+    flex: 1;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.item-gsm {
+    flex-shrink: 0;
+    color: var(--text-muted);
+    font-size: 10px;
+}
+
+.item-qty {
+    flex-shrink: 0;
+    font-weight: 600;
+    color: var(--primary);
+    min-width: 50px;
+    text-align: right;
+}
+
+/* Card Footer */
+.card-footer-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 6px;
+    border-top: 1px solid var(--border-color);
 }
 
 .card-weight {
     font-weight: bold;
+    font-size: 12px;
 }
 
+.card-date {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* Status Badges */
 .card-status {
-    padding: 2px 6px;
+    padding: 2px 8px;
     border-radius: 10px;
     font-size: 10px;
     font-weight: 600;
 }
 
 .card-status.draft {
-    background-color: var(--yellow-100);
-    color: var(--yellow-700);
+    background-color: #fff3cd;
+    color: #856404;
 }
 
 .card-status.finalized {
-    background-color: var(--green-100);
-    color: var(--green-700);
+    background-color: #d4edda;
+    color: #155724;
 }
 
 .text-muted {
