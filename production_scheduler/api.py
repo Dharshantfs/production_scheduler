@@ -22,7 +22,7 @@ def get_kanban_board(start_date, end_date):
 		items = frappe.get_all(
 			"Planning Sheet Item",
 			filters={"parent": sheet.name},
-			fields=["unit", "gsm", "weight_per_roll", "qty", "item_name", "color", "quality"],
+			fields=["*"],
 			order_by="idx"
 		)
 
@@ -37,15 +37,15 @@ def get_kanban_board(start_date, end_date):
 		total_weight = 0.0
 		item_details = []
 		for item in items:
-			item_qty = flt(item.qty)
-			item_weight = flt(item.weight_per_roll)
+			item_qty = flt(item.get("qty", 0))
+			item_weight = flt(item.get("weight_per_roll", 0))
 			total_weight += item_weight * item_qty
 
 			item_details.append({
-				"item_name": item.item_name or "",
-				"quality": item.quality or "",
-				"color": item.color or "",
-				"gsm": item.gsm or "",
+				"item_name": item.get("item_name") or "",
+				"quality": item.get("custom_quality") or item.get("quality") or "",
+				"color": item.get("color") or item.get("colour") or "",
+				"gsm": item.get("gsm") or "",
 				"qty": item_qty,
 				"weight": item_weight,
 			})
