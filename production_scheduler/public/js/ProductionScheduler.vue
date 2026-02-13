@@ -123,7 +123,7 @@ const cards = ref([]);
 const columnRefs = ref(null);
 
 // Filters
-const filterDate = ref("");
+const filterDate = ref(frappe.datetime.get_today());
 const filterPartyCode = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
