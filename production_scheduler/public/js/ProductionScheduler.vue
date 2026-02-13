@@ -100,7 +100,7 @@ export default {
     };
 
     const openForm = (name) => {
-      frappe.set_route("Form", "Planning Sheet", name);
+      frappe.set_route("Form", "Planning sheet", name);
     };
 
     onMounted(() => {
@@ -157,7 +157,7 @@ export default {
 
       // Realtime updates
       frappe.realtime.on("doc_update", (data) => {
-        if (data.doctype === "Planning Sheet") {
+        if (data.doctype === "Planning sheet") {
           fetchData();
         }
       });

@@ -9,7 +9,7 @@ def get_kanban_board(start_date, end_date):
 	end_date = getdate(end_date)
 
 	planning_sheets = frappe.get_all(
-		"Planning Sheet",
+		"Planning sheet",
 		filters={
 			"dod": ["between", [start_date, end_date]],
 			"docstatus": ["<", 2]
@@ -92,9 +92,9 @@ def update_schedule(doc_name, unit, date, index=0):
 	current_weight_tons = current_weight / 1000.0
 
 	# Get existing weight in target unit for that date
-	# Find all Planning Sheets with items assigned to this unit on the target date
+	# Find all Planning sheets with items assigned to this unit on the target date
 	existing_sheets = frappe.get_all(
-		"Planning Sheet",
+		"Planning sheet",
 		filters={
 			"dod": target_date,
 			"name": ["!=", doc_name],
@@ -137,7 +137,7 @@ def update_schedule(doc_name, unit, date, index=0):
 	""", (unit, doc_name))
 
 	# Update delivery date on parent
-	frappe.db.set_value("Planning Sheet", doc_name, "dod", target_date)
+	frappe.db.set_value("Planning sheet", doc_name, "dod", target_date)
 
 	frappe.db.commit()
 
