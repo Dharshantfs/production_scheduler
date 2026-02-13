@@ -1,0 +1,44 @@
+{
+    "charts": [],
+    "content": "[{\"id\":\"production_board_link\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Production Board\",\"shortcut_type\":\"Page\",\"shortcut_url\":\"production-board\",\"label\":\"Production Board\"}}]",
+    "creation": "2026-02-13 12:00:00.000000",
+    "custom_blocks": [],
+    "docstatus": 0,
+    "doctype": "Workspace",
+    "for_user": "",
+    "hide_custom": 0,
+    "icon": "factory",
+    "idx": 0,
+    "is_hidden": 0,
+    "label": "Production Scheduler",
+    "links": [
+        {
+            "description": "Real-Time Kanban Board for Planning Sheets",
+            "icon": "gantt",
+            "label": "Production Board",
+            "link_to": "production-board",
+            "link_type": "Page",
+            "onboard": 1,
+            "type": "Link"
+        }
+    ],
+    "modified": "2026-02-13 12:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Production Scheduler",
+    "name": "Production Scheduler",
+    "number_cards": [],
+    "owner": "Administrator",
+    "parent_page": "",
+    "public": 1,
+    "restrict_to_domain": "",
+    "roles": [],
+    "sequence_id": 30,
+    "shortcuts": [
+        {
+            "label": "Production Board",
+            "link_to": "production-board",
+            "type": "Page"
+        }
+    ],
+    "title": "Production Scheduler"
+}
