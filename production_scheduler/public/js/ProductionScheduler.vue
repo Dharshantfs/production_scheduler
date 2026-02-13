@@ -44,7 +44,7 @@
 </template>
 
 <script>
-import { ref, onMounted, computed, nextTick } from "vue";
+import { ref, onMounted, nextTick } from "vue";
 
 export default {
   name: "ProductionScheduler",
@@ -70,13 +70,12 @@ export default {
       frappe.call({
         method: "production_scheduler.production_scheduler.api.get_kanban_board",
         args: {
-            start_date: frappe.datetime.add_months(frappe.datetime.get_today(), -1), # Just an example range
-            end_date: frappe.datetime.add_months(frappe.datetime.get_today(), 1)
+          start_date: frappe.datetime.add_months(frappe.datetime.get_today(), -1),
+          end_date: frappe.datetime.add_months(frappe.datetime.get_today(), 1)
         },
         callback: (r) => {
           if (r.message) {
             cards.value = r.message;
-            // Update Sortable instances if needed or rely on DOM update
           }
         },
       });
@@ -87,10 +86,6 @@ export default {
     };
 
     const getUnitTotal = (unit) => {
-      // Weight in API is generic. Assuming raw sum.
-      // If the API returns raw sum (kg) and limit is T, we need conversion.
-      // In api.py I implemented the check in Tons. 
-      // Let's assume the API returns raw weight (likely Kg) and we display Tons.
       const totalKg = cards.value
         .filter((c) => c.unit === unit)
         .reduce((sum, c) => sum + (c.total_weight || 0), 0);
@@ -105,86 +100,67 @@ export default {
     };
 
     const openForm = (name) => {
-        frappe.set_route("Form", "Planning Sheet", name);
-    }
-    
+      frappe.set_route("Form", "Planning Sheet", name);
+    };
+
     onMounted(() => {
-        fetchData();
-        
-        // Initialize Sortable
-        // We need to wait for DOM to render columns
-        nextTick(() => {
-            if (columnRefs.value) {
-                columnRefs.value.forEach((el) => {
-                    new Sortable(el, {
-                        group: "kanban",
-                        animation: 150,
-                        onEnd: (evt) => {
-                            const itemEl = evt.item;
-                            const newUnit = evt.to.dataset.unit;
-                            const name = itemEl.dataset.name;
-                            const oldUnit = evt.from.dataset.unit;
-                            
-                            if (newUnit === oldUnit) return;
+      fetchData();
 
-                            // Optimistic update? Or wait for server?
-                            // User said: "If API returns 'Capacity Exceeded', snap the card back".
-                            // So we should probably try to move, and if fail, revert.
-                            
-                            frappe.call({
-                                method: "production_scheduler.production_scheduler.api.update_schedule",
-                                args: {
-                                    doc_name: name,
-                                    unit: newUnit,
-                                    date: frappe.datetime.get_today() // Defaulting to today as 'date' wasn't specified in UI where it comes from. 
-                                    // User said "update_schedule(doc_name, unit, date, index)".
-                                    // "Capacity Validation: Calculate total weight for the Target Unit + Date".
-                                    // If the column implies Date, we should know it.
-                                    // But Columns are Units (1-4).
-                                    // "Header: Show 'Day Total ...'".
-                                    // This implies the Board is for a SINGLE Day?
-                                    // "Create get_kanban_board(start_date, end_date)".
-                                    // If the board shows multiple days, we need rows or filters.
-                                    // I'll assume the Board Filter sets the Date Context. 
-                                    // For now, I will use 'today' or the value from the card if we aren't changing date, 
-                                    // but user said "Target Unit + Date".
-                                    // I'll use the card's existing DOD (Delivery Date) or Today?
-                                    // If we move to a Unit, do we change the Date?
-                                    // "Capacity Validation ... for Target Unit + Date".
-                                    // If the board is filtered by Date, we might update the date.
-                                    // I'll assume we keep the Date of the card unless the board implies a date change.
-                                    // Since I don't have a date picker in the UI, I'll use the card's current date.
-                                },
-                                error: (r) => {
-                                    // Revert
-                                    // Sortable doesn't easily revert on async error unless we prevent it first.
-                                    // Standard trick: manipulate the array 'cards.value' to force re-render or move DOM back.
-                                    // Re-fetching data is safest.
-                                    fetchData();
-                                },
-                                callback: (r) => {
-                                    if(r.exc) {
-                                         fetchData();
-                                    } else {
-                                        // Update local state
-                                        const card = cards.value.find(c => c.name === name);
-                                        if(card) card.unit = newUnit;
-                                        frappe.show_alert({message: __("Moved to {}").format(newUnit), indicator: 'green'});
-                                    }
-                                }
-                            })
-                        }
-                    });
+      // Initialize Sortable after DOM renders
+      nextTick(() => {
+        if (columnRefs.value) {
+          columnRefs.value.forEach((el) => {
+            new Sortable(el, {
+              group: "kanban",
+              animation: 150,
+              onEnd: (evt) => {
+                const itemEl = evt.item;
+                const newUnit = evt.to.dataset.unit;
+                const docName = itemEl.dataset.name;
+                const oldUnit = evt.from.dataset.unit;
+
+                if (newUnit === oldUnit) return;
+
+                // Find the card to get its current date
+                const card = cards.value.find((c) => c.name === docName);
+                const cardDate = card ? card.dod : frappe.datetime.get_today();
+
+                frappe.call({
+                  method: "production_scheduler.production_scheduler.api.update_schedule",
+                  args: {
+                    doc_name: docName,
+                    unit: newUnit,
+                    date: cardDate
+                  },
+                  error: () => {
+                    // Revert on error by re-fetching
+                    fetchData();
+                  },
+                  callback: (r) => {
+                    if (r.exc) {
+                      fetchData();
+                    } else {
+                      // Update local state
+                      if (card) card.unit = newUnit;
+                      frappe.show_alert({
+                        message: "Moved to " + newUnit,
+                        indicator: "green"
+                      });
+                    }
+                  }
                 });
-            }
-        });
+              }
+            });
+          });
+        }
+      });
 
-        // Realtime
-        frappe.realtime.on("doc_update", (data) => {
-            if(data.doctype === "Planning Sheet") {
-                fetchData();
-            }
-        });
+      // Realtime updates
+      frappe.realtime.on("doc_update", (data) => {
+        if (data.doctype === "Planning Sheet") {
+          fetchData();
+        }
+      });
     });
 
     return {
@@ -201,7 +177,5 @@ export default {
 </script>
 
 <style scoped>
-/* Scoped styles will be compiled by vue-loader if available, 
-   but since we are sending this to public/js, we usually rely on global css. 
-   I will make the main css file separately as requested. */
+/* Styles are in production_scheduler.css */
 </style>
