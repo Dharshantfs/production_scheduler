@@ -68,7 +68,7 @@ export default {
 
     const fetchData = () => {
       frappe.call({
-        method: "production_scheduler.production_scheduler.api.get_kanban_board",
+        method: "production_scheduler.api.get_kanban_board",
         args: {
           start_date: frappe.datetime.add_months(frappe.datetime.get_today(), -1),
           end_date: frappe.datetime.add_months(frappe.datetime.get_today(), 1)
@@ -126,7 +126,7 @@ export default {
                 const cardDate = card ? card.dod : frappe.datetime.get_today();
 
                 frappe.call({
-                  method: "production_scheduler.production_scheduler.api.update_schedule",
+                  method: "production_scheduler.api.update_schedule",
                   args: {
                     doc_name: docName,
                     unit: newUnit,
