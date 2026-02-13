@@ -38,8 +38,7 @@ def get_kanban_board(start_date, end_date):
 		item_details = []
 		for item in items:
 			item_qty = flt(item.get("qty", 0))
-			item_weight = flt(item.get("weight_per_roll", 0))
-			total_weight += item_weight * item_qty
+			total_weight += item_qty
 
 			item_details.append({
 				"item_name": item.get("item_name") or "",
@@ -47,7 +46,6 @@ def get_kanban_board(start_date, end_date):
 				"color": item.get("color") or item.get("colour") or "",
 				"gsm": item.get("gsm") or "",
 				"qty": item_qty,
-				"weight": item_weight,
 			})
 
 		data.append({
@@ -94,7 +92,7 @@ def update_schedule(doc_name, unit, date, index=0):
 
 	current_weight = 0.0
 	for item in current_doc_items:
-		current_weight += flt(item.weight_per_roll) * flt(item.qty)
+		current_weight += flt(item.get("qty", 0))
 
 	# Convert to Tons (weight_per_roll is in kg)
 	current_weight_tons = current_weight / 1000.0
@@ -118,7 +116,7 @@ def update_schedule(doc_name, unit, date, index=0):
 			fields=["weight_per_roll", "qty"]
 		)
 		for i in items:
-			total_existing_weight += flt(i.weight_per_roll) * flt(i.qty)
+			total_existing_weight += flt(i.get("qty", 0))
 
 	total_existing_weight_tons = total_existing_weight / 1000.0
 	new_total = total_existing_weight_tons + current_weight_tons
