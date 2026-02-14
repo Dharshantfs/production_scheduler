@@ -130,52 +130,73 @@ import { ref, computed, onMounted, nextTick, watch, reactive } from "vue";
 // Color groups for keyword-based matching
 // Check MOST SPECIFIC (multi-word) first, then SINGLE-WORD catch-all groups
 const COLOR_GROUPS = [
-  // Multi-word specific matches (checked first)
-  { keywords: ["WHITE MIX"], priority: 97, hex: "#f0f0f0" },
-  { keywords: ["BLACK MIX"], priority: 98, hex: "#404040" },
+  // 1. WHITE & OFF-WHITE (10-19)
+  { keywords: ["WHITE MIX"], priority: 99, hex: "#f0f0f0" }, // Mixes at end
+  { keywords: ["BLACK MIX"], priority: 99, hex: "#404040" },
   { keywords: ["COLOR MIX"], priority: 99, hex: "#c0c0c0" },
-  { keywords: ["BEIGE MIX"], priority: 100, hex: "#e0d5c0" },
-  { keywords: ["LEMON YELLOW"], priority: 3, hex: "#FFF44F" },
-  { keywords: ["GOLDEN YELLOW"], priority: 4, hex: "#FFD700" },
-  { keywords: ["SKY BLUE"], priority: 8, hex: "#87CEEB" },
-  { keywords: ["LIGHT BLUE"], priority: 9, hex: "#ADD8E6" },
-  { keywords: ["ROYAL BLUE"], priority: 10, hex: "#4169E1" },
-  { keywords: ["PEACOCK BLUE"], priority: 11, hex: "#005F69" },
-  { keywords: ["MEDICAL BLUE"], priority: 12, hex: "#0077B6" },
-  { keywords: ["NAVY BLUE"], priority: 35, hex: "#000080" },
-  { keywords: ["MEDICAL GREEN"], priority: 16, hex: "#00A86B" },
-  { keywords: ["PARROT GREEN"], priority: 17, hex: "#7CFC00" },
-  { keywords: ["RELIANCE GREEN"], priority: 18, hex: "#3CB371" },
-  { keywords: ["PEACOCK GREEN"], priority: 19, hex: "#00827F" },
-  { keywords: ["AQUA GREEN"], priority: 20, hex: "#00FFBF" },
-  { keywords: ["APPLE GREEN"], priority: 21, hex: "#8DB600" },
-  { keywords: ["MINT GREEN"], priority: 22, hex: "#98FF98" },
-  { keywords: ["SEA GREEN"], priority: 23, hex: "#2E8B57" },
-  { keywords: ["GRASS GREEN"], priority: 24, hex: "#7CFC00" },
-  { keywords: ["BOTTLE GREEN"], priority: 25, hex: "#006A4E" },
-  { keywords: ["POTHYS GREEN"], priority: 26, hex: "#2E5E4E" },
-  { keywords: ["DARK GREEN"], priority: 27, hex: "#006400" },
-  { keywords: ["OLIVE GREEN"], priority: 28, hex: "#808000" },
-  { keywords: ["ARMY GREEN"], priority: 29, hex: "#4B5320" },
-  { keywords: ["LIGHT BEIGE"], priority: 34, hex: "#F5DEB3" },
-  { keywords: ["DARK BEIGE"], priority: 35, hex: "#D2B48C" },
-  // Single-word catch-all groups (checked last)
-  { keywords: ["WHITE"], priority: 1, hex: "#FFFFFF" },
-  { keywords: ["IVORY"], priority: 2, hex: "#FFFFF0" },
-  { keywords: ["YELLOW"], priority: 4, hex: "#FFD700" },
-  { keywords: ["ORANGE"], priority: 5, hex: "#FF8C00" },
-  { keywords: ["PINK"], priority: 6, hex: "#FF69B4" },
-  { keywords: ["RED", "CRIMSON", "SCARLET"], priority: 7, hex: "#DC143C" },
-  { keywords: ["VIOLET"], priority: 14, hex: "#8B00FF" },
-  { keywords: ["PURPLE"], priority: 15, hex: "#800080" },
-  { keywords: ["GREEN"], priority: 20, hex: "#00A86B" },
-  { keywords: ["BLUE"], priority: 10, hex: "#4169E1" },
-  { keywords: ["SILVER"], priority: 30, hex: "#C0C0C0" },
-  { keywords: ["GREY", "GRAY"], priority: 31, hex: "#808080" },
-  { keywords: ["MAROON"], priority: 32, hex: "#800000" },
-  { keywords: ["BROWN"], priority: 33, hex: "#8B4513" },
-  { keywords: ["BEIGE"], priority: 34, hex: "#F5DEB3" },
-  { keywords: ["BLACK"], priority: 36, hex: "#1a1a1a" },
+  { keywords: ["BEIGE MIX"], priority: 99, hex: "#e0d5c0" }, // Mixes 99
+  
+  { keywords: ["WHITE", "BRIGHT WHITE"], priority: 10, hex: "#FFFFFF" },
+  { keywords: ["IVORY", "OFF WHITE", "CREAM"], priority: 11, hex: "#FFFFF0" },
+  
+  // 2. YELLOWS (20-29)
+  { keywords: ["LEMON YELLOW"], priority: 20, hex: "#FFF44F" },
+  { keywords: ["YELLOW"], priority: 21, hex: "#FFFF00" },
+  { keywords: ["GOLDEN YELLOW", "GOLD"], priority: 22, hex: "#FFD700" },
+  
+  // 3. ORANGES & PEACH (30-39)
+  { keywords: ["PEACH"], priority: 30, hex: "#FFDAB9" },
+  { keywords: ["ORANGE", "BRIGHT ORANGE"], priority: 31, hex: "#FFA500" },
+  
+  // 4. PINKS (40-49)
+  { keywords: ["BABY PINK", "LIGHT PINK"], priority: 40, hex: "#FFB6C1" },
+  { keywords: ["PINK", "ROSE"], priority: 41, hex: "#FFC0CB" },
+  { keywords: ["DARK PINK", "HOT PINK"], priority: 42, hex: "#FF69B4" },
+  
+  // 5. REDS & MAROONS (50-59)
+  { keywords: ["RED", "BRIGHT RED"], priority: 50, hex: "#FF0000" },
+  { keywords: ["CRIMSON", "SCARLET"], priority: 51, hex: "#DC143C" },
+  { keywords: ["MAROON", "DARK RED", "BURGUNDY"], priority: 52, hex: "#800000" },
+  
+  // 6. PURPLES & VIOLETS (60-69)
+  { keywords: ["LAVENDER", "LILAC"], priority: 60, hex: "#E6E6FA" },
+  { keywords: ["VIOLET"], priority: 61, hex: "#EE82EE" },
+  { keywords: ["PURPLE", "MAGENTA"], priority: 62, hex: "#800080" },
+  
+  // 7. BLUES (70-79) - Light to Dark
+  { keywords: ["SKY BLUE", "LIGHT BLUE"], priority: 70, hex: "#87CEEB" },
+  { keywords: ["MEDICAL BLUE"], priority: 71, hex: "#0077B6" },
+  { keywords: ["BLUE", "ROYAL BLUE"], priority: 72, hex: "#4169E1" },
+  { keywords: ["PEACOCK BLUE"], priority: 73, hex: "#005F69" },
+  { keywords: ["NAVY BLUE", "DARK BLUE"], priority: 74, hex: "#000080" }, // Darkest Blue
+  
+  // 8. GREENS (80-89) - Light to Dark
+  { keywords: ["MINT GREEN"], priority: 80, hex: "#98FF98" },
+  { keywords: ["PARROT GREEN", "LIGHT GREEN"], priority: 81, hex: "#90EE90" },
+  { keywords: ["APPLE GREEN", "LIME GREEN"], priority: 82, hex: "#32CD32" },
+  { keywords: ["GREEN", "KELLY GREEN"], priority: 83, hex: "#008000" },
+  { keywords: ["SEA GREEN"], priority: 84, hex: "#2E8B57" },
+  { keywords: ["BOTTLE GREEN"], priority: 85, hex: "#006A4E" },
+  { keywords: ["OLIVE GREEN"], priority: 86, hex: "#808000" },
+  { keywords: ["ARMY GREEN"], priority: 87, hex: "#4B5320" },
+  { keywords: ["DARK GREEN"], priority: 88, hex: "#006400" },
+
+  // 9. BROWNS & BEIGES (90-94) -> Beige is light, wait.
+  // Beige is usually light (like Ivory). Should be near 15?
+  // But user had Beige near Brown (34).
+  // "Light Beige" (34).
+  // If Beige is "Sand", it's light.
+  // I'll move Beige to 15 (After Ivory).
+  { keywords: ["BEIGE", "LIGHT BEIGE", "CREAM"], priority: 15, hex: "#F5F5DC" },
+  { keywords: ["DARK BEIGE", "KHAKI", "SAND"], priority: 90, hex: "#C2B280" }, // Darker beige
+  { keywords: ["BROWN", "CHOCOLATE", "COFFEE"], priority: 91, hex: "#A52A2A" },
+  
+  // 10. GREYS & SILVER (95-97)
+  { keywords: ["SILVER", "LIGHT GREY"], priority: 95, hex: "#C0C0C0" },
+  { keywords: ["GREY", "GRAY", "DARK GREY"], priority: 96, hex: "#808080" },
+  
+  // 11. BLACK (98)
+  { keywords: ["BLACK"], priority: 98, hex: "#000000" },
 ];
 
 const GAP_THRESHOLD = 0; // any color priority difference triggers mix roll
