@@ -96,93 +96,58 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from "vue";
 
-// Color priority map: lower = lighter
-const COLOR_PRIORITY = {
-  "WHITE": 1,
-  "IVORY": 2,
-  "LEMON YELLOW": 3,
-  "GOLDEN YELLOW": 4,
-  "ORANGE": 5,
-  "PINK": 6,
-  "RED": 7,
-  "SKY BLUE": 8,
-  "LIGHT BLUE": 9,
-  "ROYAL BLUE": 10,
-  "PEACOCK BLUE": 11,
-  "MEDICAL BLUE": 12,
-  "NAVY BLUE": 13,
-  "VIOLET": 14,
-  "PURPLE": 15,
-  "MEDICAL GREEN": 16,
-  "PARROT GREEN": 17,
-  "RELIANCE GREEN": 18,
-  "PEACOCK GREEN": 19,
-  "AQUA GREEN": 20,
-  "APPLE GREEN": 21,
-  "MINT GREEN": 22,
-  "SEA GREEN": 23,
-  "GRASS GREEN": 24,
-  "BOTTLE GREEN": 25,
-  "POTHYS GREEN": 26,
-  "DARK GREEN": 27,
-  "OLIVE GREEN": 28,
-  "ARMY GREEN": 29,
-  "SILVER": 30,
-  "GREY": 31,
-  "MAROON": 32,
-  "BROWN": 33,
-  "LIGHT BEIGE": 34,
-  "DARK BEIGE": 35,
-  "BLACK": 36,
-  "WHITE MIX": 97,
-  "BLACK MIX": 98,
-  "COLOR MIX": 99,
-  "BEIGE MIX": 100,
-};
-
-// Hex color map for swatches
-const COLOR_HEX = {
-  "WHITE": "#FFFFFF",
-  "IVORY": "#FFFFF0",
-  "LEMON YELLOW": "#FFF44F",
-  "GOLDEN YELLOW": "#FFD700",
-  "ORANGE": "#FF8C00",
-  "PINK": "#FF69B4",
-  "RED": "#DC143C",
-  "SKY BLUE": "#87CEEB",
-  "LIGHT BLUE": "#ADD8E6",
-  "ROYAL BLUE": "#4169E1",
-  "PEACOCK BLUE": "#005F69",
-  "MEDICAL BLUE": "#0077B6",
-  "NAVY BLUE": "#000080",
-  "VIOLET": "#8B00FF",
-  "PURPLE": "#800080",
-  "MEDICAL GREEN": "#00A86B",
-  "PARROT GREEN": "#7CFC00",
-  "RELIANCE GREEN": "#3CB371",
-  "PEACOCK GREEN": "#00827F",
-  "AQUA GREEN": "#00FFBF",
-  "APPLE GREEN": "#8DB600",
-  "MINT GREEN": "#98FF98",
-  "SEA GREEN": "#2E8B57",
-  "GRASS GREEN": "#7CFC00",
-  "BOTTLE GREEN": "#006A4E",
-  "POTHYS GREEN": "#2E5E4E",
-  "DARK GREEN": "#006400",
-  "OLIVE GREEN": "#808000",
-  "ARMY GREEN": "#4B5320",
-  "SILVER": "#C0C0C0",
-  "GREY": "#808080",
-  "MAROON": "#800000",
-  "BROWN": "#8B4513",
-  "LIGHT BEIGE": "#F5DEB3",
-  "DARK BEIGE": "#D2B48C",
-  "BLACK": "#1a1a1a",
-  "WHITE MIX": "#f0f0f0",
-  "BLACK MIX": "#404040",
-  "COLOR MIX": "#c0c0c0",
-  "BEIGE MIX": "#e0d5c0",
-};
+// Color groups for keyword-based matching
+// Check MOST SPECIFIC (multi-word) first, then SINGLE-WORD catch-all groups
+// This way "BRIGHT WHITE" matches WHITE group, "CRIMSON RED" matches RED group, etc.
+const COLOR_GROUPS = [
+  // Multi-word specific matches (checked first)
+  { keywords: ["WHITE MIX"], priority: 97, hex: "#f0f0f0" },
+  { keywords: ["BLACK MIX"], priority: 98, hex: "#404040" },
+  { keywords: ["COLOR MIX"], priority: 99, hex: "#c0c0c0" },
+  { keywords: ["BEIGE MIX"], priority: 100, hex: "#e0d5c0" },
+  { keywords: ["LEMON YELLOW"], priority: 3, hex: "#FFF44F" },
+  { keywords: ["GOLDEN YELLOW"], priority: 4, hex: "#FFD700" },
+  { keywords: ["SKY BLUE"], priority: 8, hex: "#87CEEB" },
+  { keywords: ["LIGHT BLUE"], priority: 9, hex: "#ADD8E6" },
+  { keywords: ["ROYAL BLUE"], priority: 10, hex: "#4169E1" },
+  { keywords: ["PEACOCK BLUE"], priority: 11, hex: "#005F69" },
+  { keywords: ["MEDICAL BLUE"], priority: 12, hex: "#0077B6" },
+  { keywords: ["NAVY BLUE"], priority: 13, hex: "#000080" },
+  { keywords: ["MEDICAL GREEN"], priority: 16, hex: "#00A86B" },
+  { keywords: ["PARROT GREEN"], priority: 17, hex: "#7CFC00" },
+  { keywords: ["RELIANCE GREEN"], priority: 18, hex: "#3CB371" },
+  { keywords: ["PEACOCK GREEN"], priority: 19, hex: "#00827F" },
+  { keywords: ["AQUA GREEN"], priority: 20, hex: "#00FFBF" },
+  { keywords: ["APPLE GREEN"], priority: 21, hex: "#8DB600" },
+  { keywords: ["MINT GREEN"], priority: 22, hex: "#98FF98" },
+  { keywords: ["SEA GREEN"], priority: 23, hex: "#2E8B57" },
+  { keywords: ["GRASS GREEN"], priority: 24, hex: "#7CFC00" },
+  { keywords: ["BOTTLE GREEN"], priority: 25, hex: "#006A4E" },
+  { keywords: ["POTHYS GREEN"], priority: 26, hex: "#2E5E4E" },
+  { keywords: ["DARK GREEN"], priority: 27, hex: "#006400" },
+  { keywords: ["OLIVE GREEN"], priority: 28, hex: "#808000" },
+  { keywords: ["ARMY GREEN"], priority: 29, hex: "#4B5320" },
+  { keywords: ["LIGHT BEIGE"], priority: 34, hex: "#F5DEB3" },
+  { keywords: ["DARK BEIGE"], priority: 35, hex: "#D2B48C" },
+  // Single-word catch-all groups (checked last)
+  // "BRIGHT WHITE", "SUPER WHITE", etc. all match here
+  { keywords: ["WHITE"], priority: 1, hex: "#FFFFFF" },
+  { keywords: ["IVORY"], priority: 2, hex: "#FFFFF0" },
+  { keywords: ["YELLOW"], priority: 4, hex: "#FFD700" },
+  { keywords: ["ORANGE"], priority: 5, hex: "#FF8C00" },
+  { keywords: ["PINK"], priority: 6, hex: "#FF69B4" },
+  { keywords: ["RED", "CRIMSON", "SCARLET"], priority: 7, hex: "#DC143C" },
+  { keywords: ["VIOLET"], priority: 14, hex: "#8B00FF" },
+  { keywords: ["PURPLE"], priority: 15, hex: "#800080" },
+  { keywords: ["GREEN"], priority: 20, hex: "#00A86B" },
+  { keywords: ["BLUE"], priority: 10, hex: "#4169E1" },
+  { keywords: ["SILVER"], priority: 30, hex: "#C0C0C0" },
+  { keywords: ["GREY", "GRAY"], priority: 31, hex: "#808080" },
+  { keywords: ["MAROON"], priority: 32, hex: "#800000" },
+  { keywords: ["BROWN"], priority: 33, hex: "#8B4513" },
+  { keywords: ["BEIGE"], priority: 34, hex: "#F5DEB3" },
+  { keywords: ["BLACK"], priority: 36, hex: "#1a1a1a" },
+];
 
 const MIX_ROLL_QTY = 100; // kg per mix roll
 const GAP_THRESHOLD = 5; // color priority gap to trigger mix roll
@@ -200,21 +165,36 @@ const visibleUnits = computed(() =>
   filterUnit.value ? units.filter((u) => u === filterUnit.value) : units
 );
 
-function getColorPriority(color) {
+// Find matching color group by checking if color name contains any keyword
+function findColorGroup(color) {
   const upper = (color || "").toUpperCase().trim();
-  return COLOR_PRIORITY[upper] || 50; // unknown colors get middle priority
+  for (const group of COLOR_GROUPS) {
+    for (const keyword of group.keywords) {
+      if (upper.includes(keyword)) return group;
+    }
+  }
+  return null;
+}
+
+function getColorPriority(color) {
+  const group = findColorGroup(color);
+  return group ? group.priority : 50; // unknown colors get middle priority
 }
 
 function getHexColor(color) {
-  const upper = (color || "").toUpperCase().trim();
-  return COLOR_HEX[upper] || "#ccc";
+  const group = findColorGroup(color);
+  return group ? group.hex : "#ccc";
 }
 
 function determineMixType(fromColor, toColor) {
-  const from = (fromColor || "").toUpperCase().trim();
-  const to = (toColor || "").toUpperCase().trim();
-  if (from === "WHITE" || to === "WHITE") return "WHITE MIX";
-  if (from === "BLACK" || to === "BLACK") return "BLACK MIX";
+  const fromGroup = findColorGroup(fromColor);
+  const toGroup = findColorGroup(toColor);
+  const fromPri = fromGroup ? fromGroup.priority : 50;
+  const toPri = toGroup ? toGroup.priority : 50;
+  if (fromPri === 1 || toPri === 1) return "WHITE MIX";
+  if (fromPri === 36 || toPri === 36) return "BLACK MIX";
+  const from = (fromColor || "").toUpperCase();
+  const to = (toColor || "").toUpperCase();
   if (from.includes("BEIGE") || to.includes("BEIGE")) return "BEIGE MIX";
   return "COLOR MIX";
 }
