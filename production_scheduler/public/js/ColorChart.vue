@@ -29,24 +29,7 @@
           <option value="Finalized">Finalized</option>
         </select>
       </div>
-      <div class="cc-filter-item">
-        <label>Color</label>
-        <button class="cc-direction-btn" @click="toggleColorDirection">
-          {{ colorDirection === 'asc' ? '☀️ Light→Dark' : '🌙 Dark→Light' }}
-        </button>
-      </div>
-      <div class="cc-filter-item">
-        <label>GSM</label>
-        <button class="cc-direction-btn" @click="toggleGsmDirection">
-          {{ gsmDirection === 'desc' ? '⬇️ High→Low' : '⬆️ Low→High' }}
-        </button>
-      </div>
-      <div class="cc-filter-item">
-        <label>Priority</label>
-        <button class="cc-direction-btn" @click="toggleSortPriority">
-          {{ sortPriority === 'color' ? '🎨 Color 1st' : '📏 GSM 1st' }}
-        </button>
-      </div>
+      <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
       <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
     </div>
 
@@ -58,7 +41,20 @@
         class="cc-column"
       >
         <div class="cc-col-header" :style="{ borderTopColor: headerColors[unit] }">
-          <span class="cc-col-title">{{ unit }}</span>
+          <div class="cc-header-top">
+            <span class="cc-col-title">{{ unit }}</span>
+            <div class="cc-unit-controls">
+              <button class="cc-mini-btn" @click="toggleUnitColor(unit)" :title="getUnitSortConfig(unit).color === 'asc' ? 'Light->Dark' : 'Dark->Light'">
+                {{ getUnitSortConfig(unit).color === 'asc' ? '☀️' : '🌙' }}
+              </button>
+              <button class="cc-mini-btn" @click="toggleUnitGsm(unit)" :title="getUnitSortConfig(unit).gsm === 'desc' ? 'High->Low' : 'Low->High'">
+                {{ getUnitSortConfig(unit).gsm === 'desc' ? '⬇️' : '⬆️' }}
+              </button>
+              <button class="cc-mini-btn" @click="toggleUnitPriority(unit)" :title="getUnitSortConfig(unit).priority === 'color' ? 'Color Priority' : 'GSM Priority'">
+                {{ getUnitSortConfig(unit).priority === 'color' ? '🎨' : '📏' }}
+              </button>
+            </div>
+          </div>
           <div class="cc-col-stats">
             <span class="cc-stat-weight">{{ getUnitTotal(unit).toFixed(2) }}T</span>
             <span class="cc-stat-mix" v-if="getMixRollCount(unit) > 0">
@@ -187,9 +183,8 @@ const filterOrderDate = ref(frappe.datetime.get_today());
 const filterPartyCode = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
-const colorDirection = ref("asc"); // asc=Light->Dark, desc=Dark->Light
-const gsmDirection = ref("desc");  // desc=High->Low, asc=Low->High
-const sortPriority = ref("color"); // 'color' (Quality->Color->GSM) or 'gsm' (Quality->GSM->Color)
+// Per-unit sort configuration
+const unitSortConfig = reactive({});
 const rawData = ref([]);
 const columnRefs = ref(null);
 
@@ -218,9 +213,9 @@ function clearFilters() {
   filterPartyCode.value = "";
   filterUnit.value = "";
   filterStatus.value = "";
-  colorDirection.value = "asc";
-  gsmDirection.value = "desc";
-  sortPriority.value = "color";
+  // Reset all unit configs to default? Or keep them?
+  // Let's keep them or reset them. User might want to clear filters but keep sort.
+  // We'll leave unitSortConfig as is.
   fetchData();
 }
 
@@ -317,23 +312,25 @@ function sortItems(unit, items) {
     let cmp = getQualityPriority(unit, a.quality) - getQualityPriority(unit, b.quality);
     
     if (cmp === 0) {
-      if (sortPriority.value === 'color') {
+      const config = getUnitSortConfig(unit);
+      
+      if (config.priority === 'color') {
         // Option A: Color -> GSM
         const c = getColorPriority(a.color) - getColorPriority(b.color);
-        cmp = colorDirection.value === 'asc' ? c : -c;
+        cmp = config.color === 'asc' ? c : -c;
         
         if (cmp === 0) {
           const g = parseFloat(a.gsm || 0) - parseFloat(b.gsm || 0);
-          cmp = gsmDirection.value === 'asc' ? g : -g;
+          cmp = config.gsm === 'asc' ? g : -g;
         }
       } else {
         // Option B: GSM -> Color
         const g = parseFloat(a.gsm || 0) - parseFloat(b.gsm || 0);
-        cmp = gsmDirection.value === 'asc' ? g : -g;
+        cmp = config.gsm === 'asc' ? g : -g;
         
         if (cmp === 0) {
           const c = getColorPriority(a.color) - getColorPriority(b.color);
-          cmp = colorDirection.value === 'asc' ? c : -c;
+          cmp = config.color === 'asc' ? c : -c;
         }
       }
     }
@@ -343,16 +340,27 @@ function sortItems(unit, items) {
   return items;
 }
 
-function toggleColorDirection() {
-  colorDirection.value = colorDirection.value === 'asc' ? 'desc' : 'asc';
+// Helper to get/init config
+function getUnitSortConfig(unit) {
+  if (!unitSortConfig[unit]) {
+    unitSortConfig[unit] = { color: 'asc', gsm: 'desc', priority: 'color' };
+  }
+  return unitSortConfig[unit];
 }
 
-function toggleGsmDirection() {
-  gsmDirection.value = gsmDirection.value === 'asc' ? 'desc' : 'asc';
+function toggleUnitColor(unit) {
+  const config = getUnitSortConfig(unit);
+  config.color = config.color === 'asc' ? 'desc' : 'asc';
 }
 
-function toggleSortPriority() {
-  sortPriority.value = sortPriority.value === 'color' ? 'gsm' : 'color';
+function toggleUnitGsm(unit) {
+  const config = getUnitSortConfig(unit);
+  config.gsm = config.gsm === 'asc' ? 'desc' : 'asc';
+}
+
+function toggleUnitPriority(unit) {
+  const config = getUnitSortConfig(unit);
+  config.priority = config.priority === 'color' ? 'gsm' : 'color';
 }
 
 // Group data by unit, sort, and insert mix markers
@@ -434,25 +442,40 @@ async function analyzePreviousFlow() {
       });
       const prevData = r.message || [];
       if (prevData.length > 0) {
-        // Assume last item in list is the last scheduled item (since sorted by creation)
-        const lastItem = prevData[prevData.length - 1];
-        
-        // Color Logic: If ended Dark (>20), start Dark->Light (desc). Else Light->Dark (asc).
-        const lastPri = getColorPriority(lastItem.color);
-        if (lastPri > 20) {
-           colorDirection.value = 'desc'; // Dark -> Light
-           frappe.show_alert(`Previous day ended Dark. Suggesting Dark → Light.`);
-        } else {
-           colorDirection.value = 'asc'; // Light -> Dark
-        }
+        // Group previous data by unit
+        const prevByUnit = {};
+        units.forEach(u => prevByUnit[u] = []);
+        prevData.forEach(item => {
+           if (prevByUnit[item.unit]) prevByUnit[item.unit].push(item);
+        });
 
-        // GSM Logic: If ended High (>50), start High->Low (desc). Else Low->High (asc).
-        const lastGsm = parseFloat(lastItem.gsm || 0);
-        if (lastGsm > 50) {
-          gsmDirection.value = 'desc'; // High -> Low
-        } else {
-          gsmDirection.value = 'asc'; // Low -> High
-        }
+        // Analyze each unit
+        units.forEach(unit => {
+           const items = prevByUnit[unit];
+           const config = getUnitSortConfig(unit);
+
+           if (items && items.length > 0) {
+              const lastItem = items[items.length - 1]; // sorted by creation
+              
+              // Color Logic
+              const lastPri = getColorPriority(lastItem.color);
+              if (lastPri > 20) {
+                 config.color = 'desc'; // Ended Dark -> Start Dark->Light
+              } else {
+                 config.color = 'asc';
+              }
+              
+              // GSM Logic
+              const lastGsm = parseFloat(lastItem.gsm || 0);
+              if (lastGsm > 50) {
+                 config.gsm = 'desc'; // Ended High -> Start High->Low
+              } else {
+                 config.gsm = 'asc';
+              }
+           }
+        });
+        
+        frappe.show_alert("Updated sort based on previous day flow");
       }
     }
   } catch (e) {
@@ -649,8 +672,39 @@ onMounted(() => {
   border-bottom: 1px solid #e2e8f0;
   border-radius: 12px 12px 0 0;
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cc-header-top {
+  display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.cc-unit-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.cc-mini-btn {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 12px;
+  color: #4a5568;
+  transition: all 0.2s;
+  display: flex; 
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+}
+
+.cc-mini-btn:hover {
+  background: #f7fafc;
+  border-color: #cbd5e0;
 }
 
 .cc-col-title {
