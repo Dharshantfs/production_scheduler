@@ -465,31 +465,45 @@ async function analyzePreviousFlow() {
            if (prevByUnit[item.unit]) prevByUnit[item.unit].push(item);
         });
 
-        // Analyze each unit
-        units.forEach(unit => {
-           const items = prevByUnit[unit];
-           const config = getUnitSortConfig(unit);
+         // Analyze each unit
+         units.forEach(unit => {
+            const prevItems = prevByUnit[unit];
+            const config = getUnitSortConfig(unit);
 
-           if (items && items.length > 0) {
-              const lastItem = items[items.length - 1]; // sorted by creation
-              
-              // Color Logic
-              const lastPri = getColorPriority(lastItem.color);
-              if (lastPri > 20) {
-                 config.color = 'desc'; // Ended Dark -> Start Dark->Light
-              } else {
-                 config.color = 'asc';
-              }
-              
-              // GSM Logic
-              const lastGsm = parseFloat(lastItem.gsm || 0);
-              if (lastGsm > 50) {
-                 config.gsm = 'desc'; // Ended High -> Start High->Low
-              } else {
-                 config.gsm = 'asc';
-              }
-           }
-        });
+            if (prevItems && prevItems.length > 0) {
+               const lastItem = prevItems[prevItems.length - 1]; // sorted by idx
+               
+               // Color Logic (Existing)
+               const lastPri = getColorPriority(lastItem.color);
+               if (lastPri > 20) {
+                  config.color = 'desc'; // Ended Dark -> Start Dark->Light
+               } else {
+                  config.color = 'asc';
+               }
+               
+               // GSM Logic - Smart Gap Minimization
+               const lastGsm = parseFloat(lastItem.gsm || 0);
+               // Get Today's Items for this unit to find min/max
+               const todayItems = filteredData.value.filter(d => d.unit === unit);
+               
+               if (todayItems.length > 0) {
+                   const gsms = todayItems.map(d => parseFloat(d.gsm || 0));
+                   const minGsm = Math.min(...gsms);
+                   const maxGsm = Math.max(...gsms);
+                   
+                   const gapAsc = Math.abs(lastGsm - minGsm);  // If Start Low
+                   const gapDesc = Math.abs(lastGsm - maxGsm); // If Start High
+                   
+                   // Choose direction with smaller gap
+                   if (gapDesc < gapAsc) {
+                       config.gsm = 'desc';
+                   } else {
+                       config.gsm = 'asc';
+                   }
+                   console.log(`Unit ${unit} Smart Sort: Last GSM ${lastGsm}. Today Min ${minGsm}, Max ${maxGsm}. Chose ${config.gsm}`);
+               }
+            }
+         });
         
         frappe.show_alert("Updated sort based on previous day flow");
       }
@@ -522,13 +536,10 @@ async function fetchData() {
 }
 
 // Watch date to re-analyze flow
-watch(filterOrderDate, () => {
-  analyzePreviousFlow();
-});
-
 // Watch date to re-analyze flow
-watch(filterOrderDate, () => {
-  analyzePreviousFlow();
+watch(filterOrderDate, async () => {
+  await fetchData();
+  await analyzePreviousFlow(); 
 });
 
 // ---- AUTO ALLOCATION (BIN PACKING) ----
