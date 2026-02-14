@@ -1,6 +1,6 @@
 {
     "charts": [],
-    "content": "[{\"id\":\"production_board_shortcut\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Production Board\",\"shortcut_type\":\"Page\",\"shortcut_url\":\"production-board\",\"label\":\"Production Board\"}}]",
+    "content": "[{\"id\":\"production_board_shortcut\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Production Board\",\"shortcut_type\":\"Page\",\"shortcut_url\":\"production-board\",\"label\":\"Production Board\"}},{\"id\":\"color_chart_shortcut\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Color Chart\",\"shortcut_type\":\"Page\",\"shortcut_url\":\"color-chart\",\"label\":\"Color Chart\"}}]",
     "creation": "2026-02-13 12:00:00.000000",
     "custom_blocks": [],
     "docstatus": 0,
@@ -22,6 +22,15 @@
             "type": "Link"
         },
         {
+            "description": "Color Chart",
+            "icon": "color",
+            "label": "Color Chart",
+            "link_to": "color-chart",
+            "link_type": "Page",
+            "onboard": 1,
+            "type": "Link"
+        },
+        {
             "description": "Planning Sheet List",
             "icon": "list",
             "label": "Planning sheet",
@@ -31,7 +40,7 @@
             "type": "Link"
         }
     ],
-    "modified": "2026-02-13 17:00:00.000000",
+    "modified": "2026-02-14 11:00:00.000000",
     "modified_by": "Administrator",
     "module": "Production Scheduler",
     "name": "Production Scheduler",
@@ -46,6 +55,11 @@
         {
             "label": "Production Board",
             "link_to": "production-board",
+            "type": "Page"
+        },
+        {
+            "label": "Color Chart",
+            "link_to": "color-chart",
             "type": "Page"
         }
     ],
