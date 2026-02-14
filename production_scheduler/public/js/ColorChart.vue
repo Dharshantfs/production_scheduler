@@ -624,6 +624,7 @@ async function autoAllocate() {
 
   // 1. Group by Quality + Color (assume same color/quality run together)
   const groups = {};
+  const unallocated = []; // Track items that don't fit
   itemsToAlloc.forEach(item => {
     const key = `${item.quality}|${item.color}`;
     if (!groups[key]) groups[key] = [];
@@ -710,13 +711,13 @@ async function autoAllocate() {
             });
             batchLoads[bestUnit] += itemTonnage;
         } else {
-            console.warn(`Could not allocate ${item.itemName} (${itemTonnage}T, ${itemWidth}"). Full or No Fit.`);
-            // Leave unit as is (or unassign?)
+            console.warn(`Could not allocate ${item.itemName}. Full or No Fit.`);
+            unallocated.push(item);
         }
     }
   }
 
-  // 3. Apply updates
+  // 3. Apply updates (Unit Changes)
   if (updates.length > 0) {
       try {
           // Optimistic update
@@ -735,7 +736,35 @@ async function autoAllocate() {
       } catch (e) {
           console.error(e);
           frappe.msgprint("Error auto-allocating");
-          fetchData();
+          fetchData(); 
+      }
+  }
+
+  // 4. Handle Unallocated (Rollover)
+  if (unallocated.length > 0) {
+      const nextDate = frappe.datetime.add_days(filterOrderDate.value, 1);
+      const totalUnallocated = unallocated.reduce((s, i) => s + (i.qty/1000), 0).toFixed(2);
+      
+      if (confirm(`${unallocated.length} orders (${totalUnallocated}T) could not fit in today's capacity.\n\nMove them to the Next Day (${nextDate})?`)) {
+          console.log("Moving to next day:", nextDate, unallocated);
+          const dateUpdates = unallocated.map(item => ({
+              name: item.itemName,
+              date: nextDate 
+          }));
+          
+          try {
+              await frappe.call({
+                method: "production_scheduler.api.update_items_bulk",
+                args: { items: dateUpdates }
+              });
+              frappe.show_alert({ message: `Moved ${unallocated.length} orders to ${nextDate}`, indicator: "orange" });
+              
+              // Remove from current view
+              rawData.value = rawData.value.filter(d => !unallocated.find(u => u.itemName === d.itemName));
+          } catch (e) {
+              console.error(e);
+              frappe.msgprint("Error moving items to next day");
+          }
       }
   }
 }

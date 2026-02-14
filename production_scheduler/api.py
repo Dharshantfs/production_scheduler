@@ -219,9 +219,18 @@ def update_items_bulk(items):
 		items = json.loads(items)
 	
 	for item in items:
-		if item.get("name") and item.get("unit"):
-			frappe.db.set_value("Planning Sheet Item", item.get("name"), "unit", item.get("unit"))
-	
+		if item.get("name"):
+			# Update Unit
+			if item.get("unit"):
+				frappe.db.set_value("Planning Sheet Item", item.get("name"), "unit", item.get("unit"))
+			
+			# Update Date (Auto-Rollover)
+			if item.get("date"):
+				# Get Parent
+				parent = frappe.db.get_value("Planning Sheet Item", item.get("name"), "parent")
+				if parent:
+					frappe.db.set_value("Planning sheet", parent, "ordered_date", item.get("date"))
+
 	return {"status": "success"}
 
 
