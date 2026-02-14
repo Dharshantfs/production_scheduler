@@ -142,7 +142,7 @@ const COLOR_GROUPS = [
   { keywords: ["ROYAL BLUE"], priority: 10, hex: "#4169E1" },
   { keywords: ["PEACOCK BLUE"], priority: 11, hex: "#005F69" },
   { keywords: ["MEDICAL BLUE"], priority: 12, hex: "#0077B6" },
-  { keywords: ["NAVY BLUE"], priority: 13, hex: "#000080" },
+  { keywords: ["NAVY BLUE"], priority: 35, hex: "#000080" },
   { keywords: ["MEDICAL GREEN"], priority: 16, hex: "#00A86B" },
   { keywords: ["PARROT GREEN"], priority: 17, hex: "#7CFC00" },
   { keywords: ["RELIANCE GREEN"], priority: 18, hex: "#3CB371" },
@@ -575,12 +575,25 @@ watch(filterOrderDate, async () => {
 });
 
 // ---- AUTO ALLOCATION (BIN PACKING) ----
-const UNIT_CAPACITIES = {
+const UNIT_WIDTHS = {
   "Unit 1": 63,
   "Unit 2": 126,
   "Unit 3": 126,
   "Unit 4": 90
 };
+
+const UNIT_TONNAGE_LIMITS = {
+  "Unit 1": 5.0,
+  "Unit 2": 12.0,
+  "Unit 3": 9.0,
+  "Unit 4": 5.5
+};
+
+function getUnitCapacityStatus(unit) {
+    const total = getUnitTotal(unit);
+    const limit = UNIT_TONNAGE_LIMITS[unit] || 999;
+    return total > limit ? { class: 'text-red-600 font-bold', warning: `⚠️ Over Limit (${limit}T)` } : {};
+}
 
 async function autoAllocate() {
   if (!confirm("Auto-allocate visible orders based on Width & Quality? This will overwrite current unit assignments.")) return;
@@ -627,63 +640,58 @@ async function autoAllocate() {
         compatibleUnits = [...units];
     }
 
-    // Sort Units: Preference for Larger Capacity to facilitate grouping
-    compatibleUnits.sort((a, b) => UNIT_CAPACITIES[b] - UNIT_CAPACITIES[a]);
+    // Sort Units: Preference for Larger Width to facilitate grouping?
+    // Actually, maybe sort by Remaining Tonnage Capacity?
+    // For now, keep width logic but respect Tonnage.
+    compatibleUnits.sort((a, b) => UNIT_WIDTHS[b] - UNIT_WIDTHS[a]);
+    
+    // Simulate current loads for this allocation session (since we are overwriting)
+    // We need to know if we are appending or overwriting.
+    // Alert says "overwrite current unit assignments". So we assume starting from 0 for these items.
+    // But what about items NOT in this filter?
+    // If we filter by "All Units", we re-allocate everything.
+    // Ideally we should account for "Locked" or "Other" items.
+    // For simplicity: We track load of items WE assign in this batch.
+    // Realistically, we should check existing load of UNSOUCHED items.
+    // But let's start with a local tracker.
+    const batchLoads = {};
+    units.forEach(u => batchLoads[u] = 0);
 
-    // Bin Packing Heuristic
-    const items = [...groupItems];
-    while (items.length > 0) {
-      let bestUnit = null;
-      let bestSubset = null;
-      let bestEfficiency = -1;
-
-      for (const u of compatibleUnits) {
-        const cap = UNIT_CAPACITIES[u];
-        const currentSubset = [];
-        let currentW = 0;
+    for (const item of groupItems) {
+        const itemWidth = parseFloat(item.width || 0);
+        const itemTonnage = (item.qty || 0) / 1000;
         
-        for (const item of items) {
-          if (currentW + (item.width || 0) <= cap) {
-            currentSubset.push(item);
-            currentW += (item.width || 0);
-          }
+        let bestUnit = null;
+        let minWaste = Infinity;
+        
+        for (const unit of compatibleUnits) {
+             const unitWidth = UNIT_WIDTHS[unit];
+             const limit = UNIT_TONNAGE_LIMITS[unit];
+             
+             // Check 1: Width Fit
+             if (unitWidth >= itemWidth) {
+                 // Check 2: Tonnage Capacity
+                 if (batchLoads[unit] + itemTonnage <= limit) {
+                     const waste = unitWidth - itemWidth;
+                     // Heuristic: Best Fit (Min Waste)
+                     if (waste < minWaste) {
+                         minWaste = waste;
+                         bestUnit = unit;
+                     }
+                 }
+             }
         }
         
-        if (currentW > 0) {
-            const efficiency = currentW / cap;
-            // Prioritize higher efficiency
-            if (efficiency > bestEfficiency) {
-                bestEfficiency = efficiency;
-                bestUnit = u;
-                bestSubset = currentSubset;
-            } else if (efficiency === bestEfficiency) {
-                // Tie breaker: Prefer smaller unit for same efficiency? (Save big units)
-                // Or Prefer larger unit?
-                // User Example: 124" in 126" (98%) vs 63" in 63" (100%).
-                // User picked 126". Why?
-                // Maybe because 124 is MORE TOTAL WIDTH than 63?
-                // Maximize Throughput?
-                // Let's maximize TOTAL WIDTH used in this batch.
-                // 124 > 63. So pick U3.
-                if (currentW > (bestSubset ? bestSubset.reduce((s,i)=>s+(i.width||0),0) : 0)) {
-                    bestUnit = u;
-                    bestSubset = currentSubset;
-                }
-            }
+        if (bestUnit) {
+            updates.push({
+                name: item.itemName,
+                unit: bestUnit
+            });
+            batchLoads[bestUnit] += itemTonnage;
+        } else {
+            console.warn(`Could not allocate ${item.itemName} (${itemTonnage}T, ${itemWidth}"). Full or No Fit.`);
+            // Leave unit as is (or unassign?)
         }
-      }
-
-      if (bestUnit && bestSubset) {
-        bestSubset.forEach(item => {
-           updates.push({ name: item.itemName, unit: bestUnit });
-           const idx = items.indexOf(item);
-           if (idx > -1) items.splice(idx, 1);
-        });
-      } else {
-        // No fit? Assign to largest available?
-        const item = items.shift();
-        updates.push({ name: item.itemName, unit: compatibleUnits[0] || "Unit 2" });
-      }
     }
   }
 
