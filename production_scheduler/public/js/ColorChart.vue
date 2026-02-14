@@ -178,16 +178,6 @@ const COLOR_GROUPS = [
 
 const GAP_THRESHOLD = 2; // any color group change triggers mix roll
 
-// Quality Priority Map for Auto-Allocation & Sort
-// Higher number = higher priority? Or simply supported list.
-// Based on user input:
-const QUALITY_PRIORITY = {
-  "Unit 1": { "SUPER PLATINUM": 1, "PLATINUM": 2, "PREMIUM": 3, "GOLD": 4, "SILVER CLASSIC": 5 },
-  "Unit 2": { "GOLD": 1, "SILVER": 2, "BRONZE": 3, "CLASSIC": 4, "ECO": 5 },
-  "Unit 3": { "SUPER PLATINUM": 1, "PLATINUM": 2, "PREMIUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
-  "Unit 4": { "PREMIUM": 1, "GOLD": 2, "SILVER": 3, "BRONZE": 4, "CLASSIC": 5 },
-};
-
 const units = ["Unit 1", "Unit 2", "Unit 3", "Unit 4"];
 const headerColors = { "Unit 1": "#3b82f6", "Unit 2": "#10b981", "Unit 3": "#f59e0b", "Unit 4": "#8b5cf6" };
 
