@@ -59,8 +59,12 @@
               </button>
             </div>
           </div>
-          <div class="cc-col-stats">
-            <span class="cc-stat-weight">{{ getUnitTotal(unit).toFixed(2) }}T</span>
+            <span class="cc-stat-weight" :class="getUnitCapacityStatus(unit).class">
+              {{ getUnitTotal(unit).toFixed(2) }}T
+            </span>
+            <div v-if="getUnitCapacityStatus(unit).warning" class="text-xs text-red-600 font-bold">
+              {{ getUnitCapacityStatus(unit).warning }}
+            </div>
             <span class="cc-stat-mix" v-if="getMixRollCount(unit) > 0">
               ⚠️ {{ getMixRollCount(unit) }} mix{{ getMixRollCount(unit) > 1 ? 'es' : '' }}
               ({{ getMixRollTotalWeight(unit) }} Kg)
