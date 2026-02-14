@@ -30,7 +30,9 @@
         </select>
       </div>
       <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
-      <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
+      <button class="cc-clear-btn" style="color: #2563eb; border-color: #2563eb; margin-left: 8px;" @click="autoAllocate" title="Auto-assign orders based on Width & Quality">
+        🪄 Auto Alloc
+      </button>
     </div>
 
     <!-- Color Chart Board -->
@@ -510,6 +512,143 @@ watch(filterOrderDate, () => {
 watch(filterOrderDate, () => {
   analyzePreviousFlow();
 });
+
+// ---- AUTO ALLOCATION (BIN PACKING) ----
+const UNIT_CAPACITIES = {
+  "Unit 1": 63,
+  "Unit 2": 126,
+  "Unit 3": 126,
+  "Unit 4": 90
+};
+
+async function autoAllocate() {
+  if (!confirm("Auto-allocate visible orders based on Width & Quality? This will overwrite current unit assignments.")) return;
+
+  const itemsToAlloc = filteredData.value; // Allocate currently filtered items
+  if (itemsToAlloc.length === 0) return;
+
+  // 1. Group by Quality + Color (assume same color/quality run together)
+  const groups = {};
+  itemsToAlloc.forEach(item => {
+    const key = `${item.quality}|${item.color}`;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(item);
+  });
+
+  const updates = [];
+
+  // 2. Process each group
+  for (const key in groups) {
+    const groupItems = groups[key];
+    const [quality, color] = key.split("|");
+    
+    // Sort items by width DESC (Best Fit Decreasing)
+    groupItems.sort((a, b) => (b.width || 0) - (a.width || 0));
+
+    // Find compatible units based on QUALITY_PRIORITY map
+    // (If map exists for a unit, it lists supported qualities. If quality not in map, maybe not supported?)
+    // But user said "Gold can run Unit 3". U3 map has Gold.
+    let compatibleUnits = units.filter(u => {
+      const priMap = QUALITY_PRIORITY[u];
+      // If unit has no map (empty?), assume generic? No, strict check if map exists.
+      // If unit has map, check if quality is in it.
+      if (priMap) {
+         // If map has entries, strict check.
+         if (Object.keys(priMap).length > 0) {
+             return priMap[quality] !== undefined;
+         }
+      }
+      return true; // If no map, assume compatible
+    });
+    
+    if (compatibleUnits.length === 0) {
+        // Fallback: try all units if strict check fails (maybe 'General' quality?)
+        compatibleUnits = [...units];
+    }
+
+    // Sort Units: Preference for Larger Capacity to facilitate grouping
+    compatibleUnits.sort((a, b) => UNIT_CAPACITIES[b] - UNIT_CAPACITIES[a]);
+
+    // Bin Packing Heuristic
+    const items = [...groupItems];
+    while (items.length > 0) {
+      let bestUnit = null;
+      let bestSubset = null;
+      let bestEfficiency = -1;
+
+      for (const u of compatibleUnits) {
+        const cap = UNIT_CAPACITIES[u];
+        const currentSubset = [];
+        let currentW = 0;
+        
+        for (const item of items) {
+          if (currentW + (item.width || 0) <= cap) {
+            currentSubset.push(item);
+            currentW += (item.width || 0);
+          }
+        }
+        
+        if (currentW > 0) {
+            const efficiency = currentW / cap;
+            // Prioritize higher efficiency
+            if (efficiency > bestEfficiency) {
+                bestEfficiency = efficiency;
+                bestUnit = u;
+                bestSubset = currentSubset;
+            } else if (efficiency === bestEfficiency) {
+                // Tie breaker: Prefer smaller unit for same efficiency? (Save big units)
+                // Or Prefer larger unit?
+                // User Example: 124" in 126" (98%) vs 63" in 63" (100%).
+                // User picked 126". Why?
+                // Maybe because 124 is MORE TOTAL WIDTH than 63?
+                // Maximize Throughput?
+                // Let's maximize TOTAL WIDTH used in this batch.
+                // 124 > 63. So pick U3.
+                if (currentW > (bestSubset ? bestSubset.reduce((s,i)=>s+(i.width||0),0) : 0)) {
+                    bestUnit = u;
+                    bestSubset = currentSubset;
+                }
+            }
+        }
+      }
+
+      if (bestUnit && bestSubset) {
+        bestSubset.forEach(item => {
+           updates.push({ name: item.itemName, unit: bestUnit });
+           const idx = items.indexOf(item);
+           if (idx > -1) items.splice(idx, 1);
+        });
+      } else {
+        // No fit? Assign to largest available?
+        const item = items.shift();
+        updates.push({ name: item.itemName, unit: compatibleUnits[0] || "Unit 2" });
+      }
+    }
+  }
+
+  // 3. Apply updates
+  if (updates.length > 0) {
+      try {
+          // Optimistic update
+          updates.forEach(upd => {
+             const item = rawData.value.find(d => d.itemName === upd.name);
+             if (item) item.unit = upd.unit;
+          });
+
+          // API Call
+          await frappe.call({
+            method: "production_scheduler.api.update_items_bulk",
+            args: { items: updates }
+          });
+          
+          frappe.show_alert({ message: `Auto-allocated ${updates.length} orders`, indicator: "green" });
+      } catch (e) {
+          console.error(e);
+          frappe.msgprint("Error auto-allocating");
+          fetchData();
+      }
+  }
+}
 
 function initSortable() {
   if (!columnRefs.value) return;

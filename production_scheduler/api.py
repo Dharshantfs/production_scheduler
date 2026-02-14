@@ -195,6 +195,7 @@ def get_color_chart_data(date):
 				"quality": item.get("custom_quality") or item.get("quality") or "",
 				"gsm": item.get("gsm") or "",
 				"qty": flt(item.get("qty", 0)),
+				"width": flt(item.get("width") or item.get("custom_width") or frappe.db.get_value("Item", item.get("item_code"), "custom_width") or 0),
 				"unit": unit,
 			})
 
@@ -207,6 +208,19 @@ def update_item_unit(item_name, unit):
 		frappe.throw(_("Item Name and Unit are required"))
 
 	frappe.db.set_value("Planning Sheet Item", item_name, "unit", unit)
+	return {"status": "success"}
+
+
+@frappe.whitelist()
+def update_items_bulk(items):
+	import json
+	if isinstance(items, str):
+		items = json.loads(items)
+	
+	for item in items:
+		if item.get("name") and item.get("unit"):
+			frappe.db.set_value("Planning Sheet Item", item.get("name"), "unit", item.get("unit"))
+	
 	return {"status": "success"}
 
 
