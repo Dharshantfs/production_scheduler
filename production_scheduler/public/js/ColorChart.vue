@@ -352,17 +352,31 @@ function getUnitSortConfig(unit) {
 
 function toggleUnitColor(unit) {
   const config = getUnitSortConfig(unit);
-  config.color = config.color === 'asc' ? 'desc' : 'asc';
+  // If not already sorting by color, switch to color and reset to asc
+  if (config.priority !== 'color') {
+      config.priority = 'color';
+      config.color = 'asc';
+  } else {
+      config.color = config.color === 'asc' ? 'desc' : 'asc';
+  }
+  console.log(`Unit ${unit} Sort: Color ${config.color}, Priority: ${config.priority}`);
 }
 
 function toggleUnitGsm(unit) {
   const config = getUnitSortConfig(unit);
-  config.gsm = config.gsm === 'asc' ? 'desc' : 'asc';
+  if (config.priority !== 'gsm') {
+      config.priority = 'gsm';
+      config.gsm = 'asc'; // Default to ASC (Low to High)? Or DESC? Usually Low to High.
+  } else {
+      config.gsm = config.gsm === 'asc' ? 'desc' : 'asc';
+  }
+  console.log(`Unit ${unit} Sort: GSM ${config.gsm}, Priority: ${config.priority}`);
 }
 
 function toggleUnitPriority(unit) {
   const config = getUnitSortConfig(unit);
   config.priority = config.priority === 'color' ? 'gsm' : 'color';
+  console.log(`Unit ${unit} Priority swapped to: ${config.priority}`);
 }
 
 // Group data by unit, sort, and insert mix markers
