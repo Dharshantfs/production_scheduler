@@ -155,14 +155,14 @@ def update_schedule(doc_name, unit, date, index=0):
 def get_color_chart_data(date):
 	target_date = getdate(date)
 
-	# Get all planning sheets for this date (by delivery date)
+	# Get all planning sheets for this date (by order date)
 	planning_sheets = frappe.get_all(
 		"Planning sheet",
 		filters={
-			"dod": target_date,
+			"ordered_date": target_date,
 			"docstatus": ["<", 2]
 		},
-		fields=["name", "customer", "party_code", "dod", "ordered_date"]
+		fields=["name", "customer", "party_code", "dod", "ordered_date", "planning_status"]
 	)
 
 	data = []
@@ -188,6 +188,7 @@ def get_color_chart_data(date):
 				"planningSheet": sheet.name,
 				"customer": sheet.customer,
 				"partyCode": sheet.party_code,
+				"planningStatus": sheet.planning_status or "Draft",
 				"color": color.upper().strip(),
 				"quality": item.get("custom_quality") or item.get("quality") or "",
 				"gsm": item.get("gsm") or "",

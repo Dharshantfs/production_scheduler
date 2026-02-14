@@ -3,8 +3,16 @@
     <!-- Filter Bar -->
     <div class="cc-filters">
       <div class="cc-filter-item">
-        <label>Date</label>
-        <input type="date" v-model="filterDate" @change="fetchData" />
+        <label>Order Date</label>
+        <input type="date" v-model="filterOrderDate" @change="fetchData" />
+      </div>
+      <div class="cc-filter-item">
+        <label>Party Code</label>
+        <input
+          type="text"
+          v-model="filterPartyCode"
+          placeholder="Search party..."
+        />
       </div>
       <div class="cc-filter-item">
         <label>Unit</label>
@@ -14,11 +22,28 @@
         </select>
       </div>
       <div class="cc-filter-item">
+        <label>Status</label>
+        <select v-model="filterStatus">
+          <option value="">All</option>
+          <option value="Draft">Draft</option>
+          <option value="Finalized">Finalized</option>
+        </select>
+      </div>
+      <div class="cc-filter-item">
+        <label>Sort By</label>
+        <select v-model="sortMode">
+          <option value="color">Color</option>
+          <option value="quality">Quality</option>
+          <option value="gsm">GSM</option>
+        </select>
+      </div>
+      <div class="cc-filter-item">
         <label>Direction</label>
         <button class="cc-direction-btn" @click="toggleDirection">
           {{ direction === 'asc' ? '☀️ Light → Dark' : '🌙 Dark → Light' }}
         </button>
       </div>
+      <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
     </div>
 
     <!-- Color Chart Board -->
@@ -34,6 +59,7 @@
             <span class="cc-stat-weight">{{ getUnitTotal(unit).toFixed(2) }}T</span>
             <span class="cc-stat-mix" v-if="getMixRollCount(unit) > 0">
               ⚠️ {{ getMixRollCount(unit) }} mix{{ getMixRollCount(unit) > 1 ? 'es' : '' }}
+              ({{ getMixRollTotalWeight(unit) }} Kg)
             </span>
           </div>
         </div>
@@ -84,8 +110,8 @@
         <!-- Unit Footer -->
         <div class="cc-col-footer">
           <span>Production: {{ getUnitProductionTotal(unit).toFixed(2) }}T</span>
-          <span v-if="getMixRollWeight(unit) > 0">
-            Mix Waste: {{ (getMixRollWeight(unit) / 1000).toFixed(3) }}T
+          <span v-if="getMixRollTotalWeight(unit) > 0">
+            Mix Waste: {{ (getMixRollTotalWeight(unit) / 1000).toFixed(3) }}T
           </span>
         </div>
       </div>
@@ -98,7 +124,6 @@ import { ref, computed, onMounted, nextTick, watch } from "vue";
 
 // Color groups for keyword-based matching
 // Check MOST SPECIFIC (multi-word) first, then SINGLE-WORD catch-all groups
-// This way "BRIGHT WHITE" matches WHITE group, "CRIMSON RED" matches RED group, etc.
 const COLOR_GROUPS = [
   // Multi-word specific matches (checked first)
   { keywords: ["WHITE MIX"], priority: 97, hex: "#f0f0f0" },
@@ -130,7 +155,6 @@ const COLOR_GROUPS = [
   { keywords: ["LIGHT BEIGE"], priority: 34, hex: "#F5DEB3" },
   { keywords: ["DARK BEIGE"], priority: 35, hex: "#D2B48C" },
   // Single-word catch-all groups (checked last)
-  // "BRIGHT WHITE", "SUPER WHITE", etc. all match here
   { keywords: ["WHITE"], priority: 1, hex: "#FFFFFF" },
   { keywords: ["IVORY"], priority: 2, hex: "#FFFFF0" },
   { keywords: ["YELLOW"], priority: 4, hex: "#FFD700" },
@@ -149,21 +173,49 @@ const COLOR_GROUPS = [
   { keywords: ["BLACK"], priority: 36, hex: "#1a1a1a" },
 ];
 
-const MIX_ROLL_QTY = 100; // kg per mix roll
-const GAP_THRESHOLD = 5; // color priority gap to trigger mix roll
+const GAP_THRESHOLD = 2; // any color group change triggers mix roll
 
 const units = ["Unit 1", "Unit 2", "Unit 3", "Unit 4"];
 const headerColors = { "Unit 1": "#3b82f6", "Unit 2": "#10b981", "Unit 3": "#f59e0b", "Unit 4": "#8b5cf6" };
 
-const filterDate = ref(frappe.datetime.get_today());
+const filterOrderDate = ref(frappe.datetime.get_today());
+const filterPartyCode = ref("");
 const filterUnit = ref("");
-const direction = ref("asc"); // asc = light to dark, desc = dark to light
+const filterStatus = ref("");
+const sortMode = ref("color"); // color, quality, gsm
+const direction = ref("asc");
 const rawData = ref([]);
 const columnRefs = ref(null);
 
 const visibleUnits = computed(() =>
   filterUnit.value ? units.filter((u) => u === filterUnit.value) : units
 );
+
+// Filter data by party code and status
+const filteredData = computed(() => {
+  let data = rawData.value;
+  if (filterPartyCode.value) {
+    const search = filterPartyCode.value.toLowerCase();
+    data = data.filter((d) =>
+      (d.partyCode || "").toLowerCase().includes(search) ||
+      (d.customer || "").toLowerCase().includes(search)
+    );
+  }
+  if (filterStatus.value) {
+    data = data.filter((d) => d.planningStatus === filterStatus.value);
+  }
+  return data;
+});
+
+function clearFilters() {
+  filterOrderDate.value = frappe.datetime.get_today();
+  filterPartyCode.value = "";
+  filterUnit.value = "";
+  filterStatus.value = "";
+  sortMode.value = "color";
+  direction.value = "asc";
+  fetchData();
+}
 
 // Find matching color group by checking if color name contains any keyword
 function findColorGroup(color) {
@@ -178,12 +230,24 @@ function findColorGroup(color) {
 
 function getColorPriority(color) {
   const group = findColorGroup(color);
-  return group ? group.priority : 50; // unknown colors get middle priority
+  return group ? group.priority : 50;
 }
 
 function getHexColor(color) {
   const group = findColorGroup(color);
   return group ? group.hex : "#ccc";
+}
+
+// Mix roll qty depends on color gap:
+// Gap 1-3: 100 Kg (close colors, easy transition)
+// Gap 4-7: 150 Kg (moderate transition)
+// Gap 8-15: 200 Kg (significant transition)
+// Gap 16+: 250 Kg (major transition, e.g. white to dark)
+function getMixRollQty(gap) {
+  if (gap <= 3) return 100;
+  if (gap <= 7) return 150;
+  if (gap <= 15) return 200;
+  return 250;
 }
 
 function determineMixType(fromColor, toColor) {
@@ -199,30 +263,52 @@ function determineMixType(fromColor, toColor) {
   return "COLOR MIX";
 }
 
-// Group raw data by unit, sort by color, insert mix markers
-function getUnitEntries(unit) {
-  const unitItems = rawData.value.filter((d) => d.unit === unit);
+// Multi-level sorting: primary → secondary → tertiary
+function sortItems(items) {
+  items.sort((a, b) => {
+    let cmp = 0;
 
-  // Sort by color priority
-  unitItems.sort((a, b) => {
-    const pa = getColorPriority(a.color);
-    const pb = getColorPriority(b.color);
-    return direction.value === "asc" ? pa - pb : pb - pa;
+    if (sortMode.value === "color") {
+      // Primary: Color, Secondary: Quality, Tertiary: GSM
+      cmp = getColorPriority(a.color) - getColorPriority(b.color);
+      if (cmp === 0) cmp = (a.quality || "").localeCompare(b.quality || "");
+      if (cmp === 0) cmp = parseFloat(a.gsm || 0) - parseFloat(b.gsm || 0);
+    } else if (sortMode.value === "quality") {
+      // Primary: Quality, Secondary: Color, Tertiary: GSM
+      cmp = (a.quality || "").localeCompare(b.quality || "");
+      if (cmp === 0) cmp = getColorPriority(a.color) - getColorPriority(b.color);
+      if (cmp === 0) cmp = parseFloat(a.gsm || 0) - parseFloat(b.gsm || 0);
+    } else if (sortMode.value === "gsm") {
+      // Primary: GSM, Secondary: Color, Tertiary: Quality
+      cmp = parseFloat(a.gsm || 0) - parseFloat(b.gsm || 0);
+      if (cmp === 0) cmp = getColorPriority(a.color) - getColorPriority(b.color);
+      if (cmp === 0) cmp = (a.quality || "").localeCompare(b.quality || "");
+    }
+
+    return direction.value === "asc" ? cmp : -cmp;
   });
+  return items;
+}
 
-  // Insert mix roll markers where color gap is large
+// Group data by unit, sort, and insert mix markers
+function getUnitEntries(unit) {
+  const unitItems = filteredData.value.filter((d) => d.unit === unit);
+  sortItems(unitItems);
+
+  // Insert mix roll markers where color GROUP changes
   const entries = [];
   for (let i = 0; i < unitItems.length; i++) {
     entries.push({ type: "order", ...unitItems[i] });
     if (i < unitItems.length - 1) {
-      const gap = Math.abs(
-        getColorPriority(unitItems[i].color) - getColorPriority(unitItems[i + 1].color)
-      );
+      const curPri = getColorPriority(unitItems[i].color);
+      const nextPri = getColorPriority(unitItems[i + 1].color);
+      const gap = Math.abs(curPri - nextPri);
+      // Only add mix marker if colors are in different groups (gap > 0)
       if (gap > GAP_THRESHOLD) {
         entries.push({
           type: "mix",
           mixType: determineMixType(unitItems[i].color, unitItems[i + 1].color),
-          qty: MIX_ROLL_QTY,
+          qty: getMixRollQty(gap),
         });
       }
     }
@@ -231,16 +317,16 @@ function getUnitEntries(unit) {
 }
 
 function getUnitTotal(unit) {
-  return rawData.value
+  return filteredData.value
     .filter((d) => d.unit === unit)
     .reduce((sum, d) => sum + d.qty, 0) / 1000;
 }
 
 function getUnitProductionTotal(unit) {
-  const production = rawData.value
+  const production = filteredData.value
     .filter((d) => d.unit === unit)
     .reduce((sum, d) => sum + d.qty, 0);
-  const mixWeight = getMixRollWeight(unit);
+  const mixWeight = getMixRollTotalWeight(unit);
   return (production + mixWeight) / 1000;
 }
 
@@ -248,8 +334,10 @@ function getMixRollCount(unit) {
   return getUnitEntries(unit).filter((e) => e.type === "mix").length;
 }
 
-function getMixRollWeight(unit) {
-  return getMixRollCount(unit) * MIX_ROLL_QTY;
+function getMixRollTotalWeight(unit) {
+  return getUnitEntries(unit)
+    .filter((e) => e.type === "mix")
+    .reduce((sum, e) => sum + e.qty, 0);
 }
 
 function toggleDirection() {
@@ -261,11 +349,11 @@ function openForm(name) {
 }
 
 async function fetchData() {
-  if (!filterDate.value) return;
+  if (!filterOrderDate.value) return;
   try {
     const r = await frappe.call({
       method: "production_scheduler.api.get_color_chart_data",
-      args: { date: filterDate.value },
+      args: { date: filterOrderDate.value },
     });
     rawData.value = r.message || [];
   } catch (e) {
@@ -288,7 +376,6 @@ function initSortable() {
       filter: ".cc-mix-marker",
       draggable: ".cc-card",
       onEnd: (evt) => {
-        // Reorder is visual only for now
         frappe.show_alert({ message: "Sequence updated", indicator: "blue" });
       },
     });
@@ -355,6 +442,23 @@ onMounted(fetchData);
 
 .cc-direction-btn:hover {
   background: #e2e8f0;
+}
+
+.cc-clear-btn {
+  padding: 6px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 12px;
+  background: #fff;
+  cursor: pointer;
+  color: #ef4444;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.cc-clear-btn:hover {
+  background: #fef2f2;
+  border-color: #ef4444;
 }
 
 /* ---- BOARD ---- */
