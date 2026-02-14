@@ -391,6 +391,48 @@ function openForm(name) {
   frappe.set_route("Form", "Planning sheet", name);
 }
 
+async function analyzePreviousFlow() {
+  if (!filterOrderDate.value) return;
+  try {
+    const prevDateArgs = await frappe.call({
+      method: "production_scheduler.api.get_previous_production_date",
+      args: { date: filterOrderDate.value }
+    });
+    const prevDate = prevDateArgs.message;
+    
+    if (prevDate) {
+      const r = await frappe.call({
+        method: "production_scheduler.api.get_color_chart_data",
+        args: { date: prevDate }
+      });
+      const prevData = r.message || [];
+      if (prevData.length > 0) {
+        // Assume last item in list is the last scheduled item (since sorted by creation)
+        const lastItem = prevData[prevData.length - 1];
+        
+        // Color Logic: If ended Dark (>20), start Dark->Light (desc). Else Light->Dark (asc).
+        const lastPri = getColorPriority(lastItem.color);
+        if (lastPri > 20) {
+           colorDirection.value = 'desc'; // Dark -> Light
+           frappe.show_alert(`Previous day ended Dark. Suggesting Dark → Light.`);
+        } else {
+           colorDirection.value = 'asc'; // Light -> Dark
+        }
+
+        // GSM Logic: If ended High (>50), start High->Low (desc). Else Low->High (asc).
+        const lastGsm = parseFloat(lastItem.gsm || 0);
+        if (lastGsm > 50) {
+          gsmDirection.value = 'desc'; // High -> Low
+        } else {
+          gsmDirection.value = 'asc'; // Low -> High
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Error analyzing previous flow", e);
+  }
+}
+
 async function fetchData() {
   if (!filterOrderDate.value) return;
   try {
@@ -405,7 +447,19 @@ async function fetchData() {
   }
   await nextTick();
   initSortable();
+  // We analyze previous flow on mount or date change, but maybe do it separately to avoid blocking render?
+  // Called safely at end of fetchData or in watcher
 }
+
+// Watch date to re-analyze flow
+watch(filterOrderDate, () => {
+  analyzePreviousFlow();
+});
+
+// Watch date to re-analyze flow
+watch(filterOrderDate, () => {
+  analyzePreviousFlow();
+});
 
 function initSortable() {
   if (!columnRefs.value) return;
@@ -461,7 +515,10 @@ function initSortable() {
   });
 }
 
-onMounted(fetchData);
+onMounted(() => {
+  fetchData();
+  analyzePreviousFlow();
+});
 </script>
 
 <style scoped>

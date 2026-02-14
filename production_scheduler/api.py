@@ -162,7 +162,8 @@ def get_color_chart_data(date):
 			"ordered_date": target_date,
 			"docstatus": ["<", 2]
 		},
-		fields=["name", "customer", "party_code", "dod", "ordered_date", "planning_status"]
+		fields=["name", "customer", "party_code", "dod", "ordered_date", "planning_status"],
+		order_by="creation asc"
 	)
 
 	data = []
@@ -207,3 +208,14 @@ def update_item_unit(item_name, unit):
 
 	frappe.db.set_value("Planning Sheet Item", item_name, "unit", unit)
 	return {"status": "success"}
+
+
+@frappe.whitelist()
+def get_previous_production_date(date):
+	prev_date = frappe.db.get_value(
+		"Planning sheet",
+		{"ordered_date": ["<", date], "docstatus": ["<", 2]},
+		"ordered_date",
+		order_by="ordered_date desc"
+	)
+	return prev_date
