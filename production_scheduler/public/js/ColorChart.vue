@@ -123,7 +123,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from "vue";
+import { ref, computed, onMounted, nextTick, watch, reactive } from "vue";
 
 // Color groups for keyword-based matching
 // Check MOST SPECIFIC (multi-word) first, then SINGLE-WORD catch-all groups
