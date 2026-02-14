@@ -11,3 +11,21 @@ app_license = "mit"
 # include js, css files in header of desk.html
 app_include_css = "/assets/production_scheduler/css/production_scheduler.css"
 app_include_js = "production_scheduler.bundle.js"
+
+# Fixtures
+# --------
+fixtures = [
+    {
+        "dt": "Custom Field",
+        "filters": [
+            [
+                "name",
+                "in",
+                [
+                    "Planning sheet-custom_order_date"
+                ]
+            ]
+        ]
+    }
+]
+

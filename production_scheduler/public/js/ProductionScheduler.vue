@@ -76,7 +76,14 @@
 
             <div class="ps-card-bottom">
               <span class="ps-card-weight">{{ (card.total_weight / 1000).toFixed(3) }} T</span>
-              <span class="ps-card-date">{{ card.dod }}</span>
+              <div class="ps-card-dates">
+                <span v-if="card.custom_order_date" class="ps-card-date-item">
+                  <span class="ps-date-label">Order:</span> {{ card.custom_order_date }}
+                </span>
+                <span class="ps-card-date-item">
+                  <span class="ps-date-label">Delivery:</span> {{ card.dod }}
+                </span>
+              </div>
             </div>
           </div>
           <div v-if="!groupedCards[unit] || groupedCards[unit].length === 0" class="ps-empty">
@@ -450,10 +457,27 @@ onMounted(() => {
   color: #1e293b;
 }
 
-.ps-card-date {
-  font-size: 11px;
-  color: #94a3b8;
+.ps-card-dates {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
 }
+
+.ps-card-date-item {
+  font-size: 10px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.ps-date-label {
+  font-weight: 600;
+  color: #94a3b8;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
 
 .ps-empty {
   text-align: center;
