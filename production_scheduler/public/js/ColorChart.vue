@@ -680,6 +680,10 @@ function initSortable() {
               // 1. Optimistic update (find item in rawData and update unit)
               const item = rawData.value.find(d => d.itemName === itemName);
               if (item) {
+                // Remove the element moved by Sortable so Vue can re-render it cleanly from state
+                if (itemEl && itemEl.parentNode) {
+                    itemEl.parentNode.removeChild(itemEl);
+                }
                 item.unit = newUnit;
                 // Re-sort happens automatically via computed properties
               }
