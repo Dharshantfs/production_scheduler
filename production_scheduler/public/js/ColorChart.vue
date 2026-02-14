@@ -45,7 +45,9 @@
         <div class="cc-col-header" :style="{ borderTopColor: headerColors[unit] }">
           <div class="cc-header-top">
             <span class="cc-col-title">{{ unit }}</span>
+            <!-- Sort Controls -->
             <div class="cc-unit-controls">
+              <span style="font-size:10px; color:#64748b; margin-right:4px;">{{ getSortLabel(unit) }}</span>
               <button class="cc-mini-btn" @click="toggleUnitColor(unit)" :title="getUnitSortConfig(unit).color === 'asc' ? 'Light->Dark' : 'Dark->Light'">
                 {{ getUnitSortConfig(unit).color === 'asc' ? '☀️' : '🌙' }}
               </button>
@@ -307,7 +309,6 @@ function getQualityPriority(unit, quality) {
   return unitMap[upper] || 99; // Unknown quality = lowest priority
 }
 
-// Auto-sort: Quality (per unit) → Color (manual) → GSM (manual)
 // Helper Comparators
 function compareQuality(unit, a, b) {
     return getQualityPriority(unit, a.quality) - getQualityPriority(unit, b.quality);
@@ -325,12 +326,21 @@ function compareGsm(a, b, direction) {
     return direction === 'asc' ? gA - gB : gB - gA;
 }
 
+// Visually display sort state
+function getSortLabel(unit) {
+    const config = getUnitSortConfig(unit);
+    const p = config.priority === 'color' ? 'Color' : (config.priority === 'gsm' ? 'GSM' : 'Quality');
+    const d = config.priority === 'color' ? config.color : (config.priority === 'gsm' ? config.gsm : 'ASC');
+    return `${p} (${d.toUpperCase()})`; 
+}
+
 // Auto-sort: Dynamically based on config.priority
 function sortItems(unit, items) {
   const config = getUnitSortConfig(unit);
-  const pri = config.priority || 'quality'; // Default to quality if undefined
+  const pri = config.priority || 'quality'; 
 
-  items.sort((a, b) => {
+  // Create a Shallow Copy to ensure Vue detects change (New Array Reference)
+  return [...items].sort((a, b) => {
     let cmp = 0;
 
     // 1. Primary Sort
@@ -355,14 +365,13 @@ function sortItems(unit, items) {
         cmp = compareQuality(unit, a, b);
         if (cmp === 0) cmp = compareColor(a, b, config.color);
     } else {
-        // Quality -> Color -> GSM (Standard)
+        // Quality -> Color -> GSM
         cmp = compareColor(a, b, config.color);
         if (cmp === 0) cmp = compareGsm(a, b, config.gsm);
     }
     
     return cmp;
   });
-  return items;
 }
 
 // Helper to get/init config
