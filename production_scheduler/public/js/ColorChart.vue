@@ -413,8 +413,8 @@ function toggleUnitPriority(unit) {
 
 // Group data by unit, sort, and insert mix markers
 function getUnitEntries(unit) {
-  const unitItems = filteredData.value.filter((d) => d.unit === unit);
-  sortItems(unit, unitItems);
+  let unitItems = filteredData.value.filter((d) => d.unit === unit);
+  unitItems = sortItems(unit, unitItems); // Capture sorted result
 
   // Insert mix roll markers where color GROUP changes
   const entries = [];
