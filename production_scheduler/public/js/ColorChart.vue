@@ -221,16 +221,24 @@ const visibleUnits = computed(() =>
 const filteredData = computed(() => {
   let data = rawData.value;
   
-  // Exclude WHITE colors (Priority 10, 11, and White Mix 99)
+  // Exclude Specific WHITE variants as per user request
+  // "BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE", "SUPER WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"
+  // And "WHITE" generally? "DONT BRING THIS COLOR IN COLOR CHART APART FROM THIS U CAN BRING ALL COLOR IVORY"
+  // So keep Ivory. Remove "White" and variants.
+  const EXCLUDED_WHITES = [
+      "WHITE", "BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE", 
+      "SUPER WHITE", "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"
+  ];
+
   data = data.filter(d => {
-      const group = findColorGroup(d.color);
-      // Keywords for White Groups: WHITE, BRIGHT WHITE, IVORY, OFF WHITE, CREAM, WHITE MIX
-      // Priorities: 10, 11, 99 (White Mix)
-      // Check priority or keywords?
-      // Priority 10, 11 are White/Ivory.
-      // Priority 99 is Mix (White Mix).
-      // Let's use priority check for robustness.
-      return ![10, 11].includes(group.priority) && !group.keywords.includes("WHITE MIX");
+      const colorUpper = (d.color || "").toUpperCase();
+      // Check if color matches any excluded keyword
+      // User says "APART FROM THIS U CAN BRING ALL COLOR IVORY"
+      // So if color is IVORY, Keep.
+      if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return true;
+      
+      // If color contains excluded keyword, remove
+      return !EXCLUDED_WHITES.some(ex => colorUpper.includes(ex));
   });
 
   if (filterPartyCode.value) {
