@@ -195,7 +195,8 @@ def get_color_chart_data(date):
 				"quality": item.get("custom_quality") or item.get("quality") or "",
 				"gsm": item.get("gsm") or "",
 				"qty": flt(item.get("qty", 0)),
-				"width": flt(item.get("width") or item.get("custom_width") or frappe.db.get_value("Item", item.get("item_code"), "custom_width") or 0),
+				"width": flt(item.get("width") or item.get("custom_width") or item.get("width_inches") or item.get("width_inch") or item.get("width_in") or 0),
+				"debug_keys": list(item.keys()),
 				"unit": unit,
 			})
 

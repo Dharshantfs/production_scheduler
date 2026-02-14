@@ -493,6 +493,10 @@ async function fetchData() {
       args: { date: filterOrderDate.value },
     });
     rawData.value = r.message || [];
+    console.log("Fetched Data:", rawData.value);
+    if (rawData.value.length > 0) {
+        console.log("Sample Item Width:", rawData.value[0].width, rawData.value[0]);
+    }
   } catch (e) {
     frappe.msgprint("Error loading color chart data");
     console.error(e);
