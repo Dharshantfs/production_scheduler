@@ -68,7 +68,7 @@
           </div>
         </div>
         <div class="cc-col-body" :data-unit="unit" ref="columnRefs">
-          <template v-for="(entry, idx) in getUnitEntries(unit)" :key="idx">
+          <template v-for="(entry, idx) in getUnitEntries(unit)" :key="entry.uniqueKey">
             <!-- Mix Roll Marker -->
             <div v-if="entry.type === 'mix'" class="cc-mix-marker">
               <div class="cc-mix-line"></div>
@@ -363,7 +363,11 @@ function getUnitEntries(unit) {
   // Insert mix roll markers where color GROUP changes
   const entries = [];
   for (let i = 0; i < unitItems.length; i++) {
-    entries.push({ type: "order", ...unitItems[i] });
+    entries.push({ 
+      type: "order", 
+      ...unitItems[i],
+      uniqueKey: unitItems[i].itemName
+    });
     if (i < unitItems.length - 1) {
       const curPri = getColorPriority(unitItems[i].color);
       const nextPri = getColorPriority(unitItems[i + 1].color);
@@ -374,6 +378,7 @@ function getUnitEntries(unit) {
           type: "mix",
           mixType: determineMixType(unitItems[i].color, unitItems[i + 1].color),
           qty: getMixRollQty(gap),
+          uniqueKey: `mix-${unitItems[i].itemName}-${unitItems[i + 1].itemName}`
         });
       }
     }
