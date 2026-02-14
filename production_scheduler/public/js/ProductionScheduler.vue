@@ -57,11 +57,16 @@
             v-for="card in groupedCards[unit]"
             :key="card.name"
             class="ps-card"
+            :class="{ 'ps-card-locked': card.docstatus === 1 }"
             :data-name="card.name"
+            :data-docstatus="card.docstatus"
             @click="openForm(card.name)"
           >
             <div class="ps-card-top">
-              <span class="ps-card-customer">{{ card.customer }}</span>
+              <div class="ps-card-top-left">
+                <span v-if="card.docstatus === 1" class="ps-lock-icon" title="Locked - Cannot move submitted document">🔒</span>
+                <span class="ps-card-customer">{{ card.customer }}</span>
+              </div>
               <span
                 class="ps-badge"
                 :class="(card.planning_status || '').toLowerCase()"
@@ -190,6 +195,10 @@ const initSortable = () => {
     el._sortable = new Sortable(el, {
       group: "kanban",
       animation: 150,
+      filter: '.ps-card-locked',
+      onMove: (evt) => {
+        return evt.related.className.indexOf('ps-card-locked') === -1;
+      },
       onEnd: (evt) => {
         const newUnit = evt.to.dataset.unit;
         const docName = evt.item.dataset.name;
@@ -388,6 +397,35 @@ onMounted(() => {
 }
 
 .ps-card:active { cursor: grabbing; }
+
+/* Locked card (submitted document) */
+.ps-card-locked {
+  opacity: 0.7;
+  cursor: not-allowed !important;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+}
+
+.ps-card-locked:hover {
+  transform: none !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
+}
+
+.ps-card-locked:active {
+  cursor: not-allowed !important;
+}
+
+.ps-card-top-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ps-lock-icon {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
 
 .ps-card-top {
   display: flex;

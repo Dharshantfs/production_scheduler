@@ -14,7 +14,7 @@ def get_kanban_board(start_date, end_date):
 			"dod": ["between", [start_date, end_date]],
 			"docstatus": ["<", 2]
 		},
-		fields=["name", "customer", "party_code", "planning_status", "dod", "ordered_date"]
+		fields=["name", "customer", "party_code", "planning_status", "dod", "ordered_date", "docstatus"]
 	)
 
 	data = []
@@ -55,6 +55,7 @@ def get_kanban_board(start_date, end_date):
 			"planning_status": sheet.planning_status or "Draft",
 			"dod": str(sheet.dod) if sheet.dod else "",
 			"ordered_date": str(sheet.ordered_date) if sheet.get("ordered_date") else "",
+			"docstatus": sheet.docstatus,
 			"unit": unit,
 			"total_weight": total_weight,
 			"items": item_details,
