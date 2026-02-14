@@ -29,6 +29,18 @@
           <option value="Finalized">Finalized</option>
         </select>
       </div>
+      <div class="cc-filter-item">
+        <label>Color</label>
+        <button class="cc-direction-btn" @click="toggleColorDirection">
+          {{ colorDirection === 'asc' ? '☀️ Light→Dark' : '🌙 Dark→Light' }}
+        </button>
+      </div>
+      <div class="cc-filter-item">
+        <label>GSM</label>
+        <button class="cc-direction-btn" @click="toggleGsmDirection">
+          {{ gsmDirection === 'desc' ? '⬇️ High→Low' : '⬆️ Low→High' }}
+        </button>
+      </div>
       <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
     </div>
 
@@ -64,6 +76,7 @@
               v-else
               class="cc-card"
               :data-name="entry.name"
+              :data-item-name="entry.itemName"
               :data-color="entry.color"
               @click="openForm(entry.planningSheet)"
             >
@@ -168,6 +181,8 @@ const filterOrderDate = ref(frappe.datetime.get_today());
 const filterPartyCode = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
+const colorDirection = ref("asc"); // asc=Light->Dark, desc=Dark->Light
+const gsmDirection = ref("desc");  // desc=High->Low, asc=Low->High
 const rawData = ref([]);
 const columnRefs = ref(null);
 
@@ -196,6 +211,8 @@ function clearFilters() {
   filterPartyCode.value = "";
   filterUnit.value = "";
   filterStatus.value = "";
+  colorDirection.value = "asc";
+  gsmDirection.value = "desc";
   fetchData();
 }
 
@@ -285,18 +302,35 @@ function getQualityPriority(unit, quality) {
   return unitMap[upper] || 99; // Unknown quality = lowest priority
 }
 
-// Auto-sort: Quality (per unit) → Color (light→dark) → GSM (high→low)
+// Auto-sort: Quality (per unit) → Color (manual) → GSM (manual)
 function sortItems(unit, items) {
   items.sort((a, b) => {
     // Primary: Quality (per-unit priority, lower number first)
     let cmp = getQualityPriority(unit, a.quality) - getQualityPriority(unit, b.quality);
-    // Secondary: Color (light to dark, lower priority number first)
-    if (cmp === 0) cmp = getColorPriority(a.color) - getColorPriority(b.color);
-    // Tertiary: GSM (high to low, descending)
-    if (cmp === 0) cmp = parseFloat(b.gsm || 0) - parseFloat(a.gsm || 0);
+    
+    // Secondary: Color (Manual Direction)
+    if (cmp === 0) {
+      const c = getColorPriority(a.color) - getColorPriority(b.color);
+      cmp = colorDirection.value === 'asc' ? c : -c;
+    }
+
+    // Tertiary: GSM (Manual Direction)
+    if (cmp === 0) {
+      const g = parseFloat(a.gsm || 0) - parseFloat(b.gsm || 0);
+      cmp = gsmDirection.value === 'asc' ? g : -g; // desc = High->Low (-g)
+    }
+    
     return cmp;
   });
   return items;
+}
+
+function toggleColorDirection() {
+  colorDirection.value = colorDirection.value === 'asc' ? 'desc' : 'asc';
+}
+
+function toggleGsmDirection() {
+  gsmDirection.value = gsmDirection.value === 'asc' ? 'desc' : 'asc';
 }
 
 // Group data by unit, sort, and insert mix markers
@@ -384,8 +418,44 @@ function initSortable() {
       animation: 150,
       filter: ".cc-mix-marker",
       draggable: ".cc-card",
-      onEnd: (evt) => {
-        frappe.show_alert({ message: "Sequence updated", indicator: "blue" });
+      onEnd: async (evt) => {
+        const itemEl = evt.item;
+        const newUnitEl = evt.to;
+        const oldUnitEl = evt.from;
+        
+        // If moved to a different unit
+        if (newUnitEl !== oldUnitEl) {
+          const itemName = itemEl.dataset.itemName;
+          const newUnit = newUnitEl.dataset.unit;
+          
+          if (itemName && newUnit) {
+            try {
+              // 1. Optimistic update (find item in rawData and update unit)
+              const item = rawData.value.find(d => d.itemName === itemName);
+              if (item) {
+                item.unit = newUnit;
+                // Re-sort happens automatically via computed properties
+              }
+              
+              // 2. API call to persist change
+              await frappe.call({
+                method: "production_scheduler.api.update_item_unit",
+                args: { item_name: itemName, unit: newUnit }
+              });
+              
+              frappe.show_alert({ message: `Moved to ${newUnit}`, indicator: "green" });
+            } catch (e) {
+              console.error(e);
+              frappe.msgprint("Error updating unit");
+              // Revert on error
+              fetchData();
+            }
+          }
+        } else {
+            // Reorder within same unit is visual only (auto-sort enforces order)
+            // We could trigger a force re-render or just show alert
+            frappe.show_alert({ message: "Sequence updated", indicator: "blue" });
+        }
       },
     });
   });

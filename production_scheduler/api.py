@@ -185,6 +185,7 @@ def get_color_chart_data(date):
 
 			data.append({
 				"name": "{}-{}".format(sheet.name, item.get("idx", 0)),
+				"itemName": item.name,
 				"planningSheet": sheet.name,
 				"customer": sheet.customer,
 				"partyCode": sheet.party_code,
@@ -197,3 +198,12 @@ def get_color_chart_data(date):
 			})
 
 	return data
+
+
+@frappe.whitelist()
+def update_item_unit(item_name, unit):
+	if not item_name or not unit:
+		frappe.throw(_("Item Name and Unit are required"))
+
+	frappe.db.set_value("Planning Sheet Item", item_name, "unit", unit)
+	return {"status": "success"}
