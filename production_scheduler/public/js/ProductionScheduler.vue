@@ -3,10 +3,6 @@
     <!-- Filter Bar -->
     <div class="ps-filters">
       <div class="ps-filter-item">
-        <label>Delivery Date</label>
-        <input type="date" v-model="filterDate" />
-      </div>
-      <div class="ps-filter-item">
         <label>Order Date</label>
         <input type="date" v-model="filterOrderDate" />
       </div>
@@ -113,7 +109,6 @@ const softLimits = { "Unit 1": 4.0, "Unit 2": 9.0, "Unit 3": 7.8, "Unit 4": 4.0 
 
 const cards = ref([]);
 const columnRefs = ref(null);
-const filterDate = ref(frappe.datetime.get_today());
 const filterOrderDate = ref("");
 const filterPartyCode = ref("");
 const filterUnit = ref("");
@@ -121,9 +116,6 @@ const filterStatus = ref("");
 
 const filteredCards = computed(() => {
   let result = cards.value;
-  if (filterDate.value) {
-    result = result.filter((c) => c.dod === filterDate.value);
-  }
   if (filterOrderDate.value) {
     result = result.filter((c) => c.ordered_date === filterOrderDate.value);
   }
@@ -170,7 +162,6 @@ const openForm = (name) => {
 };
 
 const clearFilters = () => {
-  filterDate.value = "";
   filterOrderDate.value = "";
   filterPartyCode.value = "";
   filterUnit.value = "";
