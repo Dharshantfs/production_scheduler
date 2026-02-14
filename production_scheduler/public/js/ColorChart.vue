@@ -41,6 +41,12 @@
           {{ gsmDirection === 'desc' ? '⬇️ High→Low' : '⬆️ Low→High' }}
         </button>
       </div>
+      <div class="cc-filter-item">
+        <label>Priority</label>
+        <button class="cc-direction-btn" @click="toggleSortPriority">
+          {{ sortPriority === 'color' ? '🎨 Color 1st' : '📏 GSM 1st' }}
+        </button>
+      </div>
       <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
     </div>
 
@@ -183,6 +189,7 @@ const filterUnit = ref("");
 const filterStatus = ref("");
 const colorDirection = ref("asc"); // asc=Light->Dark, desc=Dark->Light
 const gsmDirection = ref("desc");  // desc=High->Low, asc=Low->High
+const sortPriority = ref("color"); // 'color' (Quality->Color->GSM) or 'gsm' (Quality->GSM->Color)
 const rawData = ref([]);
 const columnRefs = ref(null);
 
@@ -213,6 +220,7 @@ function clearFilters() {
   filterStatus.value = "";
   colorDirection.value = "asc";
   gsmDirection.value = "desc";
+  sortPriority.value = "color";
   fetchData();
 }
 
@@ -308,16 +316,26 @@ function sortItems(unit, items) {
     // Primary: Quality (per-unit priority, lower number first)
     let cmp = getQualityPriority(unit, a.quality) - getQualityPriority(unit, b.quality);
     
-    // Secondary: Color (Manual Direction)
     if (cmp === 0) {
-      const c = getColorPriority(a.color) - getColorPriority(b.color);
-      cmp = colorDirection.value === 'asc' ? c : -c;
-    }
-
-    // Tertiary: GSM (Manual Direction)
-    if (cmp === 0) {
-      const g = parseFloat(a.gsm || 0) - parseFloat(b.gsm || 0);
-      cmp = gsmDirection.value === 'asc' ? g : -g; // desc = High->Low (-g)
+      if (sortPriority.value === 'color') {
+        // Option A: Color -> GSM
+        const c = getColorPriority(a.color) - getColorPriority(b.color);
+        cmp = colorDirection.value === 'asc' ? c : -c;
+        
+        if (cmp === 0) {
+          const g = parseFloat(a.gsm || 0) - parseFloat(b.gsm || 0);
+          cmp = gsmDirection.value === 'asc' ? g : -g;
+        }
+      } else {
+        // Option B: GSM -> Color
+        const g = parseFloat(a.gsm || 0) - parseFloat(b.gsm || 0);
+        cmp = gsmDirection.value === 'asc' ? g : -g;
+        
+        if (cmp === 0) {
+          const c = getColorPriority(a.color) - getColorPriority(b.color);
+          cmp = colorDirection.value === 'asc' ? c : -c;
+        }
+      }
     }
     
     return cmp;
@@ -331,6 +349,10 @@ function toggleColorDirection() {
 
 function toggleGsmDirection() {
   gsmDirection.value = gsmDirection.value === 'asc' ? 'desc' : 'asc';
+}
+
+function toggleSortPriority() {
+  sortPriority.value = sortPriority.value === 'color' ? 'gsm' : 'color';
 }
 
 // Group data by unit, sort, and insert mix markers
