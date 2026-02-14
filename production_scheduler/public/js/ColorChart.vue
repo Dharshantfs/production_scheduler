@@ -29,20 +29,6 @@
           <option value="Finalized">Finalized</option>
         </select>
       </div>
-      <div class="cc-filter-item">
-        <label>Sort By</label>
-        <select v-model="sortMode">
-          <option value="color">Color</option>
-          <option value="quality">Quality</option>
-          <option value="gsm">GSM</option>
-        </select>
-      </div>
-      <div class="cc-filter-item">
-        <label>Direction</label>
-        <button class="cc-direction-btn" @click="toggleDirection">
-          {{ direction === 'asc' ? '☀️ Light → Dark' : '🌙 Dark → Light' }}
-        </button>
-      </div>
       <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
     </div>
 
@@ -182,8 +168,6 @@ const filterOrderDate = ref(frappe.datetime.get_today());
 const filterPartyCode = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
-const sortMode = ref("color"); // color, quality, gsm
-const direction = ref("asc");
 const rawData = ref([]);
 const columnRefs = ref(null);
 
@@ -212,8 +196,6 @@ function clearFilters() {
   filterPartyCode.value = "";
   filterUnit.value = "";
   filterStatus.value = "";
-  sortMode.value = "color";
-  direction.value = "asc";
   fetchData();
 }
 
@@ -264,29 +246,55 @@ function determineMixType(fromColor, toColor) {
   return "COLOR MIX";
 }
 
-// Multi-level sorting: primary → secondary → tertiary
-function sortItems(items) {
+// Per-unit quality priorities (lower number = higher priority)
+const QUALITY_PRIORITY = {
+  "Unit 1": {
+    "SUPER PLATINUM": 1,
+    "PLATINUM": 2,
+    "PREMIUM": 3,
+    "GOLD": 4,
+    "SUPER CLASSIC": 5,
+  },
+  "Unit 2": {
+    "GOLD": 1,
+    "SILVER": 2,
+    "BRONZE": 3,
+    "CLASSIC": 4,
+    "ECO SPECIAL": 5,
+    "ECO SPL": 6,
+  },
+  "Unit 3": {
+    "SUPER PLATINUM": 1,
+    "PLATINUM": 2,
+    "PREMIUM": 3,
+    "GOLD": 4,
+    "SILVER": 5,
+    "BRONZE": 6,
+  },
+  "Unit 4": {
+    "PREMIUM": 1,
+    "GOLD": 2,
+    "SILVER": 3,
+    "BRONZE": 4,
+  },
+};
+
+function getQualityPriority(unit, quality) {
+  const upper = (quality || "").toUpperCase().trim();
+  const unitMap = QUALITY_PRIORITY[unit] || {};
+  return unitMap[upper] || 99; // Unknown quality = lowest priority
+}
+
+// Auto-sort: Quality (per unit) → Color (light→dark) → GSM (high→low)
+function sortItems(unit, items) {
   items.sort((a, b) => {
-    let cmp = 0;
-
-    if (sortMode.value === "color") {
-      // Primary: Color, Secondary: Quality, Tertiary: GSM
-      cmp = getColorPriority(a.color) - getColorPriority(b.color);
-      if (cmp === 0) cmp = (a.quality || "").localeCompare(b.quality || "");
-      if (cmp === 0) cmp = parseFloat(a.gsm || 0) - parseFloat(b.gsm || 0);
-    } else if (sortMode.value === "quality") {
-      // Primary: Quality, Secondary: Color, Tertiary: GSM
-      cmp = (a.quality || "").localeCompare(b.quality || "");
-      if (cmp === 0) cmp = getColorPriority(a.color) - getColorPriority(b.color);
-      if (cmp === 0) cmp = parseFloat(a.gsm || 0) - parseFloat(b.gsm || 0);
-    } else if (sortMode.value === "gsm") {
-      // Primary: GSM, Secondary: Color, Tertiary: Quality
-      cmp = parseFloat(a.gsm || 0) - parseFloat(b.gsm || 0);
-      if (cmp === 0) cmp = getColorPriority(a.color) - getColorPriority(b.color);
-      if (cmp === 0) cmp = (a.quality || "").localeCompare(b.quality || "");
-    }
-
-    return direction.value === "asc" ? cmp : -cmp;
+    // Primary: Quality (per-unit priority, lower number first)
+    let cmp = getQualityPriority(unit, a.quality) - getQualityPriority(unit, b.quality);
+    // Secondary: Color (light to dark, lower priority number first)
+    if (cmp === 0) cmp = getColorPriority(a.color) - getColorPriority(b.color);
+    // Tertiary: GSM (high to low, descending)
+    if (cmp === 0) cmp = parseFloat(b.gsm || 0) - parseFloat(a.gsm || 0);
+    return cmp;
   });
   return items;
 }
@@ -294,7 +302,7 @@ function sortItems(items) {
 // Group data by unit, sort, and insert mix markers
 function getUnitEntries(unit) {
   const unitItems = filteredData.value.filter((d) => d.unit === unit);
-  sortItems(unitItems);
+  sortItems(unit, unitItems);
 
   // Insert mix roll markers where color GROUP changes
   const entries = [];
