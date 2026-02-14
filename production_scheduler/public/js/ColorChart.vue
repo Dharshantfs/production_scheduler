@@ -308,33 +308,56 @@ function getQualityPriority(unit, quality) {
 }
 
 // Auto-sort: Quality (per unit) → Color (manual) → GSM (manual)
+// Helper Comparators
+function compareQuality(unit, a, b) {
+    return getQualityPriority(unit, a.quality) - getQualityPriority(unit, b.quality);
+}
+
+function compareColor(a, b, direction) {
+    const pA = getColorPriority(a.color);
+    const pB = getColorPriority(b.color);
+    return direction === 'asc' ? pA - pB : pB - pA;
+}
+
+function compareGsm(a, b, direction) {
+    const gA = parseFloat(a.gsm || 0);
+    const gB = parseFloat(b.gsm || 0);
+    return direction === 'asc' ? gA - gB : gB - gA;
+}
+
+// Auto-sort: Dynamically based on config.priority
 function sortItems(unit, items) {
+  const config = getUnitSortConfig(unit);
+  const pri = config.priority || 'quality'; // Default to quality if undefined
+
   items.sort((a, b) => {
-    // Primary: Quality (per-unit priority, lower number first)
-    let cmp = getQualityPriority(unit, a.quality) - getQualityPriority(unit, b.quality);
-    
-    if (cmp === 0) {
-      const config = getUnitSortConfig(unit);
-      
-      if (config.priority === 'color') {
-        // Option A: Color -> GSM
-        const c = getColorPriority(a.color) - getColorPriority(b.color);
-        cmp = config.color === 'asc' ? c : -c;
-        
-        if (cmp === 0) {
-          const g = parseFloat(a.gsm || 0) - parseFloat(b.gsm || 0);
-          cmp = config.gsm === 'asc' ? g : -g;
-        }
-      } else {
-        // Option B: GSM -> Color
-        const g = parseFloat(a.gsm || 0) - parseFloat(b.gsm || 0);
-        cmp = config.gsm === 'asc' ? g : -g;
-        
-        if (cmp === 0) {
-          const c = getColorPriority(a.color) - getColorPriority(b.color);
-          cmp = config.color === 'asc' ? c : -c;
-        }
-      }
+    let cmp = 0;
+
+    // 1. Primary Sort
+    if (pri === 'color') {
+        cmp = compareColor(a, b, config.color);
+    } else if (pri === 'gsm') {
+        cmp = compareGsm(a, b, config.gsm);
+    } else {
+        // Default: Quality
+        cmp = compareQuality(unit, a, b);
+    }
+
+    if (cmp !== 0) return cmp;
+
+    // 2. Secondary/Tertiary Sort (Tie-Breakers)
+    if (pri === 'color') {
+        // Color -> Quality -> GSM
+        cmp = compareQuality(unit, a, b);
+        if (cmp === 0) cmp = compareGsm(a, b, config.gsm);
+    } else if (pri === 'gsm') {
+        // GSM -> Quality -> Color
+        cmp = compareQuality(unit, a, b);
+        if (cmp === 0) cmp = compareColor(a, b, config.color);
+    } else {
+        // Quality -> Color -> GSM (Standard)
+        cmp = compareColor(a, b, config.color);
+        if (cmp === 0) cmp = compareGsm(a, b, config.gsm);
     }
     
     return cmp;
