@@ -220,6 +220,19 @@ const visibleUnits = computed(() =>
 // Filter data by party code and status
 const filteredData = computed(() => {
   let data = rawData.value;
+  
+  // Exclude WHITE colors (Priority 10, 11, and White Mix 99)
+  data = data.filter(d => {
+      const group = findColorGroup(d.color);
+      // Keywords for White Groups: WHITE, BRIGHT WHITE, IVORY, OFF WHITE, CREAM, WHITE MIX
+      // Priorities: 10, 11, 99 (White Mix)
+      // Check priority or keywords?
+      // Priority 10, 11 are White/Ivory.
+      // Priority 99 is Mix (White Mix).
+      // Let's use priority check for robustness.
+      return ![10, 11].includes(group.priority) && !group.keywords.includes("WHITE MIX");
+  });
+
   if (filterPartyCode.value) {
     const search = filterPartyCode.value.toLowerCase();
     data = data.filter((d) =>
