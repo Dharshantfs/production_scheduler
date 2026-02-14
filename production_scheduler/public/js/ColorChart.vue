@@ -879,7 +879,49 @@ function initSortable() {
   });
 }
 
+// ---- STATE PERSISTENCE (URL SYNC) ----
+function updateUrlParams() {
+  const url = new URL(window.location);
+  if (filterOrderDate.value) url.searchParams.set('date', filterOrderDate.value);
+  if (filterUnit.value) url.searchParams.set('unit', filterUnit.value);
+  else url.searchParams.delete('unit');
+  
+  if (filterStatus.value) url.searchParams.set('status', filterStatus.value);
+  else url.searchParams.delete('status');
+  
+  window.history.replaceState({}, '', url);
+}
+
+// Watchers to sync state
+watch(filterOrderDate, () => {
+    updateUrlParams();
+    // fetchData called by existing watcher
+});
+watch(filterUnit, updateUrlParams);
+watch(filterStatus, updateUrlParams);
+
 onMounted(() => {
+  // 1. Read URL Params
+  const params = new URLSearchParams(window.location.search);
+  const dateParam = params.get('date');
+  const unitParam = params.get('unit');
+  const statusParam = params.get('status');
+  
+  if (dateParam) {
+      filterOrderDate.value = dateParam;
+  } else {
+      // Default to today if not provided
+      // If filterOrderDate was already set in setup(), this is fine.
+      if (!filterOrderDate.value) filterOrderDate.value = frappe.datetime.get_today();
+  }
+  
+  if (unitParam) filterUnit.value = unitParam;
+  if (statusParam) {
+       // Ensure valid status
+       if (["Draft", "Finalized"].includes(statusParam)) filterStatus.value = statusParam;
+  }
+  
+  // 2. Fetch Data
   fetchData();
   analyzePreviousFlow();
 });
