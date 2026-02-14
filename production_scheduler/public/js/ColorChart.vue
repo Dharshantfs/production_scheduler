@@ -238,16 +238,17 @@ function getHexColor(color) {
   return group ? group.hex : "#ccc";
 }
 
-// Mix roll qty depends on color gap:
-// Gap 1-3: 100 Kg (close colors, easy transition)
-// Gap 4-7: 150 Kg (moderate transition)
-// Gap 8-15: 200 Kg (significant transition)
-// Gap 16+: 250 Kg (major transition, e.g. white to dark)
+// Mix roll qty: 100 Kg increments based on color gap
+// Gap 1-3: 100 Kg (close colors)
+// Gap 4-7: 200 Kg
+// Gap 8-11: 300 Kg
+// ...every +4 gap = +100 Kg
+// Gap 35 (WHITE to BLACK): ~1000 Kg (max)
 function getMixRollQty(gap) {
-  if (gap <= 3) return 100;
-  if (gap <= 7) return 150;
-  if (gap <= 15) return 200;
-  return 250;
+  const baseQty = 100;
+  const increment = Math.floor(gap / 4) * 100;
+  const totalQty = baseQty + increment;
+  return Math.min(totalQty, 1000); // Cap at 1000 Kg
 }
 
 function determineMixType(fromColor, toColor) {
