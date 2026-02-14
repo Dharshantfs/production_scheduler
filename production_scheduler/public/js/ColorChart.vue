@@ -813,18 +813,46 @@ function initSortable() {
           
           if (itemName && newUnit) {
             try {
-              // 1. Optimistic update (find item in rawData and update unit)
+              // 1. Check Capacity BEFORE moving
               const item = rawData.value.find(d => d.itemName === itemName);
+              if (item) {
+                  const itemTonnage = (item.qty || 0) / 1000;
+                  const currentLoad = getUnitTotal(newUnit); // Helper
+                  const limit = UNIT_TONNAGE_LIMITS[newUnit] || 999;
+                  
+                  if (currentLoad + itemTonnage > limit) {
+                      const nextDate = frappe.datetime.add_days(filterOrderDate.value, 1);
+                      if (confirm(`Unit ${newUnit} is Full! (${limit}T Limit)\n\nMove this order to Next Day (${nextDate})?`)) {
+                          // Move to Next Day
+                          await frappe.call({
+                            method: "production_scheduler.api.update_items_bulk",
+                            args: { items: [{ name: itemName, date: nextDate }] }
+                          });
+                          frappe.show_alert({ message: `Moved to ${nextDate}`, indicator: "orange" });
+                          
+                          // Remove from view
+                          rawData.value = rawData.value.filter(d => d.itemName !== itemName);
+                          // Clean up DOM (Sortable already moved it)
+                          if (itemEl && itemEl.parentNode) itemEl.parentNode.removeChild(itemEl);
+                          return; // Stop processing
+                      } else {
+                          // Standard Revert
+                          fetchData();
+                          return;
+                      }
+                  }
+              }
+
+              // 2. Optimistic update (Capacity OK)
               if (item) {
                 // Remove the element moved by Sortable so Vue can re-render it cleanly from state
                 if (itemEl && itemEl.parentNode) {
                     itemEl.parentNode.removeChild(itemEl);
                 }
                 item.unit = newUnit;
-                // Re-sort happens automatically via computed properties
               }
               
-              // 2. API call to persist change
+              // 3. API call to persist change
               await frappe.call({
                 method: "production_scheduler.api.update_item_unit",
                 args: { item_name: itemName, unit: newUnit }
@@ -834,7 +862,6 @@ function initSortable() {
             } catch (e) {
               console.error(e);
               frappe.msgprint("Error updating unit");
-              // Revert on error
               fetchData();
             }
           }
