@@ -3,8 +3,12 @@
     <!-- Filter Bar -->
     <div class="ps-filters">
       <div class="ps-filter-item">
-        <label>Date</label>
+        <label>Delivery Date</label>
         <input type="date" v-model="filterDate" />
+      </div>
+      <div class="ps-filter-item">
+        <label>Order Date</label>
+        <input type="date" v-model="filterOrderDate" />
       </div>
       <div class="ps-filter-item">
         <label>Party Code</label>
@@ -77,8 +81,8 @@
             <div class="ps-card-bottom">
               <span class="ps-card-weight">{{ (card.total_weight / 1000).toFixed(3) }} T</span>
               <div class="ps-card-dates">
-                <span v-if="card.custom_order_date" class="ps-card-date-item">
-                  <span class="ps-date-label">Order:</span> {{ card.custom_order_date }}
+                <span v-if="card.ordered_date" class="ps-card-date-item">
+                  <span class="ps-date-label">Order:</span> {{ card.ordered_date }}
                 </span>
                 <span class="ps-card-date-item">
                   <span class="ps-date-label">Delivery:</span> {{ card.dod }}
@@ -105,6 +109,7 @@ const softLimits = { "Unit 1": 4.0, "Unit 2": 9.0, "Unit 3": 7.8, "Unit 4": 4.0 
 const cards = ref([]);
 const columnRefs = ref(null);
 const filterDate = ref(frappe.datetime.get_today());
+const filterOrderDate = ref("");
 const filterPartyCode = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
@@ -113,6 +118,9 @@ const filteredCards = computed(() => {
   let result = cards.value;
   if (filterDate.value) {
     result = result.filter((c) => c.dod === filterDate.value);
+  }
+  if (filterOrderDate.value) {
+    result = result.filter((c) => c.ordered_date === filterOrderDate.value);
   }
   if (filterPartyCode.value) {
     const s = filterPartyCode.value.toLowerCase();
@@ -158,6 +166,7 @@ const openForm = (name) => {
 
 const clearFilters = () => {
   filterDate.value = "";
+  filterOrderDate.value = "";
   filterPartyCode.value = "";
   filterUnit.value = "";
   filterStatus.value = "";
@@ -186,18 +195,40 @@ const initSortable = () => {
         const docName = evt.item.dataset.name;
         if (newUnit === evt.from.dataset.unit) return;
         const card = cards.value.find((c) => c.name === docName);
-        frappe.call({
-          method: "production_scheduler.api.update_schedule",
-          args: { doc_name: docName, unit: newUnit, date: card ? card.dod : frappe.datetime.get_today() },
-          error: () => fetchData(),
-          callback: (r) => {
-            if (r.exc) { fetchData(); }
-            else {
-              if (card) card.unit = newUnit;
-              frappe.show_alert({ message: "Moved to " + newUnit, indicator: "green" });
-            }
+        
+        // Prompt user for delivery date
+        frappe.prompt(
+          {
+            label: "Delivery Date",
+            fieldname: "delivery_date",
+            fieldtype: "Date",
+            default: card ? card.dod : frappe.datetime.get_today()
           },
-        });
+          (values) => {
+            frappe.call({
+              method: "production_scheduler.api.update_schedule",
+              args: { 
+                doc_name: docName, 
+                unit: newUnit, 
+                date: values.delivery_date 
+              },
+              error: () => fetchData(),
+              callback: (r) => {
+                if (r.exc) { fetchData(); }
+                else {
+                  if (card) {
+                    card.unit = newUnit;
+                    card.dod = values.delivery_date;
+                  }
+                  frappe.show_alert({ message: "Moved to " + newUnit + " with delivery " + values.delivery_date, indicator: "green" });
+                  fetchData();
+                }
+              },
+            });
+          },
+          "Update Delivery Date",
+          "Update"
+        );
       },
     });
   });
