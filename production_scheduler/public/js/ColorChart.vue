@@ -176,7 +176,7 @@ const COLOR_GROUPS = [
   { keywords: ["BLACK"], priority: 36, hex: "#1a1a1a" },
 ];
 
-const GAP_THRESHOLD = 2; // any color group change triggers mix roll
+const GAP_THRESHOLD = 0; // any color priority difference triggers mix roll
 
 const units = ["Unit 1", "Unit 2", "Unit 3", "Unit 4"];
 const headerColors = { "Unit 1": "#3b82f6", "Unit 2": "#10b981", "Unit 3": "#f59e0b", "Unit 4": "#8b5cf6" };
