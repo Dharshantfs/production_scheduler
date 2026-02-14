@@ -177,8 +177,8 @@ def get_color_chart_data(date):
 
 		for item in items:
 			unit = item.get("unit") or ""
-			if not unit:
-				continue
+			# if not unit: continue  <-- Allow unassigned items so Auto Alloc can work
+
 
 			color = item.get("color") or item.get("colour") or ""
 			if not color:
