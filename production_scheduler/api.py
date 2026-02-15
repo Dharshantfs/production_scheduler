@@ -310,7 +310,7 @@ def get_orders_for_date(date):
     sql = """
         SELECT 
             i.name, i.item_code, i.item_name, i.qty, i.unit, i.color, 
-            i.custom_party_code, i.custom_gsm, i.custom_quality,
+            i.gsm, i.quality,
             p.name as planning_sheet, p.party_code, p.customer
         FROM
             `tabPlanning Sheet Item` i
@@ -321,7 +321,7 @@ def get_orders_for_date(date):
             AND p.docstatus < 2
             AND i.docstatus < 2
         ORDER BY
-            i.unit, i.custom_quality
+            i.unit, i.quality
     """
     data = frappe.db.sql(sql, (date,), as_dict=True)
     return data
