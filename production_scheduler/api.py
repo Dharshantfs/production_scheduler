@@ -580,5 +580,10 @@ def create_production_plan_from_sheet(sheet_name):
              row.sales_order_item = item.sales_order_item
              
     pp.insert()
+    
+    # Update Status to Planned
+    if sheet.sales_order:
+        frappe.db.set_value("Sales Order", sheet.sales_order, "custom_production_status", "Planned")
+        
     return pp.name
 
