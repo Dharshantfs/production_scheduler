@@ -51,7 +51,7 @@
       >
         <div class="cc-col-header" :style="{ borderTopColor: headerColors[unit] }">
           <div class="cc-header-top">
-            <span class="cc-col-title">{{ unit }}</span>
+            <span class="cc-col-title">{{ unit === 'Mixed' ? 'Unassigned' : unit }}</span>
             <!-- Sort Controls -->
             <div class="cc-unit-controls">
               <span style="font-size:10px; color:#64748b; margin-right:4px;">{{ getSortLabel(unit) }}</span>
@@ -978,80 +978,41 @@ function initSortable() {
                   const limit = UNIT_TONNAGE_LIMITS[newUnit] || 999;
                   
                   
+                  
                   if (currentLoad + itemTonnage > limit) {
+                      // CAPACITY EXCEEDED LOGIC
+                      // User Request: "Ask and Push to upcoming days"
+                      
+                      // Check for Split Candidate (Optional enhancement)
                       const availableSpace = limit - currentLoad;
                       const overflow = itemTonnage - availableSpace;
-
-                      // Check for Split Candidate
                       const candidateUnit = findSplitCandidate(item, overflow, newUnit);
 
+                      // If we can split, offer it. otherwise just push.
                       if (candidateUnit && availableSpace > 0) {
-                          // Show Split Dialog
-                          frappe.confirm(
-                              `
-                              <div style="text-align:left">
-                                  <h4 class="text-red-600 mb-2">⚠️ Unit ${newUnit} Capacity Exceeded</h4>
-                                  <p>Order Size: <b>${itemTonnage.toFixed(3)}T</b></p>
-                                  <p>Space in ${newUnit}: <b>${availableSpace.toFixed(3)}T</b></p>
+                           // ... Keep Split Dialog but ensure "Move All" is clear ...
+                           // Actually, let's simplify. User wants "Strict Enforcement".
+                           // Let's fallback to the simple "Push" dialog if they reject split?
+                           // Or just show the Split Dialog with a BIG "Move to Next Day" button.
+                           showSplitDialog(item, itemTonnage, availableSpace, overflow, newUnit, candidateUnit, itemEl);
+                      } else {
+                           // Standard Overflow
+                           frappe.confirm(
+                               `<div style="text-align:left">
+                                  <h4 class="text-red-600 mb-2 font-bold">⛔ Capacity Exceeded!</h4>
+                                  <p><b>Unit ${newUnit}</b> Limit: ${limit}T</p>
+                                  <p>Current + Order: <b>${(currentLoad + itemTonnage).toFixed(2)}T</b></p>
                                   <hr class="my-2"/>
-                                  <p class="font-bold text-blue-600">💡 Recommendation:</p>
-                                  <p>${candidateUnit} is running <b>${item.color}</b> and has space.</p>
-                                  <p>Do you want to <b>SPLIT</b> this order?</p>
-                                  <ul class="list-disc ml-4 mt-2 mb-2 text-sm text-gray-600">
-                                      <li><b>${availableSpace.toFixed(3)}T</b> -> ${newUnit} (Fill)</li>
-                                      <li><b>${overflow.toFixed(3)}T</b> -> ${candidateUnit} (Queue)</li>
-                                  </ul>
-                              </div>
-                              `,
-                              async () => {
-                                  // Primary: SPLIT
-                                  try {
-                                      const res = await frappe.call({
-                                          method: "production_scheduler.api.split_order",
-                                          args: {
-                                              item_name: itemName,
-                                              split_qty: overflow,
-                                              target_unit: candidateUnit
-                                          }
-                                      });
-                                      if (res.message && res.message.status === 'success') {
-                                          frappe.show_alert({ message: `Split: ${availableSpace.toFixed(2)}T in ${newUnit}, ${overflow.toFixed(2)}T in ${candidateUnit}`, indicator: "green" });
-                                          if (itemEl && itemEl.parentNode) itemEl.parentNode.removeChild(itemEl);
-                                          fetchData();
-                                      }
-                                  } catch (e) {
-                                      console.error(e);
-                                      fetchData();
-                                  }
-                              },
-                              () => {
-                                  // Secondary: CANCEL (User clicked No/Cancel)
-                                  // Revert drag action
-                                  renderKey.value++;
-                              }
-                          );
-
-                          return; 
+                                  <p class="font-bold">Move this order to the Next Day (${frappe.datetime.add_days(filterOrderDate.value, 1)})?</p>
+                                </div>`,
+                               async () => {
+                                    await autoPushToNextDay(itemName, newUnit, itemEl);
+                               },
+                               () => {
+                                    renderKey.value++; // Cancel -> Revert
+                               }
+                           );
                       }
-
-                      // Default: Auto Push Logic (if no split or refactored)
-                      // BUT: If availableSpace <= 0, we can't push? No, we CAN push.
-                      // Wait, if no candidate found, we just auto push?
-                      // Dialog should appear if capacity exceeded regardless of split candidate?
-                      // The current logic: if (candidate && space > 0) -> Split Dialog
-                      // Else -> Auto Push.
-                      // This seems aggressive. If no candidate, user gets no choice?
-                      // I should probably ask: "Capacity Exceeded. Move to Next Day?"
-                      
-                      frappe.confirm(
-                          `<b>Capacity Limit Reached!</b><br>Unit ${newUnit} is full.<br>Move this order to <b>${frappe.datetime.add_days(filterOrderDate.value, 1)}</b>?`,
-                          async () => {
-                               await autoPushToNextDay(itemName, newUnit, itemEl);
-                          },
-                          () => {
-                               renderKey.value++; // Cancel -> Revert
-                          }
-                      );
                       return; 
                   }
               }

@@ -41,7 +41,7 @@
       >
         <div class="cc-col-header" :style="{ borderTopColor: headerColors[unit] }">
           <div class="cc-header-top">
-            <span class="cc-col-title">{{ unit }}</span>
+            <span class="cc-col-title">{{ unit === 'Mixed' ? 'Unassigned' : unit }}</span>
             <!-- Sort Controls -->
             <div class="cc-unit-controls">
               <span style="font-size:10px; color:#64748b; margin-right:4px;">{{ getSortLabel(unit) }}</span>
