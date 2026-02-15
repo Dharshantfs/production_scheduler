@@ -631,7 +631,7 @@ def mark_order_confirmed(so_doc):
     if so_doc.meta.has_field("custom_production_status"):
         so_doc.db_set("custom_production_status", "Confirmed")
     
-    create_planning_sheet_from_so(so_doc)
+    # create_planning_sheet_from_so(so_doc) # DISABLED per user request (User has custom script)
 
 def create_planning_sheet_from_so(doc):
     """
