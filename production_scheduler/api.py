@@ -415,6 +415,7 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
             parent_doc.save()
             count += len(moving_docs)
         else:
+
             # OPTION B: Partial Move -> Re-parent to Target Sheet
             # 1. Find or Create Target Sheet for (target_date, party_code)
             target_sheet_name = frappe.db.get_value("Planning sheet", {
@@ -445,22 +446,24 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
                 new_unit = target_unit if target_unit else item_doc.unit
                 
                 # SQL Update Parent, Idx, Unit
+                # Explicitly set parenttype and parentfield to avoid orphan items
                 frappe.db.sql("""
                     UPDATE `tabPlanning Sheet Item`
-                    SET parent = %s, idx = %s, unit = %s
+                    SET parent = %s, idx = %s, unit = %s, parenttype='Planning sheet', parentfield='items'
                     WHERE name = %s
                 """, (target_sheet.name, new_idx, new_unit, item_doc.name))
                 
                 count += 1
             
             # 3. Reload and Save both to update totals/caches
-            try:
-                target_sheet.reload()
-                target_sheet.save() # Recalculates idx and totals
-                
-                parent_doc.reload()
+            # We remove the global try/except pass to ensure we see errors
+            target_sheet.reload()
+            if target_sheet.docstatus == 0:
+                target_sheet.save() 
+            
+            parent_doc.reload()
+            if parent_doc.docstatus == 0:
                 parent_doc.save()
-            except Exception as e:
-                pass # Ignore save errors if just refreshing
 
+    frappe.db.commit()
     return {"status": "success", "count": count}
