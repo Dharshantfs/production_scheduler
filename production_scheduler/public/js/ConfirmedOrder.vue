@@ -424,8 +424,9 @@ async function fetchData() {
     rawData.value = r.message || [];
     renderKey.value++; 
     
-    await nextTick();
-    initSortable();
+    // No Drag & Drop needed for this Read-Only View
+    // await nextTick();
+    // initSortable();
 
   } catch (e) {
     frappe.msgprint("Error loading confirmed orders");
@@ -433,6 +434,8 @@ async function fetchData() {
   }
 }
 
+// REMOVE SORTABLE LOGIC - Confirmed Order is Read-Only Visualization
+/*
 function initSortable() {
   if (!columnRefs.value) return;
 
@@ -444,35 +447,12 @@ function initSortable() {
       animation: 150,
       draggable: ".cc-card",
       onEnd: async (evt) => {
-        const itemEl = evt.item;
-        const newUnit = evt.to.dataset.unit;
-        const itemName = itemEl.dataset.itemName;
-
-        if (evt.from === evt.to && evt.oldIndex === evt.newIndex) return;
-
-        // Optimistic UI update
-        const movedItem = rawData.value.find((d) => d.itemName === itemName);
-        if (movedItem) {
-           movedItem.unit = newUnit;
-        }
-
-        try {
-           await frappe.call({
-            method: "production_scheduler.api.update_item_unit",
-            args: {
-              item_name: itemName,
-              unit: newUnit
-            }
-          });
-        } catch (e) {
-           console.error("Move failed", e);
-           frappe.msgprint("Failed to move order.");
-           fetchData(); // Revert
-        }
+          // Logic Removed
       },
     });
   });
-}
+} 
+*/
 
 function createProductionPlan() {
     const selectedItems = filteredData.value.map(d => d.planningSheet);
