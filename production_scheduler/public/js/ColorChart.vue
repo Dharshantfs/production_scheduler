@@ -212,9 +212,9 @@ const COLOR_GROUPS = [
 
 const GAP_THRESHOLD = 0; // any color priority difference triggers mix roll
 
-const units = ["Unit 1", "Unit 2", "Unit 3", "Unit 4"];
-const UNIT_TONNAGE_LIMITS = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5 };
-const headerColors = { "Unit 1": "#3b82f6", "Unit 2": "#10b981", "Unit 3": "#f59e0b", "Unit 4": "#8b5cf6" };
+const units = ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"];
+const UNIT_TONNAGE_LIMITS = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5, "Mixed": 999 };
+const headerColors = { "Unit 1": "#3b82f6", "Unit 2": "#10b981", "Unit 3": "#f59e0b", "Unit 4": "#8b5cf6", "Mixed": "#64748b" };
 
 const filterOrderDate = ref(frappe.datetime.get_today());
 const filterPartyCode = ref("");
@@ -244,6 +244,9 @@ const filteredData = computed(() => {
   ];
 
   data = data.filter(d => {
+      // Normalize Unit for Display
+      if (!d.unit) d.unit = "Mixed";
+
       const colorUpper = (d.color || "").toUpperCase();
       // Check if color matches any excluded keyword
       // User says "APART FROM THIS U CAN BRING ALL COLOR IVORY"
