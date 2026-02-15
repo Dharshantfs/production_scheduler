@@ -36,11 +36,13 @@
     </div>
 
     <!-- Color Chart Board -->
-    <div class="cc-board">
+    <div class="cc-board" :key="renderKey">
       <div
         v-for="unit in visibleUnits"
         :key="unit"
+        :key="unit"
         class="cc-column"
+        :data-unit="unit"
       >
         <div class="cc-col-header" :style="{ borderTopColor: headerColors[unit] }">
           <div class="cc-header-top">
@@ -216,6 +218,7 @@ const filterStatus = ref("");
 const unitSortConfig = reactive({});
 const rawData = ref([]);
 const columnRefs = ref(null);
+const renderKey = ref(0); // Force re-render for drag revert
 
 const visibleUnits = computed(() =>
   filterUnit.value ? units.filter((u) => u === filterUnit.value) : units
@@ -629,7 +632,7 @@ const UNIT_WIDTHS = {
 };
 
 const UNIT_TONNAGE_LIMITS = {
-  "Unit 1": 5.0,
+  "Unit 1": 4.4,
   "Unit 2": 12.0,
   "Unit 3": 9.0,
   "Unit 4": 5.5
@@ -824,26 +827,26 @@ function initSortable() {
                   const currentLoad = getUnitTotal(newUnit); // Helper
                   const limit = UNIT_TONNAGE_LIMITS[newUnit] || 999;
                   
+                  
                   if (currentLoad + itemTonnage > limit) {
                       const nextDate = frappe.datetime.add_days(filterOrderDate.value, 1);
-                      if (confirm(`Unit ${newUnit} is Full! (${limit}T Limit)\n\nMove this order to Next Day (${nextDate})?`)) {
-                          // Move to Next Day
-                          await frappe.call({
-                            method: "production_scheduler.api.update_items_bulk",
-                            args: { items: [{ name: itemName, date: nextDate }] }
-                          });
-                          frappe.show_alert({ message: `Moved to ${nextDate}`, indicator: "orange" });
-                          
-                          // Remove from view
-                          rawData.value = rawData.value.filter(d => d.itemName !== itemName);
-                          // Clean up DOM (Sortable already moved it)
-                          if (itemEl && itemEl.parentNode) itemEl.parentNode.removeChild(itemEl);
-                          return; // Stop processing
-                      } else {
-                          // Standard Revert
-                          fetchData();
-                          return;
-                      }
+                      // AUTOMATIC PUSH TO NEXT DAY (User Request)
+                      await frappe.call({
+                        method: "production_scheduler.api.update_items_bulk",
+                        args: { items: [{ name: itemName, date: nextDate }] }
+                      });
+                      
+                      frappe.show_alert({ 
+                          message: `Unit ${newUnit} Full! Moved 1 order to ${nextDate}`, 
+                          indicator: "orange" 
+                      });
+                      
+                      // Remove from view locally
+                      rawData.value = rawData.value.filter(d => d.itemName !== itemName);
+                      
+                      // Identify and remove DOM element if Sortable didn't already
+                      if (itemEl && itemEl.parentNode) itemEl.parentNode.removeChild(itemEl);
+                      return; 
                   }
               }
 
@@ -1203,18 +1206,19 @@ onMounted(() => {
 
 .cc-mix-line {
   flex: 1;
-  height: 1px;
+  height: 2px;
   background: #fbbf24;
 }
 
 .cc-mix-label {
-  font-size: 9px;
-  font-weight: 700;
+  font-size: 11px;
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding: 3px 8px;
-  border-radius: 10px;
+  padding: 4px 10px;
+  border-radius: 12px;
   white-space: nowrap;
+  border: 1px solid rgba(0,0,0,0.1);
 }
 
 .cc-mix-label.white-mix {
