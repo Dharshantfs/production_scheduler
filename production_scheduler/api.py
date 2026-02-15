@@ -327,10 +327,11 @@ def get_orders_for_date(date):
     return data
 
 @frappe.whitelist()
-def move_orders_to_date(item_names, target_date):
+def move_orders_to_date(item_names, target_date, target_unit=None):
     """
     Moves list of Planning Sheet Items to a new Date.
     Supports item-level granularity by re-parenting items if necessary.
+    Optionally updates the Unit of the moved items.
     """
     import json
     if isinstance(item_names, str):
@@ -359,24 +360,25 @@ def move_orders_to_date(item_names, target_date):
         parent_doc = frappe.get_doc("Planning sheet", parent_name)
         
         # Check if we are moving ALL items from this parent
-        # (This is an optimization: if 100% moved, just update parent date)
-        # However, we must ensure we don't merge incorrectly if we just change date.
-        # But if we change date, it keeps the sheet intact.
-        
         all_child_names = [d.name for d in parent_doc.items]
         moving_names = [d.name for d in moving_docs]
         
         is_full_move = set(all_child_names) == set(moving_names)
         
         if is_full_move:
-            # OPTION A: Full Move -> Just update Date
+            # OPTION A: Full Move -> Just update Date (and Unit if requested)
             parent_doc.ordered_date = target_date
+            
+            # If target_unit is provided, update all items
+            if target_unit:
+                for d in parent_doc.items:
+                    d.unit = target_unit
+            
             parent_doc.save()
             count += len(moving_docs)
         else:
             # OPTION B: Partial Move -> Re-parent to Target Sheet
             # 1. Find or Create Target Sheet for (target_date, party_code)
-            # We try to group by Customer/Party to keep sheets clean
             target_sheet_name = frappe.db.get_value("Planning sheet", {
                 "ordered_date": target_date,
                 "party_code": parent_doc.party_code,
@@ -401,12 +403,15 @@ def move_orders_to_date(item_names, target_date):
             for i, item_doc in enumerate(moving_docs):
                 new_idx = current_max_idx + i + 1
                 
-                # SQL Update Parent & Idx
+                # Determine new unit (Target Unit or keep original)
+                new_unit = target_unit if target_unit else item_doc.unit
+                
+                # SQL Update Parent, Idx, Unit
                 frappe.db.sql("""
                     UPDATE `tabPlanning Sheet Item`
-                    SET parent = %s, idx = %s
+                    SET parent = %s, idx = %s, unit = %s
                     WHERE name = %s
-                """, (target_sheet.name, new_idx, item_doc.name))
+                """, (target_sheet.name, new_idx, new_unit, item_doc.name))
                 
                 count += 1
             

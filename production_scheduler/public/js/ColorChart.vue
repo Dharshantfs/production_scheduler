@@ -1148,6 +1148,17 @@ function openPullOrdersDialog() {
                 onchange: () => loadOrders(d)
             },
             {
+                label: 'Target Unit (Optional)',
+                fieldname: 'target_unit',
+                fieldtype: 'Select',
+                options: [
+                    { label: 'Keep Original Unit', value: '' },
+                    ...units.map(u => ({ label: `Move to ${u}`, value: u }))
+                ],
+                default: '',
+                description: 'If selected, all pulled orders will be assigned to this unit.'
+            },
+            {
                 fieldtype: 'HTML',
                 fieldname: 'preview_html'
             }
@@ -1160,12 +1171,15 @@ function openPullOrdersDialog() {
                 return;
             }
             
+            const targetUnit = d.get_value('target_unit');
+            
             try {
                 const r = await frappe.call({
                      method: "production_scheduler.api.move_orders_to_date",
                      args: {
                          item_names: selected,
-                         target_date: filterOrderDate.value
+                         target_date: filterOrderDate.value,
+                         target_unit: targetUnit
                      }
                 });
                 
