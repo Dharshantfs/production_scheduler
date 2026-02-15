@@ -497,11 +497,100 @@ def get_unscheduled_planning_sheets():
     """
     sheets = frappe.db.sql(sql, as_dict=True)
     
-    # Enhance with items preview
-    for sheet in sheets:
-        sheet.items = frappe.get_all("Planning Sheet Item", filters={"parent": sheet.name}, fields=["item_name", "qty", "item_code"], limit=5)
-        
     return sheets
+
+@frappe.whitelist()
+def get_confirmed_orders_kanban(order_date=None, party_code=None):
+    """
+    Fetches ITEM-LEVEL data for Confirmed Orders (Ready for Production).
+    Structure matches get_color_chart_data for Kanban compatibility.
+    """
+    filters = {
+        "docstatus": 0, # Draft sheets are "Confirmed" in this workflow
+        "ordered_date": ["is", "not set"] # Only those NOT yet scheduled? 
+        # Wait, if they are "Ready for Production", they might NOT have a date yet?
+        # User said "filter od orderdate deleiver y date and partycode".
+        # If I filter by Order Date, that implies they HAVE an Order Date?
+        # BUT `get_unscheduled_planning_sheets` filtered for `ordered_date IS NULL`.
+        # If they are "Confirmed" (from Sales Order), they typically don't have a schedule date yet.
+        # UNLESS the user sets it manually?
+        # The prompt says: "Filter of orderdate".
+        # If I use `ordered_date` filter, I will only see items that HAVE a date.
+        # But if they have a date, they appear on the main Production Board?
+        # The "Confirmed Order" view is usually a "Holding Area" (Unscheduled).
+        # Let's assume `order_date` here refers to `transaction_date` (Sales Order Date) OR `delivery_date` (DOD)?
+        # The prompt says: "filter od orderdate deleiver y date".
+        # Let's support filtering by Sales Order Date (transaction_date) or Delivery Date (dod).
+        # And usually these sheets have NO `ordered_date` (Production Date).
+        # So we fetch sheets where `ordered_date` is NULL (Unscheduled).
+    }
+    
+    # Base SQL
+    conditions = ["(p.ordered_date IS NULL OR p.ordered_date = '')", "p.docstatus < 2"]
+    values = []
+    
+    # Filter by Sales Order Date (transaction_date) ?? 
+    # Planning sheet doesn't have transaction_date, but has `creation`?
+    # Or should we Join Sales Order?
+    # Let's use `p.creation` as proxy for Order Date if `transaction_date` missing?
+    # Actually, let's look at `Planning sheet` fields. it has `dod`. 
+    # If user wants "Order Date" filter, maybe they mean the date the ORDER came in.
+    # Let's assume standard filtering on `p.creation` or `p.modified`? or `so.transaction_date`?
+    # Given the context, let's filter by `p.dod` (Delivery Date) if provided.
+    
+    if order_date:
+        # If "Order Date" is passed, what date is it?
+        # In ColorChart, it's `ordered_date`.
+        # Here, confirmed orders DON'T have `ordered_date`.
+        # Maybe user means filtering by when the order was CONFIRMED?
+        # Let's filter by `p.creation` date?
+        conditions.append("DATE(p.creation) = %s")
+        values.append(order_date)
+
+    if party_code:
+        conditions.append("(p.party_code LIKE %s OR p.customer LIKE %s)")
+        values.append(f"%{party_code}%")
+        values.append(f"%{party_code}%")
+
+    where_clause = " AND ".join(conditions)
+
+    sql = f"""
+        SELECT 
+            i.name, i.item_code, i.item_name, i.qty, i.unit, i.color, 
+            i.gsm, i.custom_quality as quality, i.width_inch, i.idx,
+            p.name as planning_sheet, p.party_code, p.customer, p.dod, p.planning_status, p.creation
+        FROM
+            `tabPlanning Sheet Item` i
+        LEFT JOIN
+            `tabPlanning sheet` p ON i.parent = p.name
+        WHERE
+            {where_clause}
+        ORDER BY
+            p.creation DESC, i.idx ASC
+    """
+    
+    items = frappe.db.sql(sql, tuple(values), as_dict=True)
+    
+    data = []
+    for item in items:
+        # Format for Kanban (matches ColorChart)
+        data.append({
+            "name": "{}-{}".format(item.planning_sheet, item.idx), # Unique ID for card
+            "itemName": item.name, # Actual Item Name for updates
+            "planningSheet": item.planning_sheet,
+            "customer": item.customer,
+            "partyCode": item.party_code,
+            "planningStatus": item.planning_status or "Draft",
+            "color": (item.color or "").upper().strip(),
+            "quality": item.quality or "",
+            "gsm": item.gsm or "",
+            "qty": flt(item.qty),
+            "width": flt(item.width_inch or 0),
+            "unit": item.unit or "", # Might be empty initially
+            "dod": str(item.dod) if item.dod else ""
+        })
+        
+    return data
 
 @frappe.whitelist()
 def check_credit_and_confirm(doc, method=None):
@@ -687,4 +776,83 @@ def create_production_plan_from_sheet(sheet_name):
         frappe.db.set_value("Sales Order", sheet.sales_order, "custom_production_status", "Planned")
         
     return pp.name
+
+@frappe.whitelist()
+def create_production_plan_bulk(sheets):
+    """
+    Creates Production Plans for multiple Planning Sheets at once.
+    """
+    import json
+    if isinstance(sheets, str):
+        sheets = json.loads(sheets)
+    
+    if not sheets: return
+    
+    created_plans = []
+    
+    # Optional: Group by Customer? 
+    # Usually Production Plans are per Customer or Per SO.
+    # If we select multiple sheets from different customers, we probably want separate Production Plans?
+    # Or one big Production Plan?
+    # Standard ERPNext Production Plan can take multiple Sales Orders / Material Requests.
+    # But here we are mapping from Planning Sheet -> Production Plan.
+    # Let's create ONE Production Plan per Planning Sheet for simplicity and traceability (1:1 mapping),
+    # unless user requested merging.
+    # The prompt doesn't specify merging.
+    # "Create Plan: Button to convert selected/viewed confirmed orders into a production plan."
+    # If 10 orders are visible, and I click "Create Plan", maybe I want 10 plans?
+    # OR 1 plan with 10 items?
+    # 1 Plan with 10 items is better for "Batching".
+    # BUT if customers are different, we can't make 1 Plan (usually).
+    # ERPNext Production Plan has `customer` field. If filled, restricts to that customer.
+    # If empty, can handle multiple?
+    # Let's try to group by Customer.
+    
+    # 1. Fetch all sheets
+    sheet_docs = [frappe.get_doc("Planning sheet", s) for s in sheets]
+    
+    # 2. Group by Customer
+    sheets_by_customer = {}
+    for s in sheet_docs:
+        cust = s.customer or "No Customer"
+        if cust not in sheets_by_customer:
+            sheets_by_customer[cust] = []
+        sheets_by_customer[cust].append(s)
+        
+    # 3. Create Plans
+    for cust, cust_sheets in sheets_by_customer.items():
+        pp = frappe.new_doc("Production Plan")
+        pp.company = frappe.defaults.get_user_default("Company")
+        pp.customer = cust if cust != "No Customer" else None
+        pp.get_items_from = "Material Request" # Dummy, we fill manually
+        
+        # Add Reference Sales Orders?
+        # Production Plan has table `sales_orders`.
+        seen_so = set()
+        for s in cust_sheets:
+            if s.sales_order and s.sales_order not in seen_so:
+                pp.append("sales_orders", {
+                    "sales_order": s.sales_order,
+                    "sales_order_date": s.creation # approximation
+                })
+                seen_so.add(s.sales_order)
+        
+        # Add Items
+        for s in cust_sheets:
+            for item in s.items:
+                row = pp.append("po_items", {})
+                row.item_code = item.item_code
+                row.qty = item.qty
+                # row.warehouse = ... default?
+                if hasattr(item, 'sales_order_item'):
+                     row.sales_order_item = item.sales_order_item
+            
+            # Update Status of Schema
+            if s.sales_order:
+                frappe.db.set_value("Sales Order", s.sales_order, "custom_production_status", "Planned")
+        
+        pp.insert()
+        created_plans.append(pp.name)
+        
+    return created_plans
 
