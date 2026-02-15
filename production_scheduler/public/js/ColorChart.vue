@@ -33,6 +33,9 @@
       <button class="cc-clear-btn" style="color: #2563eb; border-color: #2563eb; margin-left: 8px;" @click="autoAllocate" title="Auto-assign orders based on Width & Quality">
         🪄 Auto Alloc
       </button>
+      <button class="cc-clear-btn" style="color: #059669; border-color: #059669; margin-left: 8px;" @click="openPullOrdersDialog" title="Pull orders from a future date">
+        📥 Pull Orders
+      </button>
     </div>
 
     <!-- Color Chart Board -->
@@ -1134,6 +1137,148 @@ onMounted(() => {
   fetchData();
   analyzePreviousFlow();
 });
+
+// ---- PULL ORDERS FROM FUTURE ----
+function openPullOrdersDialog() {
+    const nextDay = frappe.datetime.add_days(filterOrderDate.value, 1);
+    
+    // Create Dialog
+    const d = new frappe.ui.Dialog({
+        title: '📥 Pull Orders from Date',
+        fields: [
+            {
+                label: 'Source Date',
+                fieldname: 'source_date',
+                fieldtype: 'Date',
+                default: nextDay,
+                reqd: 1,
+                onchange: () => loadOrders(d)
+            },
+            {
+                fieldtype: 'HTML',
+                fieldname: 'preview_html'
+            }
+        ],
+        primary_action_label: 'Move Selected to Today',
+        primary_action: async () => {
+            const selected = d.calc_selected_items || [];
+            if (selected.length === 0) {
+                frappe.msgprint("Please select at least one order.");
+                return;
+            }
+            
+            try {
+                const r = await frappe.call({
+                     method: "production_scheduler.api.move_orders_to_date",
+                     args: {
+                         item_names: selected,
+                         target_date: filterOrderDate.value
+                     }
+                });
+                
+                if (r.message && r.message.status === 'success') {
+                    frappe.show_alert({ message: `Successfully moved ${r.message.count} orders.`, indicator: 'green' });
+                    d.hide();
+                    fetchData(); // Refresh board
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    });
+    
+    d.show();
+    // Initial Load
+    loadOrders(d);
+}
+
+async function loadOrders(d) {
+    const date = d.get_value('source_date');
+    if (!date) return;
+    
+    d.set_value('preview_html', '<p class="text-gray-500 italic p-2">Loading...</p>');
+    
+    try {
+        const r = await frappe.call({
+            method: "production_scheduler.api.get_orders_for_date",
+            args: { date: date }
+        });
+        
+        const items = r.message || [];
+        if (items.length === 0) {
+            d.set_value('preview_html', '<p class="text-gray-500 italic p-2">No active orders found for this date.</p>');
+            d.calc_selected_items = [];
+            return;
+        }
+        
+        // Render List with Checkboxes
+        let html = `
+            <div style="max-height: 300px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px;">
+                <table class="table table-bordered table-sm" style="margin:0;">
+                    <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 1;">
+                        <tr>
+                            <th width="40px"><input type="checkbox" id="select-all-pull" /></th>
+                            <th>Unit</th>
+                            <th>Customer</th>
+                            <th>Item / Color</th>
+                            <th>Qty</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        items.forEach(item => {
+            html += `
+                <tr>
+                    <td class="text-center">
+                        <input type="checkbox" class="pull-item-cb" data-name="${item.name}" />
+                    </td>
+                    <td>${item.unit || '-'}</td>
+                    <td><small>${item.party_code || item.customer || '-'}</small></td>
+                    <td>
+                        <div style="font-weight:600; font-size:11px;">${item.item_name}</div>
+                        <div style="font-size:10px; color: #64748b;">${item.color || '-'}</div>
+                    </td>
+                    <td><b>${(item.qty/1000).toFixed(2)}T</b></td>
+                </tr>
+            `;
+        });
+        
+        html += `</tbody></table></div>`;
+        
+        // Summary
+        html += `<div style="margin-top:8px; text-align:right; font-weight:600; font-size:12px; color:#64748b;">Total Orders: ${items.length}</div>`;
+        
+        d.set_value('preview_html', html);
+        
+        // Bind Events
+        d.$wrapper.find('#select-all-pull').on('change', function() {
+            const checked = $(this).prop('checked');
+            d.$wrapper.find('.pull-item-cb').prop('checked', checked);
+            updateSelection(d);
+        });
+        
+        d.$wrapper.find('.pull-item-cb').on('change', function() {
+            updateSelection(d);
+        });
+        
+        // Initialize selection tracker
+        d.calc_selected_items = [];
+        
+    } catch (e) {
+        console.error(e);
+        d.set_value('preview_html', '<p class="text-red-500">Error loading orders.</p>');
+    }
+}
+
+function updateSelection(d) {
+    const selected = [];
+    d.$wrapper.find('.pull-item-cb:checked').each(function() {
+        selected.push($(this).data('name'));
+    });
+    d.calc_selected_items = selected;
+    d.get_primary_btn().text(`Move ${selected.length} to Today`);
+}
 </script>
 
 <style scoped>
