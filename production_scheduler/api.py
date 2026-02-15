@@ -310,7 +310,7 @@ def get_orders_for_date(date):
     sql = """
         SELECT 
             i.name, i.item_code, i.item_name, i.qty, i.unit, i.color, 
-            i.description, i.custom_party_code, i.custom_gsm, i.custom_quality,
+            i.custom_party_code, i.custom_gsm, i.custom_quality,
             p.name as planning_sheet, p.party_code, p.customer
         FROM
             `tabPlanning Sheet Item` i
