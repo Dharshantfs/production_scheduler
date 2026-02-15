@@ -38,7 +38,7 @@ def get_kanban_board(start_date, end_date):
 	planning_sheets = frappe.get_all(
 		"Planning sheet",
 		filters={
-			"dod": ["between", [start_date, end_date]],
+			"ordered_date": ["between", [start_date, end_date]],
 			"docstatus": ["<", 2]
 		},
 		fields=["name", "customer", "party_code", "planning_status", "dod", "ordered_date", "docstatus"]
@@ -389,82 +389,71 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
     items_by_parent = {}
     
     for doc in docs_to_move:
-        items_by_parent.setdefault(doc.parent, []).append(doc)
+        p_name = str(doc.parent)
+        if p_name not in items_by_parent:
+            items_by_parent[p_name] = []
+        items_by_parent[p_name].append(doc)
 
     # 2. Process each Parent Group
-    for parent_name, moving_docs in items_by_parent.items():
+    for parent_name, items in items_by_parent.items():
         parent_doc = frappe.get_doc("Planning sheet", parent_name)
+        moving_docs = items  # items is already a list
         
-        if parent_doc.docstatus >= 1:
-             frappe.throw(f"Cannot move orders from a Submitted or Cancelled sheet ({parent_name}). Please cancel/amend it first.")
-
-        # Check if we are moving ALL items from this parent
-        all_child_names = [d.name for d in parent_doc.items]
-        moving_names = [d.name for d in moving_docs]
+        # Determine Target Sheet
+        target_sheet_name = frappe.db.get_value("Planning sheet", {
+            "ordered_date": target_date,
+            "party_code": parent_doc.party_code,
+            "docstatus": 0
+        }, "name")
         
-        is_full_move = set(all_child_names) == set(moving_names)
-        
-        if is_full_move:
-            # OPTION A: Full Move -> Just update Date (and Unit if requested)
-            parent_doc.ordered_date = target_date
-            
-            # If target_unit is provided, update all items
-            if target_unit:
-                for d in parent_doc.items:
-                    d.unit = target_unit
-            
-            parent_doc.save()
-            frappe.db.commit() # Ensure date change is saved
-            count = int(count) + int(len(moving_docs) or 0)
+        if target_sheet_name and target_sheet_name != parent_name:
+            target_sheet = frappe.get_doc("Planning sheet", target_sheet_name)
+        elif target_sheet_name == parent_name:
+            # Already on target date, but maybe unit change requested or date same
+            target_sheet = parent_doc
         else:
-            # OPTION B: Partial Move -> Re-parent to Target Sheet
-            # 1. Find or Create Target Sheet for (target_date, party_code)
-            target_sheet_name = frappe.db.get_value("Planning sheet", {
-
-                "ordered_date": target_date,
-                "party_code": parent_doc.party_code,
-                "docstatus": 0
-            }, "name")
+            target_sheet = frappe.new_doc("Planning sheet")
+            target_sheet.ordered_date = target_date
+            target_sheet.party_code = parent_doc.party_code
+            target_sheet.customer = parent_doc.customer
+            target_sheet.save()
+        
+        # Get starting idx for target
+        target_sheet.reload()
+        current_max_idx = 0
+        if target_sheet.get("items"):
+            current_max_idx = int(max([int(d.idx or 0) for d in target_sheet.items] or [0]))
+        
+        # Move Every Item in the group
+        for i, item_doc in enumerate(moving_docs):
+            new_idx = int(current_max_idx) + int(i) + 1
+            new_unit = target_unit if target_unit else item_doc.unit
             
-            if target_sheet_name:
-                target_sheet = frappe.get_doc("Planning sheet", target_sheet_name)
-            else:
-                target_sheet = frappe.new_doc("Planning sheet")
-                target_sheet.ordered_date = target_date
-                target_sheet.party_code = parent_doc.party_code
-                target_sheet.customer = parent_doc.customer
-                target_sheet.save()
+            # Use SQL for direct re-parenting (Robust for rescue)
+            frappe.db.sql("""
+                UPDATE `tabPlanning Sheet Item`
+                SET parent = %s, idx = %s, unit = %s, parenttype='Planning sheet', parentfield='items'
+                WHERE name = %s
+            """, (target_sheet.name, new_idx, new_unit, item_doc.name))
             
-            # 2. Move Items
-            # Get starting idx
-            current_max_idx = 0
-            if target_sheet.get("items"):
-                current_max_idx = int(max([int(d.idx or 0) for d in target_sheet.items] or [0]))
+            count = int(count) + 1
+        
+        frappe.db.commit() # Save SQL updates
+        
+        # 3. Handle Parent Cleanup
+        target_sheet.reload()
+        if int(target_sheet.docstatus or 0) == 0:
+            target_sheet.save()
             
-            for i, item_doc in enumerate(moving_docs):
-                new_idx = int(current_max_idx or 0) + int(i or 0) + 1
-                
-                # Determine new unit (Target Unit or keep original)
-                new_unit = target_unit if target_unit else item_doc.unit
-                
-                # SQL Update Parent, Idx, Unit
-                # Explicitly set parenttype and parentfield to avoid orphan items
-                frappe.db.sql("""
-                    UPDATE `tabPlanning Sheet Item`
-                    SET parent = %s, idx = %s, unit = %s, parenttype='Planning sheet', parentfield='items'
-                    WHERE name = %s
-                """, (target_sheet.name, new_idx, new_unit, item_doc.name))
-                
-                count = int(count) + 1
-            
-            frappe.db.commit()
-            
-            if int(target_sheet.docstatus or 0) == 0:
-                target_sheet.save() 
-            
+        if target_sheet.name != parent_doc.name:
             parent_doc.reload()
-            if int(parent_doc.docstatus or 0) == 0:
+            if not parent_doc.get("items"):
+                # Source is empty -> DELETE
+                frappe.delete_doc("Planning sheet", parent_doc.name, force=1)
+            elif int(parent_doc.docstatus or 0) == 0:
                 parent_doc.save()
+        
+    frappe.db.commit()
 
 
 @frappe.whitelist()

@@ -1150,15 +1150,25 @@ async function handleMoveOrders(items, date, unit, dialog) {
         });
         
         if (r.message && r.message.status === 'success') {
-            const successMsg = `Successfully moved ${r.message.count} orders to ${date}.`;
+            const currentFilterDate = filterOrderDate.value;
+            const targetDate = date;
+            
+            const successMsg = `Successfully moved ${r.message.count} orders to ${targetDate}.`;
             frappe.show_alert({ message: successMsg, indicator: 'green' });
             
-            // Also show a msgprint if moving to a different date than current filter
-            if (date !== filterOrderDate.value) {
+            // If moved to a date not currently viewed, show a more prominent message
+            if (targetDate !== currentFilterDate) {
                 frappe.msgprint({
                     title: __('Orders Moved'),
                     indicator: 'green',
-                    message: `Successfully moved ${r.message.count} orders to <b>${date}</b>.<br><br><i>Please change the date filter to view them.</i>`
+                    primary_action: {
+                        label: `Go to ${targetDate}`,
+                        action: () => {
+                            filterOrderDate.value = targetDate;
+                            fetchData();
+                        }
+                    },
+                    message: `Moved ${r.message.count} orders to <b>${targetDate}</b>.<br>They are no longer on this board.`
                 });
             }
             
@@ -1173,27 +1183,51 @@ async function handleMoveOrders(items, date, unit, dialog) {
         
         const cleanError = (raw) => {
             if (!raw) return "";
+            
+            // If it's a string, try to parse it (it might be double-encoded JSON)
             if (typeof raw === 'string') {
-                if (raw.trim().startsWith('{') || raw.trim().startsWith('[')) {
+                const trimmed = raw.trim();
+                if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
                     try {
-                        return cleanError(JSON.parse(raw));
-                    } catch (e) {
+                        return cleanError(JSON.parse(trimmed));
+                    } catch (err) {
                         return raw;
                     }
                 }
+                // If it's HTML, try to strip tags or return as is
+                if (raw.includes('<div') || raw.includes('<p')) {
+                    const temp = document.createElement('div');
+                    temp.innerHTML = raw;
+                    return temp.textContent || temp.innerText || raw;
+                }
                 return raw;
             }
+            
+            // If it's an array, join its elements
             if (Array.isArray(raw)) {
-                return raw.map(cleanError).join("\n");
+                return raw.map(cleanError).filter(Boolean).join("\n");
             }
+            
+            // If it's an object, prioritize 'message' or 'error' property
             if (typeof raw === 'object') {
-                return cleanError(raw.message || raw.error || JSON.stringify(raw));
+                if (raw.message) return cleanError(raw.message);
+                if (raw.error) return cleanError(raw.error);
+                // Last resort: stringify
+                try {
+                    return cleanError(JSON.stringify(raw));
+                } catch (err) {
+                    return String(raw);
+                }
             }
+            
             return String(raw);
         };
 
         const serverMsgs = e.server_messages || e._server_messages || (e.responseJSON && e.responseJSON._server_messages);
         msg = cleanError(serverMsgs || e.message || e.error || e.responseText || e);
+        
+        // Final trim and cleanup
+        msg = msg.split('\n').map(s => s.trim()).filter(Boolean).join('\n');
         
         if (msg && msg.toLowerCase().includes("capacity exceeded")) {
              // Propose Next Day
