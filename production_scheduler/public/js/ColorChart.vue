@@ -992,7 +992,7 @@ function initSortable() {
                                   <p>Space in ${newUnit}: <b>${availableSpace.toFixed(3)}T</b></p>
                                   <hr class="my-2"/>
                                   <p class="font-bold text-blue-600">💡 Recommendation:</p>
-                                  <p>${candidateUnit} is running <b>${item.color_desc}</b> and has space.</p>
+                                  <p>${candidateUnit} is running <b>${item.color}</b> and has space.</p>
                                   <p>Do you want to <b>SPLIT</b> this order?</p>
                                   <ul class="list-disc ml-4 mt-2 mb-2 text-sm text-gray-600">
                                       <li><b>${availableSpace.toFixed(3)}T</b> -> ${newUnit} (Fill)</li>
@@ -1013,8 +1013,6 @@ function initSortable() {
                                       });
                                       if (res.message && res.message.status === 'success') {
                                           frappe.show_alert({ message: `Split: ${availableSpace.toFixed(2)}T in ${newUnit}, ${overflow.toFixed(2)}T in ${candidateUnit}`, indicator: "green" });
-                                          // Update UI locally (Hack: Just reload for now to be safe, or manually splice)
-                                          // For now, removing the dragged element to avoid visual glitches before reload
                                           if (itemEl && itemEl.parentNode) itemEl.parentNode.removeChild(itemEl);
                                           fetchData();
                                       }
@@ -1023,26 +1021,34 @@ function initSortable() {
                                       fetchData();
                                   }
                               },
-                              async () => {
-                                  // Secondary: MOVE TO NEXT DAY (Cancel Split)
-                                  // Actually frappe.confirm secondary is "Cancel". 
-                                  // We want a 3rd option or just fallback.
-                                  // Frappe confirm behavior: Cancel -> do nothing? 
-                                  // If they cancel split, we should ask if they want to move to next day? 
-                                  // OR: I should just use `frappe.prompt` or custom dialog.
-                                  // Let's stick to: If Cancel Split -> Fallback to Auto Push?
-                                  // No, `frappe.confirm` Cancel just closes.
-                                  // I will implement a custom Dialog for better UX.
+                              () => {
+                                  // Secondary: CANCEL (User clicked No/Cancel)
+                                  // Revert drag action
+                                  renderKey.value++;
                               }
                           );
 
-                          // HACK: Replacing confirm with a better Custom Dialog logic below
-                          // ... (Real implementation using Dialog) ...
                           return; 
                       }
 
                       // Default: Auto Push Logic (if no split or refactored)
-                      await autoPushToNextDay(itemName, newUnit, itemEl);
+                      // BUT: If availableSpace <= 0, we can't push? No, we CAN push.
+                      // Wait, if no candidate found, we just auto push?
+                      // Dialog should appear if capacity exceeded regardless of split candidate?
+                      // The current logic: if (candidate && space > 0) -> Split Dialog
+                      // Else -> Auto Push.
+                      // This seems aggressive. If no candidate, user gets no choice?
+                      // I should probably ask: "Capacity Exceeded. Move to Next Day?"
+                      
+                      frappe.confirm(
+                          `<b>Capacity Limit Reached!</b><br>Unit ${newUnit} is full.<br>Move this order to <b>${frappe.datetime.add_days(filterOrderDate.value, 1)}</b>?`,
+                          async () => {
+                               await autoPushToNextDay(itemName, newUnit, itemEl);
+                          },
+                          () => {
+                               renderKey.value++; // Cancel -> Revert
+                          }
+                      );
                       return; 
                   }
               }
@@ -1237,8 +1243,11 @@ async function handleMoveOrders(items, date, unit, dialog) {
              frappe.confirm(
                  `<b>Capacity Limit Reached!</b><br>${msg}<br><br>Do you want to move these orders to <b>${nextDay}</b> instead?`,
                  () => {
-                     // Retry with next day
                      handleMoveOrders(items, nextDay, unit, dialog);
+                 },
+                 () => {
+                     // No / Cancel -> Revert UI
+                     renderKey.value++;
                  }
              );
         } else {
