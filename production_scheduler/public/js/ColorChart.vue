@@ -758,17 +758,16 @@ async function fetchData() {
     });
     rawData.value = r.message || [];
     console.log("Fetched Data:", rawData.value);
-    if (rawData.value.length > 0) {
-        console.log("Sample Item Width:", rawData.value[0].width, rawData.value[0]);
-    }
+    
+    // Force Reactive UI Refresh
+    renderKey.value++; 
+    
+    await nextTick();
+    initSortable();
   } catch (e) {
     frappe.msgprint("Error loading color chart data");
     console.error(e);
   }
-  await nextTick();
-  initSortable();
-  // We analyze previous flow on mount or date change, but maybe do it separately to avoid blocking render?
-  // Called safely at end of fetchData or in watcher
 }
 
 // Watch date to re-analyze flow
@@ -1173,7 +1172,10 @@ async function handleMoveOrders(items, date, unit, dialog) {
             }
             
             if (dialog) dialog.hide();
-            fetchData();
+            
+            // Comprehensive Refresh
+            await fetchData();
+            await analyzePreviousFlow(); // Keep sorting consistent with flow
         }
     } catch (e) {
         console.error("Move failed", e);
