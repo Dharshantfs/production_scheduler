@@ -3,6 +3,33 @@ from frappe import _
 from frappe.utils import getdate, flt
 
 
+HARD_LIMITS = {
+	"Unit 1": 4.4,
+	"Unit 2": 12.0,
+	"Unit 3": 9.0,
+	"Unit 4": 5.5
+}
+
+SOFT_LIMITS = {
+	"Unit 1": 4.0,
+	"Unit 2": 9.0,
+	"Unit 3": 7.8,
+	"Unit 4": 4.0
+}
+
+
+def get_unit_load(date, unit):
+    """Calculates current load (in Tons) for a unit on a given date."""
+    sql = """
+        SELECT SUM(i.qty) as total_qty
+        FROM `tabPlanning Sheet Item` i
+        JOIN `tabPlanning sheet` p ON i.parent = p.name
+        WHERE p.ordered_date = %s AND i.unit = %s AND p.docstatus < 2 AND i.docstatus < 2
+    """
+    result = frappe.db.sql(sql, (date, unit), as_dict=True)
+    return flt(result[0].total_qty if result else 0) / 1000.0
+
+
 @frappe.whitelist()
 def get_kanban_board(start_date, end_date):
 	start_date = getdate(start_date)
@@ -66,20 +93,6 @@ def get_kanban_board(start_date, end_date):
 
 @frappe.whitelist()
 def update_schedule(doc_name, unit, date, index=0):
-	HARD_LIMITS = {
-		"Unit 1": 4.4,
-		"Unit 2": 12.0,
-		"Unit 3": 9.0,
-		"Unit 4": 5.5
-	}
-
-	SOFT_LIMITS = {
-		"Unit 1": 4.0,
-		"Unit 2": 9.0,
-		"Unit 3": 7.8,
-		"Unit 4": 4.0
-	}
-
 	if unit not in HARD_LIMITS:
 		frappe.throw(_("Invalid Unit"))
 
@@ -341,19 +354,44 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
         return {"status": "failed", "message": "No items selected"}
 
     target_date = getdate(target_date)
+    
+    # --- CAPACITY VALIDATION ---
+    # 1. Calculate weight to add per unit
+    weights_to_add = {} # unit -> tons
+    
+    docs_to_move = [] 
+    for name in item_names:
+        try:
+            doc = frappe.get_doc("Planning Sheet Item", name)
+            docs_to_move.append(doc)
+            
+            final_unit = target_unit if target_unit else (doc.unit or "")
+            if final_unit:
+                wt_tons = flt(doc.qty) / 1000.0
+                weights_to_add[final_unit] = weights_to_add.get(final_unit, 0.0) + wt_tons
+        except frappe.DoesNotExistError:
+            continue
+            
+    # 2. Check Limits
+    for unit, added_weight in weights_to_add.items():
+        if unit in HARD_LIMITS:
+            current_load = get_unit_load(target_date, unit)
+            limit = HARD_LIMITS[unit]
+            
+            if current_load + added_weight > limit:
+                frappe.throw(
+                    _("Cannot pull orders! {0} capacity exceeded.<br>Limit: {1}T<br>Current: {2:.2f}T<br>Adding: {3:.2f}T<br>New Total: {4:.2f}T").format(
+                        unit, limit, current_load, added_weight, current_load + added_weight
+                    )
+                )
+
     count = 0
     
     # 1. Group items by Current Parent
     items_by_parent = {}
-    item_details = {} # Map item_name -> doc
     
-    for name in item_names:
-        try:
-            doc = frappe.get_doc("Planning Sheet Item", name)
-            items_by_parent.setdefault(doc.parent, []).append(doc)
-            item_details[name] = doc
-        except frappe.DoesNotExistError:
-            continue
+    for doc in docs_to_move:
+        items_by_parent.setdefault(doc.parent, []).append(doc)
 
     # 2. Process each Parent Group
     for parent_name, moving_docs in items_by_parent.items():
