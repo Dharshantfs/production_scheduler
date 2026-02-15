@@ -36,6 +36,9 @@
       <button class="cc-clear-btn" style="color: #059669; border-color: #059669; margin-left: 8px;" @click="openPullOrdersDialog" title="Pull orders from a future date">
         📥 Pull Orders
       </button>
+      <button v-if="isAdmin" class="cc-clear-btn" style="color: #dc2626; border-color: #dc2626; margin-left: 8px;" @click="openRescueDialog" title="Rescue lost or stuck orders">
+        🚑 Rescue Orders
+      </button>
     </div>
 
     <!-- Color Chart Board -->
@@ -1322,6 +1325,134 @@ function updateSelection(d) {
     });
     d.calc_selected_items = selected;
     d.get_primary_btn().text(`Move ${selected.length} to Today`);
+}
+
+// ---- ADMIN RESCUE ----
+const isAdmin = computed(() => {
+    const roles = frappe.boot.user.roles || [];
+    return roles.includes('System Manager') || roles.includes('Administrator');
+});
+
+function openRescueDialog() {
+    const d = new frappe.ui.Dialog({
+        title: '🚑 Rescue / Re-Queue Orders',
+        fields: [
+            {
+                label: 'Source Planning Sheet',
+                fieldname: 'sheet',
+                fieldtype: 'Link',
+                options: 'Planning sheet',
+                reqd: 1,
+                description: 'Select the sheet containing the lost/stuck orders.',
+                onchange: () => loadRescueItems(d)
+            },
+            {
+                fieldtype: 'HTML',
+                fieldname: 'rescue_html'
+            }
+        ],
+        primary_action_label: 'Rescue Selected',
+        primary_action: async () => {
+            const selected = d.calc_selected_rescue || [];
+            if (selected.length === 0) {
+                frappe.msgprint("Select at least one order to rescue.");
+                return;
+            }
+            
+            try {
+                const r = await frappe.call({
+                    method: "production_scheduler.api.move_orders_to_date",
+                    args: {
+                        item_names: selected,
+                        target_date: filterOrderDate.value,
+                        target_unit: '' // Keep original unit or force? User didn't specify, safest is Keep.
+                    }
+                });
+                
+                if (r.message && r.message.status === 'success') {
+                    frappe.show_alert({ message: `Rescued ${r.message.count} orders.`, indicator: 'green' });
+                    d.hide();
+                    fetchData();
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    });
+    d.show();
+}
+
+async function loadRescueItems(d) {
+    const sheet = d.get_value('sheet');
+    if (!sheet) return;
+    
+    d.set_value('rescue_html', 'Loading...');
+    
+    try {
+        const r = await frappe.call({
+            method: "production_scheduler.api.get_items_by_sheet",
+            args: { sheet_name: sheet }
+        });
+        
+        const items = r.message || [];
+        if (items.length === 0) {
+            d.set_value('rescue_html', 'No items found in this sheet.');
+            return;
+        }
+        
+        // Simple List for Rescue
+        let html = `
+            <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ccc; margin-top:10px;">
+                <table class="table table-bordered table-sm" style="margin:0;">
+                    <thead>
+                        <tr style="background:#f0f0f0;">
+                            <th width="30"><input type="checkbox" id="select-all-rescue"></th>
+                            <th>Item</th>
+                            <th>Unit</th>
+                            <th>Qty</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        items.forEach(item => {
+            html += `
+                <tr>
+                    <td><input type="checkbox" class="rescue-cb" data-name="${item.name}"></td>
+                    <td>${item.item_name} <br> <span class="text-muted" style="font-size:10px;">${item.name}</span></td>
+                    <td>${item.unit || '-'}</td>
+                    <td>${item.qty}</td>
+                    <td>${item.docstatus === 0 ? 'Draft' : item.docstatus === 1 ? 'Submitted' : 'Cancelled'}</td>
+                </tr>
+            `;
+        });
+        
+        html += `</tbody></table></div>`;
+        d.set_value('rescue_html', html);
+        
+        // Bind Logic
+        d.$wrapper.find('#select-all-rescue').on('change', function() {
+            d.$wrapper.find('.rescue-cb').prop('checked', $(this).prop('checked'));
+            updateRescueSelection(d);
+        });
+        
+        d.$wrapper.find('.rescue-cb').on('change', () => updateRescueSelection(d));
+        
+        d.calc_selected_rescue = [];
+        
+    } catch (e) {
+        d.set_value('rescue_html', 'Error loading items.');
+    }
+}
+
+function updateRescueSelection(d) {
+    const s = [];
+    d.$wrapper.find('.rescue-cb:checked').each(function() {
+        s.push($(this).data('name'));
+    });
+    d.calc_selected_rescue = s;
+    d.get_primary_btn().text(`Rescue ${s.length} Orders`);
 }
 </script>
 

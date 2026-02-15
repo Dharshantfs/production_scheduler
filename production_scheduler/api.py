@@ -465,5 +465,21 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
             if parent_doc.docstatus == 0:
                 parent_doc.save()
 
-    frappe.db.commit()
-    return {"status": "success", "count": count}
+
+@frappe.whitelist()
+def get_items_by_sheet(sheet_name):
+    """
+    Fetches all items for a given Planning Sheet.
+    Used for Admin Rescue to recover items.
+    """
+    if not sheet_name:
+        return []
+        
+    sql = """
+        SELECT name, item_name, qty, unit, docstatus, parent, idx
+        FROM `tabPlanning Sheet Item`
+        WHERE parent = %s
+        ORDER BY idx ASC
+    """
+    return frappe.db.sql(sql, (sheet_name,), as_dict=True)
+
