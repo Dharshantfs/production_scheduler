@@ -393,28 +393,20 @@ def move_orders_to_date(item_names, target_date):
                 target_sheet.save()
             
             # 2. Move Items
-            for item_doc in moving_docs:
-                # Remove from Old Parent
-                # We can't just 'remove' from list easily with preservation of ID if we use standard ORM append?
-                # Actually, standard way: 
-                # new_row = target_sheet.append("items")
-                # copy fields...
-                # delete old row.
-                # This CHANGES IDs. 
+            # Get starting idx
+            current_max_idx = 0
+            if target_sheet.get("items"):
+                current_max_idx = max([d.idx for d in target_sheet.items] or [0])
+            
+            for i, item_doc in enumerate(moving_docs):
+                new_idx = current_max_idx + i + 1
                 
-                # To PRESERVE IDs (cleaner history):
-                # SQL Update Parent
+                # SQL Update Parent & Idx
                 frappe.db.sql("""
                     UPDATE `tabPlanning Sheet Item`
                     SET parent = %s, idx = %s
                     WHERE name = %s
-                """, (target_sheet.name, len(target_sheet.items) + 1, item_doc.name))
-                
-                # Update in-memory lists for safe save if needed, but SQL is direct.
-                # We should reload docs to update total calculations?
-                
-                # Using SQL is risky for 'idx', but if we append, we handle idx.
-                # Let's count current target items.
+                """, (target_sheet.name, new_idx, item_doc.name))
                 
                 count += 1
             
