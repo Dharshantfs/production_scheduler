@@ -1167,7 +1167,7 @@ async function handleMoveOrders(items, date, unit, dialog) {
              } catch (ex) {}
         }
         
-        if (msg && msg.includes("Capacity Exceeded")) {
+        if (msg && msg.toLowerCase().includes("capacity exceeded")) {
              // Propose Next Day
              const nextDay = frappe.datetime.add_days(date, 1);
              frappe.confirm(
