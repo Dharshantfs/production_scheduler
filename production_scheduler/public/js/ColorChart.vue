@@ -447,7 +447,7 @@ function findSplitCandidate(item, overflowQty, currentUnit) {
     // Relaxed criteria: At least one item matches, OR unit is empty (maybe?)
     // User said: "unit 4 is free ans qulaity is also imp unit 4 also running same quality"
     // So we check if the unit contains items of same spec
-    const hasMatch = unitEntries.some(i => i.color_desc === item.color_desc && i.quality === item.quality);
+    const hasMatch = unitEntries.some(i => i.color === item.color && i.quality === item.quality);
     
     if (hasMatch) {
        const load = getUnitTotal(unit);
@@ -988,15 +988,13 @@ function initSortable() {
                       const overflow = itemTonnage - availableSpace;
                       const candidateUnit = findSplitCandidate(item, overflow, newUnit);
 
-                      // If we can split, offer it. otherwise just push.
-                      if (candidateUnit && availableSpace > 0) {
-                           // ... Keep Split Dialog but ensure "Move All" is clear ...
-                           // Actually, let's simplify. User wants "Strict Enforcement".
-                           // Let's fallback to the simple "Push" dialog if they reject split?
-                           // Or just show the Split Dialog with a BIG "Move to Next Day" button.
+                      // If we can split OR just move whole order to candidate
+                      if (candidateUnit) { 
+                           // Show Smart Suggestion Dialog
+                           // Logic: "Unit X is full. But Unit Y has space and matches. Move there?"
                            showSplitDialog(item, itemTonnage, availableSpace, overflow, newUnit, candidateUnit, itemEl);
                       } else {
-                           // Standard Overflow
+                           // Standard Overflow - No better option found
                            frappe.confirm(
                                `<div style="text-align:left">
                                   <h4 class="text-red-600 mb-2 font-bold">⛔ Capacity Exceeded!</h4>
