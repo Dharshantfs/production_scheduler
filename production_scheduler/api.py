@@ -538,13 +538,12 @@ def get_confirmed_orders_kanban(order_date=None, party_code=None):
     # Let's assume standard filtering on `p.creation` or `p.modified`? or `so.transaction_date`?
     # Given the context, let's filter by `p.dod` (Delivery Date) if provided.
     
+    # Filter by Sales Order Date (transaction_date) preference
     if order_date:
-        # If "Order Date" is passed, what date is it?
-        # In ColorChart, it's `ordered_date`.
-        # Here, confirmed orders DON'T have `ordered_date`.
-        # Maybe user means filtering by when the order was CONFIRMED?
-        # Let's filter by `p.creation` date?
-        conditions.append("DATE(p.creation) = %s")
+        # User "Order Date" filter usually implies Sales Order Date.
+        # Fallback to Creation Date if no Sales Order linked.
+        conditions.append("((so.transaction_date IS NOT NULL AND so.transaction_date = %s) OR (so.transaction_date IS NULL AND DATE(p.creation) = %s))")
+        values.append(order_date)
         values.append(order_date)
 
     if party_code:
@@ -558,15 +557,18 @@ def get_confirmed_orders_kanban(order_date=None, party_code=None):
         SELECT 
             i.name, i.item_code, i.item_name, i.qty, i.unit, i.color, 
             i.gsm, i.custom_quality as quality, i.width_inch, i.idx,
-            p.name as planning_sheet, p.party_code, p.customer, p.dod, p.planning_status, p.creation
+            p.name as planning_sheet, p.party_code, p.customer, p.dod, p.planning_status, p.creation,
+            so.transaction_date as so_date
         FROM
             `tabPlanning Sheet Item` i
         LEFT JOIN
             `tabPlanning sheet` p ON i.parent = p.name
+        LEFT JOIN
+            `tabSales Order` so ON p.sales_order = so.name
         WHERE
             {where_clause}
         ORDER BY
-            p.creation DESC, i.idx ASC
+            so.transaction_date ASC, p.creation DESC, i.idx ASC
     """
     
     items = frappe.db.sql(sql, tuple(values), as_dict=True)

@@ -174,7 +174,7 @@ const units = ["Unit 1", "Unit 2", "Unit 3", "Unit 4"];
 const UNIT_TONNAGE_LIMITS = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5 };
 const headerColors = { "Unit 1": "#3b82f6", "Unit 2": "#10b981", "Unit 3": "#f59e0b", "Unit 4": "#8b5cf6" };
 
-const filterOrderDate = ref("");
+const filterOrderDate = ref(""); // Default empty to show backlog
 const filterDeliveryDate = ref("");
 const filterPartyCode = ref("");
 const filterUnit = ref("");
