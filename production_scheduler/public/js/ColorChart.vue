@@ -1157,9 +1157,6 @@ async function handleMoveOrders(items, date, unit, dialog) {
     } catch (e) {
         console.error("Move failed", e);
         
-    } catch (e) {
-        console.error("Move failed", e);
-        
         // Robust Error Extraction
         let msg = "";
         
