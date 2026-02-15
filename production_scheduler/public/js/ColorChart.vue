@@ -783,13 +783,6 @@ const UNIT_WIDTHS = {
   "Unit 4": 90
 };
 
-const UNIT_TONNAGE_LIMITS = {
-  "Unit 1": 4.4,
-  "Unit 2": 12.0,
-  "Unit 3": 9.0,
-  "Unit 4": 5.5
-};
-
 function getUnitCapacityStatus(unit) {
     const total = getUnitTotal(unit);
     const limit = UNIT_TONNAGE_LIMITS[unit] || 999;
