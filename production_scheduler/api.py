@@ -395,6 +395,9 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
     for parent_name, moving_docs in items_by_parent.items():
         parent_doc = frappe.get_doc("Planning sheet", parent_name)
         
+        if parent_doc.docstatus >= 1:
+             frappe.throw(f"Cannot move orders from a Submitted or Cancelled sheet ({parent_name}). Please cancel/amend it first.")
+
         # Check if we are moving ALL items from this parent
         all_child_names = [d.name for d in parent_doc.items]
         moving_names = [d.name for d in moving_docs]
@@ -411,12 +414,13 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
                     d.unit = target_unit
             
             parent_doc.save()
+            frappe.db.commit() # Ensure date change is saved
             count += len(moving_docs)
         else:
-
             # OPTION B: Partial Move -> Re-parent to Target Sheet
             # 1. Find or Create Target Sheet for (target_date, party_code)
             target_sheet_name = frappe.db.get_value("Planning sheet", {
+
                 "ordered_date": target_date,
                 "party_code": parent_doc.party_code,
                 "docstatus": 0
@@ -453,9 +457,11 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
                 
                 count += 1
             
+            frappe.db.commit()
+            
             # 3. Reload and Save both to update totals/caches
-            # We remove the global try/except pass to ensure we see errors
             target_sheet.reload()
+
             if target_sheet.docstatus == 0:
                 target_sheet.save() 
             

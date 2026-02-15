@@ -1150,7 +1150,18 @@ async function handleMoveOrders(items, date, unit, dialog) {
         });
         
         if (r.message && r.message.status === 'success') {
-            frappe.show_alert({ message: `Successfully moved ${r.message.count} orders.`, indicator: 'green' });
+            const successMsg = `Successfully moved ${r.message.count} orders to ${date}.`;
+            frappe.show_alert({ message: successMsg, indicator: 'green' });
+            
+            // Also show a msgprint if moving to a different date than current filter
+            if (date !== filterOrderDate.value) {
+                frappe.msgprint({
+                    title: __('Orders Moved'),
+                    indicator: 'green',
+                    message: `Successfully moved ${r.message.count} orders to <b>${date}</b>.<br><br><i>Please change the date filter to view them.</i>`
+                });
+            }
+            
             if (dialog) dialog.hide();
             fetchData();
         }
@@ -1160,37 +1171,29 @@ async function handleMoveOrders(items, date, unit, dialog) {
         // Robust Error Extraction
         let msg = "";
         
-        if (typeof e === 'string') {
-            msg = e;
-        } else {
-            // Try standard message props
-            msg = e.message || e.error || "";
-            
-            // Try server_messages (JSON string)
-            const serverMsgs = e.server_messages || e._server_messages || (e.responseJSON && e.responseJSON._server_messages);
-            
-            if (serverMsgs) {
-                 try {
-                     const parsed = JSON.parse(serverMsgs);
-                     if (Array.isArray(parsed)) {
-                         msg = parsed.join("\n");
-                     } else if (parsed && typeof parsed === 'object') {
-                         // Check for message property in object
-                         msg = parsed.message || JSON.stringify(parsed);
-                     } else {
-                         msg = parsed;
-                     }
-                 } catch (ex) {
-                     // If not JSON, use raw string
-                     msg = serverMsgs;
-                 }
+        const cleanError = (raw) => {
+            if (!raw) return "";
+            if (typeof raw === 'string') {
+                if (raw.trim().startsWith('{') || raw.trim().startsWith('[')) {
+                    try {
+                        return cleanError(JSON.parse(raw));
+                    } catch (e) {
+                        return raw;
+                    }
+                }
+                return raw;
             }
-            
-            // If still empty, try responseText
-            if (!msg && e.responseText) {
-                 msg = e.responseText;
+            if (Array.isArray(raw)) {
+                return raw.map(cleanError).join("\n");
             }
-        }
+            if (typeof raw === 'object') {
+                return cleanError(raw.message || raw.error || JSON.stringify(raw));
+            }
+            return String(raw);
+        };
+
+        const serverMsgs = e.server_messages || e._server_messages || (e.responseJSON && e.responseJSON._server_messages);
+        msg = cleanError(serverMsgs || e.message || e.error || e.responseText || e);
         
         if (msg && msg.toLowerCase().includes("capacity exceeded")) {
              // Propose Next Day
