@@ -1157,14 +1157,35 @@ async function handleMoveOrders(items, date, unit, dialog) {
     } catch (e) {
         console.error("Move failed", e);
         
-        // Check for Capacity Error
+    } catch (e) {
+        console.error("Move failed", e);
+        
+        // Robust Error Extraction
         let msg = "";
-        if (e.message) msg = e.message;
-        else if (e.server_messages) {
-             try {
-                 const msgs = JSON.parse(e.server_messages);
-                 msg = msgs.join("\n");
-             } catch (ex) {}
+        
+        if (typeof e === 'string') {
+            msg = e;
+        } else {
+            // Try standard message props
+            msg = e.message || e.error || "";
+            
+            // Try server_messages (JSON string)
+            const serverMsgs = e.server_messages || e._server_messages || (e.responseJSON && e.responseJSON._server_messages);
+            
+            if (serverMsgs) {
+                 try {
+                     const parsed = JSON.parse(serverMsgs);
+                     msg = Array.isArray(parsed) ? parsed.join("\n") : parsed;
+                 } catch (ex) {
+                     // If not JSON, maybe raw string?
+                     msg = serverMsgs;
+                 }
+            }
+            
+            // If still empty, try responseText
+            if (!msg && e.responseText) {
+                 msg = e.responseText;
+            }
         }
         
         if (msg && msg.toLowerCase().includes("capacity exceeded")) {
