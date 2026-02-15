@@ -95,7 +95,10 @@
                 ></div>
                 <div class="cc-card-info">
                   <div class="cc-card-color-name">{{ entry.color }}</div>
-                  <div class="cc-card-customer">{{ entry.customer }} — {{ entry.partyCode }}</div>
+                  <div class="cc-card-customer">
+                    <span style="font-weight:700; color:#111827;">{{ entry.partyCode }}</span>
+                    <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> · {{ entry.customer }}</span>
+                  </div>
                   <div class="cc-card-details">
                     {{ entry.quality }} · {{ entry.gsm }} GSM
                   </div>

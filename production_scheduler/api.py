@@ -658,7 +658,11 @@ def create_planning_sheet_from_so(doc):
             ps.sales_order = doc.name
             ps.customer = doc.customer
             ps.dod = doc.delivery_date
-            ps.party_code = doc.customer
+            # Assign Party Code: If 'party_code' exists in Sales Order, use it. Else fallback to Customer.
+            if hasattr(doc, 'party_code') and doc.party_code:
+                ps.party_code = doc.party_code
+            else:
+                ps.party_code = doc.customer
             ps.planning_status = "Draft"
             # ps.set("__newname", "PLAN-" + doc.name) # Naming series usually handles this, but user requested. 
             # Note: __newname is for mapped docs usually. If naming series is set, this might be ignored or cause issue.
@@ -749,7 +753,7 @@ def create_planning_sheet_from_so(doc):
                     "color": col,
                     "weight_per_roll": wt,
                     "unit": unit,
-                    "party_code": doc.customer
+                    "party_code": doc.party_code if (hasattr(doc, 'party_code') and doc.party_code) else doc.customer
                 })
 
             ps.flags.ignore_permissions = True
