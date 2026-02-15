@@ -473,3 +473,112 @@ def get_items_by_sheet(sheet_name):
     """
     return frappe.db.sql(sql, (sheet_name,), as_dict=True)
 
+
+# --------------------------------------------------------------------------------
+# Confirmed Order Workflow & Automation
+# --------------------------------------------------------------------------------
+
+@frappe.whitelist()
+def get_unscheduled_planning_sheets():
+    """
+    Fetches Planning Sheets that are 'Confirmed' (docstatus=0 or 1) but have NO ordered_date.
+    These display in the 'Confirmed Order' view.
+    """
+    sql = """
+        SELECT 
+            p.name, p.customer, p.party_code, p.docstatus, p.ordered_date,
+            SUM(i.qty) as total_qty
+        FROM `tabPlanning sheet` p
+        LEFT JOIN `tabPlanning Sheet Item` i ON i.parent = p.name
+        WHERE 
+            (p.ordered_date IS NULL OR p.ordered_date = '')
+            AND p.docstatus < 2
+        GROUP BY p.name
+    """
+    sheets = frappe.db.sql(sql, as_dict=True)
+    
+    # Enhance with items preview
+    for sheet in sheets:
+        sheet.items = frappe.get_all("Planning Sheet Item", filters={"parent": sheet.name}, fields=["item_name", "qty", "item_code"], limit=5)
+        
+    return sheets
+
+@frappe.whitelist()
+def check_credit_and_confirm(doc, method=None):
+    """
+    Hook for Sales Order: On Submit.
+    If Credit Customer (logic: Payment Terms != 'Advance'), set status Confirmed & Create Sheet.
+    """
+    if doc.docstatus != 1: return
+
+    is_advance = False
+    if doc.payment_terms_template:
+        terms = frappe.db.get_value("Payment Terms Template", doc.payment_terms_template, "template_name")
+        if terms and "Advance" in terms:
+            is_advance = True
+    
+    if not is_advance:
+        mark_order_confirmed(doc)
+
+@frappe.whitelist()
+def check_advance_and_confirm(doc, method=None):
+    """
+    Hook for Payment Entry: On Submit.
+    Check if linked Sales Orders are fully paid.
+    """
+    if doc.docstatus != 1: return
+    
+    for ref in doc.references:
+        if ref.reference_doctype == "Sales Order":
+            so = frappe.get_doc("Sales Order", ref.reference_name)
+            mark_order_confirmed(so)
+
+def mark_order_confirmed(so_doc):
+    """
+    Sets Sales Order custom status and Creates/Updates Planning Sheet.
+    """
+    if so_doc.meta.has_field("custom_production_status"):
+        so_doc.db_set("custom_production_status", "Confirmed")
+    
+    ps_name = frappe.db.get_value("Planning sheet", {"sales_order": so_doc.name}, "name")
+    
+    if not ps_name:
+        ps = frappe.new_doc("Planning sheet")
+        ps.customer = so_doc.customer
+        ps.party_code = so_doc.customer 
+        if ps.meta.has_field("sales_order"):
+            ps.sales_order = so_doc.name
+        
+        for item in so_doc.items:
+            row = ps.append("items", {})
+            row.item_code = item.item_code
+            row.item_name = item.item_name
+            row.qty = item.qty
+            row.description = item.description
+            
+        ps.insert(ignore_permissions=True)
+
+@frappe.whitelist()
+def create_production_plan_from_sheet(sheet_name):
+    """
+    Creates a Production Plan from a Planning Sheet.
+    """
+    if not sheet_name: return
+    sheet = frappe.get_doc("Planning sheet", sheet_name)
+    
+    pp = frappe.new_doc("Production Plan")
+    pp.company = frappe.defaults.get_user_default("Company")
+    pp.customer = sheet.customer
+    pp.get_items_from = "Material Request" 
+    
+    for item in sheet.items:
+        row = pp.append("po_items", {})
+        row.item_code = item.item_code
+        row.qty = item.qty
+        row.warehouse = item.warehouse if hasattr(item, 'warehouse') else ""
+        if hasattr(item, 'sales_order_item'):
+             row.sales_order_item = item.sales_order_item
+             
+    pp.insert()
+    return pp.name
+

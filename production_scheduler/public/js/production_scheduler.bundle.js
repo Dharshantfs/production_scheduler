@@ -17,3 +17,12 @@ production_scheduler.ColorChartController = class {
         app.mount(wrapper);
     }
 };
+
+import ConfirmedOrder from "./ConfirmedOrder.vue";
+
+production_scheduler.ConfirmedOrderController = class {
+    constructor(wrapper) {
+        const app = createApp(ConfirmedOrder);
+        app.mount(wrapper);
+    }
+};

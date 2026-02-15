@@ -38,6 +38,15 @@
             "link_type": "DocType",
             "onboard": 1,
             "type": "Link"
+        },
+        {
+            "description": "Confirmed Order",
+            "icon": "tick",
+            "label": "Confirmed Order",
+            "link_to": "confirmed-order",
+            "link_type": "Page",
+            "onboard": 1,
+            "type": "Link"
         }
     ],
     "modified": "2026-02-14 11:00:00.000000",
