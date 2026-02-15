@@ -1204,40 +1204,77 @@ async function loadOrders(d) {
             return;
         }
         
-        // Render List with Checkboxes
+        // Modern List View using Flexbox/Grid
         let html = `
-            <div style="max-height: 300px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px;">
-                <table class="table table-bordered table-sm" style="margin:0;">
-                    <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 1;">
-                        <tr>
-                            <th width="40px"><input type="checkbox" id="select-all-pull" /></th>
-                            <th>Unit</th>
-                            <th>Customer</th>
-                            <th>Item / Color</th>
-                            <th>Qty</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+            <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;">
+                <div style="position: sticky; top: 0; background: #f8fafc; z-index: 10; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; display: grid; grid-template-columns: 40px 80px 1fr 100px; gap: 8px; font-weight: 600; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
+                    <div style="display:flex; align-items:center; justify-content:center;"><input type="checkbox" id="select-all-pull" style="cursor:pointer;" /></div>
+                    <div>Unit</div>
+                    <div>Order Details</div>
+                    <div style="text-align:right;">Qty</div>
+                </div>
+                <div style="display: flex; flex-direction: column;">
         `;
         
         items.forEach(item => {
+            // Quality Badge Color
+            const q = (item.quality || '').toUpperCase();
+            let qBadgeColor = '#e2e8f0';
+            let qTextColor = '#475569';
+            if (q.includes('PLATINUM')) { qBadgeColor = '#e0e7ff'; qTextColor = '#3730a3'; }
+            else if (q.includes('GOLD')) { qBadgeColor = '#fef3c7'; qTextColor = '#92400e'; }
+            else if (q.includes('PREMIUM')) { qBadgeColor = '#dcfce7'; qTextColor = '#166534'; }
+            
             html += `
-                <tr>
-                    <td class="text-center">
-                        <input type="checkbox" class="pull-item-cb" data-name="${item.name}" />
-                    </td>
-                    <td>${item.unit || '-'}</td>
-                    <td><small>${item.party_code || item.customer || '-'}</small></td>
-                    <td>
-                        <div style="font-weight:600; font-size:11px;">${item.item_name}</div>
-                        <div style="font-size:10px; color: #64748b;">${item.color || '-'}</div>
-                    </td>
-                    <td><b>${(item.qty/1000).toFixed(2)}T</b></td>
-                </tr>
+                <div class="pull-item-row" style="display: grid; grid-template-columns: 40px 80px 1fr 100px; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; align-items: center; transition: background 0.2s;">
+                    <div style="display:flex; align-items:center; justify-content:center;">
+                        <input type="checkbox" class="pull-item-cb" data-name="${item.name}" style="cursor:pointer; transform: scale(1.1);" />
+                    </div>
+                    
+                    <!-- Unit -->
+                    <div>
+                        <span style="font-size: 11px; font-weight: 700; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">
+                            ${item.unit || 'UNASSIGNED'}
+                        </span>
+                    </div>
+                    
+                    <!-- Details -->
+                    <div style="display: flex; flex-direction: column; gap: 2px;">
+                        <span style="font-size: 13px; font-weight: 600; color: #1e293b;">
+                            ${item.item_name}
+                            <span style="font-weight: 400; color: #94a3b8; font-size: 12px; margin-left: 4px;">
+                                &bull; <span style="color: #0f172a;">${item.party_code || item.customer || '-'}</span>
+                            </span>
+                        </span>
+                        
+                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 2px;">
+                            <!-- Color Badge -->
+                            <span style="display: inline-flex; align-items: center; gap: 4px; border: 1px solid #e2e8f0; padding: 1px 6px; border-radius: 99px; font-size: 11px; background: #fff;">
+                                <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color: ${getHexColor(item.color)}; box-shadow: 0 0 0 1px rgba(0,0,0,0.1);"></span>
+                                <span style="color: #334155; font-weight: 500;">${item.color || 'No Color'}</span>
+                            </span>
+                            
+                            <!-- Quality Badge -->
+                            <span style="font-size: 10px; font-weight: 600; background: ${qBadgeColor}; color: ${qTextColor}; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.3px;">
+                                ${item.quality || 'STD'}
+                            </span>
+                            
+                            <!-- GSM Badge -->
+                            <span style="font-size: 10px; font-weight: 600; background: #f3f4f6; color: #4b5563; padding: 1px 6px; border-radius: 4px;">
+                                ${item.gsm ? item.gsm + ' GSM' : 'N/A'}
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <!-- Qty -->
+                    <div style="text-align: right;">
+                        <span style="display: block; font-size: 14px; font-weight: 700; color: #0f172a;">${(item.qty/1000).toFixed(2)} T</span>
+                    </div>
+                </div>
             `;
         });
         
-        html += `</tbody></table></div>`;
+        html += `</div></div>`;
         
         // Summary
         html += `<div style="margin-top:8px; text-align:right; font-weight:600; font-size:12px; color:#64748b;">Total Orders: ${items.length}</div>`;
