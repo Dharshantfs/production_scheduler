@@ -1172,9 +1172,16 @@ async function handleMoveOrders(items, date, unit, dialog) {
             if (serverMsgs) {
                  try {
                      const parsed = JSON.parse(serverMsgs);
-                     msg = Array.isArray(parsed) ? parsed.join("\n") : parsed;
+                     if (Array.isArray(parsed)) {
+                         msg = parsed.join("\n");
+                     } else if (parsed && typeof parsed === 'object') {
+                         // Check for message property in object
+                         msg = parsed.message || JSON.stringify(parsed);
+                     } else {
+                         msg = parsed;
+                     }
                  } catch (ex) {
-                     // If not JSON, maybe raw string?
+                     // If not JSON, use raw string
                      msg = serverMsgs;
                  }
             }
