@@ -720,8 +720,18 @@ def create_planning_sheet_from_so(doc):
                 if gsm > 0 and width > 0 and m_roll > 0:
                     wt = (gsm * width * m_roll * 0.0254) / 1000
 
-                # 6. UNIT ALLOCATION (DISABLED)
+                # 6. UNIT ALLOCATION (RE-ENABLED)
                 unit = ""
+                # Priority: Unit 1 -> Unit 2 -> Unit 3 (based on list definitions)
+                if qual in UNIT_1:
+                    unit = "Unit 1"
+                elif qual in UNIT_2:
+                    unit = "Unit 2"
+                elif qual in UNIT_3:
+                    unit = "Unit 3"
+                else:
+                    # Fallback or check for Unit 4 logic if available (currently not defined)
+                    unit = ""
 
                 # 7. ADD ROW
                 ps.append("items", {
