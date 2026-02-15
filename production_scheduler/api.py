@@ -533,6 +533,15 @@ def check_advance_and_confirm(doc, method=None):
             so = frappe.get_doc("Sales Order", ref.reference_name)
             mark_order_confirmed(so)
 
+def mark_order_confirmed(so_doc):
+    """
+    Sets Sales Order custom status and Creates/Updates Planning Sheet.
+    """
+    if so_doc.meta.has_field("custom_production_status"):
+        so_doc.db_set("custom_production_status", "Confirmed")
+    
+    create_planning_sheet_from_so(so_doc)
+
 def create_planning_sheet_from_so(doc):
     """
     AUTO-CREATE PLANNING SHEET (User Provided Logic)
