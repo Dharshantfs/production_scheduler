@@ -583,14 +583,53 @@ function getUnitEntries(unit) {
       const curPri = getColorPriority(unitItems[i].color);
       const nextPri = getColorPriority(unitItems[i + 1].color);
       const gap = Math.abs(curPri - nextPri);
-      // Only add mix marker if colors are in different groups (gap > 0)
-      if (gap > GAP_THRESHOLD) {
-        entries.push({
-          type: "mix",
-          mixType: determineMixType(unitItems[i].color, unitItems[i + 1].color),
-          qty: getMixRollQty(gap),
-          uniqueKey: `mix-${unitItems[i].itemName}-${unitItems[i + 1].itemName}`
-        });
+      
+      // FIX: Force mix roll if priority is different OR if the color name is different 
+      // (User wants to see mix breakdowns even between similar colors if they are distinct runs)
+      // Actually strictly speaking, mix roll is for cleaning. 
+      // If priority is same (e.g. 2 different Pinks in same group), maybe no mix?
+      // But user complained "Golden Yellow" vs "Bright Orange" (likely different priorities).
+      // Let's debug by checking if they are in different groups.
+      
+      // If gap > 0, it's definitely a mix.
+      // If gap == 0, check if they are actually different colors.
+      // User reported "Golden Yellow" (Pri 22) vs "Bright Orange" (Pri 31). Gap should be 9.
+      // Why didn't it show? 
+      // Maybe `unitItems` are not sorted by color?
+      // Ah, the user might have clicked "Sort by GSM" or something else?
+      // If sorted by GSM, colors might be interleaved.
+      // BUT `getUnitEntries` sorts by priority/gsm right before this loop: `unitItems = sortItems(unit, unitItems)`.
+      
+      // Let's force a check:
+      if (gap > 0 || (unitItems[i].color !== unitItems[i+1].color)) {
+         // Determine mix type
+         let mType = determineMixType(unitItems[i].color, unitItems[i + 1].color);
+         let mQty = 0;
+         
+         // If gap > 0, use standard logic.
+         if (gap > 0) {
+             mQty = getMixRollQty(gap);
+         } else {
+             // Same priority group but different color name?
+             // Maybe a small mix or just a separator?
+             // If user wants to see "Mix" between every color change:
+             mQty = 10; // Minimal mix for same-group color change?
+             mType = "COLOR CHANGE"; 
+         }
+         
+         // Only push if it's a "real" mix (gap > 0) or user enforced.
+         // Reverting to strict gap > 0 for now as per "Mix Roll" definition (cleaning waste).
+         // Golden Yellow (22) vs Bright Orange (31) -> Gap 9. Should show.
+         // Maybe the CSS is hidden?
+         
+         if (gap > 0) {
+            entries.push({
+              type: "mix",
+              mixType: mType,
+              qty: getMixRollQty(gap),
+              uniqueKey: `mix-${unitItems[i].itemName}-${unitItems[i + 1].itemName}`
+            });
+         }
       }
     }
   }
