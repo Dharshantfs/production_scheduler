@@ -731,7 +731,10 @@ async function analyzePreviousFlow() {
             }
          });
         
+        
         frappe.show_alert("Updated sort based on previous day flow");
+        // Force re-render of columns to ensure mix rolls are displayed correctly
+        renderKey.value++;
       }
     }
   } catch (e) {
@@ -1097,6 +1100,13 @@ watch(filterOrderDate, () => {
 });
 watch(filterUnit, updateUrlParams);
 watch(filterStatus, updateUrlParams);
+
+// Re-init Sortable when renderKey changes (forced re-render)
+watch(renderKey, () => {
+    nextTick(() => {
+        initSortable();
+    });
+});
 
 onMounted(() => {
   // 1. Read URL Params
