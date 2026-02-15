@@ -133,8 +133,8 @@ def update_schedule(doc_name, unit, date, index=0):
 		for i in items:
 			total_existing_weight += flt(i.get("qty", 0))
 
-	total_existing_weight_tons = total_existing_weight / 1000.0
-	new_total = total_existing_weight_tons + current_weight_tons
+	total_existing_weight_tons = flt(total_existing_weight) / 1000.0
+	new_total = flt(total_existing_weight_tons) + flt(current_weight_tons)
 
 	if new_total > HARD_LIMITS[unit]:
 		frappe.throw(
@@ -415,7 +415,7 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
             
             parent_doc.save()
             frappe.db.commit() # Ensure date change is saved
-            count += len(moving_docs)
+            count = int(count) + int(len(moving_docs) or 0)
         else:
             # OPTION B: Partial Move -> Re-parent to Target Sheet
             # 1. Find or Create Target Sheet for (target_date, party_code)
@@ -439,10 +439,10 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
             # Get starting idx
             current_max_idx = 0
             if target_sheet.get("items"):
-                current_max_idx = max([d.idx for d in target_sheet.items] or [0])
+                current_max_idx = int(max([int(d.idx or 0) for d in target_sheet.items] or [0]))
             
             for i, item_doc in enumerate(moving_docs):
-                new_idx = current_max_idx + i + 1
+                new_idx = int(current_max_idx or 0) + int(i or 0) + 1
                 
                 # Determine new unit (Target Unit or keep original)
                 new_unit = target_unit if target_unit else item_doc.unit
@@ -455,18 +455,15 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
                     WHERE name = %s
                 """, (target_sheet.name, new_idx, new_unit, item_doc.name))
                 
-                count += 1
+                count = int(count) + 1
             
             frappe.db.commit()
             
-            # 3. Reload and Save both to update totals/caches
-            target_sheet.reload()
-
-            if target_sheet.docstatus == 0:
+            if int(target_sheet.docstatus or 0) == 0:
                 target_sheet.save() 
             
             parent_doc.reload()
-            if parent_doc.docstatus == 0:
+            if int(parent_doc.docstatus or 0) == 0:
                 parent_doc.save()
 
 
