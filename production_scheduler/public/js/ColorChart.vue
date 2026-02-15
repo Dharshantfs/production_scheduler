@@ -1134,6 +1134,55 @@ onMounted(() => {
   analyzePreviousFlow();
 });
 
+// ---- SHARED ACTION ----
+async function handleMoveOrders(items, date, unit, dialog) {
+    // If unit is "Keep Original", passed as empty string
+    try {
+        // We use freeze:true to prevent UI interaction, but we settle generic errors manually to parse them
+        const r = await frappe.call({
+            method: "production_scheduler.api.move_orders_to_date",
+            args: {
+                item_names: items,
+                target_date: date,
+                target_unit: unit
+            },
+            freeze: true
+        });
+        
+        if (r.message && r.message.status === 'success') {
+            frappe.show_alert({ message: `Successfully moved ${r.message.count} orders.`, indicator: 'green' });
+            if (dialog) dialog.hide();
+            fetchData();
+        }
+    } catch (e) {
+        console.error("Move failed", e);
+        
+        // Check for Capacity Error
+        let msg = "";
+        if (e.message) msg = e.message;
+        else if (e.server_messages) {
+             try {
+                 const msgs = JSON.parse(e.server_messages);
+                 msg = msgs.join("\n");
+             } catch (ex) {}
+        }
+        
+        if (msg && msg.includes("Capacity Exceeded")) {
+             // Propose Next Day
+             const nextDay = frappe.datetime.add_days(date, 1);
+             frappe.confirm(
+                 `<b>Capacity Limit Reached!</b><br>${msg}<br><br>Do you want to move these orders to <b>${nextDay}</b> instead?`,
+                 () => {
+                     // Retry with next day
+                     handleMoveOrders(items, nextDay, unit, dialog);
+                 }
+             );
+        } else {
+             frappe.msgprint(msg || "An error occurred while moving orders.");
+        }
+    }
+}
+
 // ---- PULL ORDERS FROM FUTURE ----
 function openPullOrdersDialog() {
     const nextDay = frappe.datetime.add_days(filterOrderDate.value, 1);
@@ -1167,33 +1216,14 @@ function openPullOrdersDialog() {
             }
         ],
         primary_action_label: 'Move Selected to Today',
-        primary_action: async () => {
+        primary_action: () => {
             const selected = d.calc_selected_items || [];
             if (selected.length === 0) {
                 frappe.msgprint("Please select at least one order.");
                 return;
             }
-            
             const targetUnit = d.get_value('target_unit');
-            
-            try {
-                const r = await frappe.call({
-                     method: "production_scheduler.api.move_orders_to_date",
-                     args: {
-                         item_names: selected,
-                         target_date: filterOrderDate.value,
-                         target_unit: targetUnit
-                     }
-                });
-                
-                if (r.message && r.message.status === 'success') {
-                    frappe.show_alert({ message: `Successfully moved ${r.message.count} orders.`, indicator: 'green' });
-                    d.hide();
-                    fetchData(); // Refresh board
-                }
-            } catch (e) {
-                console.error(e);
-            }
+            handleMoveOrders(selected, filterOrderDate.value, targetUnit, d);
         }
     });
     
@@ -1347,36 +1377,30 @@ function openRescueDialog() {
                 onchange: () => loadRescueItems(d)
             },
             {
+                label: 'Target Unit (Optional)',
+                fieldname: 'target_unit',
+                fieldtype: 'Select',
+                options: [
+                    { label: 'Keep Original Unit', value: '' },
+                    ...units.map(u => ({ label: `Move to ${u}`, value: u }))
+                ],
+                default: '',
+                description: 'If selected, all rescued orders will be assigned to this unit.'
+            },
+            {
                 fieldtype: 'HTML',
                 fieldname: 'rescue_html'
             }
         ],
         primary_action_label: 'Rescue Selected',
-        primary_action: async () => {
+        primary_action: () => {
             const selected = d.calc_selected_rescue || [];
             if (selected.length === 0) {
                 frappe.msgprint("Select at least one order to rescue.");
                 return;
             }
-            
-            try {
-                const r = await frappe.call({
-                    method: "production_scheduler.api.move_orders_to_date",
-                    args: {
-                        item_names: selected,
-                        target_date: filterOrderDate.value,
-                        target_unit: '' // Keep original unit or force? User didn't specify, safest is Keep.
-                    }
-                });
-                
-                if (r.message && r.message.status === 'success') {
-                    frappe.show_alert({ message: `Rescued ${r.message.count} orders.`, indicator: 'green' });
-                    d.hide();
-                    fetchData();
-                }
-            } catch (e) {
-                console.error(e);
-            }
+            const targetUnit = d.get_value('target_unit');
+            handleMoveOrders(selected, filterOrderDate.value, targetUnit, d);
         }
     });
     d.show();
