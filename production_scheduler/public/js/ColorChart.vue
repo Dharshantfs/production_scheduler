@@ -40,7 +40,6 @@
       <div
         v-for="unit in visibleUnits"
         :key="unit"
-        :key="unit"
         class="cc-column"
         :data-unit="unit"
       >
@@ -62,7 +61,7 @@
             </div>
           </div>
             <span class="cc-stat-weight" :class="getUnitCapacityStatus(unit).class">
-              {{ getUnitTotal(unit).toFixed(2) }}T
+              {{ getUnitTotal(unit).toFixed(2) }} / {{ UNIT_TONNAGE_LIMITS[unit] }}T
             </span>
             <div v-if="getUnitCapacityStatus(unit).warning" class="text-xs text-red-600 font-bold">
               {{ getUnitCapacityStatus(unit).warning }}
