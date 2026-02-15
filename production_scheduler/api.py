@@ -243,3 +243,47 @@ def get_previous_production_date(date):
 		order_by="ordered_date desc"
 	)
 	return prev_date
+
+@frappe.whitelist()
+def split_order(item_name, split_qty, target_unit):
+	"""
+	Splits an order: Keeps 'remaining_qty' in original item, creates new item with 'split_qty' in target_unit.
+	"""
+	if not item_name or not split_qty or not target_unit:
+		frappe.throw("Missing required parameters: item_name, split_qty, target_unit")
+
+	doc = frappe.get_doc("Planning Sheet Item", item_name)
+	original_qty = float(doc.qty or 0)
+	split_qty_val = float(split_qty)
+
+	if split_qty_val >= original_qty:
+		frappe.throw(f"Split quantity ({split_qty_val}) must be less than original quantity ({original_qty})")
+
+	if split_qty_val <= 0:
+		frappe.throw("Split quantity must be positive")
+
+	# 1. Update Original (Reduce Qty)
+	remaining_qty = original_qty - split_qty_val
+	doc.db_set("qty", remaining_qty)
+	
+	# 2. Create Split Item (New Row)
+	new_doc = frappe.copy_doc(doc)
+	new_doc.qty = split_qty_val
+	new_doc.unit = target_unit
+	
+	# Traceability (Try to set custom fields if they exist)
+	# Assuming user will add these fields via Customize Form if not present
+        # but we try to set them on the doc object anyway
+	new_doc.custom_split_from = item_name
+	new_doc.custom_is_split = 1
+	
+	new_doc.insert()
+	
+	return {
+		"status": "success",
+		"original_item": doc.name,
+		"remaining_qty": remaining_qty,
+		"new_item": new_doc.name,
+		"split_qty": split_qty_val, 
+		"target_unit": target_unit
+	}
