@@ -70,7 +70,7 @@
               ({{ getMixRollTotalWeight(unit) }} Kg)
             </span>
           </div>
-        </div>
+
         <div class="cc-col-body" :data-unit="unit" ref="columnRefs">
           <template v-for="(entry, idx) in getUnitEntries(unit)" :key="entry.uniqueKey">
             <!-- Mix Roll Marker -->
