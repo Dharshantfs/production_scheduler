@@ -1199,13 +1199,7 @@ async function handleMoveOrders(items, date, unit, dialog) {
                  }
              );
         } else {
-             // DEBUG: Show exact mismatch reason
-             console.log("Capacity Check Failed on:", msg);
-             frappe.msgprint({
-                 title: 'Error / Debug Info',
-                 message: `<b>Operation Failed</b><br>Message received: "${msg}"<br><br><i>Debug: Expected "capacity exceeded" in message.</i>`,
-                 indicator: 'red'
-             });
+             frappe.msgprint(msg || "An error occurred while moving orders.");
         }
     }
 }
