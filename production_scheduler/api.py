@@ -380,9 +380,7 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
             
             if current_load + added_weight > limit:
                 frappe.throw(
-                    _("Cannot pull orders! {0} capacity exceeded.<br>Limit: {1}T<br>Current: {2:.2f}T<br>Adding: {3:.2f}T<br>New Total: {4:.2f}T").format(
-                        unit, limit, current_load, added_weight, current_load + added_weight
-                    )
+                    f"Capacity Exceeded! Unit {unit} allows max {limit}T. Current: {current_load:.2f}T. Adding: {added_weight:.2f}T. New Total: {current_load + added_weight:.2f}T"
                 )
 
     count = 0
