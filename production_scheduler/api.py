@@ -4,18 +4,18 @@ from frappe.utils import getdate, flt
 
 
 # --- DEFINITIONS ---
-UNIT_1 = ["SUPER PLATINUM", "PLATINUM", "PREMIUM", "GOLD", "SUPER CLASSIC"]
-UNIT_2 = ["GOLD", "SILVER", "BRONZE", "CLASSIC", "ECO SPECIAL", "ECO SPL"]
-UNIT_3 = ["SUPER PLATINUM", "PLATINUM", "PREMIUM", "GOLD", "SILVER", "BRONZE"]
-# Unit 4 is generally for overflow or specific low-priority.
+UNIT_1 = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER"]
+UNIT_2 = ["GOLD", "SILVER", "BRONZE", "CLASSIC", "SUPER CLASSIC", "LIFE STYLE", "ECO SPECIAL", "ECO GREEN", "SUPER ECO", "ULTRA", "DELUXE"]
+UNIT_3 = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER", "BRONZE"]
+UNIT_4 = ["PREMIUM", "GOLD", "SILVER", "BRONZE"]
 
+# ... Limits ...
 HARD_LIMITS = {
 	"Unit 1": 4.4,
 	"Unit 2": 12.0,
 	"Unit 3": 9.0,
 	"Unit 4": 5.5
 }
-
 SOFT_LIMITS = {
 	"Unit 1": 4.0,
 	"Unit 2": 9.0,
@@ -27,7 +27,7 @@ UNIT_QUALITY_MAP = {
 	"Unit 1": UNIT_1,
 	"Unit 2": UNIT_2,
 	"Unit 3": UNIT_3,
-	"Unit 4": ["PREMIUM", "GOLD", "SILVER", "BRONZE"] # Assumed based on ColorChart.vue
+	"Unit 4": UNIT_4
 }
 
 def get_unit_load(date, unit):
@@ -79,6 +79,16 @@ def find_best_slot(item_qty_tons, quality, preferred_unit, start_date, recursion
 	next_date = frappe.utils.add_days(check_date, 1)
 	return find_best_slot(item_qty_tons, quality, preferred_unit, next_date, recursion_depth + 1)
 
+
+def get_preferred_unit(quality):
+	"""Determines the best unit based on Item Quality."""
+	if not quality: return "Unit 1"
+	# check strict order as per original logic
+	if quality in UNIT_QUALITY_MAP["Unit 1"]: return "Unit 1"
+	if quality in UNIT_QUALITY_MAP["Unit 2"]: return "Unit 2"
+	if quality in UNIT_QUALITY_MAP["Unit 3"]: return "Unit 3"
+	if quality in UNIT_QUALITY_MAP["Unit 4"]: return "Unit 4"
+	return "Unit 1"
 
 @frappe.whitelist()
 def update_sequence(items):
@@ -599,9 +609,11 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
             new_idx = int(current_max_idx) + int(i) + 1
             new_unit = target_unit if target_unit else item_doc.unit
 
-            # HEAL UNASSIGNED: If unit is missing, default to Unit 1
+            # HEAL UNASSIGNED: If unit is missing, auto-assign based on Quality
             if not new_unit:
-                new_unit = 'Unit 1'
+                # Use item quality to find best unit
+                qual = item_doc.custom_quality or item_doc.quality
+                new_unit = get_preferred_unit(qual)
             
             # Use SQL for direct re-parenting (Robust for rescue)
             frappe.db.sql("""

@@ -274,10 +274,13 @@ function determineMixType(fromColor, toColor) {
 }
 
 const QUALITY_PRIORITY = {
-  "Unit 1": { "SUPER PLATINUM": 1, "PLATINUM": 2, "PREMIUM": 3, "GOLD": 4, "SUPER CLASSIC": 5 },
-  "Unit 2": { "GOLD": 1, "SILVER": 2, "BRONZE": 3, "CLASSIC": 4, "ECO SPECIAL": 5, "ECO SPL": 6 },
-  "Unit 3": { "SUPER PLATINUM": 1, "PLATINUM": 2, "PREMIUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
-  "Unit 4": { "PREMIUM": 1, "GOLD": 2, "SILVER": 3, "BRONZE": 4 }
+  "Unit 1": { "PREMIUM": 1, "PLATINUM": 2, "SUPER PLATINUM": 3, "GOLD": 4, "SILVER": 5 },
+  "Unit 2": { 
+      "GOLD": 1, "SILVER": 2, "BRONZE": 3, "CLASSIC": 4, "SUPER CLASSIC": 5, 
+      "LIFE STYLE": 6, "ECO SPECIAL": 7, "ECO GREEN": 8, "SUPER ECO": 9, "ULTRA": 10, "DELUXE": 11 
+  },
+  "Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPER PLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
+  "Unit 4": { "PREMIUM": 1, "GOLD": 2, "SILVER": 3, "BRONZE": 4 },
 };
 
 function getQualityPriority(unit, quality) {
