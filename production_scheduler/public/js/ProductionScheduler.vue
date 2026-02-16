@@ -145,6 +145,15 @@ const groupedCards = computed(() => {
 });
 
 const getUnitTotal = (unit) => {
+  // If Date Filter is active, calculate TRUE capacity for that date (ignoring Party/Status filters)
+  // This ensures the user sees the Unit is "Full" even if they are filtering for a specific customer.
+  if (filterOrderDate.value) {
+      return cards.value
+        .filter((c) => c.unit === unit && c.ordered_date === filterOrderDate.value)
+        .reduce((sum, c) => sum + (c.total_weight || 0), 0) / 1000;
+  }
+  
+  // If No Date Filter, sum visible cards (Fallback, though comparing 30 days to 1 day limit is weird)
   return filteredCards.value
     .filter((c) => c.unit === unit)
     .reduce((sum, c) => sum + (c.total_weight || 0), 0) / 1000;
@@ -196,13 +205,16 @@ const initSortable = () => {
         if (newUnit === evt.from.dataset.unit) return;
         const card = cards.value.find((c) => c.name === docName);
         
-        // Prompt user for delivery date
+        // Use Prompt for Date Change only if needed? 
+        // Or simplified: Just move to unit on SAME date, or ask date if date filter not set?
+        // Existing behavior: Prompts for Date. Let's keep it but enhance the callback.
+        
         frappe.prompt(
           {
             label: "Delivery Date",
             fieldname: "delivery_date",
             fieldtype: "Date",
-            default: card ? card.dod : frappe.datetime.get_today()
+            default: (filterOrderDate.value) || (card ? card.ordered_date : frappe.datetime.get_today())
           },
           (values) => {
             frappe.call({
@@ -215,19 +227,23 @@ const initSortable = () => {
               error: () => fetchData(),
               callback: (r) => {
                 if (r.exc) { fetchData(); }
-                else {
-                  if (card) {
-                    card.unit = newUnit;
-                    card.dod = values.delivery_date;
+                else if (r.message && r.message.status === 'success') {
+                  const movedTo = r.message.moved_to;
+                  // Handle Auto-Moves
+                  if (movedTo.unit !== newUnit || movedTo.date !== values.delivery_date) {
+                      frappe.msgprint(`⚠️ <b>Capacity Full!</b><br>Auto-moved to <b>${movedTo.unit}</b> on <b>${movedTo.date}</b>.`);
+                  } else {
+                      frappe.show_alert({ message: "Moved to " + newUnit, indicator: "green" });
                   }
-                  frappe.show_alert({ message: "Moved to " + newUnit + " with delivery " + values.delivery_date, indicator: "green" });
                   fetchData();
+                } else {
+                   fetchData();
                 }
               },
             });
           },
-          "Update Delivery Date",
-          "Update"
+          "Confirm Move",
+          "Move"
         );
       },
     });

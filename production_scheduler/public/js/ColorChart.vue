@@ -395,155 +395,132 @@ function getSortLabel(unit) {
     return `${p} (${d.toUpperCase()})`; 
 }
 
-// Auto-sort: Dynamically based on config.priority
-function sortItems(unit, items) {
-  const config = getUnitSortConfig(unit);
-  const pri = config.priority || 'quality'; 
+// Capacity Helper - Uses RAW DATA (Correct!) to include Hidden White Orders
+function getUnitTotal(unit) {
+  // Use rawData.value to ensure hidden orders (White) are counted in capacity
+  return rawData.value
+    .filter((d) => (d.unit || "Mixed") === unit)
+    .reduce((sum, d) => sum + d.qty, 0) / 1000;
+}
 
-  // Create a Shallow Copy to ensure Vue detects change (New Array Reference)
-  return [...items].sort((a, b) => {
-    let cmp = 0;
+function getUnitProductionTotal(unit) {
+  const production = rawData.value
+    .filter((d) => (d.unit || "Mixed") === unit)
+    .reduce((sum, d) => sum + d.qty, 0);
+  const mixWeight = getMixRollTotalWeight(unit);
+  return (production + mixWeight) / 1000;
+}
 
-    // 1. Primary Sort
-    if (pri === 'color') {
-        cmp = compareColor(a, b, config.color);
-    } else if (pri === 'gsm') {
-        cmp = compareGsm(a, b, config.gsm);
-    } else {
-        // Default: Quality
-        cmp = compareQuality(unit, a, b);
+function getUnitCapacityStatus(unit) {
+    const total = getUnitTotal(unit);
+    const limit = UNIT_TONNAGE_LIMITS[unit] || 999;
+    
+    // STRICT Warning (Red) if over limit
+    if (total > limit) {
+        return { 
+            class: 'text-red-600 font-bold', 
+            warning: `⚠️ Over Limit (${(total - limit).toFixed(2)}T)!` 
+        };
     }
-
-    if (cmp !== 0) return cmp;
-
-    // 2. Secondary/Tertiary Sort (Tie-Breakers)
-    if (pri === 'color') {
-        // Color -> Quality -> GSM
-        cmp = compareQuality(unit, a, b);
-        if (cmp === 0) cmp = compareGsm(a, b, config.gsm);
-    } else if (pri === 'gsm') {
-        // GSM -> Quality -> Color
-        cmp = compareQuality(unit, a, b);
-        if (cmp === 0) cmp = compareColor(a, b, config.color);
-    } else {
-        // Quality -> Color -> GSM
-        cmp = compareColor(a, b, config.color);
-        if (cmp === 0) cmp = compareGsm(a, b, config.gsm);
+    // Warning (Orange) if near limit (within 10%)
+    if (total > limit * 0.9) {
+        return { 
+            class: 'text-orange-600 font-bold', 
+            warning: `⚠️ Near Limit` 
+        };
     }
     
-    return cmp;
-  });
+    return { class: 'text-gray-600', warning: '' };
 }
-// ---- HELPER FUNCTIONS FOR SPLIT LOGIC ----
 
-function findSplitCandidate(item, overflowQty, currentUnit) {
-  // Look for another unit that:
-  // 1. Is NOT the current unit
-  // 2. has same Color Desc AND Quality
-  // 3. Has enough space for overflowQty
+// ... (Mix Roll functions use getUnitEntries which uses filteredData - Correct for VISUALS) ...
+
+async function initSortable() {
+  if (!columnRefs.value) return;
+  const Sortable = await loadSortable();
   
-  for (const unit of units) {
-    if (unit === currentUnit) continue;
-    
-    // Check match
-    const unitEntries = getUnitEntries(unit);
-    // Relaxed criteria: At least one item matches, OR unit is empty (maybe?)
-    // User said: "unit 4 is free ans qulaity is also imp unit 4 also running same quality"
-    // So we check if the unit contains items of same spec
-    const hasMatch = unitEntries.some(i => i.color === item.color && i.quality === item.quality);
-    
-    if (hasMatch) {
-       const load = getUnitTotal(unit);
-       const limit = UNIT_TONNAGE_LIMITS[unit] || 999;
-       
-       if (load + overflowQty <= limit) {
-           return unit;
-       }
-    }
-  }
-  return null;
-}
+  // Clear old instances
+  columnRefs.value.forEach(col => {
+      if (col._sortable) col._sortable.destroy();
+  });
 
-async function autoPushToNextDay(itemName, unit, itemEl) {
-    const nextDate = frappe.datetime.add_days(filterOrderDate.value, 1);
-    
-    await frappe.call({
-      method: "production_scheduler.api.update_items_bulk",
-      args: { items: [{ name: itemName, date: nextDate }] }
-    });
-    
-    frappe.show_alert({ 
-        message: `Unit ${unit} Full! Moved 1 order to ${nextDate}`, 
-        indicator: "orange" 
-    });
-    
-    // Remove from view locally
-    rawData.value = rawData.value.filter(d => d.itemName !== itemName);
-    
-    // Identify and remove DOM element if Sortable didn't already
-    if (itemEl && itemEl.parentNode) itemEl.parentNode.removeChild(itemEl);
-}
+  columnRefs.value.forEach((colEl) => {
+    colEl._sortable = new Sortable(colEl, {
+      group: "kanban",
+      animation: 150,
+      ghostClass: "cc-ghost",
+      onEnd: async (evt) => {
+        const itemEl = evt.item;
+        const newUnitEl = evt.to;
+        const oldUnitEl = evt.from;
+        
+        // Data Extraction
+        const itemName = itemEl.dataset.itemName;
+        const newUnit = newUnitEl.dataset.unit;
+        
+        if (!itemName || !newUnit) return;
 
-function showSplitDialog(item, itemTonnage, availableSpace, overflow, newUnit, candidateUnit, itemEl) {
-    const d = new frappe.ui.Dialog({
-        title: '⚠️ Capacity Exceeded',
-        fields: [
-            {
-                fieldtype: 'HTML',
-                fieldname: 'msg',
-                options: `
-                    <div style="text-align:left">
-                        <p class="text-red-600 font-bold">Unit ${newUnit} is full (Space: ${availableSpace.toFixed(3)}T).</p>
-                        <p>Order Size: <b>${itemTonnage.toFixed(3)}T</b></p>
-                        <div class="mt-4 p-3 bg-blue-50 rounded border border-blue-200">
-                            <p class="font-bold text-blue-800">💡 Recommendation</p>
-                            <p class="text-sm"><b>${candidateUnit}</b> matches Color & Quality and has space.</p>
-                            <hr class="my-2 border-blue-200"/>
-                            <p class="text-sm font-bold">Do you want to SPLIT this order?</p>
-                            <ul class="list-disc ml-4 text-xs text-gray-700 mt-1">
-                                <li><b>${availableSpace.toFixed(3)}T</b> -> ${newUnit} (Fill)</li>
-                                <li><b>${overflow.toFixed(3)}T</b> -> ${candidateUnit} (Queue)</li>
-                            </ul>
-                        </div>
-                    </div>
-                `
-            }
-        ],
-        primary_action_label: '✅ Split & Distribute',
-        primary_action: async () => {
-             d.hide();
+        // Optimistic UI Update Logic (Vue Re-render handles it usually, but we need to track state)
+        // If we moved between lists (unit changed)
+        if (newUnitEl !== oldUnitEl) {
+             // 1. STRICT BACKEND VALIDATION - Just Call API
+             // The User wants "Auto Push" without asking.
+             
              try {
-                  const res = await frappe.call({
-                      method: "production_scheduler.api.split_order",
-                      args: {
-                          item_name: item.itemName,
-                          split_qty: overflow,
-                          target_unit: candidateUnit
-                      }
-                  });
-                  if (res.message && res.message.status === 'success') {
-                      frappe.show_alert({ message: `Split: ${availableSpace.toFixed(2)}T in ${newUnit}, ${overflow.toFixed(2)}T in ${candidateUnit}`, indicator: "green" });
-                      if (itemEl && itemEl.parentNode) itemEl.parentNode.removeChild(itemEl);
-                      fetchData();
-                  }
+                frappe.show_alert({ message: "Validating Capacity...", indicator: "orange" });
+                
+                const res = await frappe.call({
+                    method: "production_scheduler.api.update_schedule",
+                    args: {
+                        doc_name: itemEl.dataset.name.split('-')[0], // Planning Sheet Name
+                        unit: newUnit,
+                        date: filterOrderDate.value // Target Date
+                    }
+                });
+                
+                if (res.message && res.message.status === 'success') {
+                    const movedTo = res.message.moved_to;
+                    const originalTarget = res.message.original_target;
+                    
+                    // 2. CHECK RESULT
+                    // Case A: Moved to Next Day?
+                    if (movedTo.date !== filterOrderDate.value) {
+                         frappe.msgprint(`⚠️ <b>Capacity Full in ${newUnit}!</b><br>Order automatically moved to <b>${movedTo.date}</b> in <b>${movedTo.unit}</b>.`);
+                         // Remove from current view
+                         itemEl.parentNode && itemEl.parentNode.removeChild(itemEl); // Clean DOM
+                         // Update Local State (Remove)
+                         rawData.value = rawData.value.filter(d => d.itemName !== itemName);
+                    } 
+                    // Case B: Moved to Neighbor Unit?
+                    else if (movedTo.unit !== newUnit) {
+                         frappe.msgprint(`⚠️ <b>Capacity Full in ${newUnit}!</b><br>Order automatically placed in <b>${movedTo.unit}</b>.`);
+                         // We need to move the DOM element to the correct unit column manually 
+                         // OR just refresh data. Refresh is safer.
+                         fetchData(); 
+                    }
+                    // Case C: Success (Stayed where we put it)
+                    else {
+                         frappe.show_alert({ message: `Moved to ${newUnit}`, indicator: "green" });
+                         // Update Local State Unit
+                         const item = rawData.value.find(d => d.itemName === itemName);
+                         if (item) item.unit = newUnit;
+                    }
+                }
              } catch (e) {
-                  console.error(e);
-                  fetchData();
+                 console.error(e);
+                 // If error (e.g. fatal), revert
+                 frappe.msgprint("❌ Move Failed: " + (e.message || "Unknown Error"));
+                 renderKey.value++; // Revert Drag
              }
+        } else {
+             // Same list (Reorder) - Visual Only (Sorting enforces order anyway)
+             // No API call needed usually unless we track precise index.
+             // We don't track manual index, we sort by rules. So this is a no-op visually.
         }
+      },
     });
-    
-    d.add_custom_button('➡️ Move All to Next Day', async () => {
-         d.hide();
-         await autoPushToNextDay(item.itemName, newUnit, itemEl);
-    });
-    
-    d.show();
-}
-
-/**
- * Helper to get Sort Label
- */function getUnitSortConfig(unit) {
+  });
+}function getUnitSortConfig(unit) {
   if (!unitSortConfig[unit]) {
     unitSortConfig[unit] = { color: 'asc', gsm: 'desc', priority: 'color' };
   }

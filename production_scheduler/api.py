@@ -3,165 +3,157 @@ from frappe import _
 from frappe.utils import getdate, flt
 
 
-HARD_LIMITS = {
-	"Unit 1": 4.4,
-	"Unit 2": 12.0,
-	"Unit 3": 9.0,
-	"Unit 4": 5.5
+# --- DEFINITIONS ---
+UNIT_1 = ["SUPER PLATINUM", "PLATINUM", "PREMIUM", "GOLD", "SUPER CLASSIC"]
+UNIT_2 = ["GOLD", "SILVER", "BRONZE", "CLASSIC", "ECO SPECIAL", "ECO SPL"]
+UNIT_3 = ["SUPER PLATINUM", "PLATINUM", "PREMIUM", "GOLD", "SILVER", "BRONZE"]
+# Unit 4 is generally for overflow or specific low-priority, but let's define it based on usage if needed.
+# For now we use the lists to check compatibility.
+
+UNIT_QUALITY_MAP = {
+	"Unit 1": UNIT_1,
+	"Unit 2": UNIT_2,
+	"Unit 3": UNIT_3,
+	"Unit 4": ["PREMIUM", "GOLD", "SILVER", "BRONZE"] # Assumed based on ColorChart.vue
 }
 
-SOFT_LIMITS = {
-	"Unit 1": 4.0,
-	"Unit 2": 9.0,
-	"Unit 3": 7.8,
-	"Unit 4": 4.0
-}
+def get_unit_load_check(date, unit):
+	"""Calculates current load (in Tons) for a unit on a given date."""
+	# Optimized query
+	sql = """
+		SELECT SUM(i.qty) as total_qty
+		FROM `tabPlanning Sheet Item` i
+		JOIN `tabPlanning sheet` p ON i.parent = p.name
+		WHERE p.ordered_date = %s AND i.unit = %s AND p.docstatus < 2 AND i.docstatus < 2
+	"""
+	result = frappe.db.sql(sql, (date, unit))
+	return flt(result[0][0]) / 1000.0 if result and result[0][0] else 0.0
 
+def find_best_slot(item_qty_tons, quality, preferred_unit, start_date, recursion_depth=0):
+	"""
+	Recursive function to find the best available slot (Date/Unit).
+	Order:
+	1. Preferred Unit (on Date)
+	2. Neighbor Units (on Date) - Must support Quality
+	3. Next Day (Recurse)
+	"""
+	if recursion_depth > 30: # Look ahead max 30 days
+		return None # No slot found
 
-def get_unit_load(date, unit):
-    """Calculates current load (in Tons) for a unit on a given date."""
-    sql = """
-        SELECT SUM(i.qty) as total_qty
-        FROM `tabPlanning Sheet Item` i
-        JOIN `tabPlanning sheet` p ON i.parent = p.name
-        WHERE p.ordered_date = %s AND i.unit = %s AND p.docstatus < 2 AND i.docstatus < 2
-    """
-    result = frappe.db.sql(sql, (date, unit), as_dict=True)
-    return flt(result[0].total_qty if result else 0) / 1000.0
+	check_date = getdate(start_date)
+	
+	# 1. Check Preferred Unit
+	if preferred_unit and preferred_unit in HARD_LIMITS:
+		current_load = get_unit_load_check(check_date, preferred_unit)
+		if current_load + item_qty_tons <= HARD_LIMITS[preferred_unit]:
+			return {"date": check_date, "unit": preferred_unit}
 
+	# 2. Check Neighbor Units (on same date)
+	compatible_units = []
+	for unit, valid_qualities in UNIT_QUALITY_MAP.items():
+		if unit == preferred_unit: continue
+		if quality in valid_qualities:
+			compatible_units.append(unit)
+	
+	# Sort neighbors? Maybe by capacity? Or just order 1->4?
+	# Let's check them in order of definition (Unit 1..4)
+	for unit in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
+		if unit in compatible_units and unit in HARD_LIMITS:
+			load = get_unit_load_check(check_date, unit)
+			if load + item_qty_tons <= HARD_LIMITS[unit]:
+				return {"date": check_date, "unit": unit}
 
-@frappe.whitelist()
-def get_kanban_board(start_date, end_date):
-	start_date = getdate(start_date)
-	end_date = getdate(end_date)
-
-	planning_sheets = frappe.get_all(
-		"Planning sheet",
-		filters={
-			"ordered_date": ["between", [start_date, end_date]],
-			"docstatus": ["<", 2]
-		},
-		fields=["name", "customer", "party_code", "planning_status", "dod", "ordered_date", "docstatus"]
-	)
-
-	data = []
-	for sheet in planning_sheets:
-		items = frappe.get_all(
-			"Planning Sheet Item",
-			filters={"parent": sheet.name},
-			fields=["*"],
-			order_by="idx"
-		)
-
-		if not items:
-			continue
-
-		# Get unit from the first item
-		unit = items[0].get("unit") or ""
-		if not unit:
-			continue
-
-		total_weight = 0.0
-		item_details = []
-		for item in items:
-			item_qty = flt(item.get("qty", 0))
-			total_weight += item_qty
-
-			item_details.append({
-				"item_name": item.get("item_name") or "",
-				"quality": item.get("custom_quality") or item.get("quality") or "",
-				"color": item.get("color") or item.get("colour") or "",
-				"gsm": item.get("gsm") or "",
-				"qty": item_qty,
-			})
-
-		data.append({
-			"name": sheet.name,
-			"customer": sheet.customer,
-			"party_code": sheet.party_code,
-			"planning_status": sheet.planning_status or "Draft",
-			"dod": str(sheet.dod) if sheet.dod else "",
-			"ordered_date": str(sheet.ordered_date) if sheet.get("ordered_date") else "",
-			"docstatus": sheet.docstatus,
-			"unit": unit,
-			"total_weight": total_weight,
-			"items": item_details,
-		})
-
-	return data
+	# 3. Next Day (Recurse)
+	next_date = frappe.utils.add_days(check_date, 1)
+	return find_best_slot(item_qty_tons, quality, preferred_unit, next_date, recursion_depth + 1)
 
 
 @frappe.whitelist()
 def update_schedule(doc_name, unit, date, index=0):
-	if unit not in HARD_LIMITS:
-		frappe.throw(_("Invalid Unit"))
-
 	target_date = getdate(date)
-
-	# Get current doc weight
-	current_doc_items = frappe.get_all(
+	
+	# Get Item Details
+	doc_items = frappe.get_all(
 		"Planning Sheet Item",
 		filters={"parent": doc_name},
-		fields=["weight_per_roll", "qty"]
+		fields=["qty", "custom_quality", "quality", "unit"]
 	)
+	
+	total_tons = sum([flt(d.qty) for d in doc_items]) / 1000.0
+	quality = doc_items[0].get("custom_quality") or doc_items[0].get("quality") or "" if doc_items else ""
 
-	current_weight = 0.0
-	for item in current_doc_items:
-		current_weight += flt(item.get("qty", 0))
+	# Use Smart Slot Finder
+	# We treat the user's requested 'unit' and 'date' as the starting preference.
+	best_slot = find_best_slot(total_tons, quality, unit, target_date)
+	
+	if not best_slot:
+		frappe.throw(_("Could not find a valid slot for this order within 30 days."))
 
-	# Convert to Tons (weight_per_roll is in kg)
-	current_weight_tons = current_weight / 1000.0
-
-	# Get existing weight in target unit for that date
-	existing_sheets = frappe.get_all(
-		"Planning sheet",
-		filters={
-			"dod": target_date,
-			"name": ["!=", doc_name],
-			"docstatus": ["<", 2]
-		},
-		fields=["name"]
-	)
-
-	total_existing_weight = 0.0
-	for sheet in existing_sheets:
-		items = frappe.get_all(
-			"Planning Sheet Item",
-			filters={"parent": sheet.name, "unit": unit},
-			fields=["weight_per_roll", "qty"]
-		)
-		for i in items:
-			total_existing_weight += flt(i.get("qty", 0))
-
-	total_existing_weight_tons = flt(total_existing_weight) / 1000.0
-	new_total = flt(total_existing_weight_tons) + flt(current_weight_tons)
-
-	if new_total > HARD_LIMITS[unit]:
-		frappe.throw(
-			_("Capacity Exceeded! {0} allows max {1}T. New Total: {2:.2f}T").format(
-				unit, HARD_LIMITS[unit], new_total
-			)
-		)
-
-	if new_total > SOFT_LIMITS[unit]:
-		frappe.msgprint(
-			_("Warning: Soft Limit Exceeded for {0}").format(unit),
-			alert=True
-		)
-
-	# Update all child items' unit field
+	final_unit = best_slot["unit"]
+	final_date = getdate(best_slot["date"])
+	
+	# Update DB
 	frappe.db.sql("""
 		UPDATE `tabPlanning Sheet Item`
 		SET unit = %s
 		WHERE parent = %s
-	""", (unit, doc_name))
+	""", (final_unit, doc_name))
 
-	# Update delivery date on parent
-	frappe.db.set_value("Planning sheet", doc_name, "dod", target_date)
-
+	frappe.db.set_value("Planning sheet", doc_name, "dod", final_date) # Actually ordered_date?
+	# The system seems to use `ordered_date` for scheduling, but `dod` (Delivery Date) is also updated?
+	# In `get_color_chart_data`, it filters by `ordered_date`.
+	# So we MUST update `ordered_date`.
+	frappe.db.set_value("Planning sheet", doc_name, "ordered_date", final_date)
+	
 	frappe.db.commit()
 
-	return {"status": "success", "new_total": new_total}
+	return {
+		"status": "success", 
+		"moved_to": {"date": final_date, "unit": final_unit},
+		"original_target": {"date": target_date, "unit": unit}
+	}
+
+# ... (Existing get_color_chart_data, update_item_unit, update_items_bulk, etc. - UNCHANGED) ...
+# I will retain them in the file content if I am replacing strict block, but if I am replacing a range I need to be careful.
+# The previous `update_schedule` ended at line 165. `get_color_chart_data` followed.
+# I am targeting `HARD_LIMITS` definition (line 6) down to `update_schedule` end?
+# Wait, `HARD_LIMITS` is at the top. I should probably insert the helper functions and replace `update_schedule`.
+# `create_planning_sheet_from_so` is further down (line 636).
+# I will make TWO edits.
+# 1. Replace `update_schedule` and add helpers. (This step)
+# 2. Update `create_planning_sheet_from_so`.
+
+# Actually, I can do `create_planning_sheet_from_so` implementation now if I include it in the replacement chunk
+# But it's far away. I'll stick to `update_schedule` and helpers first.
+# Wait, I need `UNIT_QUALITY_MAP` for `create_planning_sheet_from_so` too.
+# I'll define it globally.
+
+# The `update_schedule` function in original file is lines 95-164.
+# `HARD_LIMITS` is 6-11.
+# I will replace from `HARD_LIMITS` (line 6) to the end of `update_schedule` (line 164).
+# And keep `get_kanban_board` (lines 33-91) ??
+# Ah, `get_kanban_board` is in between `get_unit_load` and `update_schedule`.
+# Ref:
+# 6-18: Limits
+# 21-30: get_unit_load
+# 33-91: get_kanban_board
+# 94-164: update_schedule
+
+# So I should:
+# 1. Update Limits and Add Helpers at top? Or just replace `update_schedule` and add helpers there?
+# Python allows defining helpers anywhere ensuring usage is after def? No, order matters if running script but inside module it's fine.
+# But `find_best_slot` needs `UNIT_QUALITY_MAP`.
+# I'll put `UNIT_QUALITY_MAP` near `HARD_LIMITS`.
+
+# Strategy:
+# Replace Lines 6-30 (Limits + get_unit_load) with New Limits + Map + Helpers.
+# Replace Lines 94-164 (update_schedule) with New `update_schedule`.
+
+# Let's do it in one go if possible? No, `get_kanban_board` is in the middle.
+# I will use `multi_replace_file_content`.
+
+# ... (get_color_chart_data etc are below 164)
+
 
 
 @frappe.whitelist()
@@ -643,9 +635,7 @@ def create_planning_sheet_from_so(doc):
             frappe.msgprint("ℹ️ Planning Sheet already exists.")
         else:
             # --- DEFINITIONS ---
-            UNIT_1 = ["SUPER PLATINUM", "PLATINUM", "PREMIUM", "GOLD", "SUPER CLASSIC"]
-            UNIT_2 = ["GOLD", "SILVER", "BRONZE", "CLASSIC", "ECO SPECIAL", "ECO SPL"]
-            UNIT_3 = ["SUPER PLATINUM", "PLATINUM", "PREMIUM", "GOLD", "SILVER", "BRONZE"]
+            # NOTE: Units lists are now global UNIT_QUALITY_MAP
 
             QUAL_LIST = ["SUPER PLATINUM", "SUPER CLASSIC", "SUPER ECO", "ECO SPECIAL", "ECO GREEN", "ECO SPL", "LIFE STYLE", "LIFESTYLE", "PREMIUM", "PLATINUM", "CLASSIC", "DELUXE", "BRONZE", "SILVER", "ULTRA", "GOLD", "UV"]
             QUAL_LIST.sort(key=len, reverse=True)
@@ -653,31 +643,34 @@ def create_planning_sheet_from_so(doc):
             COL_LIST = ["GOLDEN YELLOW", "BRIGHT WHITE", "SUPER WHITE", "BLACK", "RED", "BLUE", "GREEN", "MILKY WHITE", "SUNSHINE WHITE", "BLEACH WHITE", "LEMON YELLOW", "BRIGHT ORANGE", "DARK ORANGE", "BABY PINK", "DARK PINK", "CRIMSON RED", "LIGHT MAROON", "DARK MAROON", "MEDICAL BLUE", "PEACOCK BLUE", "RELIANCE GREEN", "PARROT GREEN", "ROYAL BLUE", "NAVY BLUE", "LIGHT GREY", "DARK GREY", "CHOCOLATE BROWN", "LIGHT BEIGE", "DARK BEIGE", "WHITE MIX", "BLACK MIX", "COLOR MIX", "BEIGE MIX", "WHITE"]
             COL_LIST.sort(key=len, reverse=True)
 
-            # --- CREATE DOC ---
+            # --- PREPARE DOC ---
             ps = frappe.new_doc("Planning sheet")
             ps.sales_order = doc.name
             ps.customer = doc.customer
+            
+            # Start Date Preference: Delivery Date or Today?
+            preferred_date = doc.delivery_date or frappe.utils.nowdate()
             ps.dod = doc.delivery_date
-            # Assign Party Code: If 'party_code' exists in Sales Order, use it. Else fallback to Customer.
+            
+            # Assign Party Code
             if hasattr(doc, 'party_code') and doc.party_code:
                 ps.party_code = doc.party_code
             else:
                 ps.party_code = doc.customer
             ps.planning_status = "Draft"
-            # ps.set("__newname", "PLAN-" + doc.name) # Naming series usually handles this, but user requested. 
-            # Note: __newname is for mapped docs usually. If naming series is set, this might be ignored or cause issue.
-            # I will trust user's script but if it fails I might need to adjust.
-            
+
             # --- PROCESS ITEMS ---
+            total_tons = 0.0
+            major_quality = ""
+            processed_items_data = []
+
             for it in doc.items:
-                # 1. CLEAN TEXT
+                 # Extraction Logic
                 raw_txt = (it.item_code or "") + " " + (it.item_name or "")
                 clean_txt = raw_txt.upper().replace("-", " ").replace("_", " ").replace("(", " ").replace(")", " ")
                 clean_txt = clean_txt.replace("''", " INCH ").replace('"', " INCH ")
-                
                 words = clean_txt.split()
                 
-                # 2. EXTRACT GSM
                 gsm = 0
                 for i in range(1, len(words)):
                     if words[i] == "GSM":
@@ -685,8 +678,7 @@ def create_planning_sheet_from_so(doc):
                         if prev.isdigit():
                             gsm = int(prev)
                             break
-
-                # 3. EXTRACT WIDTH
+                            
                 width = 0.0
                 for i in range(len(words) - 1):
                     if words[i] == "W":
@@ -694,7 +686,6 @@ def create_planning_sheet_from_so(doc):
                         if next_word.replace('.', '', 1).isdigit():
                             width = float(next_word)
                             break
-                
                 if width == 0.0:
                     for i in range(1, len(words)):
                         if words[i] == "INCH":
@@ -702,42 +693,62 @@ def create_planning_sheet_from_so(doc):
                             if prev.replace('.', '', 1).isdigit():
                                 width = float(prev)
                                 break
-
-                # 4. EXTRACT QUALITY & COLOR
+                                
                 search_text = " " + " ".join(words) + " "
-                
                 qual = ""
                 for q in QUAL_LIST:
                     if (" " + q + " ") in search_text:
                         qual = q
                         break
-                
                 col = ""
                 for c in COL_LIST:
                     if (" " + c + " ") in search_text:
                         col = c
                         break
-
-                # 5. CALCULATE WEIGHT
+                        
                 m_roll = float(it.custom_meter_per_roll or 0)
                 wt = 0.0
                 if gsm > 0 and width > 0 and m_roll > 0:
                     wt = (gsm * width * m_roll * 0.0254) / 1000
+                elif it.weight_per_unit: 
+                     wt = float(it.weight_per_unit)
+                
+                total_tons += (flt(it.qty) / 1000.0)
+                if not major_quality and qual: major_quality = qual
+                
+                processed_items_data.append({
+                    "data": it,
+                    "gsm": gsm,
+                    "width": width,
+                    "qual": qual,
+                    "col": col,
+                    "wt": wt
+                })
 
-                # 6. UNIT ALLOCATION (RE-ENABLED)
-                unit = ""
-                # Priority: Unit 1 -> Unit 2 -> Unit 3 (based on list definitions)
-                if qual in UNIT_1:
-                    unit = "Unit 1"
-                elif qual in UNIT_2:
-                    unit = "Unit 2"
-                elif qual in UNIT_3:
-                    unit = "Unit 3"
-                else:
-                    # Fallback or check for Unit 4 logic if available (currently not defined)
-                    unit = ""
+            # 2. Determine Preferred Unit based on Quality
+            preferred_unit = ""
+            if major_quality in UNIT_QUALITY_MAP["Unit 1"]: preferred_unit = "Unit 1"
+            elif major_quality in UNIT_QUALITY_MAP["Unit 2"]: preferred_unit = "Unit 2"
+            elif major_quality in UNIT_QUALITY_MAP["Unit 3"]: preferred_unit = "Unit 3"
+            elif major_quality in UNIT_QUALITY_MAP["Unit 4"]: preferred_unit = "Unit 4"
+            else: preferred_unit = "Unit 1" # Default
 
-                # 7. ADD ROW
+            # 3. Find Best Slot for TOTAL Weight
+            best_slot = find_best_slot(total_tons, major_quality, preferred_unit, preferred_date)
+            
+            if not best_slot:
+                frappe.msgprint("⚠️ Could not find capacity for this order (30 day limit). Created as Draft without date.")
+                ps.ordered_date = None
+                final_unit = preferred_unit 
+            else:
+                ps.ordered_date = best_slot["date"]
+                final_unit = best_slot["unit"]
+                if str(best_slot["date"]) != str(preferred_date):
+                     frappe.msgprint(f"⚠️ Capacity Full. Scheduled for {best_slot['date']} in {final_unit}.")
+
+            # 4. Insert Items
+            for p_item in processed_items_data:
+                it = p_item["data"]
                 ps.append("items", {
                     "sales_order_item": it.name,
                     "item_code": it.item_code,
@@ -745,14 +756,14 @@ def create_planning_sheet_from_so(doc):
                     "qty": it.qty,
                     "uom": it.uom,
                     "meter": float(it.custom_meter or 0),
-                    "meter_per_roll": m_roll,
+                    "meter_per_roll": float(it.custom_meter_per_roll or 0),
                     "no_of_rolls": float(it.custom_no_of_rolls or 0),
-                    "gsm": gsm,
-                    "width_inch": width,
-                    "custom_quality": qual,
-                    "color": col,
-                    "weight_per_roll": wt,
-                    "unit": unit,
+                    "gsm": p_item["gsm"],
+                    "width_inch": p_item["width"],
+                    "custom_quality": p_item["qual"],
+                    "color": p_item["col"],
+                    "weight_per_roll": p_item["wt"],
+                    "unit": final_unit,
                     "party_code": doc.party_code if (hasattr(doc, 'party_code') and doc.party_code) else doc.customer
                 })
 
