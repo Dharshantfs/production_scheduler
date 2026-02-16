@@ -1156,3 +1156,79 @@ def create_production_plan_bulk(sheets):
         
     return created_plans
 
+
+@frappe.whitelist()
+def create_planning_sheets_bulk(sales_orders):
+    """
+    Creates Planning Sheets for selected Sales Orders.
+    Uses GSM usage logic (Unit 1>50, etc) to auto-allocate items.
+    """
+    import json
+    if isinstance(sales_orders, str):
+        sales_orders = json.loads(sales_orders)
+        
+    created = []
+    errors = []
+    
+    # GSM/Quality Maps (Helper)
+    # Re-defining here or using global
+    
+    for so_name in sales_orders:
+        try:
+            # Check if active Planning Sheet exists (Docstatus 0 or 1)
+            # We use frappe.db.exists with filters
+            if frappe.db.count("Planning sheet", {"sales_order": so_name, "docstatus": ["<", 2]}) > 0:
+                continue # Skip if exists
+                
+            doc = frappe.get_doc("Sales Order", so_name)
+            
+            ps = frappe.new_doc("Planning sheet")
+            ps.sales_order = doc.name
+            ps.party_code = doc.party_code if hasattr(doc, 'party_code') else doc.customer
+            ps.customer = doc.customer
+            ps.dod = doc.delivery_date
+            ps.ordered_date = doc.transaction_date
+            ps.planning_status = "Draft"
+            
+            for it in doc.items:
+                # Logic from Step 1270, simplified since we have helpers now
+                qual = it.custom_quality or it.quality
+                gsm = flt(it.custom_gsm or it.gsm or 0)
+                
+                # Unit Logic
+                unit = "Unit 1"
+                q_up = str(qual or "").upper()
+                if q_up:
+                    if gsm > 50 and q_up in UNIT_QUALITY_MAP["Unit 1"]: unit = "Unit 1"
+                    elif gsm > 20 and q_up in UNIT_QUALITY_MAP["Unit 2"]: unit = "Unit 2"
+                    elif gsm > 10 and q_up in UNIT_QUALITY_MAP["Unit 3"]: unit = "Unit 3"
+                    elif q_up in UNIT_QUALITY_MAP["Unit 4"]: unit = "Unit 4"
+                
+                # Handling custom fields safely
+                width = flt(it.custom_width or 0)
+                
+                ps.append("items", {
+                    "sales_order_item": it.name,
+                    "item_code": it.item_code,
+                    "item_name": it.item_name,
+                    "qty": it.qty,
+                    "uom": it.uom,
+                    "gsm": gsm,
+                    "custom_quality": qual,
+                    "color": it.custom_color or it.color,
+                    "width_inch": width,
+                    "unit": unit,
+                    "meter": it.custom_meter or 0,
+                    "no_of_rolls": it.custom_no_of_rolls or 0,
+                    "meter_per_roll": it.custom_meter_per_roll or 0
+                })
+                
+            ps.insert(ignore_permissions=True)
+            created.append(ps.name)
+            
+        except Exception as e:
+            frappe.log_error(f"Failed to create plan for {so_name}: {str(e)}")
+            errors.append(so_name)
+            
+    return {"created": created, "errors": errors}
+

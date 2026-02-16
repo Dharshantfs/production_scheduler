@@ -26,8 +26,8 @@
         </select>
       </div>
       <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
-      <button class="cc-clear-btn" style="color: #2563eb; border-color: #2563eb; margin-left: 8px;" @click="createProductionPlan" title="Create Production Plan for visible orders">
-        🚀 Create Plan
+      <button class="cc-clear-btn" style="color: #2563eb; border-color: #2563eb; margin-left: 8px;" @click="createPlanningSheets" title="Create Planning Sheets for visible orders">
+        🚀 Add to Schedule
       </button>
     </div>
 
@@ -469,25 +469,34 @@ function initSortable() {
 } 
 */
 
-function createProductionPlan() {
-    const selectedItems = filteredData.value.map(d => d.planningSheet);
-    const uniqueSheets = [...new Set(selectedItems)];
+function createPlanningSheets() {
+    // We need unique Sales Orders from the visible items
+    const selectedSOs = [...new Set(filteredData.value.map(d => d.name))]; // d.name is SO Name in get_confirmed_orders_kanban
     
-    if (uniqueSheets.length === 0) {
+    if (selectedSOs.length === 0) {
         frappe.msgprint("No orders to plan.");
         return;
     }
     
-    frappe.confirm(`Create Production Plans for ${uniqueSheets.length} orders?`, async () => {
+    frappe.confirm(`Create Planning Sheets for ${selectedSOs.length} Sales Orders?`, async () => {
         try {
-            await frappe.call({
-                method: "production_scheduler.api.create_production_plan_bulk",
-                args: { sheets: uniqueSheets }
+            const r = await frappe.call({
+                method: "production_scheduler.api.create_planning_sheets_bulk",
+                args: { sales_orders: selectedSOs }
             });
-            frappe.show_alert({ message: "Production Plans Created", indicator: "green" });
-            fetchData();
+            
+            if (r.message && r.message.created && r.message.created.length > 0) {
+                 frappe.show_alert({ message: `Created ${r.message.created.length} Planning Sheets`, indicator: "green" });
+                 fetchData(); // Refresh to remove them from list
+            } else if (r.message && r.message.errors && r.message.errors.length > 0) {
+                 frappe.msgprint(`Failed to create some plans. Check Error Log.`);
+            } else {
+                 frappe.msgprint("No plans created. Maybe they already exist?");
+            }
+
         } catch (e) {
             frappe.msgprint("Failed to create plans.");
+            console.error(e);
         }
     });
 }
