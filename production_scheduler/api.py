@@ -1,4 +1,4 @@
-import frappe
+﻿import frappe
 from frappe import _
 from frappe.utils import getdate, flt
 
@@ -598,6 +598,10 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
         for i, item_doc in enumerate(moving_docs):
             new_idx = int(current_max_idx) + int(i) + 1
             new_unit = target_unit if target_unit else item_doc.unit
+
+            # HEAL UNASSIGNED: If unit is missing, default to Unit 1
+            if not new_unit:
+                new_unit = 'Unit 1'
             
             # Use SQL for direct re-parenting (Robust for rescue)
             frappe.db.sql("""
@@ -810,7 +814,7 @@ def create_planning_sheet_from_so(doc):
     try:
         # 1. Check if Planning Sheet already exists
         if frappe.db.exists("Planning sheet", {"sales_order": doc.name}):
-            frappe.msgprint("ℹ️ Planning Sheet already exists.")
+            frappe.msgprint("â„¹ï¸ Planning Sheet already exists.")
         else:
             # --- DEFINITIONS ---
             # NOTE: Units lists are now global UNIT_QUALITY_MAP
@@ -915,14 +919,14 @@ def create_planning_sheet_from_so(doc):
             best_slot = find_best_slot(total_tons, major_quality, preferred_unit, preferred_date)
             
             if not best_slot:
-                frappe.msgprint("⚠️ Could not find capacity for this order (30 day limit). Created as Draft without date.")
+                frappe.msgprint("âš ï¸ Could not find capacity for this order (30 day limit). Created as Draft without date.")
                 ps.ordered_date = None
                 final_unit = preferred_unit 
             else:
                 ps.ordered_date = best_slot["date"]
                 final_unit = best_slot["unit"]
                 if str(best_slot["date"]) != str(preferred_date):
-                     frappe.msgprint(f"⚠️ Capacity Full. Scheduled for {best_slot['date']} in {final_unit}.")
+                     frappe.msgprint(f"âš ï¸ Capacity Full. Scheduled for {best_slot['date']} in {final_unit}.")
 
             # 4. Insert Items
             for p_item in processed_items_data:
@@ -947,7 +951,7 @@ def create_planning_sheet_from_so(doc):
 
             ps.flags.ignore_permissions = True
             ps.insert()
-            # frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> Created!") 
+            # frappe.msgprint(f"âœ… Planning Sheet <b>{ps.name}</b> Created!") 
             # Commented out msgprint to avoid API clutter if called from hook
 
     except Exception as e:

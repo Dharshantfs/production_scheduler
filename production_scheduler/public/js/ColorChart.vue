@@ -95,15 +95,12 @@
             <div
               v-else
               class="cc-card"
-              :class="{ 'cc-card-locked': entry.docstatus !== 0 }"
               :data-name="entry.name"
               :data-item-name="entry.itemName"
               :data-color="entry.color"
               :data-planning-sheet="entry.planningSheet"
-              :draggable="entry.docstatus === 0"
               @click="openForm(entry.planningSheet)"
             >
-              <div v-if="entry.docstatus !== 0" class="cc-lock-badge" title="Sheet is Submitted/Locked">🔒</div>
               <div class="cc-card-left">
                 <div
                   class="cc-color-swatch"
