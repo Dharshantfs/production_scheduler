@@ -626,11 +626,7 @@ function getUnitEntries(unit) {
   return entries;
 }
 
-function getUnitTotal(unit) {
-  return filteredData.value
-    .filter((d) => d.unit === unit)
-    .reduce((sum, d) => sum + d.qty, 0) / 1000;
-}
+
 
 function getUnitProductionTotal(unit) {
   const production = filteredData.value
