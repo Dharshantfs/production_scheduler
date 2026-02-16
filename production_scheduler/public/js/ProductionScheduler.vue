@@ -68,10 +68,10 @@
           </div>
             <span class="cc-stat-weight" :class="getUnitCapacityStatus(unit).class">
               {{ getUnitTotal(unit).toFixed(2) }} / {{ UNIT_TONNAGE_LIMITS[unit] }}T
+              <span v-if="getHiddenWhiteTotal(unit) > 0" style="font-size:10px; font-weight:700; color:#475569; display:block;">
+                 (Inc. {{ getHiddenWhiteTotal(unit).toFixed(2) }}T White)
+              </span>
             </span>
-            <div v-if="getUnitCapacityStatus(unit).warning" class="text-xs text-red-600 font-bold">
-              {{ getUnitCapacityStatus(unit).warning }}
-            </div>
             <span class="cc-stat-mix" v-if="getMixRollCount(unit) > 0">
               ⚠️ {{ getMixRollCount(unit) }} mix{{ getMixRollCount(unit) > 1 ? 'es' : '' }}
               ({{ getMixRollTotalWeight(unit) }} Kg)
@@ -203,18 +203,25 @@ const visibleUnits = computed(() =>
   filterUnit.value ? units.filter((u) => u === filterUnit.value) : units
 );
 
+const EXCLUDED_WHITES = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE"];
+
 // Filter data by party code and status
 const filteredData = computed(() => {
   let data = rawData.value;
-  
-  // NOTE: UNLIKE COLOR CHART, WE DO NOT FILTER WHITE ORDERS HERE.
-  // We want to see EVERYTHING in the Production Board.
   
   // Data Cleanup (Normalize Unit)
   data = data.map(d => ({
       ...d,
       unit: d.unit || "Mixed"
   }));
+
+  // Filter Hidden Whites (Match Color Chart Logic)
+  // We want to HIDE these from the list, but show their total in header.
+  data = data.filter(d => {
+      const colorUpper = (d.color || "").toUpperCase();
+      if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return true;
+      return !EXCLUDED_WHITES.some(ex => colorUpper.includes(ex));
+  });
 
   if (filterPartyCode.value) {
     const search = filterPartyCode.value.toLowerCase();
@@ -298,10 +305,23 @@ function compareColor(a, b, direction) {
 }
 
 function compareGsm(a, b, direction) {
-    const gA = parseFloat(a.gsm || 0);
-    const gB = parseFloat(b.gsm || 0);
-    return direction === 'asc' ? gA - gB : gB - gA;
+    const gsmA = parseFloat(a.gsm) || 0;
+    const gsmB = parseFloat(b.gsm) || 0;
+    return direction === 'asc' ? gsmA - gsmB : gsmB - gsmA;
 }
+
+function getHiddenWhiteTotal(unit) {
+  return rawData.value
+    .filter((d) => {
+        if ((d.unit || "Mixed") !== unit) return false;
+        const colorUpper = (d.color || "").toUpperCase();
+        // Check if it IS an excluded white
+        if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return false;
+        return EXCLUDED_WHITES.some(ex => colorUpper.includes(ex));
+    })
+    .reduce((sum, d) => sum + d.qty, 0) / 1000;
+}
+
 
 function getSortLabel(unit) {
     const config = getUnitSortConfig(unit);
