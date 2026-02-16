@@ -7,8 +7,21 @@ from frappe.utils import getdate, flt
 UNIT_1 = ["SUPER PLATINUM", "PLATINUM", "PREMIUM", "GOLD", "SUPER CLASSIC"]
 UNIT_2 = ["GOLD", "SILVER", "BRONZE", "CLASSIC", "ECO SPECIAL", "ECO SPL"]
 UNIT_3 = ["SUPER PLATINUM", "PLATINUM", "PREMIUM", "GOLD", "SILVER", "BRONZE"]
-# Unit 4 is generally for overflow or specific low-priority, but let's define it based on usage if needed.
-# For now we use the lists to check compatibility.
+# Unit 4 is generally for overflow or specific low-priority.
+
+HARD_LIMITS = {
+	"Unit 1": 4.4,
+	"Unit 2": 12.0,
+	"Unit 3": 9.0,
+	"Unit 4": 5.5
+}
+
+SOFT_LIMITS = {
+	"Unit 1": 4.0,
+	"Unit 2": 9.0,
+	"Unit 3": 7.8,
+	"Unit 4": 4.0
+}
 
 UNIT_QUALITY_MAP = {
 	"Unit 1": UNIT_1,
