@@ -200,20 +200,29 @@ const COLOR_GROUPS = [
   { keywords: ["ARMY GREEN"], priority: 87, hex: "#4B5320" },
   { keywords: ["DARK GREEN"], priority: 88, hex: "#006400" },
 
-  // 9. BROWNS & BEIGES (90-94) -> Beige is light, wait.
-  // Beige is usually light (like Ivory). Should be near 15?
-  // But user had Beige near Brown (34).
-  // "Light Beige" (34).
-  // If Beige is "Sand", it's light.
-  // I'll move Beige to 15 (After Ivory).
-  { keywords: ["BEIGE", "LIGHT BEIGE", "CREAM"], priority: 15, hex: "#F5F5DC" },
-  { keywords: ["DARK BEIGE", "KHAKI", "SAND"], priority: 90, hex: "#C2B280" }, // Darker beige
-  { keywords: ["BROWN", "CHOCOLATE", "COFFEE"], priority: 91, hex: "#A52A2A" },
-  
   // 10. GREYS & SILVER (95-97)
   { keywords: ["SILVER", "LIGHT GREY"], priority: 95, hex: "#C0C0C0" },
   { keywords: ["GREY", "GRAY", "DARK GREY"], priority: 96, hex: "#808080" },
   
+  // 9. BROWNS & BEIGES (Moved to End as per Transition Rule)
+  // Transition: Black -> Beige -> [Others]
+  // So Beige must be > 98 (Black)? Or < 98?
+  // User said: "aftere black complusary need any color in beige after biege order placed allowed to place other colors"
+  // If sorting Ascending (Light -> Dark):
+  // White (10) ... Black (98).
+  // If Black is last, then Beige needs to be 99?
+  // But wait, user said "after black... beige".
+  // If we sort 10->98. Black is at bottom.
+  // Then next cycle starts?
+  // OR does user run Black -> Beige -> White?
+  // "red blue ... black ... after black compulsory beige ... after beige other colors"
+  // This implies a CYCLE: Light -> Dark (Black) -> Beige -> Light.
+  // So Beige should be effectively "Priority 100" or handle a wrap-around.
+  // Let's set Beige to 99 (after Black).
+  { keywords: ["BEIGE", "LIGHT BEIGE", "CREAM", "OFF WHITE", "IVORY"], priority: 99, hex: "#F5F5DC" }, 
+  { keywords: ["DARK BEIGE", "KHAKI", "SAND"], priority: 99, hex: "#C2B280" }, 
+  { keywords: ["BROWN", "CHOCOLATE", "COFFEE"], priority: 90, hex: "#A52A2A" }, // Brown can stay normal?
+
   // 11. BLACK (98)
   { keywords: ["BLACK"], priority: 98, hex: "#000000" },
 ];
