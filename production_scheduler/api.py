@@ -146,10 +146,14 @@ def get_kanban_board(start_date, end_date):
 		items = frappe.get_all(
 			"Planning Sheet Item",
 			filters={"parent": sheet.name},
-			fields=["qty", "unit", "quality", "color", "gsm"],
+			fields=["qty", "unit", "custom_quality", "color", "gsm"],
 			order_by="idx"
 		)
 		
+		# Map custom_quality to quality for frontend consistency
+		for item in items:
+			item["quality"] = item.get("custom_quality")
+
 		total_weight = sum([flt(d.qty) for d in items])
 		
 		# Determine Major Unit
