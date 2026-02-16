@@ -504,7 +504,7 @@ def get_confirmed_orders_kanban(order_date=None, party_code=None):
     sql = f"""
         SELECT 
             so.name, so.customer, so.transaction_date, so.delivery_date, 
-            so.party_code as party_code,
+            so.party_code as party_code, so.custom_production_status,
             item.name as itemName, item.item_code, item.qty, item.custom_width as width,
             COALESCE(item.custom_quality, item.quality) as quality,
             COALESCE(item.custom_gsm, item.gsm, 0) as gsm,
@@ -515,7 +515,7 @@ def get_confirmed_orders_kanban(order_date=None, party_code=None):
             `tabSales Order` so ON item.parent = so.name
         WHERE
             so.docstatus = 1
-            AND so.custom_production_status = 'Confirmed'
+            -- AND so.custom_production_status = 'Confirmed'
             {where_clause}
             AND item.name NOT IN (
                 SELECT sales_order_item 
@@ -548,7 +548,7 @@ def get_confirmed_orders_kanban(order_date=None, party_code=None):
             "partyCode": row.party_code or row.customer,
             "ordered_date": row.transaction_date,
             "dod": row.delivery_date,
-            "planningStatus": "Confirmed",
+            "planningStatus": row.custom_production_status or "None",
             "docstatus": 1,
             "unit": unit,
             "color": (row.color or "").title(),
