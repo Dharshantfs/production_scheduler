@@ -140,6 +140,7 @@
 
 <script setup>
 import { ref, computed, onMounted, nextTick, watch, reactive } from "vue";
+import Sortable from "sortablejs";
 
 // Color groups for keyword-based matching
 // Check MOST SPECIFIC (multi-word) first, then SINGLE-WORD catch-all groups
@@ -431,7 +432,7 @@ function getUnitCapacityStatus(unit) {
 
 async function initSortable() {
   if (!columnRefs.value) return;
-  const Sortable = await loadSortable();
+  // Sortable is imported at top
   
   // Clear old instances
   columnRefs.value.forEach(col => {
@@ -548,6 +549,23 @@ function toggleUnitPriority(unit) {
   const config = getUnitSortConfig(unit);
   config.priority = config.priority === 'color' ? 'gsm' : 'color';
   console.log(`Unit ${unit} Priority swapped to: ${config.priority}`);
+}
+
+// Sort Items based on Unit Config
+function sortItems(unit, items) {
+  const config = getUnitSortConfig(unit);
+  // Create a copy to sort
+  return [...items].sort((a, b) => {
+      let diff = 0;
+      if (config.priority === 'color') {
+          diff = compareColor(a, b, config.color);
+          if (diff === 0) diff = compareGsm(a, b, config.gsm);
+      } else {
+          diff = compareGsm(a, b, config.gsm);
+          if (diff === 0) diff = compareColor(a, b, config.color);
+      }
+      return diff;
+  });
 }
 
 // Group data by unit, sort, and insert mix markers
