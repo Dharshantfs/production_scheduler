@@ -30,7 +30,7 @@ UNIT_QUALITY_MAP = {
 	"Unit 4": ["PREMIUM", "GOLD", "SILVER", "BRONZE"] # Assumed based on ColorChart.vue
 }
 
-def get_unit_load_check(date, unit):
+def get_unit_load(date, unit):
 	"""Calculates current load (in Tons) for a unit on a given date."""
 	# Optimized query
 	sql = """
@@ -57,7 +57,7 @@ def find_best_slot(item_qty_tons, quality, preferred_unit, start_date, recursion
 	
 	# 1. Check Preferred Unit
 	if preferred_unit and preferred_unit in HARD_LIMITS:
-		current_load = get_unit_load_check(check_date, preferred_unit)
+		current_load = get_unit_load(check_date, preferred_unit)
 		if current_load + item_qty_tons <= HARD_LIMITS[preferred_unit]:
 			return {"date": check_date, "unit": preferred_unit}
 
@@ -68,11 +68,10 @@ def find_best_slot(item_qty_tons, quality, preferred_unit, start_date, recursion
 		if quality in valid_qualities:
 			compatible_units.append(unit)
 	
-	# Sort neighbors? Maybe by capacity? Or just order 1->4?
-	# Let's check them in order of definition (Unit 1..4)
+	# Check Neighbors
 	for unit in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
 		if unit in compatible_units and unit in HARD_LIMITS:
-			load = get_unit_load_check(check_date, unit)
+			load = get_unit_load(check_date, unit)
 			if load + item_qty_tons <= HARD_LIMITS[unit]:
 				return {"date": check_date, "unit": unit}
 
@@ -82,40 +81,205 @@ def find_best_slot(item_qty_tons, quality, preferred_unit, start_date, recursion
 
 
 @frappe.whitelist()
-def update_schedule(doc_name, unit, date, index=0):
+def update_sequence(items):
+	"""
+	Updates the 'idx' of items based on the provided list.
+	items: [{"name": "item_name", "idx": 1}, ...]
+	"""
+	import json
+	if isinstance(items, str):
+		items = json.loads(items)
+		
+	for item in items:
+		if item.get("name") and item.get("idx") is not None:
+			frappe.db.set_value("Planning Sheet Item", item.get("name"), "idx", item.get("idx"))
+			
+	return {"status": "success"}
+
+
+@frappe.whitelist()
+def update_schedule(doc_name, unit, date, index=0, force_move=0, perform_split=0):
 	target_date = getdate(date)
-	frappe.log_error("Update Schedule Debug", f"Doc: {doc_name}, Unit: {unit}, Date: {date}")
+	force_move = flt(force_move)
+	perform_split = flt(perform_split)
+	
+	frappe.log_error("Update Schedule Debug", f"Doc: {doc_name}, Unit: {unit}, Date: {date}, Force: {force_move}, Split: {perform_split}")
 
 	# Get Item Details
 	doc_items = frappe.get_all(
 		"Planning Sheet Item",
 		filters={"parent": doc_name},
-		fields=["qty", "custom_quality", "unit"]
+		fields=["name", "qty", "custom_quality", "unit", "quality"]
 	)
 	
+	if not doc_items:
+		frappe.throw(_("Planning Sheet has no items."))
+
 	total_tons = sum([flt(d.qty) for d in doc_items]) / 1000.0
-	quality = doc_items[0].get("custom_quality") or doc_items[0].get("quality") or "" if doc_items else ""
-
-	# Use Smart Slot Finder
-	# We treat the user's requested 'unit' and 'date' as the starting preference.
-	best_slot = find_best_slot(total_tons, quality, unit, target_date)
+	quality = doc_items[0].get("custom_quality") or doc_items[0].get("quality") or "" 
 	
-	if not best_slot:
-		frappe.throw(_("Could not find a valid slot for this order within 30 days."))
-
-	final_unit = best_slot["unit"]
-	final_date = getdate(best_slot["date"])
+	# Determine Final Slot
+	final_unit = unit
+	final_date = target_date
 	
-	frappe.log_error("Update Schedule Result", f"Final Unit: {final_unit}, Final Date: {final_date}")
+	# Check Capacity of Target
+	current_load = get_unit_load(target_date, unit)
+	limit = HARD_LIMITS.get(unit, 999.0)
+	
+	if current_load + total_tons > limit:
+		# Exceeds Capacity
+		available_space = max(0, limit - current_load)
+		
+		# Scenario A: FORCE MOVE (User said "Move to Next Day")
+		if force_move:
+			# Use Smart Slot Finder to find NEXT available slot (likely next day or neighbor)
+			# We start searching from target_date. 
+			# But since we know target_unit on target_date is full (we just checked),
+			# find_best_slot will automatically check neighbors or next day.
+			best_slot = find_best_slot(total_tons, quality, unit, target_date)
+			if not best_slot:
+				frappe.throw(_("Could not find a valid slot."))
+			final_unit = best_slot["unit"]
+			final_date = getdate(best_slot["date"])
+			
+		# Scenario B: SMART SPLIT (User said "Split")
+		elif perform_split:
+			# 1. Fill Target Unit
+			# Constraint: Min Split 100kg (0.1T)
+			if available_space < 0.1:
+				frappe.throw(_(f"Available space ({available_space:.3f}T) is too small to split (Min 0.1T). Please move to next day."))
+			
+			# Split logic typically works on ONE item. If sheet has multiple items, it's complex.
+			# Assuming specific UI logic usually targets one main item. 
+			# We will pick the largest item to split? Or the first?
+			# Let's split the first item for now.
+			target_item = doc_items[0]
+			split_qty = available_space * 1000.0 # Tons to Kg
+			
+			# Call Split function
+			# Keep 'split_qty' in Current Item (which stays in Target Unit)
+			# Move 'Remainder' to New Item (which goes to Neighbor/NextDay)
+			# Wait, split_order(item, split_qty, target) -> New Item gets split_qty.
+			# So we want New Item to stay in Target Unit (Available Space).
+			# And Old Item to go to Neighbor/NextDay?
+			# Or vice versa.
+			# Let's do: New Item = Available Space (Target Unit). Old Item = Remainder (Find Slot).
+			
+			# Actually, `split_order` implementation:
+			# Original = Remainder. New = Split Qty (Target Unit).
+			# So if we pass `split_qty = available_space`, key `target_unit = unit`.
+			# Then Old Item has `Total - Available`. We need to move Old Item to best slot.
+			
+			res = split_order(target_item.name, split_qty, unit)
+			
+			# Now update the Original Item (Remainder) to a valid slot
+			# Calculate Remainder Weight
+			remainder_tons = total_tons - available_space
+			
+			# Find slot for Remainder
+			# Prioritize Neighbors on SAME DATE
+			best_slot_remainder = find_best_slot(remainder_tons, quality, unit, target_date)
+			
+			# We need to explicitly check if find_best_slot returned the Target Slot again?
+			# No, find_best_slot checks available capacity. Target Unit IS FULL (we filled it with new item technically? No DB update yet).
+			# Wait, `split_order` does DB Insert/Update immediately.
+			# So `get_unit_load` will capture the new item? YES.
+			
+			if not best_slot_remainder:
+				frappe.throw(_("Could not find slot for remaining quantity."))
+				
+			# Update Original Parent/Item to New Slot
+			# `split_order` keeps Original Item in same parent.
+			# So we move the Original Item (which is still on this parent) to new slot?
+			# If we change Parent Unit/Date, it affects BOTH items if they are on same parent?
+			# ERROR: `Planning Sheet` is the parent. `Planning Sheet` has `ordered_date`.
+			# If we split, we have 2 items. They share the same `ordered_date` (Parent Field).
+			# If split parts need DIFFERENT DATES, they need DIFFERENT PARENT SHEETS.
+			# `split_order` creates a NEW item on the SAME parent?
+			# Let's check `split_order` implementation.
+			# `new_doc = frappe.copy_doc(doc) ... new_doc.insert()`. parent is copied? Yes.
+			
+			# ISSUE: If we need to move Remainder to Next Day, we MUST separate them into different Sheets.
+			# Does `split_order` handle reparenting? No.
+			# So we need a "Split Sheet" logic.
+			
+			# Logic:
+			# 1. Split Item.
+			# 2. Create New Parent Sheet for the Remainder Item (Original Item).
+			# 3. Move Original Item to New Parent.
+			# 4. Set New Parent Date/Unit.
+			
+			# Complex. Simplified approach:
+			# Treat `split_order` as creating a "Split-off" item.
+			# We want the "Split-off" to be the one entering the Target Unit (Available).
+			# The "Original" stays behind?
+			# Or "Original" moves to Target, "Split-off" goes to Next Day.
+			
+			# Let's assume:
+			# 1. We clone the Sheet.
+			# 2. We adjust Qty on both Sheets.
+			# 3. Sheet A (Available) -> Target Unit/Date.
+			# 4. Sheet B (Remainder) -> Best Slot.
+			
+			# Refined Smart Split:
+			# 1. Update Current Sheet qty to `Available`. Update its Unit/Date to `Target`.
+			# 2. Create New Sheet (Clone). Set qty to `Remainder`. Find Best Slot for it.
+			
+			# Implementation:
+			remainder_qty = (total_tons * 1000) - split_qty
+			
+			# A. Update Current Sheet (Fits in Target)
+			# Update item qty
+			frappe.db.set_value("Planning Sheet Item", target_item.name, "qty", split_qty)
+			# Update Sheet (Parent)
+			final_unit = unit
+			final_date = target_date
+			
+			# B. Create New Sheet for Remainder
+			new_sheet = frappe.copy_doc(frappe.get_doc("Planning sheet", doc_name))
+			new_sheet.name = None # New
+			new_sheet.save(ignore_permissions=True) # Draft
+			
+			# Create Item for New Sheet
+			new_item = frappe.copy_doc(frappe.get_doc("Planning Sheet Item", target_item.name))
+			new_item.name = None
+			new_item.parent = new_sheet.name
+			new_item.qty = remainder_qty
+			new_item.custom_split_from = doc_name
+			new_item.custom_is_split = 1
+			new_item.insert()
+			
+			# Find slot for New Sheet
+			best_slot_rem = find_best_slot(remainder_tons, quality, unit, target_date)
+			rem_unit = best_slot_rem["unit"]
+			rem_date = getdate(best_slot_rem["date"])
+			
+			# Update New Sheet Item Unit
+			frappe.db.set_value("Planning Sheet Item", new_item.name, "unit", rem_unit)
+			# Update New Sheet Date
+			frappe.db.set_value("Planning sheet", new_sheet.name, "dod", str(rem_date))
+			frappe.db.set_value("Planning sheet", new_sheet.name, "ordered_date", str(rem_date))
+			
+			frappe.msgprint(f"Split Successful. {split_qty/1000}T in {unit}, {remainder_qty/1000}T moved to {rem_unit} on {rem_date}")
+			
+		else:
+			# Scenario C: OVERFLOW (Ask User)
+			return {
+				"status": "overflow",
+				"available": available_space,
+				"limit": limit,
+				"current_load": current_load,
+				"order_weight": total_tons
+			}
 
-	# Update DB - Items Unit
+	# Update DB - Items Unit (For Normal Move / Force Move / Split-Part-A)
 	frappe.db.sql("""
 		UPDATE `tabPlanning Sheet Item`
 		SET unit = %s
 		WHERE parent = %s
 	""", (final_unit, doc_name))
 
-	# Update Date on Parent Sheet - FORCE via set_value to avoid controller side-effects
+	# Update Date on Parent Sheet - FORCE via set_value
 	frappe.db.set_value("Planning sheet", doc_name, "dod", str(final_date))
 	frappe.db.set_value("Planning sheet", doc_name, "ordered_date", str(final_date))
 	
