@@ -216,14 +216,9 @@ const filteredData = computed(() => {
       unit: d.unit || "Mixed"
   }));
 
-  // Filter Hidden Whites (Match Color Chart Logic)
-  // We want to HIDE these from the list, but show their total in header.
-  data = data.filter(d => {
-      const colorUpper = (d.color || "").toUpperCase();
-      if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return true;
-      return !EXCLUDED_WHITES.some(ex => colorUpper.includes(ex));
-  });
-
+  // NOTE: In Production Board, we show ALL items (including White).
+  // We just show the summary of White weight in the header.
+  
   if (filterPartyCode.value) {
     const search = filterPartyCode.value.toLowerCase();
     data = data.filter((d) =>
@@ -371,33 +366,86 @@ async function initSortable() {
         if (!itemName || !newUnit) return;
 
         if (newUnitEl !== oldUnitEl) {
+             // 1. STRICT BACKEND VALIDATION - Just Call API
              try {
                 frappe.show_alert({ message: "Validating Capacity...", indicator: "orange" });
-                const res = await frappe.call({
-                    method: "production_scheduler.api.update_schedule",
-                    args: {
-                        doc_name: itemEl.dataset.planningSheet || itemEl.dataset.name.split('-')[0], 
-                        unit: newUnit,
-                        date: filterOrderDate.value 
-                    }
-                });
                 
-                if (res.message && res.message.status === 'success') {
-                    const movedTo = res.message.moved_to;
-                    if (movedTo.date !== filterOrderDate.value) {
-                         frappe.msgprint(`⚠️ <b>Capacity Full in ${newUnit}!</b><br>Order automatically moved to <b>${movedTo.date}</b> in <b>${movedTo.unit}</b>.`);
-                         itemEl.parentNode && itemEl.parentNode.removeChild(itemEl); 
-                         rawData.value = rawData.value.filter(d => d.itemName !== itemName);
-                    } 
-                    else if (movedTo.unit !== newUnit) {
-                         frappe.msgprint(`⚠️ <b>Capacity Full in ${newUnit}!</b><br>Order automatically placed in <b>${movedTo.unit}</b>.`);
-                         fetchData(); 
-                    }
-                    else {
-                         frappe.show_alert({ message: `Moved to ${newUnit}`, indicator: "green" });
-                         const item = rawData.value.find(d => d.itemName === itemName);
-                         if (item) item.unit = newUnit;
-                    }
+                // Helper to perform the move with flags
+                const performMove = async (force=0, split=0) => {
+                    const res = await frappe.call({
+                        method: "production_scheduler.api.update_schedule",
+                        args: {
+                            doc_name: itemEl.dataset.planningSheet || itemEl.dataset.name.split('-')[0], 
+                            unit: newUnit,
+                            date: filterOrderDate.value, 
+                            force_move: force,
+                            perform_split: split
+                        }
+                    });
+                    return res;
+                };
+
+                // Initial Call (No Force, No Split)
+                let res = await performMove();
+                
+                if (res.message && res.message.status === 'overflow') {
+                     // OVERFLOW - Show Dialog
+                     const avail = res.message.available;
+                     const limit = res.message.limit;
+                     const current = res.message.current_load;
+                     const orderWt = res.message.order_weight;
+                     
+                     const d = new frappe.ui.Dialog({
+                        title: '⚠️ Capacity Full',
+                        fields: [
+                            {
+                                fieldtype: 'HTML',
+                                options: `
+                                    <div style="padding: 10px; border-radius: 8px; background: #fff1f2; border: 1px solid #fda4af;">
+                                         <p style="margin:0; font-weight:700; color:#991b1b;">Capacity Exceeded for ${newUnit}!</p>
+                                         <p style="margin:5px 0 0; font-size:13px; color:#b91c1c;">
+                                            Unit allows <b>${limit}T</b>. Currently planned: <b>${current.toFixed(2)}T</b>.<br>
+                                            Adding this order (<b>${orderWt.toFixed(2)}T</b>) is not possible without moving or splitting.
+                                         </p>
+                                         <p style="margin:10px 0 0; font-weight:700; color:#1e293b;">Available Space: ${avail.toFixed(2)}T</p>
+                                    </div>
+                                `
+                            }
+                        ],
+                        primary_action_label: 'Move to Next Day',
+                        primary_action: async () => {
+                             d.hide();
+                             const moveRes = await performMove(1, 0); // Force Move (Next available slot)
+                             if (moveRes.message && moveRes.message.status === 'success') {
+                                 const finalSlot = moveRes.message.moved_to;
+                                 frappe.msgprint(`Moved to <b>${finalSlot.date}</b> in <b>${finalSlot.unit}</b>`);
+                                 fetchData(); 
+                             }
+                        },
+                        secondary_action_label: 'Split & Distribute',
+                    });
+                    
+                    d.set_secondary_action(async () => {
+                         d.hide();
+                         const splitRes = await performMove(0, 1); // Perform Split
+                         if (splitRes.message && splitRes.message.status === 'success') {
+                             frappe.msgprint("Order Split and distributed successfully.");
+                             fetchData();
+                         }
+                    });
+
+                    // Add Cancel Button
+                    d.add_custom_button('Cancel', () => {
+                         d.hide();
+                         renderKey.value++; // Force re-render to revert drag
+                    });
+
+                    d.show();
+                } else if (res.message && res.message.status === 'success') {
+                    // Normal Success
+                    frappe.show_alert({ message: `Successfully moved to ${newUnit}`, indicator: "green" });
+                    const item = rawData.value.find(d => d.itemName === itemName);
+                    if (item) item.unit = newUnit;
                 }
              } catch (e) {
                  console.error(e);
