@@ -68,6 +68,9 @@
           </div>
             <span class="cc-stat-weight" :class="getUnitCapacityStatus(unit).class">
               {{ getUnitTotal(unit).toFixed(2) }} / {{ UNIT_TONNAGE_LIMITS[unit] }}T
+              <span v-if="getHiddenWhiteTotal(unit) > 0" style="font-size:10px; font-weight:400; color:#64748b; display:block;">
+                 (Inc. {{ getHiddenWhiteTotal(unit).toFixed(2) }}T White)
+              </span>
             </span>
             <div v-if="getUnitCapacityStatus(unit).warning" class="text-xs text-red-600 font-bold">
               {{ getUnitCapacityStatus(unit).warning }}
@@ -234,30 +237,28 @@ const visibleUnits = computed(() =>
   filterUnit.value ? units.filter((u) => u === filterUnit.value) : units
 );
 
+const EXCLUDED_WHITES = [
+  "WHITE", "BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE", 
+  "SUPER WHITE", "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"
+];
+
+// As per user request: "APART FROM THIS U CAN BRING ALL COLOR IVORY"
+// So IVORY, CREAM, OFF WHITE are kept.
+
 // Filter data by party code and status
 const filteredData = computed(() => {
   let data = rawData.value;
   
-  // Exclude Specific WHITE variants as per user request
-  // "BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE", "SUPER WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"
-  // And "WHITE" generally? "DONT BRING THIS COLOR IN COLOR CHART APART FROM THIS U CAN BRING ALL COLOR IVORY"
-  // So keep Ivory. Remove "White" and variants.
-  const EXCLUDED_WHITES = [
-      "WHITE", "BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE", 
-      "SUPER WHITE", "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"
-  ];
-
   data = data.filter(d => {
       // Normalize Unit for Display
       if (!d.unit) d.unit = "Mixed";
 
       const colorUpper = (d.color || "").toUpperCase();
-      // Check if color matches any excluded keyword
-      // User says "APART FROM THIS U CAN BRING ALL COLOR IVORY"
-      // So if color is IVORY, Keep.
+      
+      // Keep Ivory/Cream explicitly
       if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return true;
       
-      // If color contains excluded keyword, remove
+      // Remove Excluded Whites
       return !EXCLUDED_WHITES.some(ex => colorUpper.includes(ex));
   });
 
@@ -401,6 +402,18 @@ function getUnitTotal(unit) {
   // Use rawData.value to ensure hidden orders (White) are counted in capacity
   return rawData.value
     .filter((d) => (d.unit || "Mixed") === unit)
+    .reduce((sum, d) => sum + d.qty, 0) / 1000;
+}
+
+function getHiddenWhiteTotal(unit) {
+  return rawData.value
+    .filter((d) => {
+        if ((d.unit || "Mixed") !== unit) return false;
+        const colorUpper = (d.color || "").toUpperCase();
+        // Check if it IS an excluded white
+        if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return false;
+        return EXCLUDED_WHITES.some(ex => colorUpper.includes(ex));
+    })
     .reduce((sum, d) => sum + d.qty, 0) / 1000;
 }
 

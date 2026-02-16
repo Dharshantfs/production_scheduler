@@ -84,7 +84,7 @@ def find_best_slot(item_qty_tons, quality, preferred_unit, start_date, recursion
 @frappe.whitelist()
 def update_schedule(doc_name, unit, date, index=0):
 	target_date = getdate(date)
-	frappe.error_log.add("Update Schedule Debug", f"Doc: {doc_name}, Unit: {unit}, Date: {date}")
+	frappe.log_error("Update Schedule Debug", f"Doc: {doc_name}, Unit: {unit}, Date: {date}")
 
 	# Get Item Details
 	doc_items = frappe.get_all(
@@ -106,7 +106,7 @@ def update_schedule(doc_name, unit, date, index=0):
 	final_unit = best_slot["unit"]
 	final_date = getdate(best_slot["date"])
 	
-	frappe.error_log.add("Update Schedule Result", f"Final Unit: {final_unit}, Final Date: {final_date}")
+	frappe.log_error("Update Schedule Result", f"Final Unit: {final_unit}, Final Date: {final_date}")
 
 	# Update DB - Items Unit
 	frappe.db.sql("""
