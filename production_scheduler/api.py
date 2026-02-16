@@ -109,7 +109,7 @@ def update_schedule(doc_name, unit, date, index=0, force_move=0, perform_split=0
 	doc_items = frappe.get_all(
 		"Planning Sheet Item",
 		filters={"parent": doc_name},
-		fields=["name", "qty", "custom_quality", "unit", "quality"]
+		fields=["name", "qty", "custom_quality", "unit"]
 	)
 	
 	if not doc_items:
