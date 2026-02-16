@@ -6,7 +6,7 @@ frappe.provide("production_scheduler");
 
 production_scheduler.Controller = class {
     constructor(wrapper) {
-        const app = createApp(ColorChart);
+        const app = createApp(ProductionScheduler);
         app.mount(wrapper);
     }
 };
