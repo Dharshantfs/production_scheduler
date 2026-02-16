@@ -603,64 +603,29 @@ async function initSortable() {
 }
 
 // Helper for handling move success
-function handleMoveSuccess(res, itemEl, newUnit, itemName) {
+async function handleMoveSuccess(res, itemEl, newUnit, itemName) {
     if (res.message && res.message.status === 'success') {
-        const movedTo = res.message.moved_to;
+        const movedTo = res.message.moved_to || { unit: newUnit, date: filterOrderDate.value };
         
         // 2. CHECK RESULT
         // Case A: Moved to Next Day?
         if (movedTo.date !== filterOrderDate.value) {
              frappe.msgprint(`⚠️ <b>Moved to Next Day!</b><br>Order moved to <b>${movedTo.date}</b> in <b>${movedTo.unit}</b>.`);
-             // Remove from current view
-             itemEl.parentNode && itemEl.parentNode.removeChild(itemEl); // Clean DOM
-             // Update Local State (Remove)
-             rawData.value = rawData.value.filter(d => d.itemName !== itemName);
+             await fetchData(); 
         } 
-        // Case B: Moved to Neighbor Unit?
-        else if (movedTo.unit !== newUnit) {
-             frappe.msgprint(`⚠️ <b>Capacity Full in ${newUnit}!</b><br>Order automatically placed in <b>${movedTo.unit}</b>.`);
-             fetchData(); 
-        }
-        // Case C: Success (Stayed where we put it)
+        // Case B: Success (Either stuck to newUnit or moved to neighbor unit)
         else {
-             frappe.show_alert({ message: `Moved to ${newUnit}`, indicator: "green" });
-             // Update Local State Unit
-             const item = rawData.value.find(d => d.itemName === itemName);
-             if (item) item.unit = newUnit;
-             
-             // If this was a split, we might need to refresh because a new item (remainder) might be in a neighbor unit?
-             // Or the original item quantity changed.
-             // Safer to refresh if we suspect complex changes.
-             // Simple move is fine locally. But Split involves quantity change.
-             // How do we know if it was a split? 
-             // API doesn't explicitly return "split" flag in simple success dict, but we can infer or pass it.
-             // Or just refresh if we did a split call. 
-             // Actually, `perform_split` call triggers this. 
-             // We can pass context.
-             // Let's just fetchData() if we did a split or force move to be safe?
-             // Checking `res` structure...
-             // If we did a split, the ITEM QUANTITY changed. Local tracking assumes constant quantity.
-             // So for Split, we MUST refresh.
-             // How to know? `performMove` called with `split=1`. 
-             // But inside `handleMoveSuccess`, we don't know args.
-             // Refactor: Just refresh always? No, flashes.
-             // Refresh if movedTo.unit != newUnit OR date changed OR explicitly flagged.
-             // Check `res` for extra info?
-             
-             // Since `ColorChart` is complex, refreshing on any edit is safest but slowest.
-             // Let's checking if item.qty matches? No.
-             
-             // Fix: If `split` flag was used in `performMove`... but we are inside callbacks.
-             // We can check `res.message.original_target`.
-             
-             // Actually, the API returns simple success.
-             // Let's just `fetchData()` inside the Split Action Callback (before calling handleMoveSuccess? No handleMoveSuccess is void).
-             // In the Split Action block:
-             // `const res3 = await performMove(0, 1);`
-             // `fetchData();` <--- Add this.
+             if (movedTo.unit !== newUnit) {
+                frappe.msgprint(`⚠️ <b>Capacity Full in ${newUnit}!</b><br>Order automatically placed in <b>${movedTo.unit}</b>.`);
+             } else {
+                frappe.show_alert({ message: `Successfully moved to ${newUnit}`, indicator: "green" });
+             }
+             // Always Refresh after any backend move to ensure consistency
+             await fetchData(); 
         }
     }
-}function getUnitSortConfig(unit) {
+}
+function getUnitSortConfig(unit) {
   if (!unitSortConfig[unit]) {
     unitSortConfig[unit] = { color: 'asc', gsm: 'desc', priority: 'color' };
   }

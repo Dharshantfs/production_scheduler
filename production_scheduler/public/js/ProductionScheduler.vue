@@ -447,8 +447,8 @@ async function initSortable() {
                 } else if (res.message && res.message.status === 'success') {
                     // Normal Success
                     frappe.show_alert({ message: `Successfully moved to ${newUnit}`, indicator: "green" });
-                    const item = rawData.value.find(d => d.itemName === itemName);
-                    if (item) item.unit = newUnit;
+                    // Always Refresh after any backend move to ensure consistency
+                    await fetchData(); 
                 }
              } catch (e) {
                  console.error(e);
