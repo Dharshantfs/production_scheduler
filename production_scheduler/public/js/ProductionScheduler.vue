@@ -92,12 +92,15 @@
             <div
               v-else
               class="cc-card"
+              :class="{ 'cc-card-locked': entry.docstatus !== 0 }"
               :data-name="entry.name"
               :data-item-name="entry.itemName"
               :data-color="entry.color"
               :data-planning-sheet="entry.planningSheet"
+              :draggable="entry.docstatus === 0"
               @click="openForm(entry.planningSheet)"
             >
+              <div v-if="entry.docstatus !== 0" class="cc-lock-badge" title="Sheet is Submitted/Locked">🔒</div>
               <div class="cc-card-left">
                 <div
                   class="cc-color-swatch"
@@ -375,7 +378,7 @@ async function initSortable() {
                     const res = await frappe.call({
                         method: "production_scheduler.api.update_schedule",
                         args: {
-                            doc_name: itemEl.dataset.planningSheet || itemEl.dataset.name.split('-')[0], 
+                            item_name: itemEl.dataset.itemName, 
                             unit: newUnit,
                             date: filterOrderDate.value, 
                             force_move: force,
@@ -837,6 +840,30 @@ onMounted(() => {
 }
 
 .cc-card:active { cursor: grabbing; }
+
+.cc-card-locked {
+  opacity: 0.8;
+  cursor: not-allowed !important;
+  background-color: #f9fafb !important;
+  border: 1px dashed #d1d5db !important;
+}
+
+.cc-lock-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #fefce8;
+  border: 1px solid #fde047;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  z-index: 10;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
 
 .cc-card-left {
   display: flex;
