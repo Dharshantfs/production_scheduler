@@ -609,8 +609,8 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
             new_idx = int(current_max_idx) + int(i) + 1
             new_unit = target_unit if target_unit else item_doc.unit
 
-            # HEAL UNASSIGNED: If unit is missing, auto-assign based on Quality
-            if not new_unit:
+            # HEAL UNASSIGNED: If unit is missing OR "Unassigned"/"Mixed", auto-assign based on Quality
+            if not new_unit or new_unit in ["Unassigned", "Mixed"]:
                 # Use item quality to find best unit
                 qual = item_doc.custom_quality or item_doc.quality
                 new_unit = get_preferred_unit(qual)
