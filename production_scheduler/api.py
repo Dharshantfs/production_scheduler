@@ -482,6 +482,85 @@ def split_order(item_name, split_qty, target_unit):
 	}
 
 @frappe.whitelist()
+@frappe.whitelist()
+def get_confirmed_orders_kanban(order_date=None, party_code=None):
+    """
+    Fetches 'Confirmed' Sales Order Items that are NOT yet in any active Planning Sheet.
+    Dynamically maps Unit based on Quality/GSM using system rules.
+    """
+    params = {}
+    conditions = []
+    
+    if order_date:
+        conditions.append("so.transaction_date = %(order_date)s")
+        params["order_date"] = order_date
+    if party_code:
+        conditions.append("(so.party_code LIKE %(party_code)s OR so.customer LIKE %(party_code)s)")
+        params["party_code"] = f"%{party_code}%"
+        
+    where_clause = " AND ".join(conditions)
+    if where_clause: where_clause = "AND " + where_clause
+    
+    sql = f"""
+        SELECT 
+            so.name, so.customer, so.transaction_date, so.delivery_date, 
+            so.party_code as party_code,
+            item.name as itemName, item.item_code, item.qty, item.custom_width as width,
+            COALESCE(item.custom_quality, item.quality) as quality,
+            COALESCE(item.custom_gsm, item.gsm, 0) as gsm,
+            COALESCE(item.custom_color, item.color, '') as color
+        FROM
+            `tabSales Order Item` item
+        JOIN
+            `tabSales Order` so ON item.parent = so.name
+        WHERE
+            so.docstatus = 1
+            AND so.custom_production_status = 'Confirmed'
+            {where_clause}
+            AND item.name NOT IN (
+                SELECT sales_order_item 
+                FROM `tabPlanning Sheet Item` 
+                WHERE docstatus < 2 AND sales_order_item IS NOT NULL
+            )
+    """
+    
+    raw_data = frappe.db.sql(sql, params, as_dict=True)
+    data = []
+    
+    for row in raw_data:
+        # Calculate Unit Logic
+        qual = row.quality or ""
+        gsm = flt(row.gsm)
+        unit = "Unit 1"
+        q_up = str(qual).upper()
+        
+        if q_up:
+            if gsm > 50 and q_up in UNIT_QUALITY_MAP["Unit 1"]: unit = "Unit 1"
+            elif gsm > 20 and q_up in UNIT_QUALITY_MAP["Unit 2"]: unit = "Unit 2"
+            elif gsm > 10 and q_up in UNIT_QUALITY_MAP["Unit 3"]: unit = "Unit 3"
+            elif q_up in UNIT_QUALITY_MAP["Unit 4"]: unit = "Unit 4"
+            
+        data.append({
+            "name": row.name,
+            "itemName": row.itemName,
+            "planningSheet": row.name, # Key to creating plan from this SO
+            "customer": row.customer,
+            "partyCode": row.party_code or row.customer,
+            "ordered_date": row.transaction_date,
+            "dod": row.delivery_date,
+            "planningStatus": "Confirmed",
+            "docstatus": 1,
+            "unit": unit,
+            "color": (row.color or "").title(),
+            "quality": qual,
+            "gsm": gsm,
+            "qty": row.qty,
+            "width": row.width
+        })
+        
+    return data
+
+@frappe.whitelist()
 def get_orders_for_date(date):
     """
     Fetch all Planning Sheet Items for a specific date that are NOT Cancelled/Completed (optional filter).

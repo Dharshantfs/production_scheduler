@@ -165,12 +165,18 @@ const COLOR_GROUPS = [
   { keywords: ["OLIVE GREEN"], priority: 86, hex: "#808000" },
   { keywords: ["ARMY GREEN"], priority: 87, hex: "#4B5320" },
   { keywords: ["DARK GREEN"], priority: 88, hex: "#006400" },
-  { keywords: ["BEIGE", "LIGHT BEIGE", "CREAM"], priority: 15, hex: "#F5F5DC" },
-  { keywords: ["DARK BEIGE", "KHAKI", "SAND"], priority: 90, hex: "#C2B280" },
-  { keywords: ["BROWN", "CHOCOLATE", "COFFEE"], priority: 91, hex: "#A52A2A" },
+
+  // 10. GREYS & SILVER (95-97)
   { keywords: ["SILVER", "LIGHT GREY"], priority: 95, hex: "#C0C0C0" },
   { keywords: ["GREY", "GRAY", "DARK GREY"], priority: 96, hex: "#808080" },
+  
+  // 11. BLACK (98)
   { keywords: ["BLACK"], priority: 98, hex: "#000000" },
+
+  // 9. BROWNS & BEIGES (Moved to End as per Transition Rule)
+  { keywords: ["BEIGE", "LIGHT BEIGE", "CREAM"], priority: 99, hex: "#F5F5DC" },
+  { keywords: ["DARK BEIGE", "KHAKI", "SAND"], priority: 99, hex: "#C2B280" }, 
+  { keywords: ["BROWN", "CHOCOLATE", "COFFEE"], priority: 90, hex: "#A52A2A" }, 
 ];
 
 const units = ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"];
