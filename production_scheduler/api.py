@@ -126,6 +126,55 @@ def update_schedule(doc_name, unit, date, index=0):
 		"original_target": {"date": target_date, "unit": unit}
 	}
 
+@frappe.whitelist()
+def get_kanban_board(start_date, end_date):
+	start_date = getdate(start_date)
+	end_date = getdate(end_date)
+	
+	sheets = frappe.get_all(
+		"Planning sheet",
+		filters={
+			"ordered_date": ["between", [start_date, end_date]],
+			"docstatus": ["<", 2]
+		},
+		fields=["name", "customer", "party_code", "ordered_date", "dod", "planning_status", "docstatus"],
+		order_by="ordered_date asc"
+	)
+	
+	data = []
+	for sheet in sheets:
+		items = frappe.get_all(
+			"Planning Sheet Item",
+			filters={"parent": sheet.name},
+			fields=["qty", "unit", "quality", "color", "gsm"],
+			order_by="idx"
+		)
+		
+		total_weight = sum([flt(d.qty) for d in items])
+		
+		# Determine Major Unit
+		unit = "Unit 1" # Default
+		if items:
+			# Get most frequent unit
+			units = [d.unit for d in items if d.unit]
+			if units:
+				unit = max(set(units), key=units.count)
+		
+		data.append({
+			"name": sheet.name,
+			"customer": sheet.customer,
+			"party_code": sheet.party_code,
+			"ordered_date": sheet.ordered_date,
+			"dod": sheet.dod,
+			"planning_status": sheet.planning_status,
+			"docstatus": sheet.docstatus,
+			"unit": unit,
+			"total_weight": total_weight,
+			"items": items
+		})
+		
+	return data
+
 # ... (Existing get_color_chart_data, update_item_unit, update_items_bulk, etc. - UNCHANGED) ...
 # I will retain them in the file content if I am replacing strict block, but if I am replacing a range I need to be careful.
 # The previous `update_schedule` ended at line 165. `get_color_chart_data` followed.
