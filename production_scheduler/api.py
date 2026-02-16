@@ -106,17 +106,25 @@ def update_schedule(doc_name, unit, date, index=0):
 	final_date = getdate(best_slot["date"])
 	
 	# Update DB
+	# Update DB
 	frappe.db.sql("""
 		UPDATE `tabPlanning Sheet Item`
 		SET unit = %s
 		WHERE parent = %s
 	""", (final_unit, doc_name))
 
-	frappe.db.set_value("Planning sheet", doc_name, "dod", final_date) # Actually ordered_date?
-	# The system seems to use `ordered_date` for scheduling, but `dod` (Delivery Date) is also updated?
-	# In `get_color_chart_data`, it filters by `ordered_date`.
-	# So we MUST update `ordered_date`.
-	frappe.db.set_value("Planning sheet", doc_name, "ordered_date", final_date)
+	# Update Date on Parent Sheet
+	# We use get_doc and save() to ensure all system hooks run (e.g. timestamps, permissions)
+	try:
+		doc = frappe.get_doc("Planning sheet", doc_name)
+		doc.ordered_date = str(final_date)
+		doc.dod = str(final_date)
+		doc.save(ignore_permissions=True)
+	except Exception:
+		# Fallback if doc load fails or validation prevents save
+		frappe.db.set_value("Planning sheet", doc_name, "dod", str(final_date))
+		frappe.db.set_value("Planning sheet", doc_name, "ordered_date", str(final_date))
+
 	
 	frappe.db.commit()
 
