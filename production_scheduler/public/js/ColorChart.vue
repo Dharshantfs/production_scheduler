@@ -98,6 +98,7 @@
               :data-name="entry.name"
               :data-item-name="entry.itemName"
               :data-color="entry.color"
+              :data-planning-sheet="entry.planningSheet"
               @click="openForm(entry.planningSheet)"
             >
               <div class="cc-card-left">
@@ -482,7 +483,7 @@ async function initSortable() {
                     const res = await frappe.call({
                         method: "production_scheduler.api.update_schedule",
                         args: {
-                            doc_name: itemEl.dataset.name.split('-')[0], // Planning Sheet Name
+                            doc_name: itemEl.dataset.planningSheet || itemEl.dataset.name.split('-')[0], // Use explicit sheet name if available
                             unit: newUnit,
                             date: filterOrderDate.value, // Target Date
                             force_move: force,
