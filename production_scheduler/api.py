@@ -89,7 +89,7 @@ def update_schedule(doc_name, unit, date, index=0):
 	doc_items = frappe.get_all(
 		"Planning Sheet Item",
 		filters={"parent": doc_name},
-		fields=["qty", "custom_quality", "quality", "unit"]
+		fields=["qty", "custom_quality", "unit"]
 	)
 	
 	total_tons = sum([flt(d.qty) for d in doc_items]) / 1000.0
