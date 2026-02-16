@@ -84,7 +84,8 @@ def find_best_slot(item_qty_tons, quality, preferred_unit, start_date, recursion
 @frappe.whitelist()
 def update_schedule(doc_name, unit, date, index=0):
 	target_date = getdate(date)
-	
+	frappe.error_log.add("Update Schedule Debug", f"Doc: {doc_name}, Unit: {unit}, Date: {date}")
+
 	# Get Item Details
 	doc_items = frappe.get_all(
 		"Planning Sheet Item",
@@ -105,27 +106,20 @@ def update_schedule(doc_name, unit, date, index=0):
 	final_unit = best_slot["unit"]
 	final_date = getdate(best_slot["date"])
 	
-	# Update DB
-	# Update DB
+	frappe.error_log.add("Update Schedule Result", f"Final Unit: {final_unit}, Final Date: {final_date}")
+
+	# Update DB - Items Unit
 	frappe.db.sql("""
 		UPDATE `tabPlanning Sheet Item`
 		SET unit = %s
 		WHERE parent = %s
 	""", (final_unit, doc_name))
 
-	# Update Date on Parent Sheet
-	# We use get_doc and save() to ensure all system hooks run (e.g. timestamps, permissions)
-	try:
-		doc = frappe.get_doc("Planning sheet", doc_name)
-		doc.ordered_date = str(final_date)
-		doc.dod = str(final_date)
-		doc.save(ignore_permissions=True)
-	except Exception:
-		# Fallback if doc load fails or validation prevents save
-		frappe.db.set_value("Planning sheet", doc_name, "dod", str(final_date))
-		frappe.db.set_value("Planning sheet", doc_name, "ordered_date", str(final_date))
-
+	# Update Date on Parent Sheet - FORCE via set_value to avoid controller side-effects
+	frappe.db.set_value("Planning sheet", doc_name, "dod", str(final_date))
+	frappe.db.set_value("Planning sheet", doc_name, "ordered_date", str(final_date))
 	
+	# Explicit Commit
 	frappe.db.commit()
 
 	return {
