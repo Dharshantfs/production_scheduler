@@ -403,13 +403,7 @@ function getUnitTotal(unit) {
     .reduce((sum, d) => sum + d.qty, 0) / 1000;
 }
 
-function getUnitProductionTotal(unit) {
-  const production = rawData.value
-    .filter((d) => (d.unit || "Mixed") === unit)
-    .reduce((sum, d) => sum + d.qty, 0);
-  const mixWeight = getMixRollTotalWeight(unit);
-  return (production + mixWeight) / 1000;
-}
+
 
 function getUnitCapacityStatus(unit) {
     const total = getUnitTotal(unit);
@@ -764,11 +758,7 @@ const UNIT_WIDTHS = {
   "Unit 4": 90
 };
 
-function getUnitCapacityStatus(unit) {
-    const total = getUnitTotal(unit);
-    const limit = UNIT_TONNAGE_LIMITS[unit] || 999;
-    return total > limit ? { class: 'text-red-600 font-bold', warning: `⚠️ Over Limit (${limit}T)` } : {};
-}
+
 
 async function autoAllocate() {
   if (!confirm("Auto-allocate visible orders based on Width & Quality? This will overwrite current unit assignments.")) return;
