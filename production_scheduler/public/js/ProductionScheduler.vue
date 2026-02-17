@@ -517,7 +517,6 @@ function sortItems(unit, items) {
 function getUnitEntries(unit) {
   let unitItems = filteredData.value.filter((d) => d.unit === unit);
   unitItems = sortItems(unit, unitItems); 
-\t
   const entries = [];
   for (let i = 0; i < unitItems.length; i++) {
     entries.push({ 
