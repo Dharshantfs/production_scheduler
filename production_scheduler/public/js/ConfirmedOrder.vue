@@ -67,8 +67,8 @@
 
         <div class="cc-col-body" :data-unit="unit" ref="columnRefs">
           <template v-for="(entry, idx) in getUnitEntries(unit)" :key="entry.uniqueKey">
-            <!-- Mix Roll Marker -->
-            <div v-if="entry.type === 'mix'" class="cc-mix-marker">
+            <!-- Mix Roll Marker (HIDDEN as per user request) -->
+            <div v-if="entry.type === 'mix' && false" class="cc-mix-marker">
               <div class="cc-mix-line"></div>
               <span class="cc-mix-label" :class="entry.mixType.toLowerCase().replace(' ', '-')">
                 {{ entry.mixType }} — ~{{ entry.qty }} Kg
@@ -126,12 +126,12 @@
 import { ref, computed, onMounted, nextTick, watch, reactive } from "vue";
 import Sortable from "sortablejs";
 
-// Color groups for keyword-based matching (SAME AS COLOR CHART)
+// Color groups 
 const COLOR_GROUPS = [
-  { keywords: ["WHITE MIX"], priority: 99, hex: "#f0f0f0" },
+  { keywords: ["WHITE MIX"], priority: 99, hex: "#f0f0f0" }, 
   { keywords: ["BLACK MIX"], priority: 99, hex: "#404040" },
   { keywords: ["COLOR MIX"], priority: 99, hex: "#c0c0c0" },
-  { keywords: ["BEIGE MIX"], priority: 99, hex: "#e0d5c0" },
+  { keywords: ["BEIGE MIX"], priority: 99, hex: "#e0d5c0" }, 
   { keywords: ["WHITE", "BRIGHT WHITE"], priority: 10, hex: "#FFFFFF" },
   { keywords: ["IVORY", "OFF WHITE", "CREAM"], priority: 11, hex: "#FFFFF0" },
   { keywords: ["LEMON YELLOW"], priority: 20, hex: "#FFF44F" },
@@ -199,6 +199,8 @@ const renderKey = ref(0);
 const visibleUnits = computed(() =>
   filterUnit.value ? units.filter((u) => u === filterUnit.value) : units
 );
+
+const EXCLUDED_WHITES = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE"];
 
 const filteredData = computed(() => {
   let data = rawData.value;
