@@ -29,6 +29,25 @@
           <option value="Finalized">Finalized</option>
         </select>
       </div>
+      <div class="cc-filter-item" style="flex-direction:row; align-items:flex-end; gap:4px; margin-left:auto;">
+          <button 
+            class="cc-view-btn" 
+            :class="{ active: viewMode === 'kanban' }" 
+            @click="viewMode = 'kanban'"
+            title="Kanban Board View"
+          >
+            📋 Kanban
+          </button>
+          <button 
+            class="cc-view-btn" 
+            :class="{ active: viewMode === 'matrix' }" 
+            @click="viewMode = 'matrix'"
+            title="Matrix Pivot View"
+          >
+            📊 Matrix
+          </button>
+      </div>
+      
       <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
       <button class="cc-clear-btn" style="color: #2563eb; border-color: #2563eb; margin-left: 8px;" @click="autoAllocate" title="Auto-assign orders based on Width & Quality">
         🪄 Auto Alloc
@@ -41,8 +60,8 @@
       </button>
     </div>
 
-    <!-- Color Chart Board -->
-    <div class="cc-board" :key="renderKey">
+    <!-- Kanban View -->
+    <div v-if="viewMode === 'kanban'" class="cc-board" :key="renderKey">
       <div
         v-for="unit in visibleUnits"
         :key="unit"
@@ -138,6 +157,51 @@
           </span>
         </div>
       </div>
+    </div>
+
+    <!-- Matrix Pivot View -->
+    <div v-if="viewMode === 'matrix'" class="cc-matrix-container">
+        <div class="cc-matrix-scroll">
+            <table class="cc-matrix-table">
+                <thead>
+                    <tr>
+                        <th class="matrix-sticky-col">Colors / Quality</th>
+                        <th v-for="col in matrixData.columns" :key="col">{{ col }}</th>
+                        <th class="matrix-total-col">TOTAL</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr v-for="row in matrixData.rows" :key="row.color">
+                        <td class="matrix-sticky-col matrix-row-header">
+                            <div class="flex items-center">
+                                <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
+                                {{ row.color }}
+                            </div>
+                        </td>
+                        <td 
+                            v-for="col in matrixData.columns" 
+                            :key="col" 
+                            class="text-right"
+                            :class="{ 'matrix-highlight': (row.cells[col] || 0) >= 800 }"
+                        >
+                            {{ (row.cells[col] || 0) > 0 ? (row.cells[col]).toFixed(0) : '-' }}
+                        </td>
+                        <td class="matrix-total-col text-right font-bold bg-gray-50">
+                            {{ row.total.toFixed(0) }}
+                        </td>
+                    </tr>
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th class="matrix-sticky-col">TOTAL</th>
+                        <th v-for="col in matrixData.columns" :key="col" class="text-right">
+                            {{ matrixData.colTotals[col].toFixed(0) }}
+                        </th>
+                        <th class="matrix-total-col text-right">{{ matrixData.grandTotal.toFixed(0) }}</th>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
     </div>
   </div>
 </template>
@@ -239,9 +303,76 @@ const filterUnit = ref("");
 const filterStatus = ref("");
 // Per-unit sort configuration
 const unitSortConfig = reactive({});
+const viewMode = ref('kanban'); // 'kanban' | 'matrix'
 const rawData = ref([]);
 const columnRefs = ref(null);
 const renderKey = ref(0); // Force re-render for drag revert
+
+// Matrix View Helpers
+const matrixData = computed(() => {
+    if (viewMode.value !== 'matrix') return [];
+    
+    // 1. Get Unique Qualities (Columns) from strict list or data?
+    // Use Predefined Global List to ensure order?
+    // Or dynamic? Dynamic is safer for new qualities.
+    // Let's use specific Unit Maps combined? Or just dynamic.
+    const allQualities = new Set();
+    filteredData.value.forEach(d => {
+        if (d.quality) allQualities.add(d.quality.toUpperCase().trim());
+    });
+    // Sort Qualities: Using PREDEFINED logic if possible, else logic
+    // We can use getQualityPriority('Unit 2', q) as a heuristic (since Unit 2 has most)
+    const sortedQualities = Array.from(allQualities).sort((a, b) => {
+        // Try Unit 2 priority first
+        const pA = getQualityPriority("Unit 2", a);
+        const pB = getQualityPriority("Unit 2", b);
+        if (pA !== 99 && pB !== 99) return pA - pB;
+        if (pA !== 99) return -1;
+        if (pB !== 99) return 1;
+        return a.localeCompare(b);
+    });
+
+    // 2. Group by Color (Rows)
+    const rows = {};
+    filteredData.value.forEach(d => {
+        const color = d.color || "Unknown";
+        if (!rows[color]) {
+            rows[color] = {
+                color: color,
+                priority: getColorPriority(color), // For sorting rows
+                cells: {},
+                total: 0
+            };
+        }
+        
+        const q = (d.quality || "").toUpperCase().trim();
+        if (!rows[color].cells[q]) rows[color].cells[q] = 0;
+        
+        rows[color].cells[q] += (d.qty || 0);
+        rows[color].total += (d.qty || 0);
+    });
+
+    // 3. Convert to Array and Sort
+    const sortedRows = Object.values(rows).sort((a, b) => {
+        return compareColor({color: a.color}, {color: b.color}, 'asc');
+    });
+
+    // 4. Calculate Column Totals
+    const colTotals = {};
+    sortedQualities.forEach(q => {
+        colTotals[q] = sortedRows.reduce((sum, r) => sum + (r.cells[q] || 0), 0);
+    });
+    
+    // Grand Total
+    const grandTotal = sortedRows.reduce((sum, r) => sum + r.total, 0);
+
+    return {
+        columns: sortedQualities,
+        rows: sortedRows,
+        colTotals,
+        grandTotal
+    };
+});
 
 const visibleUnits = computed(() =>
   filterUnit.value ? units.filter((u) => u === filterUnit.value) : units
@@ -1842,5 +1973,99 @@ function updateRescueSelection(d) {
   color: #94a3b8;
   font-size: 13px;
   font-style: italic;
+}
+</style>
+
+<style scoped>
+/* ---- MATRIX VIEW ---- */
+.cc-view-btn {
+    background: white;
+    border: 1px solid #d1d5db;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #4b5563;
+    cursor: pointer;
+    font-weight: 500;
+}
+.cc-view-btn.active {
+    background: #eff6ff;
+    border-color: #3b82f6;
+    color: #1d4ed8;
+    font-weight: 600;
+}
+
+.cc-matrix-container {
+    flex: 1;
+    overflow: hidden;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+}
+
+.cc-matrix-scroll {
+    flex: 1;
+    overflow: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: white;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.cc-matrix-table {
+    width: 100%;
+    border-collapse: separate; /* Required for sticky headers */
+    border-spacing: 0;
+    font-size: 12px;
+}
+
+.cc-matrix-table th, 
+.cc-matrix-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #e5e7eb;
+    border-right: 1px solid #e5e7eb;
+}
+
+.cc-matrix-table thead th {
+    background: #f8fafc;
+    font-weight: 700;
+    color: #334155;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.cc-matrix-table tbody tr:hover td {
+    background: #f8fafc;
+}
+
+.matrix-sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 10;
+    background: #f8fafc;
+    border-right: 2px solid #e2e8f0;
+}
+
+.cc-matrix-table thead th.matrix-sticky-col {
+    z-index: 30; /* Higher than normal headers and normal sticky cols */
+}
+
+.matrix-row-header {
+    font-weight: 600;
+    color: #1e293b;
+    min-width: 150px;
+}
+
+.matrix-highlight {
+    background-color: #dcfce7 !important; /* Green-100 */
+    color: #166534;
+    font-weight: 700;
+}
+
+.matrix-total-col {
+    background: #f1f5f9;
+    font-weight: 700;
 }
 </style>
