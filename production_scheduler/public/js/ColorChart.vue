@@ -364,6 +364,9 @@ const matrixData = computed(() => {
     const groups = {};
     
     filteredData.value.forEach(d => {
+        // UNIT FILTER (Matrix View needs this explicitly as filteredData doesn't filter unit)
+        if (filterUnit.value && (d.unit || "Mixed") !== filterUnit.value) return;
+
         // ID for the Column Group
         // Use Planning Sheet Name or Code? 
         // d.planningSheet might be "PS-001". d.name is "PS-001-1".
@@ -383,12 +386,19 @@ const matrixData = computed(() => {
             };
             
             // Calculate Days (Diff from Today?)
-            // Excel: "34 DAYS". older orders have more days.
-            if (groups[code].date) {
+            // If "Days Remaining" (DOD - Today):
+            if (d.dod) {
+               const d1 = new Date(d.dod);
+               const today = new Date();
+               const diffTime = d1 - today; 
+               const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+               groups[code].days = diffDays + " DAYS";
+            } else if (groups[code].date) {
+               // Fallback: Age (Today - Ordered Date)
                const d1 = new Date(groups[code].date);
                const today = new Date();
-               const diffTime = Math.abs(today - d1);
-               const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+               const diffTime = today - d1;
+               const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); 
                groups[code].days = diffDays + " DAYS";
             }
         }
