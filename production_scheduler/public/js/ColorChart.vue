@@ -222,7 +222,6 @@
                             v-for="col in matrixData.columns" 
                             :key="col.id" 
                             class="text-right"
-                            :class="{ 'matrix-highlight': (row.cells[col.id] || 0) >= 800 }"
                         >
                             {{ (row.cells[col.id] || 0) > 0 ? (row.cells[col.id]).toFixed(0) : '' }}
                         </td>
