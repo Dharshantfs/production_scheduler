@@ -391,6 +391,8 @@ def get_color_chart_data(date):
 				"width": flt(item.get("width") or item.get("custom_width") or item.get("width_inches") or item.get("width_inch") or item.get("width_in") or 0),
 				"debug_keys": list(item.keys()),
 				"unit": unit,
+				"ordered_date": str(sheet.ordered_date) if sheet.ordered_date else "",
+				"dod": str(sheet.dod) if sheet.dod else "",
 			})
 
 	return data
