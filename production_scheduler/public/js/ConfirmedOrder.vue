@@ -203,19 +203,13 @@ const visibleUnits = computed(() =>
 const filteredData = computed(() => {
   let data = rawData.value;
   
-  // EXCLUDE WHITES LOGIC (Shared)
-  const EXCLUDED_WHITES = [
-      "WHITE", "BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE", 
-      "SUPER WHITE", "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"
-  ];
+  // EXCLUDE WHITES LOGIC (Shared) - DISABLED (Show All)
+  // const EXCLUDED_WHITES = [];
 
   data = data.filter(d => {
       // Normalize Unit for Display
       if (!d.unit) d.unit = "Mixed";
-
-      const colorUpper = (d.color || "").toUpperCase();
-      if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return true;
-      return !EXCLUDED_WHITES.some(ex => colorUpper.includes(ex));
+      return true; // SHOW ALL COLORS (WHITES INCLUDED)
   });
 
   if (filterPartyCode.value) {
