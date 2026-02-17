@@ -213,6 +213,7 @@ const visibleUnits = computed(() =>
 const EXCLUDED_WHITES = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE"];
 
 // Filter data by party code and status
+// Filter data by party code and status
 const filteredData = computed(() => {
   let data = rawData.value;
   
@@ -222,9 +223,22 @@ const filteredData = computed(() => {
       unit: d.unit || "Mixed"
   }));
 
-  // NOTE: In Production Board, we show ALL items (including White).
-  // We just show the summary of White weight in the header.
-  
+  // 1. Calculate Total Weight Per Color (Across ALL units)
+  const colorTotals = {};
+  data.forEach(d => {
+      const color = (d.color || "").toUpperCase().trim();
+      if (!colorTotals[color]) colorTotals[color] = 0;
+      colorTotals[color] += (d.qty || 0);
+  });
+
+  // 2. Filter out orders where Color Total < 800kg
+  // User Requirement: "only show color orderders in production board if the quanity reached 800 above"
+  data = data.filter(d => {
+      const color = (d.color || "").toUpperCase().trim();
+      const total = colorTotals[color] || 0;
+      return total >= 800;
+  });
+
   if (filterPartyCode.value) {
     const search = filterPartyCode.value.toLowerCase();
     data = data.filter((d) =>

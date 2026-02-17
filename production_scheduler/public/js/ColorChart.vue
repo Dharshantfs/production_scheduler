@@ -164,10 +164,50 @@
         <div class="cc-matrix-scroll">
             <table class="cc-matrix-table">
                 <thead>
+                    <!-- Row 1: Order Date (Merged) -->
                     <tr>
-                        <th class="matrix-sticky-col">Colors / Quality</th>
-                        <th v-for="col in matrixData.columns" :key="col">{{ col }}</th>
-                        <th class="matrix-total-col">TOTAL</th>
+                        <th class="matrix-sticky-col">DATE</th>
+                        <template v-for="(h, i) in matrixData.dateHeaders" :key="'date-' + i">
+                            <th :colspan="h.span" class="text-center" style="background:#f1f5f9; border-left:1px solid #cbd5e1;">
+                                {{ h.date }}
+                            </th>
+                        </template>
+                        <th class="matrix-total-col" rowspan="6">TOTAL</th>
+                    </tr>
+                    <!-- Row 2: Days -->
+                    <tr>
+                        <th class="matrix-sticky-col">DAYS</th>
+                        <th v-for="col in matrixData.columns" :key="'days-'+col.id" class="text-center font-normal">
+                            {{ col.days }}
+                        </th>
+                    </tr>
+                    <!-- Row 3: Code -->
+                    <tr>
+                        <th class="matrix-sticky-col">CODE</th>
+                        <th v-for="col in matrixData.columns" :key="'code-'+col.id" class="text-center">
+                            {{ col.code }}
+                        </th>
+                    </tr>
+                    <!-- Row 4: GSM -->
+                    <tr>
+                        <th class="matrix-sticky-col">GSM TYPE</th>
+                        <th v-for="col in matrixData.columns" :key="'gsm-'+col.id" class="text-center font-normal">
+                            {{ col.gsm }}
+                        </th>
+                    </tr>
+                    <!-- Row 5: Quality -->
+                    <tr>
+                        <th class="matrix-sticky-col">QUALITY</th>
+                        <th v-for="col in matrixData.columns" :key="'qual-'+col.id" class="text-center">
+                            {{ col.quality }}
+                        </th>
+                    </tr>
+                    <!-- Row 6: Customer (Green Header) -->
+                    <tr>
+                        <th class="matrix-sticky-col" style="background:#dcfce7; color:#166534;">COLOURS</th>
+                        <th v-for="col in matrixData.columns" :key="'cust-'+col.id" class="text-center" style="background:#dcfce7; color:#166534; font-size:10px;">
+                            {{ col.customer }}
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
@@ -180,11 +220,11 @@
                         </td>
                         <td 
                             v-for="col in matrixData.columns" 
-                            :key="col" 
+                            :key="col.id" 
                             class="text-right"
-                            :class="{ 'matrix-highlight': (row.cells[col] || 0) >= 800 }"
+                            :class="{ 'matrix-highlight': (row.cells[col.id] || 0) >= 800 }"
                         >
-                            {{ (row.cells[col] || 0) > 0 ? (row.cells[col]).toFixed(0) : '-' }}
+                            {{ (row.cells[col.id] || 0) > 0 ? (row.cells[col.id]).toFixed(0) : '' }}
                         </td>
                         <td class="matrix-total-col text-right font-bold bg-gray-50">
                             {{ row.total.toFixed(0) }}
@@ -194,8 +234,8 @@
                 <tfoot>
                     <tr>
                         <th class="matrix-sticky-col">TOTAL</th>
-                        <th v-for="col in matrixData.columns" :key="col" class="text-right">
-                            {{ matrixData.colTotals[col].toFixed(0) }}
+                        <th v-for="col in matrixData.columns" :key="col.id" class="text-right">
+                            {{ matrixData.colTotals[col.id].toFixed(0) }}
                         </th>
                         <th class="matrix-total-col text-right">{{ matrixData.grandTotal.toFixed(0) }}</th>
                     </tr>
@@ -312,63 +352,120 @@ const renderKey = ref(0); // Force re-render for drag revert
 const matrixData = computed(() => {
     if (viewMode.value !== 'matrix') return [];
     
-    // 1. Get Unique Qualities (Columns) from strict list or data?
-    // Use Predefined Global List to ensure order?
-    // Or dynamic? Dynamic is safer for new qualities.
-    // Let's use specific Unit Maps combined? Or just dynamic.
-    const allQualities = new Set();
+    // 1. Prepare Columns (Orders / Planning Sheets/Items)
+    // Group items by "Order Identity" -> (Date + Code/Sheet + Quality + Customer + GSM)?
+    // User wants "Date, Days, Code, GSM, Quality, Customer" as headers.
+    // Each COLUMN represents a unique "Production Run" or Order Context.
+    
+    // We need to group detailed items into columns.
+    // If an order has multiple colors, do they share a column?
+    // In the Excel, "Code A26192" has multiple colors below it (Ivory, Golden Yellow).
+    // So distinct columns are determined by: CODE (and its attributes).
+    
+    const groups = {};
+    
     filteredData.value.forEach(d => {
-        if (d.quality) allQualities.add(d.quality.toUpperCase().trim());
-    });
-    // Sort Qualities: Using PREDEFINED logic if possible, else logic
-    // We can use getQualityPriority('Unit 2', q) as a heuristic (since Unit 2 has most)
-    const sortedQualities = Array.from(allQualities).sort((a, b) => {
-        // Try Unit 2 priority first
-        const pA = getQualityPriority("Unit 2", a);
-        const pB = getQualityPriority("Unit 2", b);
-        if (pA !== 99 && pB !== 99) return pA - pB;
-        if (pA !== 99) return -1;
-        if (pB !== 99) return 1;
-        return a.localeCompare(b);
-    });
-
-    // 2. Group by Color (Rows)
-    const rows = {};
-    filteredData.value.forEach(d => {
-        const color = d.color || "Unknown";
-        if (!rows[color]) {
-            rows[color] = {
-                color: color,
-                priority: getColorPriority(color), // For sorting rows
-                cells: {},
-                total: 0
+        // ID for the Column Group
+        // Use Planning Sheet Name or Code? 
+        // d.planningSheet might be "PS-001". d.name is "PS-001-1".
+        // Let's use `planningSheet` as the Grouper?
+        const code = d.planningSheet; // Or d.partyCode? Excel says "Code A26192". This looks like a Sales Order or Sheet ID.
+        
+        if (!groups[code]) {
+            groups[code] = {
+                id: code,
+                date: d.ordered_date || d.order_date || "", // Date
+                days: 0, // Calculate Diff?
+                code: code,
+                gsm: d.gsm || "",
+                quality: d.quality || "",
+                customer: d.customer || d.partyCode || "",
+                items: []
             };
+            
+            // Calculate Days (Diff from Today?)
+            // Excel: "34 DAYS". older orders have more days.
+            if (groups[code].date) {
+               const d1 = new Date(groups[code].date);
+               const today = new Date();
+               const diffTime = Math.abs(today - d1);
+               const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+               groups[code].days = diffDays + " DAYS";
+            }
         }
-        
-        const q = (d.quality || "").toUpperCase().trim();
-        if (!rows[color].cells[q]) rows[color].cells[q] = 0;
-        
-        rows[color].cells[q] += (d.qty || 0);
-        rows[color].total += (d.qty || 0);
+        groups[code].items.push(d);
     });
 
-    // 3. Convert to Array and Sort
-    const sortedRows = Object.values(rows).sort((a, b) => {
-        return compareColor({color: a.color}, {color: b.color}, 'asc');
+    // Sort Groups (Columns) by Date then Code
+    const sortedGroups = Object.values(groups).sort((a, b) => {
+        if (a.date !== b.date) return new Date(a.date) - new Date(b.date);
+        return a.code.localeCompare(b.code);
     });
 
-    // 4. Calculate Column Totals
-    const colTotals = {};
-    sortedQualities.forEach(q => {
-        colTotals[q] = sortedRows.reduce((sum, r) => sum + (r.cells[q] || 0), 0);
+    // 2. Prepare Rows (Unique Colors)
+    const allColors = new Set();
+    filteredData.value.forEach(d => {
+        if (d.color) allColors.add(d.color);
     });
     
-    // Grand Total
-    const grandTotal = sortedRows.reduce((sum, r) => sum + r.total, 0);
+    const sortedColors = Array.from(allColors).sort((a, b) => {
+         return compareColor({color: a}, {color: b}, 'asc');
+    });
+
+    const rows = sortedColors.map(color => {
+        return {
+            color: color,
+            cells: {}, // Key = Group ID (Code)
+            total: 0
+        };
+    });
+
+    // 3. Fill Cells
+    rows.forEach(row => {
+        sortedGroups.forEach(group => {
+            // Find item with this color in this group
+            const match = group.items.find(i => i.color === row.color);
+            if (match) {
+                row.cells[group.id] = match.qty;
+                row.total += match.qty;
+            }
+        });
+    });
+    
+    // Group Columns by DATE for Merged Header
+    const dateHeaders = [];
+    let lastDate = null;
+    let currentSpan = 0;
+    
+    sortedGroups.forEach((g, index) => {
+         const d = g.date;
+         if (d !== lastDate) {
+             if (lastDate !== null) {
+                 dateHeaders.push({ date: lastDate, span: currentSpan });
+             }
+             lastDate = d;
+             currentSpan = 1;
+         } else {
+             currentSpan++;
+         }
+         
+         if (index === sortedGroups.length - 1) {
+             dateHeaders.push({ date: lastDate, span: currentSpan });
+         }
+    });
+
+    // Column Totals
+    const colTotals = {};
+    sortedGroups.forEach(g => {
+        colTotals[g.id] = rows.reduce((sum, r) => sum + (r.cells[g.id] || 0), 0);
+    });
+    
+    const grandTotal = rows.reduce((sum, r) => sum + r.total, 0);
 
     return {
-        columns: sortedQualities,
-        rows: sortedRows,
+        dateHeaders,
+        columns: sortedGroups,
+        rows,
         colTotals,
         grandTotal
     };
