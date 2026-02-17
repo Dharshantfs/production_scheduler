@@ -482,83 +482,7 @@ def split_order(item_name, split_qty, target_unit):
 	}
 
 @frappe.whitelist()
-@frappe.whitelist()
-def get_confirmed_orders_kanban(order_date=None, party_code=None):
-    """
-    Fetches 'Confirmed' Sales Order Items that are NOT yet in any active Planning Sheet.
-    Dynamically maps Unit based on Quality/GSM using system rules.
-    """
-    params = {}
-    conditions = []
-    
-    if order_date:
-        conditions.append("so.transaction_date = %(order_date)s")
-        params["order_date"] = order_date
-    if party_code:
-        conditions.append("(so.party_code LIKE %(party_code)s OR so.customer LIKE %(party_code)s)")
-        params["party_code"] = f"%{party_code}%"
-        
-    where_clause = " AND ".join(conditions)
-    if where_clause: where_clause = "AND " + where_clause
-    
-    sql = f"""
-        SELECT 
-            so.name, so.customer, so.transaction_date, so.delivery_date, 
-            so.party_code as party_code, so.custom_production_status,
-            item.name as itemName, item.item_code, item.qty, item.custom_width as width,
-            COALESCE(item.custom_quality, item.quality) as quality,
-            COALESCE(item.custom_gsm, item.gsm, 0) as gsm,
-            COALESCE(item.custom_color, item.color, '') as color
-        FROM
-            `tabSales Order Item` item
-        JOIN
-            `tabSales Order` so ON item.parent = so.name
-        WHERE
-            so.docstatus = 1
-            -- AND so.custom_production_status = 'Confirmed'
-            {where_clause}
-            AND item.name NOT IN (
-                SELECT sales_order_item 
-                FROM `tabPlanning Sheet Item` 
-                WHERE docstatus < 2 AND sales_order_item IS NOT NULL
-            )
-    """
-    
-    raw_data = frappe.db.sql(sql, params, as_dict=True)
-    data = []
-    
-    for row in raw_data:
-        # Calculate Unit Logic
-        qual = row.quality or ""
-        gsm = flt(row.gsm)
-        unit = "Unit 1"
-        q_up = str(qual).upper()
-        
-        if q_up:
-            if gsm > 50 and q_up in UNIT_QUALITY_MAP["Unit 1"]: unit = "Unit 1"
-            elif gsm > 20 and q_up in UNIT_QUALITY_MAP["Unit 2"]: unit = "Unit 2"
-            elif gsm > 10 and q_up in UNIT_QUALITY_MAP["Unit 3"]: unit = "Unit 3"
-            elif q_up in UNIT_QUALITY_MAP["Unit 4"]: unit = "Unit 4"
-            
-        data.append({
-            "name": row.name,
-            "itemName": row.itemName,
-            "planningSheet": row.name, # Key to creating plan from this SO
-            "customer": row.customer,
-            "partyCode": row.party_code or row.customer,
-            "ordered_date": row.transaction_date,
-            "dod": row.delivery_date,
-            "planningStatus": row.custom_production_status or "None",
-            "docstatus": 1,
-            "unit": unit,
-            "color": (row.color or "").title(),
-            "quality": qual,
-            "gsm": gsm,
-            "qty": row.qty,
-            "width": row.width
-        })
-        
-    return data
+
 
 @frappe.whitelist()
 def get_orders_for_date(date):
@@ -767,54 +691,21 @@ def get_unscheduled_planning_sheets():
 @frappe.whitelist()
 def get_confirmed_orders_kanban(order_date=None, party_code=None):
     """
-    Fetches ITEM-LEVEL data for Confirmed Orders (Ready for Production).
-    Structure matches get_color_chart_data for Kanban compatibility.
+    Fetches Planning Sheet Items where the linked Sales Order is 'Confirmed'.
+    These items are already in Planning Sheets (scheduled or unscheduled).
     """
-    filters = {
-        "docstatus": 0, # Draft sheets are "Confirmed" in this workflow
-        "ordered_date": ["is", "not set"] # Only those NOT yet scheduled? 
-        # Wait, if they are "Ready for Production", they might NOT have a date yet?
-        # User said "filter od orderdate deleiver y date and partycode".
-        # If I filter by Order Date, that implies they HAVE an Order Date?
-        # BUT `get_unscheduled_planning_sheets` filtered for `ordered_date IS NULL`.
-        # If they are "Confirmed" (from Sales Order), they typically don't have a schedule date yet.
-        # UNLESS the user sets it manually?
-        # The prompt says: "Filter of orderdate".
-        # If I use `ordered_date` filter, I will only see items that HAVE a date.
-        # But if they have a date, they appear on the main Production Board?
-        # The "Confirmed Order" view is usually a "Holding Area" (Unscheduled).
-        # Let's assume `order_date` here refers to `transaction_date` (Sales Order Date) OR `delivery_date` (DOD)?
-        # The prompt says: "filter od orderdate deleiver y date".
-        # Let's support filtering by Sales Order Date (transaction_date) or Delivery Date (dod).
-        # And usually these sheets have NO `ordered_date` (Production Date).
-        # So we fetch sheets where `ordered_date` is NULL (Unscheduled).
-    }
-    
-    # Base SQL
-    conditions = ["(p.ordered_date IS NULL OR p.ordered_date = '')", "p.docstatus < 2"]
+    conditions = ["so.custom_production_status = 'Confirmed'", "p.docstatus < 2"]
     values = []
-    
-    # Filter by Sales Order Date (transaction_date) ?? 
-    # Planning sheet doesn't have transaction_date, but has `creation`?
-    # Or should we Join Sales Order?
-    # Let's use `p.creation` as proxy for Order Date if `transaction_date` missing?
-    # Actually, let's look at `Planning sheet` fields. it has `dod`. 
-    # If user wants "Order Date" filter, maybe they mean the date the ORDER came in.
-    # Let's assume standard filtering on `p.creation` or `p.modified`? or `so.transaction_date`?
-    # Given the context, let's filter by `p.dod` (Delivery Date) if provided.
-    
-    # Filter by Sales Order Date (transaction_date) preference
+
+    # Optional Filters
     if order_date:
-        # User "Order Date" filter usually implies Sales Order Date.
-        # Fallback to Creation Date if no Sales Order linked.
-        conditions.append("((so.transaction_date IS NOT NULL AND so.transaction_date = %s) OR (so.transaction_date IS NULL AND DATE(p.creation) = %s))")
-        values.append(order_date)
-        values.append(order_date)
+        # Assuming order_date filter applies to Delivery Date (DOD) or Order Date
+        conditions.append("(p.dod = %s OR DATE(so.transaction_date) = %s)")
+        values.extend([order_date, order_date])
 
     if party_code:
         conditions.append("(p.party_code LIKE %s OR p.customer LIKE %s)")
-        values.append(f"%{party_code}%")
-        values.append(f"%{party_code}%")
+        values.extend([f"%{party_code}%", f"%{party_code}%"])
 
     where_clause = " AND ".join(conditions)
 
@@ -823,10 +714,10 @@ def get_confirmed_orders_kanban(order_date=None, party_code=None):
             i.name, i.item_code, i.item_name, i.qty, i.unit, i.color, 
             i.gsm, i.custom_quality as quality, i.width_inch, i.idx,
             p.name as planning_sheet, p.party_code, p.customer, p.dod, p.planning_status, p.creation,
-            so.transaction_date as so_date
+            so.transaction_date as so_date, so.custom_production_status
         FROM
             `tabPlanning Sheet Item` i
-        LEFT JOIN
+        JOIN
             `tabPlanning sheet` p ON i.parent = p.name
         LEFT JOIN
             `tabSales Order` so ON p.sales_order = so.name
@@ -853,8 +744,9 @@ def get_confirmed_orders_kanban(order_date=None, party_code=None):
             "gsm": item.gsm or "",
             "qty": flt(item.qty),
             "width": flt(item.width_inch or 0),
-            "unit": item.unit or "", # Might be empty initially
-            "dod": str(item.dod) if item.dod else ""
+            "unit": item.unit or "", 
+            "dod": str(item.dod) if item.dod else "",
+            "order_date": str(item.so_date) if item.so_date else str(item.creation.date())
         })
         
     return data
