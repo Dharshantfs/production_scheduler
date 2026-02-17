@@ -80,8 +80,8 @@
 
         <div class="cc-col-body" :data-unit="unit" ref="columnRefs">
           <template v-for="(entry, idx) in getUnitEntries(unit)" :key="entry.uniqueKey">
-            <!-- Mix Roll Marker (HIDDEN as per user request) -->
-            <div v-if="entry.type === 'mix' && false" class="cc-mix-marker">
+            <!-- Mix Roll Marker (HIDDEN as per user request, but handled correctly) -->
+            <div v-if="entry.type === 'mix'" class="cc-mix-marker" style="display:none;">
               <div class="cc-mix-line"></div>
               <span class="cc-mix-label" :class="entry.mixType.toLowerCase().replace(' ', '-')">
                 {{ entry.mixType }} — ~{{ entry.qty }} Kg
