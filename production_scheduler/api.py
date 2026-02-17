@@ -689,19 +689,25 @@ def get_unscheduled_planning_sheets():
     return sheets
 
 @frappe.whitelist()
-def get_confirmed_orders_kanban(order_date=None, party_code=None):
+def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=None):
     """
     Fetches Planning Sheet Items where the linked Sales Order is 'Confirmed'.
     These items are already in Planning Sheets (scheduled or unscheduled).
+    Supports independent filtering by Order Date and Delivery Date.
     """
     conditions = ["so.custom_production_status = 'Confirmed'", "p.docstatus < 2"]
     values = []
 
-    # Optional Filters
+    # Filter by Sales Order Date (Transaction Date)
+    # Fallback to Creation Date if SO date is missing (unlikely for matched SOs)
     if order_date:
-        # Assuming order_date filter applies to Delivery Date (DOD) or Order Date
-        conditions.append("(p.dod = %s OR DATE(so.transaction_date) = %s)")
+        conditions.append("((so.transaction_date IS NOT NULL AND so.transaction_date = %s) OR (so.transaction_date IS NULL AND DATE(p.creation) = %s))")
         values.extend([order_date, order_date])
+
+    # Filter by Delivery Date (DOD)
+    if delivery_date:
+        conditions.append("p.dod = %s")
+        values.append(delivery_date)
 
     if party_code:
         conditions.append("(p.party_code LIKE %s OR p.customer LIKE %s)")
@@ -751,44 +757,7 @@ def get_confirmed_orders_kanban(order_date=None, party_code=None):
         
     return data
 
-@frappe.whitelist()
-def check_credit_and_confirm(doc, method=None):
-    """
-    Hook for Sales Order: On Submit.
-    If Credit Customer (logic: Payment Terms != 'Advance'), set status Confirmed & Create Sheet.
-    """
-    if doc.docstatus != 1: return
 
-    is_advance = False
-    if doc.payment_terms_template:
-        terms = frappe.db.get_value("Payment Terms Template", doc.payment_terms_template, "template_name")
-        if terms and "Advance" in terms:
-            is_advance = True
-    
-    if not is_advance:
-        mark_order_confirmed(doc)
-
-@frappe.whitelist()
-def check_advance_and_confirm(doc, method=None):
-    """
-    Hook for Payment Entry: On Submit.
-    Check if linked Sales Orders are fully paid.
-    """
-    if doc.docstatus != 1: return
-    
-    for ref in doc.references:
-        if ref.reference_doctype == "Sales Order":
-            so = frappe.get_doc("Sales Order", ref.reference_name)
-            mark_order_confirmed(so)
-
-def mark_order_confirmed(so_doc):
-    """
-    Sets Sales Order custom status and Creates/Updates Planning Sheet.
-    """
-    if so_doc.meta.has_field("custom_production_status"):
-        so_doc.db_set("custom_production_status", "Confirmed")
-    
-    # create_planning_sheet_from_so(so_doc) # DISABLED per user request (User has custom script)
 
 def create_planning_sheet_from_so(doc):
     """

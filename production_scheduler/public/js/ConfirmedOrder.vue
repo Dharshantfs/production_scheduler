@@ -220,11 +220,6 @@ const filteredData = computed(() => {
     );
   }
   
-  // Confirmed Order specific: Filter by Delivery Date if set
-  if (filterDeliveryDate.value) {
-      data = data.filter(d => d.dod === filterDeliveryDate.value);
-  }
-
   return data;
 });
 
@@ -430,6 +425,7 @@ async function fetchData() {
       method: "production_scheduler.api.get_confirmed_orders_kanban", 
       args: { 
           order_date: filterOrderDate.value || null,
+          delivery_date: filterDeliveryDate.value || null,
           party_code: filterPartyCode.value || null
       },
     });

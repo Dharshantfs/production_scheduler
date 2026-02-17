@@ -12,13 +12,5 @@ app_license = "mit"
 app_include_css = "/assets/production_scheduler/css/production_scheduler.css"
 app_include_js = "production_scheduler.bundle.js"
 
-doc_events = {
-    "Sales Order": {
-        "on_submit": "production_scheduler.api.check_credit_and_confirm",
-        "on_update": "production_scheduler.api.check_credit_and_confirm"
-    },
-    "Payment Entry": {
-        "on_submit": "production_scheduler.api.check_advance_and_confirm"
-    }
-}
+
 
