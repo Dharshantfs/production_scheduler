@@ -198,8 +198,14 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 		final_unit = unit
 		final_date = target_date
 
-	# 4. Perform Move (Re-parent if needed)
-	_move_item_to_slot(item, final_unit, final_date)
+	# 4. Perform Move
+	# Convert index to int if provided
+	idx_val = int(index) if index else None
+	# If index is 0/None, maybe append? 
+	# User drags to specific position. index is the new index in the list.
+	# We should respect it.
+	
+	_move_item_to_slot(item, final_unit, final_date, idx_val)
 	
 	frappe.db.commit()
 	return {
@@ -207,17 +213,17 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 		"moved_to": {"date": final_date, "unit": final_unit}
 	}
 
-def _move_item_to_slot(item_doc, unit, date):
+def _move_item_to_slot(item_doc, unit, date, new_idx=None):
 	"""Internal helper to re-parent a Planning Sheet Item to a specific slot."""
 	target_date = getdate(date)
 	source_parent = frappe.get_doc("Planning sheet", item_doc.parent)
 	
-	# 1. Update Unit on Item
-	item_doc.unit = unit
-	
-	# 2. Re-parent if Date changed
-	if source_parent.ordered_date != target_date:
-		# Find suitable sheet for this date and party
+	# 1. Determine Target Sheet
+	target_sheet_name = None
+	if source_parent.ordered_date == target_date:
+		target_sheet_name = source_parent.name
+	else:
+		# Find suitable sheet
 		target_sheet_name = frappe.db.get_value("Planning sheet", {
 			"ordered_date": target_date,
 			"party_code": source_parent.party_code,
@@ -233,19 +239,36 @@ def _move_item_to_slot(item_doc, unit, date):
 			new_sheet.customer = source_parent.customer
 			new_sheet.save(ignore_permissions=True)
 			target_sheet_name = new_sheet.name
+
+	# 2. Handle IDX Shifting if inserting at specific position
+	# If new_idx is provided, we need to shift items in the target unit/sheet >= new_idx
+	if new_idx is not None:
+		# Get items in target sheet/unit to shift
+		# Note: 'idx' is global per Planning Sheet usually. 
+		# But here we are checking Unit ordering.
+		# If we use global 'idx' for sheet, we need to shift ALL items in sheet.
+		frappe.db.sql("""
+			UPDATE `tabPlanning Sheet Item`
+			SET idx = idx + 1
+			WHERE parent = %s AND idx >= %s
+		""", (target_sheet_name, new_idx))
 		
-		# Move Item
-		item_doc.parent = target_sheet_name
-		item_doc.parenttype = "Planning sheet"
-		item_doc.parentfield = "items"
-		item_doc.save()
-		
-		# Cleanup Source Parent if empty
+	# 3. Update Item
+	item_doc.unit = unit
+	item_doc.parent = target_sheet_name
+	item_doc.parenttype = "Planning sheet"
+	item_doc.parentfield = "items"
+	if new_idx is not None:
+		item_doc.idx = new_idx
+	
+	item_doc.save()
+	
+	# 4. Cleanup Source
+	if source_parent.name != target_sheet_name:
 		source_parent.reload()
 		if not source_parent.get("items"):
 			frappe.delete_doc("Planning sheet", source_parent.name, force=1)
-	else:
-		item_doc.save()
+
 
 @frappe.whitelist()
 def get_kanban_board(start_date, end_date):
@@ -1110,5 +1133,33 @@ def create_planning_sheets_bulk(sales_orders):
             frappe.log_error(f"Failed to create plan for {so_name}: {str(e)}")
             errors.append(so_name)
             
+            
     return {"created": created, "errors": errors}
+
+
+@frappe.whitelist()
+def save_color_order(order):
+    """Save custom color order global default."""
+    if isinstance(order, str):
+        try:
+            import json
+            order = json.loads(order)
+        except:
+            pass
+    if not isinstance(order, list):
+        return
+    frappe.defaults.set_global_default("production_color_order", frappe.as_json(order))
+    return "saved"
+
+@frappe.whitelist()
+def get_color_order():
+    """Get custom color order global default."""
+    order_str = frappe.defaults.get_global_default("production_color_order")
+    if order_str:
+        try:
+            import json
+            return json.loads(order_str)
+        except:
+            return []
+    return []
 

@@ -39,6 +39,9 @@
       <button v-if="isAdmin" class="cc-clear-btn" style="color: #dc2626; border-color: #dc2626; margin-left: 8px;" @click="openRescueDialog" title="Rescue lost or stuck orders">
         🚑 Rescue Orders
       </button>
+      <button class="cc-clear-btn" style="margin-left:8px;" @click="fetchData" title="Refresh Data">
+        🔄
+      </button>
       
       <!-- View Toggle -->
       <div class="cc-view-toggle">
@@ -279,6 +282,7 @@ const unitSortConfig = reactive({});
 const rawData = ref([]);
 const columnRefs = ref(null);
 const renderKey = ref(0); 
+const customRowOrder = ref([]); // Store user-defined color order
 const viewMode = ref('kanban'); // 'kanban' | 'table'
 
 const visibleUnits = computed(() =>
@@ -423,6 +427,17 @@ function findColorGroup(color) {
 }
 
 function getColorPriority(color) {
+  // Check custom order first
+  if (customRowOrder.value && customRowOrder.value.length > 0) {
+      const idx = customRowOrder.value.indexOf(color);
+      if (idx !== -1) {
+          // Return a priority that overrides standard groups.
+          // Lower number = higher priority (sorted first).
+          // Standard Groups are 10-99.
+          // We use negative numbers to prioritize custom order.
+          return -1000 + idx;
+      }
+  }
   const group = findColorGroup(color);
   return group ? group.priority : 50;
 }
@@ -538,8 +553,13 @@ async function initSortable() {
         const newUnit = newUnitEl.dataset.unit;
         
         if (!itemName || !newUnit) return;
+        
+        // Calculate new index (1-based)
+        // evt.newIndex is 0-based.
+        // We need to pass this to backend to insert at correct position.
+        const newIndex = evt.newIndex + 1;
 
-        if (newUnitEl !== oldUnitEl) {
+        if (newUnitEl !== oldUnitEl || evt.newIndex !== evt.oldIndex) {
              // 1. STRICT BACKEND VALIDATION - Just Call API
              try {
                 frappe.show_alert({ message: "Validating Capacity...", indicator: "orange" });
@@ -551,7 +571,8 @@ async function initSortable() {
                         args: {
                             item_name: itemEl.dataset.itemName, 
                             unit: newUnit,
-                            date: filterOrderDate.value, 
+                            date: filterOrderDate.value,
+                            index: newIndex, // Pass Index!
                             force_move: force,
                             perform_split: split
                         }
@@ -832,6 +853,13 @@ async function fetchData() {
       },
     });
     rawData.value = r.message || [];
+    
+    // Load Custom Color Order
+    try {
+        const orderRes = await frappe.call("production_scheduler.api.get_color_order");
+        customRowOrder.value = orderRes.message || [];
+    } catch(e) { console.error("Failed to load color order", e); }
+    
     renderKey.value++; 
     await nextTick();
     await initSortable();
@@ -843,6 +871,14 @@ async function fetchData() {
 
 onMounted(() => {
   fetchData();
+  
+  // Auto-refresh when tab becomes visible (Fix for Matrix Sync)
+  document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === 'visible') {
+          console.log("Tab visible, refreshing data...");
+          fetchData();
+      }
+  });
 });
 </script>
 

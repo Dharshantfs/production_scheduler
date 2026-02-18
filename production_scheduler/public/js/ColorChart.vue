@@ -822,8 +822,12 @@ async function initSortable() {
                   const rows = Array.from(matrixBody.value.querySelectorAll('.matrix-row'));
                   customRowOrder.value = rows.map(r => r.dataset.color);
                   
-                  // Vue will re-render based on `matrixData` which uses `customRowOrder`
-                  // Sorting relies on data, so we don't need to manually move DOM (Sortable did it, Vue will correct it).
+                  // SAVE GLOBALLY
+                  frappe.call({
+                      method: "production_scheduler.api.save_color_order",
+                      args: { order: customRowOrder.value },
+                      callback: () => frappe.show_alert("Color Order Saved", 2)
+                  });
               }
           });
       }
