@@ -49,7 +49,7 @@
       </button>
     </div>
 
-    <div class="cc-board" :key="renderKey">
+    <div class="cc-board">
       <div
         v-for="unit in visibleUnits"
         :key="unit"
@@ -485,39 +485,39 @@ async function initSortable() {
                         primary_action_label: 'Move to Next Day',
                         primary_action: async () => { d.hide(); const moveRes = await performMove(1, 0); if (moveRes.message && moveRes.message.status === 'success') fetchData(); },
                         secondary_action_label: 'Cancel',
-                        secondary_action: () => { d.hide(); renderKey.value++; }
+                        secondary_action: () => { d.hide(); fetchData(); }
                      });
                      d.show();
                 } else if (res.message && res.message.status === 'success') {
                     frappe.show_alert({ message: isSameUnit ? "Order resequenced" : "Successfully moved", indicator: "green" });
-                    // For same-unit reorder: do optimistic local update instead of full fetch
-                    // to avoid destroying sortable instances which causes freeze
                     if (isSameUnit) {
                         unitSortConfig[newUnit].mode = 'manual';
-                        // Update the idx values in rawData locally to reflect new order
+                        // Update idx in memory only — no re-render, no sortable reinit, no freeze
                         const unitItems = rawData.value
                             .filter(d => (d.unit || "Mixed") === newUnit)
                             .sort((a, b) => (a.idx || 0) - (b.idx || 0));
-                        // Move the dragged item from oldIndex to newIndex
-                        const oldIdx = evt.oldIndex;
-                        const newIdx = evt.newIndex;
-                        const moved = unitItems.splice(oldIdx, 1)[0];
-                        unitItems.splice(newIdx, 0, moved);
-                        // Reassign idx values silently — no spread, no re-render, no sortable reinit
+                        const moved = unitItems.splice(evt.oldIndex, 1)[0];
+                        unitItems.splice(evt.newIndex, 0, moved);
                         unitItems.forEach((item, i) => {
                             const rawItem = rawData.value.find(d => d.itemName === item.itemName);
                             if (rawItem) rawItem.idx = i + 1;
                         });
-                        // DOM is already correct (Sortable moved it). Don't touch rawData ref.
+                        // Persist the new sequence to backend so table view matches
+                        const sequencePayload = unitItems.map((item, i) => ({ name: item.itemName, idx: i + 1 }));
+                        frappe.call({
+                            method: "production_scheduler.api.update_sequence",
+                            args: { items: sequencePayload }
+                        });
+                        // DOM is already correct (Sortable moved it). Don't touch rawData ref = no freeze.
                     } else {
                         unitSortConfig[newUnit].mode = 'manual';
-                        await fetchData(); 
+                        await fetchData();
                     }
                 }
              } catch (e) {
                  console.error(e);
                  frappe.msgprint("❌ Move Failed");
-                 renderKey.value++; 
+                 fetchData(); 
              }
              }, 50); // 50ms delay lets SortableJS finalize DOM before we change Vue state
         }
@@ -987,8 +987,9 @@ async function fetchData() {
         customRowOrder.value = orderRes.message || [];
     } catch(e) { console.error("Failed to load color order", e); }
     
-    // renderKey++ forces Vue to re-create DOM, watch(renderKey) then calls initSortable after nextTick
-    renderKey.value++;
+    // Reinit sortable after data loads — use nextTick to wait for Vue to finish rendering
+    await nextTick();
+    initSortable();
   } catch (e) {
     frappe.msgprint("Error loading data");
     console.error(e);
@@ -997,11 +998,6 @@ async function fetchData() {
 
 onMounted(() => {
   fetchData();
-});
-
-// After renderKey forces DOM rebuild, reinit sortable
-watch(renderKey, () => {
-    nextTick(() => initSortable());
 });
 </script>
 
