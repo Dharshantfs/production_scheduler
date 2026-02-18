@@ -706,7 +706,7 @@ function getUnitCapacityStatus(unit) {
     if (total > limit * 0.9) {
         return { 
             class: 'text-orange-600 font-bold', 
-            warning: $warn Near Limit 
+            warning: '⚠️ Near Limit' 
         };
     }
     
