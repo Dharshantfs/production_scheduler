@@ -800,45 +800,286 @@ async function autoAllocate() {
   );
 }
 
-function openPullOrdersDialog() {
-  // Simple dialog to call backend pull
-  const d = new frappe.ui.Dialog({
-     title: "Pull Orders",
-     fields: [
-        {
-            label: "From Date",
-            fieldname: "from_date",
-            fieldtype: "Date",
-            default: frappe.datetime.add_days(filterOrderDate.value, 1),
-            reqd: 1
+// ---- SHARED ACTION ----
+async function handleMoveOrders(items, date, unit, dialog) {
+    try {
+        const r = await frappe.call({
+            method: "production_scheduler.api.move_orders_to_date",
+            args: {
+                item_names: items,
+                target_date: date,
+                target_unit: unit
+            },
+            freeze: true
+        });
+        
+        if (r.message && r.message.status === 'success') {
+            const currentFilterDate = filterOrderDate.value;
+            const targetDate = date;
+            
+            const successMsg = `Successfully moved ${r.message.count} orders to ${targetDate}.`;
+            frappe.show_alert({ message: successMsg, indicator: 'green' });
+            
+            if (targetDate !== currentFilterDate) {
+                frappe.msgprint({
+                    title: 'Orders Moved',
+                    indicator: 'green',
+                    message: `Moved ${r.message.count} orders to <b>${targetDate}</b>.<br>They are no longer on this board.`
+                });
+            }
+            
+            if (dialog) dialog.hide();
+            await fetchData();
         }
-     ],
-     primary_action_label: "Pull All",
-     primary_action: async (val) => {
-         d.hide();
-         try {
-             const r = await frappe.call({
-                 method: "production_scheduler.api.move_orders_to_date",
-                 args: {
-                     source_date: val.from_date,
-                     target_date: filterOrderDate.value,
-                     // Move ALL orders from source to target
-                     // This API needs update if we want to move ALL.
-                     // Currently move_orders_to_date takes list of items or whole sheet?
-                 }
-             });
-             frappe.msgprint("Orders Pulled");
-             fetchData();
-         } catch (e) {
-             console.error(e); 
-         }
-     }
-  });
-  d.show();
+    } catch (e) {
+        console.error("Move failed", e);
+        frappe.msgprint("Error moving orders: " + (e.message || "Unknown Error"));
+    }
+}
+
+// ---- PULL ORDERS FROM FUTURE ----
+function openPullOrdersDialog() {
+    const nextDay = frappe.datetime.add_days(filterOrderDate.value, 1);
+    
+    // Create Dialog
+    const d = new frappe.ui.Dialog({
+        title: '📥 Pull Orders from Date',
+        fields: [
+            {
+                label: 'Source Date',
+                fieldname: 'source_date',
+                fieldtype: 'Date',
+                default: nextDay,
+                reqd: 1,
+                onchange: () => loadOrders(d)
+            },
+            {
+                label: 'Target Unit (Optional)',
+                fieldname: 'target_unit',
+                fieldtype: 'Select',
+                options: [
+                    { label: 'Keep Original Unit', value: '' },
+                    ...units.map(u => ({ label: `Move to ${u}`, value: u }))
+                ],
+                default: '',
+                description: 'If selected, all pulled orders will be assigned to this unit.'
+            },
+            {
+                fieldtype: 'HTML',
+                fieldname: 'preview_html'
+            }
+        ],
+        primary_action_label: 'Move Selected to Today',
+        primary_action: () => {
+            const selected = d.calc_selected_items || [];
+            if (selected.length === 0) {
+                frappe.msgprint("Please select at least one order.");
+                return;
+            }
+            const targetUnit = d.get_value('target_unit');
+            handleMoveOrders(selected, filterOrderDate.value, targetUnit, d);
+        }
+    });
+    
+    d.show();
+    loadOrders(d);
+}
+
+async function loadOrders(d) {
+    const date = d.get_value('source_date');
+    if (!date) return;
+    
+    d.set_value('preview_html', '<p class="text-gray-500 italic p-2">Loading...</p>');
+    
+    try {
+        const r = await frappe.call({
+            method: "production_scheduler.api.get_orders_for_date",
+            args: { date: date }
+        });
+        
+        const items = r.message || [];
+        if (items.length === 0) {
+            d.set_value('preview_html', '<p class="text-gray-500 italic p-2">No active orders found for this date.</p>');
+            d.calc_selected_items = [];
+            return;
+        }
+        
+        let html = `
+            <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;">
+                <div style="position: sticky; top: 0; background: #f8fafc; z-index: 10; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; display: grid; grid-template-columns: 40px 80px 1fr 100px; gap: 8px; font-weight: 600; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
+                    <div style="display:flex; align-items:center; justify-content:center;"><input type="checkbox" id="select-all-pull" style="cursor:pointer;" /></div>
+                    <div>Unit</div>
+                    <div>Order Details</div>
+                    <div style="text-align:right;">Qty</div>
+                </div>
+                <div style="display: flex; flex-direction: column;">
+        `;
+        
+        items.forEach(item => {
+            html += `
+                <div class="pull-item-row" style="display: grid; grid-template-columns: 40px 80px 1fr 100px; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; align-items: center;">
+                    <div style="display:flex; align-items:center; justify-content:center;">
+                        <input type="checkbox" class="pull-item-cb" data-name="${item.name}" style="cursor:pointer; transform: scale(1.1);" />
+                    </div>
+                    <div><span style="font-size: 11px; font-weight: 700; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">${item.unit || 'UNASSIGNED'}</span></div>
+                    <div style="display: flex; flex-direction: column; gap: 2px;">
+                        <span style="font-size: 13px; font-weight: 600; color: #1e293b;">${item.item_name} <span style="font-weight: 400; color: #94a3b8; font-size: 12px;">&bull; ${item.party_code || item.customer || '-'}</span></span>
+                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            <span style="display: inline-flex; align-items: center; gap: 4px; border: 1px solid #e2e8f0; padding: 1px 6px; border-radius: 99px; font-size: 11px; background: #fff;">
+                                <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color: ${getHexColor(item.color)};"></span>${item.color || 'No Color'}
+                            </span>
+                             <span style="font-size: 10px; font-weight: 600; background: #e2e8f0; color: #475569; padding: 1px 6px; border-radius: 4px;">${item.quality || 'STD'}</span>
+                             <span style="font-size: 10px; font-weight: 600; background: #f3f4f6; color: #4b5563; padding: 1px 6px; border-radius: 4px;">${item.gsm ? item.gsm + ' GSM' : 'N/A'}</span>
+                        </div>
+                    </div>
+                    <div style="text-align: right;"><span style="display: block; font-size: 14px; font-weight: 700; color: #0f172a;">${(item.qty/1000).toFixed(2)} T</span></div>
+                </div>
+            `;
+        });
+        
+        html += `</div></div>`;
+        html += `<div style="margin-top:8px; text-align:right; font-weight:600; font-size:12px; color:#64748b;">Total Orders: ${items.length}</div>`;
+        
+        d.set_value('preview_html', html);
+        
+        d.$wrapper.find('#select-all-pull').on('change', function() {
+            const checked = $(this).prop('checked');
+            d.$wrapper.find('.pull-item-cb').prop('checked', checked);
+            updateSelection(d);
+        });
+        
+        d.$wrapper.find('.pull-item-cb').on('change', function() {
+            updateSelection(d);
+        });
+        
+        d.calc_selected_items = [];
+        
+    } catch (e) {
+        console.error(e);
+        d.set_value('preview_html', '<p class="text-red-500">Error loading orders.</p>');
+    }
+}
+
+function updateSelection(d) {
+    const selected = [];
+    d.$wrapper.find('.pull-item-cb:checked').each(function() {
+        selected.push($(this).data('name'));
+    });
+    d.calc_selected_items = selected;
+    d.get_primary_btn().text(`Move ${selected.length} to Today`);
 }
 
 function openRescueDialog() {
-   // Admin only rescue
+    const d = new frappe.ui.Dialog({
+        title: '🚑 Rescue / Re-Queue Orders',
+        fields: [
+            {
+                label: 'Source Planning Sheet',
+                fieldname: 'sheet',
+                fieldtype: 'Link',
+                options: 'Planning sheet',
+                reqd: 1,
+                description: 'Select the sheet containing the lost/stuck orders.',
+                onchange: () => loadRescueItems(d)
+            },
+            {
+                label: 'Target Unit (Optional)',
+                fieldname: 'target_unit',
+                fieldtype: 'Select',
+                options: [
+                    { label: 'Keep Original Unit', value: '' },
+                    ...units.map(u => ({ label: `Move to ${u}`, value: u }))
+                ],
+                default: '',
+                description: 'If selected, all rescued orders will be assigned to this unit.'
+            },
+            {
+                fieldtype: 'HTML',
+                fieldname: 'rescue_html'
+            }
+        ],
+        primary_action_label: 'Rescue Selected',
+        primary_action: () => {
+            const selected = d.calc_selected_rescue || [];
+            if (selected.length === 0) {
+                frappe.msgprint("Select at least one order to rescue.");
+                return;
+            }
+            const targetUnit = d.get_value('target_unit');
+            handleMoveOrders(selected, filterOrderDate.value, targetUnit, d);
+        }
+    });
+    d.show();
+}
+
+async function loadRescueItems(d) {
+    const sheet = d.get_value('sheet');
+    if (!sheet) return;
+    
+    d.set_value('rescue_html', 'Loading...');
+    
+    try {
+        const r = await frappe.call({
+            method: "production_scheduler.api.get_items_by_sheet",
+            args: { sheet_name: sheet }
+        });
+        
+        const items = r.message || [];
+        if (items.length === 0) {
+            d.set_value('rescue_html', 'No items found in this sheet.');
+            return;
+        }
+        
+        let html = `
+            <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ccc; margin-top:10px;">
+                <table class="table table-bordered table-sm" style="margin:0;">
+                    <thead>
+                        <tr style="background:#f0f0f0;">
+                            <th width="30"><input type="checkbox" id="select-all-rescue"></th>
+                            <th>Item</th>
+                            <th>Unit</th>
+                            <th>Qty</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        items.forEach(item => {
+            html += `
+                <tr>
+                    <td><input type="checkbox" class="rescue-cb" data-name="${item.name}"></td>
+                    <td>${item.item_name} <br> <span class="text-muted" style="font-size:10px;">${item.name}</span></td>
+                    <td>${item.unit || '-'}</td>
+                    <td>${item.qty}</td>
+                    <td>${item.docstatus === 0 ? 'Draft' : item.docstatus === 1 ? 'Submitted' : 'Cancelled'}</td>
+                </tr>
+            `;
+        });
+        
+        html += `</tbody></table></div>`;
+        d.set_value('rescue_html', html);
+        
+        d.$wrapper.find('#select-all-rescue').on('change', function() {
+            d.$wrapper.find('.rescue-cb').prop('checked', $(this).prop('checked'));
+            updateRescueSelection(d);
+        });
+        
+        d.$wrapper.find('.rescue-cb').on('change', () => updateRescueSelection(d));
+        d.calc_selected_rescue = [];
+        
+    } catch (e) {
+        d.set_value('rescue_html', 'Error loading items.');
+    }
+}
+
+function updateRescueSelection(d) {
+    const s = [];
+    d.$wrapper.find('.rescue-cb:checked').each(function() {
+        s.push($(this).data('name'));
+    });
+    d.calc_selected_rescue = s;
+    d.get_primary_btn().text(`Rescue ${s.length} Orders`);
 }
 
 const isAdmin = computed(() => frappe.user.has_role("System Manager"));
