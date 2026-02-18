@@ -282,7 +282,7 @@ const filterStatus = ref("");
 const unitSortConfig = reactive({});
 // Pre-initialize for all units to prevent reactive loops during render
 units.forEach(u => {
-    unitSortConfig[u] = { color: 'asc', gsm: 'desc', priority: 'color' };
+    unitSortConfig[u] = { mode: 'auto', color: 'asc', gsm: 'desc', priority: 'color' };
 });
 
 const rawData = ref([]);
@@ -529,6 +529,7 @@ function getHiddenWhiteTotal(unit) {
 
 function getSortLabel(unit) {
     const config = getUnitSortConfig(unit);
+    if (config.mode === 'manual') return 'Manual Sort';
     const p = config.priority === 'color' ? 'Color' : (config.priority === 'gsm' ? 'GSM' : 'Quality');
     const d = config.priority === 'color' ? config.color : (config.priority === 'gsm' ? config.gsm : 'ASC');
     return `${p} (${d.toUpperCase()})`; 
@@ -614,6 +615,7 @@ async function initSortable() {
                      d.show();
                 } else if (res.message && res.message.status === 'success') {
                     frappe.show_alert({ message: `Successfully moved`, indicator: "green" });
+                    unitSortConfig[newUnit].mode = 'manual';
                     await fetchData(); 
                 }
              } catch (e) {
@@ -637,6 +639,7 @@ function getUnitSortConfig(unit) {
 
 function toggleUnitColor(unit) {
   const config = getUnitSortConfig(unit);
+  config.mode = 'auto'; // Reset to auto on sort click
   if (config.priority !== 'color') {
       config.priority = 'color';
       config.color = 'asc';
@@ -647,6 +650,7 @@ function toggleUnitColor(unit) {
 
 function toggleUnitGsm(unit) {
   const config = getUnitSortConfig(unit);
+  config.mode = 'auto'; // Reset to auto on sort click
   if (config.priority !== 'gsm') {
       config.priority = 'gsm';
       config.gsm = 'asc';
@@ -663,6 +667,11 @@ function toggleUnitPriority(unit) {
 function sortItems(unit, items) {
   const config = getUnitSortConfig(unit);
   return [...items].sort((a, b) => {
+      // Manual Mode: Primary sort is idx
+      if (config.mode === 'manual') {
+          return (a.idx || 0) - (b.idx || 0);
+      }
+
       let diff = 0;
       if (config.priority === 'color') {
           diff = compareColor(a, b, config.color);
