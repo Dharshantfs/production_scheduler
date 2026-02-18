@@ -306,16 +306,17 @@ const renderKey = ref(0);
 const customRowOrder = ref([]); // Store user-defined color order
 const viewMode = ref('kanban'); // 'kanban' | 'table'
 
-const visibleUnits = computed(() =>
-  filterUnit.value ? units.filter((u) => u === filterUnit.value) : units
-);
+const visibleUnits = computed(() => {
+  if (!filterUnit.value) return units;
+  return units.filter((u) => u === filterUnit.value);
+});
 
 const EXCLUDED_WHITES = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE"];
 
 // Filter data by party code and status
 // Filter data by party code and status
 const filteredData = computed(() => {
-  let data = rawData.value;
+  let data = rawData.value || [];
   
   // Data Cleanup (Normalize Unit)
   data = data.map(d => ({
@@ -332,12 +333,14 @@ const filteredData = computed(() => {
   });
 
   // 2. Filter out orders where Color Total < 800kg
-  // User Requirement: "only show color orderders in production board if the quanity reached 800 above"
-  data = data.filter(d => {
-      const color = (d.color || "").toUpperCase().trim();
-      const total = colorTotals[color] || 0;
-      return total >= 800;
-  });
+  // But ONLY if we actually have data to filter, otherwise keep empty
+  if (data.length > 0) {
+      data = data.filter(d => {
+          const color = (d.color || "").toUpperCase().trim();
+          const total = colorTotals[color] || 0;
+          return total >= 800;
+      });
+  }
 
   if (filterPartyCode.value) {
     const search = filterPartyCode.value.toLowerCase();
@@ -346,9 +349,12 @@ const filteredData = computed(() => {
       (d.customer || "").toLowerCase().includes(search)
     );
   }
+
+  // Use production_status or planning_status based on API
   if (filterStatus.value) {
-    data = data.filter((d) => d.planningStatus === filterStatus.value);
+    data = data.filter((d) => (d.status === filterStatus.value || d.production_status === filterStatus.value));
   }
+  
   return data;
 });
 
