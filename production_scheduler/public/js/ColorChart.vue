@@ -2003,7 +2003,7 @@ function updateRescueSelection(d) {
   letter-spacing: 0.3px;
 }
 
-                <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> · {{ entry.customer }}</span>
+.cc-card-customer {
   font-size: 10px;
   color: #94a3b8;
   font-weight: 600;
