@@ -978,6 +978,7 @@ function toggleUnitColor(unit) {
   } else {
       config.color = config.color === 'asc' ? 'desc' : 'asc';
   }
+  renderKey.value++; // Force re-render so cards re-sort immediately
 }
 
 function toggleUnitGsm(unit) {
@@ -989,12 +990,14 @@ function toggleUnitGsm(unit) {
   } else {
       config.gsm = config.gsm === 'asc' ? 'desc' : 'asc';
   }
+  renderKey.value++; // Force re-render so cards re-sort immediately
 }
 
 function toggleUnitPriority(unit) {
   const config = getUnitSortConfig(unit);
   config.mode = 'auto';
   config.priority = config.priority === 'color' ? 'gsm' : 'color';
+  renderKey.value++; // Force re-render so cards re-sort immediately
 }
 
 function sortItems(unit, items) {
