@@ -1171,13 +1171,16 @@ def update_sequence(items):
     """
     Updates the idx of items for manual reordering.
     Expects items = [{name: 'ITEM-ID', idx: 1}, ...]
+    Uses SQL to bypass potential Framework overhead/re-indexing logic.
     """
     import json
     if isinstance(items, str):
         items = json.loads(items)
         
+    # Batch update? No, simple loop is fine for < 50 items usually.
     for i in items:
-        frappe.db.set_value("Planning Sheet Item", i["name"], "idx", i["idx"])
+        frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET idx=%s WHERE name=%s", (i["idx"], i["name"]))
         
+    frappe.db.commit() # Ensure committed immediately 
     return "ok"
 
