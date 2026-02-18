@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="cc-container">
     <!-- Filter Bar -->
     <div class="cc-filters">
@@ -36,7 +36,7 @@
             @click="viewMode = 'kanban'"
             title="Kanban Board View"
           >
-            📋 Kanban
+            ðŸ“‹ Kanban
           </button>
           <button 
             class="cc-view-btn" 
@@ -44,13 +44,13 @@
             @click="viewMode = 'matrix'"
             title="Matrix Pivot View"
           >
-            📊 Matrix
+            ðŸ“Š Matrix
           </button>
       </div>
       
-      <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
+      <button class="cc-clear-btn" @click="clearFilters">âœ• Clear</button>
       <button class="cc-clear-btn" style="color: #2563eb; border-color: #2563eb; margin-left: 8px;" @click="autoAllocate" title="Auto-assign orders based on Width & Quality">
-        🪄 Auto Alloc
+        ðŸª„ Auto Alloc
       </button>
       <button class="cc-clear-btn" style="color: #059669; border-color: #059669; margin-left: 8px;" @click="openPullOrdersDialog" title="Pull orders from a future date">
         📥 Pull Orders
@@ -75,13 +75,13 @@
             <div class="cc-unit-controls">
               <span style="font-size:10px; color:#64748b; margin-right:4px;">{{ getSortLabel(unit) }}</span>
               <button class="cc-mini-btn" @click="toggleUnitColor(unit)" :title="getUnitSortConfig(unit).color === 'asc' ? 'Light->Dark' : 'Dark->Light'">
-                {{ getUnitSortConfig(unit).color === 'asc' ? '☀️' : '🌙' }}
+                {{ getUnitSortConfig(unit).color === 'asc' ? 'â˜€ï¸' : 'ðŸŒ™' }}
               </button>
               <button class="cc-mini-btn" @click="toggleUnitGsm(unit)" :title="getUnitSortConfig(unit).gsm === 'desc' ? 'High->Low' : 'Low->High'">
-                {{ getUnitSortConfig(unit).gsm === 'desc' ? '⬇️' : '⬆️' }}
+                {{ getUnitSortConfig(unit).gsm === 'desc' ? 'â¬‡ï¸' : 'â¬†ï¸' }}
               </button>
               <button class="cc-mini-btn" @click="toggleUnitPriority(unit)" :title="getUnitSortConfig(unit).priority === 'color' ? 'Color Priority' : 'GSM Priority'">
-                {{ getUnitSortConfig(unit).priority === 'color' ? '🎨' : '📏' }}
+                {{ getUnitSortConfig(unit).priority === 'color' ? 'ðŸŽ¨' : 'ðŸ“' }}
               </button>
             </div>
           </div>
@@ -95,7 +95,7 @@
               {{ getUnitCapacityStatus(unit).warning }}
             </div>
             <span class="cc-stat-mix" v-if="getMixRollCount(unit) > 0">
-              ⚠️ {{ getMixRollCount(unit) }} mix{{ getMixRollCount(unit) > 1 ? 'es' : '' }}
+              âš ï¸ {{ getMixRollCount(unit) }} mix{{ getMixRollCount(unit) > 1 ? 'es' : '' }}
               ({{ getMixRollTotalWeight(unit) }} Kg)
             </span>
           </div>
@@ -106,7 +106,7 @@
             <div v-if="entry.type === 'mix'" class="cc-mix-marker">
               <div class="cc-mix-line"></div>
               <span class="cc-mix-label" :class="entry.mixType.toLowerCase().replace(' ', '-')">
-                {{ entry.mixType }} — ~{{ entry.qty }} Kg
+                {{ entry.mixType }} â€” ~{{ entry.qty }} Kg
               </span>
               <div class="cc-mix-line"></div>
             </div>
@@ -130,10 +130,10 @@
                   <div class="cc-card-color-name">{{ entry.color }}</div>
                   <div class="cc-card-customer">
                     <span style="font-weight:700; color:#111827;">{{ entry.partyCode }}</span>
-                    <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> · {{ entry.customer }}</span>
+                    <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> Â· {{ entry.customer }}</span>
                   </div>
                   <div class="cc-card-details">
-                    {{ entry.quality }} · {{ entry.gsm }} GSM
+                    {{ entry.quality }} Â· {{ entry.gsm }} GSM
                   </div>
                 </div>
               </div>
@@ -353,6 +353,10 @@ const filterUnit = ref("");
 const filterStatus = ref("");
 // Per-unit sort configuration
 const unitSortConfig = reactive({});
+// Pre-initialize for all units
+units.forEach(u => {
+    unitSortConfig[u] = { mode: 'auto', color: 'asc', gsm: 'desc', priority: 'color' };
+});
 const viewMode = ref('kanban'); // 'kanban' | 'matrix'
 const rawData = ref([]);
 const columnRefs = ref(null);
@@ -576,6 +580,15 @@ function findColorGroup(color) {
 }
 
 function getColorPriority(color) {
+  // Check custom order first (Sync with Matrix View)
+  if (customRowOrder.value && customRowOrder.value.length > 0) {
+      const idx = customRowOrder.value.indexOf(color);
+      if (idx !== -1) {
+          // Return a priority that overrides standard groups.
+          // Lower number = higher priority. Standard groups are 10-99.
+          return idx - 1000; 
+      }
+  }
   const group = findColorGroup(color);
   return group ? group.priority : 50;
 }
@@ -648,6 +661,7 @@ function compareGsm(a, b, direction) {
 // Visually display sort state
 function getSortLabel(unit) {
     const config = getUnitSortConfig(unit);
+    if (config.mode === 'manual') return 'Manual Sort';
     const p = config.priority === 'color' ? 'Color' : (config.priority === 'gsm' ? 'GSM' : 'Quality');
     const d = config.priority === 'color' ? config.color : (config.priority === 'gsm' ? config.gsm : 'ASC');
     return `${p} (${d.toUpperCase()})`; 
@@ -683,14 +697,14 @@ function getUnitCapacityStatus(unit) {
     if (total > limit) {
         return { 
             class: 'text-red-600 font-bold', 
-            warning: `⚠️ Over Limit (${(total - limit).toFixed(2)}T)!` 
+            warning: `âš ï¸ Over Limit (${(total - limit).toFixed(2)}T)!` 
         };
     }
     // Warning (Orange) if near limit (within 10%)
     if (total > limit * 0.9) {
         return { 
             class: 'text-orange-600 font-bold', 
-            warning: `⚠️ Near Limit` 
+            warning: `âš ï¸ Near Limit` 
         };
     }
     
@@ -701,7 +715,6 @@ function getUnitCapacityStatus(unit) {
 
 async function initSortable() {
   if (!columnRefs.value) return;
-  // Sortable is imported at top
   
   // Clear old instances
   columnRefs.value.forEach(col => {
@@ -712,95 +725,45 @@ async function initSortable() {
 
   // MATRIX VIEW SORTABLE
   if (viewMode.value === 'matrix') {
-      
       // 1. COLUMNS (Headers)
       if (matrixHeaderRow.value) {
           matrixHeaderRow.value._sortable = new Sortable(matrixHeaderRow.value, {
              group: 'matrix-cols',
              animation: 150,
-             handle: '.draggable-handle', // Drag handle
-             draggable: '.matrix-col-header', // Only columns
+             handle: '.draggable-handle',
+             draggable: '.matrix-col-header',
              ghostClass: 'cc-ghost',
              onEnd: async (evt) => {
-                 const { oldIndex, newIndex, item } = evt;
-                 if (oldIndex === newIndex) return;
-
-                 // Determine Target Date
-                 // The 'children' of the tr include the first TH (CODE label) which is NOT draggable.
-                 // So valid indices start from 1?
-                 // sortablejs indices are based on draggable elements if we specific draggable?
-                 // If 'draggable' is set, indices might still be DOM based. 
-                 // The first TH is class 'matrix-sticky-col' NOT 'matrix-col-header'.
-                 // So Sortable ignores it?
-                 // Let's rely on VISUAL placement.
-                 
-                 // We need to find the "Target Date" of the column we dropped onto (or near).
-                 // Better: Get data from the element at newIndex.
+                 const { newIndex, item } = evt;
                  const allCols = Array.from(matrixHeaderRow.value.querySelectorAll('.matrix-col-header'));
-                 // Verify the list matches internal state
-                 // The list `allCols` now reflects the NEW DOM order.
-                 
-                 const targetEl = allCols[newIndex]; // The element now at this position
-                 // Wait, `onEnd` fires AFTER DOM Move.
-                 // So `allCols[newIndex]` IS the dragged element `item`? YES.
-                 // This doesn't help us find the DATE of the *position*.
-                 // We need the date of the column that *was* there or is *neighboring*.
-                 
-                 // Actually, the goal is to RESCHEDULE.
-                 // We need to know which "Block" (Date) we landed in.
-                 // Visually, the Date Headers (Row 1) are merged.
-                 // The Code Headers (Row 3) are individual.
-                 // If I drag Code A (Date 1) to Code B (Date 2), I want Code A to change to Date 2.
-                 
-                 // Let's look at the Neighbors to guess the date.
                  let targetDate = null;
-                 
-                 // Check Left Neighbor
-                 const leftEl = allCols[newIndex - 1]; // Neighbor
+                 const leftEl = allCols[newIndex - 1];
                  if (leftEl) {
                      targetDate = leftEl.dataset.date;
                  } else {
-                     // Check Right Neighbor (if dropped at start)
                      const rightEl = allCols[newIndex + 1];
-                     if (rightEl) {
-                         targetDate = rightEl.dataset.date;
-                     }
+                     if (rightEl) targetDate = rightEl.dataset.date;
                  }
                  
-                 // If we found a date (and it's different)
                  if (targetDate) {
                      const originalDate = item.dataset.date;
-                     if (originalDate === targetDate) return; // Same date, just reorder? (No backend support for manual sheet order yet)
+                     if (originalDate === targetDate) return;
                      
                      if (confirm(`Move Order to ${targetDate}?`)) {
                          const colId = item.dataset.id;
-                         // Find items for this Column (Group)
-                         // We need the Group from matrixData.columns
                          const group = matrixData.value.columns.find(c => c.id === colId);
                          if (group && group.items.length) {
-                             const itemNames = group.items.map(i => i.itemName); // Use actual Item Name
-                             
-                             frappe.show_alert("Rescheduling Order...");
+                             const itemNames = group.items.map(i => i.itemName);
                              try {
                                  await frappe.call({
                                      method: "production_scheduler.api.move_orders_to_date",
-                                     args: {
-                                         item_names: itemNames,
-                                         target_date: targetDate
-                                     }
+                                     args: { item_names: itemNames, target_date: targetDate }
                                  });
-                                 fetchData(); // Refresh
-                             } catch(e) {
-                                 console.error(e);
-                                 renderKey.value++; // Revert
-                             }
+                                 fetchData();
+                             } catch(e) { console.error(e); renderKey.value++; }
                          }
-                     } else {
-                         renderKey.value++; // Revert
-                     }
-                 } else {
-                     renderKey.value++; // Could not determine date
-                 }
+                     } else { renderKey.value++; }
+                 } else { renderKey.value++; }
              }
           });
       }
@@ -810,19 +773,14 @@ async function initSortable() {
           matrixBody.value._sortable = new Sortable(matrixBody.value, {
               group: 'matrix-rows',
               animation: 150,
-              handle: '.matrix-row-header', // Drag via Color Name cell
+              handle: '.matrix-row-header',
               draggable: '.matrix-row',
               ghostClass: 'cc-ghost',
               onEnd: (evt) => {
                   const { oldIndex, newIndex } = evt;
                   if (oldIndex === newIndex) return;
-
-                  // Update Custom Order
-                  // Extracts distinct colors from DOM order
                   const rows = Array.from(matrixBody.value.querySelectorAll('.matrix-row'));
                   customRowOrder.value = rows.map(r => r.dataset.color);
-                  
-                  // SAVE GLOBALLY
                   frappe.call({
                       method: "production_scheduler.api.save_color_order",
                       args: { order: customRowOrder.value },
@@ -831,154 +789,86 @@ async function initSortable() {
               }
           });
       }
-      
       return; 
   }
 
+  // KANBAN VIEW SORTABLE
   columnRefs.value.forEach((colEl) => {
+    if (!colEl) return;
     colEl._sortable = new Sortable(colEl, {
       group: "kanban",
       animation: 150,
       ghostClass: "cc-ghost",
       onEnd: async (evt) => {
-        const itemEl = evt.item;
-        const newUnitEl = evt.to;
-        const oldUnitEl = evt.from;
-        
-        // Data Extraction
-        const itemName = itemEl.dataset.itemName;
-        const newUnit = newUnitEl.dataset.unit;
-        
+        const { item, to, from, newIndex, oldIndex } = evt;
+        const itemName = item.dataset.itemName;
+        const newUnit = to.dataset.unit;
         if (!itemName || !newUnit) return;
 
-        // Optimistic UI Update Logic (Vue Re-render handles it usually, but we need to track state)
-        // If we moved between lists (unit changed)
-        if (newUnitEl !== oldUnitEl) {
-             // 1. STRICT BACKEND VALIDATION - Just Call API
-             // The User wants "Auto Push" without asking.
-             
+        if (to !== from || newIndex !== oldIndex) {
              try {
                 frappe.show_alert({ message: "Validating Capacity...", indicator: "orange" });
                 
-                // Helper to perform the move with flags
                 const performMove = async (force=0, split=0) => {
-                    const res = await frappe.call({
+                    return await frappe.call({
                         method: "production_scheduler.api.update_schedule",
                         args: {
-                            item_name: itemEl.dataset.itemName, // REFACTORED: Use Item Name
+                            item_name: itemName, 
                             unit: newUnit,
-                            date: filterOrderDate.value, // Target Date
+                            date: filterOrderDate.value,
+                            index: newIndex + 1,
                             force_move: force,
                             perform_split: split
                         }
                     });
-                    return res;
                 };
 
-                // Initial Call (No Force, No Split)
                 let res = await performMove();
                 
                 if (res.message && res.message.status === 'overflow') {
-                     // OVERFLOW - Show Dialog
                      const avail = res.message.available;
                      const limit = res.message.limit;
                      const current = res.message.current_load;
                      const orderWt = res.message.order_weight;
                      
                      const d = new frappe.ui.Dialog({
-                        title: '⚠️ Capacity Full',
-                        fields: [
-                            {
-                                fieldtype: 'HTML',
-                                fieldname: 'msg',
-                                options: `
-                                    <div style="text-align:center; padding:10px;">
-                                        <p class="text-lg font-bold text-red-600">Unit Capacity Exceeded!</p>
-                                        <p>Unit Limit: <b>${limit}T</b> | Current: <b>${current.toFixed(2)}T</b></p>
-                                        <p>Your Order: <b>${orderWt.toFixed(2)}T</b></p>
-                                        <p class="mt-2 text-green-600 font-bold" style="background:#ecfdf5; padding:5px; border-radius:4px;">
-                                            Available Space: ${avail.toFixed(3)}T
-                                        </p>
-                                    </div>
-                                `
-                            }
-                        ],
+                        title: 'âš ï¸ Capacity Full',
+                        fields: [{
+                             fieldtype: 'HTML', fieldname: 'msg',
+                             options: `<div style="text-align:center; padding:10px;">
+                                 <p class="text-lg font-bold text-red-600">Unit Capacity Exceeded!</p>
+                                 <p>Unit Limit: <b>${limit}T</b> | Current: <b>${current.toFixed(2)}T</b></p>
+                                 <p>Your Order: <b>${orderWt.toFixed(2)}T</b></p>
+                                 <p class="mt-2 text-green-600 font-bold">Available Space: ${avail.toFixed(3)}T</p>
+                             </div>`
+                        }],
                         primary_action_label: 'Move to Next Day',
                         primary_action: async () => {
                             d.hide();
-                            frappe.show_alert({message: "Moving to Next Day...", indicator: "blue"});
-                            const res2 = await performMove(1, 0); // Force Move
-                            handleMoveSuccess(res2, itemEl, newUnit, itemName);
+                            const res2 = await performMove(1, 0);
+                            handleMoveSuccess(res2, newUnit);
                         },
                         secondary_action_label: 'Cancel',
-                        secondary_action: () => {
-                            d.hide();
-                            renderKey.value++; // Revert
-                        }
+                        secondary_action: () => { d.hide(); renderKey.value++; }
                      });
                      
-                     // Add Third Button for Split (Custom)
                      d.add_custom_action('Split & Distribute', async () => {
                          d.hide();
                          if (avail < 0.1) {
-                             frappe.msgprint("Available space is too small to split (<100kg). Please move to next day.");
-                             renderKey.value++; // Revert
-                             return;
+                             frappe.msgprint("Space too small to split.");
+                             renderKey.value++; return;
                          }
-                         frappe.show_alert({message: "Splitting Order...", indicator: "blue"});
-                         try {
-                             const res3 = await performMove(0, 1); // Perform Split
-                             handleMoveSuccess(res3, itemEl, newUnit, itemName);
-                         } catch(e) {
-                             frappe.msgprint(e.message);
-                             renderKey.value++;
-                         }
-                     }, 'btn-warning'); // Warning color (Orange)
-                     
+                         const res3 = await performMove(0, 1);
+                         handleMoveSuccess(res3, newUnit);
+                     }, 'btn-warning');
                      d.show();
-                     
                 } else {
-                     handleMoveSuccess(res, itemEl, newUnit, itemName);
+                     handleMoveSuccess(res, newUnit);
                 }
-
              } catch (e) {
                  console.error(e);
-                 // If error (e.g. fatal), revert
-                 frappe.msgprint("❌ Move Failed: " + (e.message || "Unknown Error"));
-                 renderKey.value++; // Revert Drag
-             }
-        } else {
-             // Same list (Reorder) - Backend Update
-             const newIndex = evt.newIndex;
-             const oldIndex = evt.oldIndex;
-             
-             if (newIndex !== oldIndex) {
-                 // Get all items in this column
-                 const siblingItems = Array.from(newUnitEl.children).filter(el => !el.classList.contains('cc-mix-marker') && !el.classList.contains('cc-ghost'));
-                 
-                 // Create list of {name, idx}
-                 const updates = siblingItems.map((el, idx) => ({
-                     name: el.dataset.itemName,
-                     idx: idx + 1 // 1-based index
-                 }));
-                 
-                 // UPDATE LOCAL DATA (Crucial for visual consistency before refresh)
-                 updates.forEach(upd => {
-                     const item = rawData.value.find(d => d.itemName === upd.name);
-                     if (item) item.idx = upd.idx;
-                 });
-                 
-                 // FORCE MANUAL MODE
-                 const config = getUnitSortConfig(newUnit);
-                 config.priority = 'manual';
-                 
-                 frappe.call({
-                     method: "production_scheduler.api.update_sequence",
-                     args: { items: updates }
-                 }).then(() => {
-                     frappe.show_alert({ message: "Order Updated (Manual Mode)", indicator: "green" }, 1); 
-                     renderKey.value++; // Force re-render to apply 'manual' sort logic strictly
-                 });
+                 frappe.msgprint("âŒ Move Failed");
+                 renderKey.value++;
              }
         }
       },
@@ -986,82 +876,61 @@ async function initSortable() {
   });
 }
 
-// Helper for handling move success
-async function handleMoveSuccess(res, itemEl, newUnit, itemName) {
+async function handleMoveSuccess(res, newUnit) {
     if (res.message && res.message.status === 'success') {
         const movedTo = res.message.moved_to || { unit: newUnit, date: filterOrderDate.value };
-        
-        // 2. CHECK RESULT
-        // Case A: Moved to Next Day?
         if (movedTo.date !== filterOrderDate.value) {
-             frappe.msgprint(`⚠️ <b>Moved to Next Day!</b><br>Order moved to <b>${movedTo.date}</b> in <b>${movedTo.unit}</b>.`);
-             await fetchData(); 
-        } 
-        // Case B: Success (Either stuck to newUnit or moved to neighbor unit)
-        else {
-             if (movedTo.unit !== newUnit) {
-                frappe.msgprint(`⚠️ <b>Capacity Full in ${newUnit}!</b><br>Order automatically placed in <b>${movedTo.unit}</b>.`);
-             } else {
-                frappe.show_alert({ message: `Successfully moved to ${newUnit}`, indicator: "green" });
-             }
-             // Always Refresh after any backend move to ensure consistency
-             await fetchData(); 
+             frappe.msgprint(`Moved to ${movedTo.date}`);
+        } else if (movedTo.unit !== newUnit) {
+             frappe.msgprint(`Placed in ${movedTo.unit} (Capacity Full in ${newUnit})`);
+        } else {
+             frappe.show_alert({ message: "Moved successfully", indicator: "green" });
         }
+        unitSortConfig[movedTo.unit].mode = 'manual';
+        await fetchData(); 
     }
 }
+
 function getUnitSortConfig(unit) {
   if (!unitSortConfig[unit]) {
-    unitSortConfig[unit] = { color: 'asc', gsm: 'desc', priority: 'color' };
+    unitSortConfig[unit] = { mode: 'auto', color: 'asc', gsm: 'desc', priority: 'color' };
   }
   return unitSortConfig[unit];
 }
 
 function toggleUnitColor(unit) {
   const config = getUnitSortConfig(unit);
-  // If not already sorting by color, switch to color and reset to asc
+  config.mode = 'auto'; 
   if (config.priority !== 'color') {
       config.priority = 'color';
       config.color = 'asc';
   } else {
       config.color = config.color === 'asc' ? 'desc' : 'asc';
   }
-  // Ensure manual mode is cleared (redundant but safe)
-  if (config.priority === 'manual') config.priority = 'color';
-  
-  console.log(`Unit ${unit} Sort: Color ${config.color}, Priority: ${config.priority}`);
 }
 
 function toggleUnitGsm(unit) {
   const config = getUnitSortConfig(unit);
+  config.mode = 'auto';
   if (config.priority !== 'gsm') {
       config.priority = 'gsm';
-      config.gsm = 'asc'; // Default to ASC (Low to High)? Or DESC? Usually Low to High.
+      config.gsm = 'asc';
   } else {
       config.gsm = config.gsm === 'asc' ? 'desc' : 'asc';
   }
-  // Reset Manual
-  if (config.priority === 'manual') config.priority = 'gsm';
-  
-  console.log(`Unit ${unit} Sort: GSM ${config.gsm}, Priority: ${config.priority}`);
 }
 
 function toggleUnitPriority(unit) {
+  const config = getUnitSortConfig(unit);
+  config.mode = 'auto';
   config.priority = config.priority === 'color' ? 'gsm' : 'color';
-  // Ensure we are NOT in manual mode
-  if (config.priority === 'manual') config.priority = 'color';
-  console.log(`Unit ${unit} Priority swapped to: ${config.priority}`);
 }
 
-// Sort Items based on Unit Config
 function sortItems(unit, items) {
   const config = getUnitSortConfig(unit);
-  
-  // Manual Sort: Sort by IDX
-  if (config.priority === 'manual') {
+  if (config.mode === 'manual') {
       return [...items].sort((a, b) => (a.idx || 0) - (b.idx || 0));
   }
-  
-  // Auto Sort: Color / GSM
   return [...items].sort((a, b) => {
       let diff = 0;
       if (config.priority === 'color') {
@@ -1071,16 +940,16 @@ function sortItems(unit, items) {
           diff = compareGsm(a, b, config.gsm);
           if (diff === 0) diff = compareColor(a, b, config.color);
       }
+      if (diff === 0) diff = (a.idx || 0) - (b.idx || 0);
       return diff;
   });
 }
 
 // Group data by unit, sort, and insert mix markers
 function getUnitEntries(unit) {
-  let unitItems = filteredData.value.filter((d) => d.unit === unit);
-  unitItems = sortItems(unit, unitItems); // Capture sorted result
+  let unitItems = filteredData.value.filter((d) => (d.unit || "Mixed") === unit);
+  unitItems = sortItems(unit, unitItems); 
 
-  // Insert mix roll markers where color GROUP changes
   const entries = [];
   for (let i = 0; i < unitItems.length; i++) {
     entries.push({ 
@@ -1091,68 +960,25 @@ function getUnitEntries(unit) {
     if (i < unitItems.length - 1) {
       const curPri = getColorPriority(unitItems[i].color);
       const nextPri = getColorPriority(unitItems[i + 1].color);
-      const gap = Math.abs(curPri - nextPri);
-      
-      // FIX: Force mix roll if priority is different OR if the color name is different 
-      // (User wants to see mix breakdowns even between similar colors if they are distinct runs)
-      // Actually strictly speaking, mix roll is for cleaning. 
-      // If priority is same (e.g. 2 different Pinks in same group), maybe no mix?
-      // But user complained "Golden Yellow" vs "Bright Orange" (likely different priorities).
-      // Let's debug by checking if they are in different groups.
-      
-      // If gap > 0, it's definitely a mix.
-      // If gap == 0, check if they are actually different colors.
-      // User reported "Golden Yellow" (Pri 22) vs "Bright Orange" (Pri 31). Gap should be 9.
-      // Why didn't it show? 
-      // Maybe `unitItems` are not sorted by color?
-      // Ah, the user might have clicked "Sort by GSM" or something else?
-      // If sorted by GSM, colors might be interleaved.
-      // BUT `getUnitEntries` sorts by priority/gsm right before this loop: `unitItems = sortItems(unit, unitItems)`.
-      
-      // Let's force a check:
-      if (gap > 0 || (unitItems[i].color !== unitItems[i+1].color)) {
-         // Determine mix type
-         let mType = determineMixType(unitItems[i].color, unitItems[i + 1].color);
-         let mQty = 0;
-         
-         // If gap > 0, use standard logic.
-         if (gap > 0) {
-             mQty = getMixRollQty(gap);
-         } else {
-             // Same priority group but different color name?
-             // Maybe a small mix or just a separator?
-             // If user wants to see "Mix" between every color change:
-             mQty = 10; // Minimal mix for same-group color change?
-             mType = "COLOR CHANGE"; 
-         }
-         
-         // Only push if it's a "real" mix (gap > 0) or user enforced.
-         // Reverting to strict gap > 0 for now as per "Mix Roll" definition (cleaning waste).
-         // Golden Yellow (22) vs Bright Orange (31) -> Gap 9. Should show.
-         // Maybe the CSS is hidden?
-         
-         if (gap > 0) {
-            entries.push({
+      if (curPri !== nextPri || unitItems[i].color !== unitItems[i+1].color) {
+          entries.push({
               type: "mix",
-              mixType: mType,
-              qty: getMixRollQty(gap),
-              uniqueKey: `mix-${unitItems[i].itemName}-${unitItems[i + 1].itemName}`
-            });
-         }
+              unit: unit,
+              fromColor: unitItems[i].color,
+              toColor: unitItems[i+1].color,
+              qty: getMixRollQty(unitItems[i].color, unitItems[i+1].color),
+              uniqueKey: `mix-${unitItems[i].itemName}-${unitItems[i+1].itemName}`
+          });
       }
     }
   }
   return entries;
 }
 
-
-
 function getUnitProductionTotal(unit) {
-  const production = filteredData.value
-    .filter((d) => d.unit === unit)
-    .reduce((sum, d) => sum + d.qty, 0);
-  const mixWeight = getMixRollTotalWeight(unit);
-  return (production + mixWeight) / 1000;
+  return rawData.value
+    .filter((d) => (d.unit || "Mixed") === unit)
+    .reduce((sum, d) => sum + (parseFloat(d.actual_qty) || 0), 0) / 1000;
 }
 
 function getMixRollCount(unit) {
@@ -1259,8 +1085,12 @@ async function fetchData() {
         ...d,
         idx: parseInt(d.idx || 0) || 9999
     }));
-    console.log("Fetched Data:", rawData.value);
-    
+    // Load Custom Color Order (Sync)
+    try {
+        const orderRes = await frappe.call("production_scheduler.api.get_color_order");
+        customRowOrder.value = orderRes.message || [];
+    } catch(e) { console.error("Failed to load color order", e); }
+
     // Force Reactive UI Refresh
     renderKey.value++; 
     
@@ -1621,7 +1451,7 @@ function openPullOrdersDialog() {
     
     // Create Dialog
     const d = new frappe.ui.Dialog({
-        title: '📥 Pull Orders from Date',
+        title: 'ðŸ“¥ Pull Orders from Date',
         fields: [
             {
                 label: 'Source Date',
@@ -1797,7 +1627,7 @@ const isAdmin = computed(() => {
 
 function openRescueDialog() {
     const d = new frappe.ui.Dialog({
-        title: '🚑 Rescue / Re-Queue Orders',
+        title: 'ðŸš‘ Rescue / Re-Queue Orders',
         fields: [
             {
                 label: 'Source Planning Sheet',
