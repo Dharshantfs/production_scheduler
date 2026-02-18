@@ -58,7 +58,7 @@
                         <th style="width: 80px;">GSM</th>
                         <th style="width: 80px;">WEIGHT (Kg)</th>
                         <th style="width: 80px;">ACTUAL PROD</th>
-                        <th style="width: 100px;">STATUS</th>
+                        <th style="width: 100px;">DESPATCH STATUS</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -86,8 +86,8 @@
                                 </td>
                                 
                                 <td class="cell-center">
-                                    <span class="status-badge" :class="item.production_status === 'Ready to Plan' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100'">
-                                        {{ item.production_status || 'Pending' }}
+                                    <span class="status-badge" :class="getDispatchStatusClass(item.delivery_status)">
+                                        {{ formatDispatchStatus(item.delivery_status) }}
                                     </span>
                                 </td>
                             </tr>
@@ -351,6 +351,20 @@ function getDayName(dateStr) {
 
 function getUnitHeaderColor(unit) {
     return "#fcd34d"; // Amber-300
+}
+
+function formatDispatchStatus(status) {
+    if (!status || status === 'Not Delivered') return 'NOT DESPATCHED';
+    if (status === 'Fully Delivered') return 'DESPATCHED';
+    if (status === 'Partly Delivered') return 'PARTLY DESPATCHED';
+    return status.toUpperCase();
+}
+
+function getDispatchStatusClass(status) {
+    if (!status || status === 'Not Delivered') return 'bg-red-100 text-red-800'; // Red
+    if (status === 'Fully Delivered') return 'bg-green-100 text-green-800'; // Green
+    if (status === 'Partly Delivered') return 'bg-orange-100 text-orange-800'; // Orange
+    return 'bg-gray-100 text-gray-800';
 }
 
 

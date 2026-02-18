@@ -354,9 +354,17 @@ def get_color_chart_data(date):
 			"ordered_date": target_date,
 			"docstatus": ["<", 2]
 		},
-		fields=["name", "customer", "party_code", "dod", "ordered_date", "planning_status"],
+		fields=["name", "customer", "party_code", "dod", "ordered_date", "planning_status", "docstatus", "sales_order"],
 		order_by="creation asc"
 	)
+
+	# Fetch delivery statuses for referenced Sales Orders
+	so_names = [d.sales_order for d in planning_sheets if d.sales_order]
+	so_status_map = {}
+	if so_names:
+		sos = frappe.get_all("Sales Order", filters={"name": ["in", so_names]}, fields=["name", "delivery_status"])
+		for s in sos:
+			so_status_map[s.name] = s.delivery_status
 
 	data = []
 	for sheet in planning_sheets:
@@ -393,6 +401,10 @@ def get_color_chart_data(date):
 				"unit": unit,
 				"ordered_date": str(sheet.ordered_date) if sheet.ordered_date else "",
 				"dod": str(sheet.dod) if sheet.dod else "",
+				"unit": unit,
+				"ordered_date": str(sheet.ordered_date) if sheet.ordered_date else "",
+				"dod": str(sheet.dod) if sheet.dod else "",
+				"delivery_status": so_status_map.get(sheet.sales_order) or "Not Delivered"
 			})
 
 	return data
@@ -722,7 +734,9 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
             i.name, i.item_code, i.item_name, i.qty, i.unit, i.color, 
             i.gsm, i.custom_quality as quality, i.width_inch, i.idx,
             p.name as planning_sheet, p.party_code, p.customer, p.dod, p.planning_status, p.creation,
-            so.transaction_date as so_date, so.custom_production_status
+            i.gsm, i.custom_quality as quality, i.width_inch, i.idx,
+            p.name as planning_sheet, p.party_code, p.customer, p.dod, p.planning_status, p.creation,
+            so.transaction_date as so_date, so.custom_production_status, so.delivery_status
         FROM
             `tabPlanning Sheet Item` i
         JOIN
@@ -754,7 +768,10 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
             "width": flt(item.width_inch or 0),
             "unit": item.unit or "", 
             "dod": str(item.dod) if item.dod else "",
-            "order_date": str(item.so_date) if item.so_date else str(item.creation.date())
+            "unit": item.unit or "", 
+            "dod": str(item.dod) if item.dod else "",
+            "order_date": str(item.so_date) if item.so_date else str(item.creation.date()),
+            "delivery_status": item.delivery_status or "Not Delivered"
         })
         
     return data
