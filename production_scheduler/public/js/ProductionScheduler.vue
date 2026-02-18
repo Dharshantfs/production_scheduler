@@ -457,6 +457,17 @@ async function initSortable() {
         const newIndex = evt.newIndex + 1;
         const isSameUnit = (newUnitEl === oldUnitEl);
 
+        // Helper: Revert the DOM move that SortableJS did.
+        // This prevents duplicates — Vue will handle the re-render from updated data.
+        const revertDomMove = () => {
+          if (!isSameUnit) {
+            try {
+              const refNode = oldUnitEl.children[evt.oldIndex] || null;
+              oldUnitEl.insertBefore(itemEl, refNode);
+            } catch(e) { /* element may already be gone */ }
+          }
+        };
+
         if (!isSameUnit || evt.newIndex !== evt.oldIndex) {
              // Use setTimeout to let SortableJS finish its internal cleanup before we do anything
              setTimeout(async () => {
@@ -492,9 +503,9 @@ async function initSortable() {
                         title: '⚠️ Capacity Full',
                         fields: [{ fieldtype: 'HTML', options: `<div style="padding: 10px; border-radius: 8px; background: #fff1f2; border: 1px solid #fda4af;"><p class="text-lg font-bold text-red-600">Unit Capacity Exceeded!</p><p>Available: <b>${avail.toFixed(3)}T</b></p></div>` }],
                         primary_action_label: 'Move to Next Day',
-                        primary_action: async () => { d.hide(); const moveRes = await performMove(1, 0); if (moveRes.message && moveRes.message.status === 'success') fetchData(); },
+                        primary_action: async () => { d.hide(); revertDomMove(); const moveRes = await performMove(1, 0); if (moveRes.message && moveRes.message.status === 'success') fetchData(); },
                         secondary_action_label: 'Cancel',
-                        secondary_action: () => { d.hide(); fetchData(); }
+                        secondary_action: () => { d.hide(); revertDomMove(); fetchData(); }
                      });
                      d.show();
                 } else if (res.message && res.message.status === 'success') {
@@ -520,12 +531,14 @@ async function initSortable() {
                         // DOM is already correct (Sortable moved it). Don't touch rawData ref = no freeze.
                     } else {
                         unitSortConfig[newUnit].mode = 'manual';
+                        revertDomMove(); // Revert Sortable's DOM move — let Vue re-render from fresh data
                         await fetchData();
                     }
                 }
              } catch (e) {
                  console.error(e);
                  frappe.msgprint("❌ Move Failed");
+                 revertDomMove();
                  fetchData(); 
              }
              }, 100); // Delay lets SortableJS finalize DOM before we change Vue state
