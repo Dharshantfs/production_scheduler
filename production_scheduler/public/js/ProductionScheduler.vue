@@ -280,8 +280,35 @@ const filterPartyCode = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
 const unitSortConfig = reactive({});
+// Pre-initialize for all units to prevent reactive loops during render
+units.forEach(u => {
+    unitSortConfig[u] = { color: 'asc', gsm: 'desc', priority: 'color' };
+});
+
 const rawData = ref([]);
-const columnRefs = ref(null);
+
+const columnRefs = ref([]);
+const setColumnRef = (el) => {
+  if (el && !columnRefs.value.includes(el)) {
+    columnRefs.value.push(el);
+  }
+};
+const tableRefs = ref([]);
+const setTableRef = (el) => {
+    if (el && !tableRefs.value.includes(el)) {
+        tableRefs.value.push(el);
+    }
+};
+
+// Robust Sortable Tracking
+const sortableInstances = []; // Non-reactive array to track instances
+
+// Reset on update/re-render
+onBeforeUpdate(() => {
+  columnRefs.value = [];
+  tableRefs.value = [];
+});
+
 const renderKey = ref(0); 
 const customRowOrder = ref([]); // Store user-defined color order
 const viewMode = ref('kanban'); // 'kanban' | 'table'
@@ -340,16 +367,8 @@ const tableData = computed(() => {
     const unitsData = visibleUnits.value.map(unit => {
         let items = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
         
-        // Sort items by Date -> Sequence (idx)
-        // If "Mixed", sort by Sequence maybe? Or just date.
-        // Excel shows date grouping.
-        // Assuming filteredData already contains sorted items from `getUnitEntries` logic? 
-        // No, `filteredData` is flat. But `rawData` has `idx` from backend.
-        // Let's sort manually here to be safe: Date ASC, then idx ASC
-        items.sort((a, b) => {
-            if (a.ordered_date !== b.ordered_date) return new Date(a.ordered_date) - new Date(b.ordered_date);
-            return (a.idx || 0) - (b.idx || 0);
-        });
+        // SYNC: Use same sort as Kanban
+        items = sortItems(unit, items);
 
         // Group by Date
         const dateGroupsObj = {};
@@ -536,13 +555,17 @@ function getUnitCapacityStatus(unit) {
 
 async function initSortable() {
   if (!columnRefs.value) return;
-  // Clear old instances
-  columnRefs.value.forEach(col => {
-      if (col._sortable) col._sortable.destroy();
+  
+  // ROBUST CLEANUP
+  sortableInstances.forEach(s => {
+      try { s.destroy(); } catch(e) {}
   });
+  sortableInstances.length = 0;
 
+  // Kanban Columns
   columnRefs.value.forEach((colEl) => {
-    colEl._sortable = new Sortable(colEl, {
+    if (!colEl) return;
+    const s = new Sortable(colEl, {
       group: "kanban",
       animation: 150,
       ghostClass: "cc-ghost",
@@ -554,26 +577,20 @@ async function initSortable() {
         const newUnit = newUnitEl.dataset.unit;
         
         if (!itemName || !newUnit) return;
-        
-        // Calculate new index (1-based)
-        // evt.newIndex is 0-based.
-        // We need to pass this to backend to insert at correct position.
         const newIndex = evt.newIndex + 1;
 
         if (newUnitEl !== oldUnitEl || evt.newIndex !== evt.oldIndex) {
-             // 1. STRICT BACKEND VALIDATION - Just Call API
              try {
                 frappe.show_alert({ message: "Validating Capacity...", indicator: "orange" });
                 
-                // Helper to perform the move with flags
                 const performMove = async (force=0, split=0) => {
                     const res = await frappe.call({
                         method: "production_scheduler.api.update_schedule",
                         args: {
-                            item_name: itemEl.dataset.itemName, 
+                            item_name: itemName, 
                             unit: newUnit,
                             date: filterOrderDate.value,
-                            index: newIndex, // Pass Index!
+                            index: newIndex,
                             force_move: force,
                             perform_split: split
                         }
@@ -581,11 +598,9 @@ async function initSortable() {
                     return res;
                 };
 
-                // Initial Call (No Force, No Split)
                 let res = await performMove();
                 
                 if (res.message && res.message.status === 'overflow') {
-                     // OVERFLOW - Show Dialog
                      const avail = res.message.available;
                      const limit = res.message.limit;
                      const current = res.message.current_load;
@@ -593,72 +608,62 @@ async function initSortable() {
                      
                      const d = new frappe.ui.Dialog({
                         title: '⚠️ Capacity Full',
-                        fields: [
-                            {
-                                fieldtype: 'HTML',
-                                options: `
-                                    <div style="padding: 10px; border-radius: 8px; background: #fff1f2; border: 1px solid #fda4af;">
-                                         <p style="margin:0; font-weight:700; color:#991b1b;">Capacity Exceeded for ${newUnit}!</p>
-                                         <p style="margin:5px 0 0; font-size:13px; color:#b91c1c;">
-                                            Unit allows <b>${limit}T</b>. Currently planned: <b>${current.toFixed(2)}T</b>.<br>
-                                            Adding this order (<b>${orderWt.toFixed(2)}T</b>) is not possible without moving or splitting.
-                                         </p>
-                                         <p style="margin:10px 0 0; font-weight:700; color:#1e293b;">Available Space: ${avail.toFixed(2)}T</p>
-                                    </div>
-                                `
-                            }
-                        ],
-                        primary_action_label: 'Move to Next Day',
-                        primary_action: async () => {
-                             d.hide();
-                             const moveRes = await performMove(1, 0); // Force Move (Next available slot)
-                             if (moveRes.message && moveRes.message.status === 'success') {
-                                 const finalSlot = moveRes.message.moved_to;
-                                 frappe.msgprint(`Moved to <b>${finalSlot.date}</b> in <b>${finalSlot.unit}</b>`);
-                                 fetchData(); 
-                             }
-                        },
-                        secondary_action_label: 'Split & Distribute',
-                    });
-                    
-                    d.set_secondary_action(async () => {
-                         d.hide();
-                         const splitRes = await performMove(0, 1); // Perform Split
-                         if (splitRes.message && splitRes.message.status === 'success') {
-                             frappe.msgprint("Order Split and distributed successfully.");
-                             fetchData();
-                         }
-                    });
-
-                    // Add Cancel Button
-                    d.add_custom_button('Cancel', () => {
-                         d.hide();
-                         renderKey.value++; // Force re-render to revert drag
-                    });
-
-                    d.show();
+                        fields: [{ fieldtype: 'HTML', options: `<div style="padding: 10px; border-radius: 8px; background: #fff1f2; border: 1px solid #fda4af;">...</div>` }],
+                        primary_action: async () => { d.hide(); const moveRes = await performMove(1, 0); if (moveRes.message && moveRes.message.status === 'success') fetchData(); },
+                        secondary_action: async () => { d.hide(); const splitRes = await performMove(0, 1); if (splitRes.message && splitRes.message.status === 'success') fetchData(); }
+                     });
+                     d.show();
                 } else if (res.message && res.message.status === 'success') {
-                    // Normal Success
-                    frappe.show_alert({ message: `Successfully moved to ${newUnit}`, indicator: "green" });
-                    // Always Refresh after any backend move to ensure consistency
+                    frappe.show_alert({ message: `Successfully moved`, indicator: "green" });
                     await fetchData(); 
                 }
              } catch (e) {
                  console.error(e);
-                 frappe.msgprint("❌ Move Failed: " + (e.message || "Unknown Error"));
+                 frappe.msgprint("❌ Move Failed");
                  renderKey.value++; 
              }
         }
       },
     });
+    sortableInstances.push(s);
   });
+
+  // Table Groups
+  if (tableRefs.value && tableRefs.value.length > 0) {
+      tableRefs.value.forEach((tbody) => {
+          if (!tbody) return;
+          const s = new Sortable(tbody, {
+              group: "table-group",
+              animation: 150,
+              handle: ".cc-table-row",
+              ghostClass: "bg-blue-50",
+              onEnd: async (evt) => {
+                  const rows = Array.from(tbody.querySelectorAll('tr'));
+                  const updates = rows.map((row, idx) => ({
+                      name: row.dataset.itemName,
+                      idx: idx + 1
+                  }));
+                  try {
+                      await frappe.call({
+                          method: "production_scheduler.api.update_sequence",
+                          args: { items: updates }
+                      });
+                      frappe.show_alert({ message: "Sequence Updated", indicator: "green" });
+                      await fetchData();
+                  } catch (e) {
+                      console.error(e);
+                      fetchData();
+                  }
+              }
+          });
+          sortableInstances.push(s);
+      });
+  }
 }
 
 function getUnitSortConfig(unit) {
-  if (!unitSortConfig[unit]) {
-    unitSortConfig[unit] = { color: 'asc', gsm: 'desc', priority: 'color' };
-  }
-  return unitSortConfig[unit];
+  // Config is pre-initialized, return fallback if unit missing
+  return unitSortConfig[unit] || { color: 'asc', gsm: 'desc', priority: 'color' };
 }
 
 function toggleUnitColor(unit) {
@@ -707,7 +712,7 @@ function sortItems(unit, items) {
 }
 
 function getUnitEntries(unit) {
-  let unitItems = filteredData.value.filter((d) => d.unit === unit);
+  let unitItems = filteredData.value.filter((d) => (d.unit || "Mixed") === unit);
   unitItems = sortItems(unit, unitItems); 
   const entries = [];
   for (let i = 0; i < unitItems.length; i++) {
@@ -1118,14 +1123,6 @@ async function fetchData() {
 
 onMounted(() => {
   fetchData();
-  
-  // Auto-refresh when tab becomes visible (Fix for Matrix Sync)
-  document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === 'visible') {
-          console.log("Tab visible, refreshing data...");
-          fetchData();
-      }
-  });
 });
 </script>
 
