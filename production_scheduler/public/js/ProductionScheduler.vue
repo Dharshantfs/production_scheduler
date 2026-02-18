@@ -218,7 +218,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch, reactive } from "vue";
+import { ref, computed, onMounted, onBeforeUpdate, nextTick, watch, reactive } from "vue";
 import Sortable from "sortablejs";
 
 // Color groups 
