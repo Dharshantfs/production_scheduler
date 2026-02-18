@@ -293,12 +293,6 @@ const setColumnRef = (el) => {
     columnRefs.value.push(el);
   }
 };
-const tableRefs = ref([]);
-const setTableRef = (el) => {
-    if (el && !tableRefs.value.includes(el)) {
-        tableRefs.value.push(el);
-    }
-};
 
 // Robust Sortable Tracking
 const sortableInstances = []; // Non-reactive array to track instances
@@ -306,7 +300,6 @@ const sortableInstances = []; // Non-reactive array to track instances
 // Reset on update/re-render
 onBeforeUpdate(() => {
   columnRefs.value = [];
-  tableRefs.value = [];
 });
 
 const renderKey = ref(0); 
@@ -628,37 +621,7 @@ async function initSortable() {
     sortableInstances.push(s);
   });
 
-  // Table Groups
-  if (tableRefs.value && tableRefs.value.length > 0) {
-      tableRefs.value.forEach((tbody) => {
-          if (!tbody) return;
-          const s = new Sortable(tbody, {
-              group: "table-group",
-              animation: 150,
-              handle: ".cc-table-row",
-              ghostClass: "bg-blue-50",
-              onEnd: async (evt) => {
-                  const rows = Array.from(tbody.querySelectorAll('tr'));
-                  const updates = rows.map((row, idx) => ({
-                      name: row.dataset.itemName,
-                      idx: idx + 1
-                  }));
-                  try {
-                      await frappe.call({
-                          method: "production_scheduler.api.update_sequence",
-                          args: { items: updates }
-                      });
-                      frappe.show_alert({ message: "Sequence Updated", indicator: "green" });
-                      await fetchData();
-                  } catch (e) {
-                      console.error(e);
-                      fetchData();
-                  }
-              }
-          });
-          sortableInstances.push(s);
-      });
-  }
+
 }
 
 function getUnitSortConfig(unit) {
