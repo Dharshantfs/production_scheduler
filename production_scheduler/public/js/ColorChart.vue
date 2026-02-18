@@ -559,7 +559,7 @@ const filteredData = computed(() => {
   return data;
 });
 
-      <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
+function clearFilters() {
   filterOrderDate.value = frappe.datetime.get_today();
   filterPartyCode.value = "";
   filterUnit.value = "";
