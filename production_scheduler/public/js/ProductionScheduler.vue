@@ -457,21 +457,17 @@ async function initSortable() {
         const newIndex = evt.newIndex + 1;
         const isSameUnit = (newUnitEl === oldUnitEl);
 
-        // Helper: Revert the DOM move that SortableJS did.
-        // This prevents duplicates — Vue will handle the re-render from updated data.
-        const revertDomMove = () => {
-          if (!isSameUnit) {
-            try {
-              const refNode = oldUnitEl.children[evt.oldIndex] || null;
-              oldUnitEl.insertBefore(itemEl, refNode);
-            } catch(e) { /* element may already be gone */ }
-          }
-        };
-
         if (!isSameUnit || evt.newIndex !== evt.oldIndex) {
-             // Use setTimeout to let SortableJS finish its internal cleanup before we do anything
-             setTimeout(async () => {
-             try {
+            // For cross-unit moves: immediately hide the Sortable-moved DOM element.
+            // SortableJS already moved it into the new column's DOM.
+            // We hide it NOW (synchronously) so Vue's upcoming re-render from fetchData()
+            // doesn't see a duplicate — Vue will replace the entire list cleanly.
+            if (!isSameUnit) {
+                itemEl.style.display = 'none';
+            }
+
+            setTimeout(async () => {
+            try {
                 if (!isSameUnit) {
                     frappe.show_alert({ message: "Validating Capacity...", indicator: "orange" });
                 }
@@ -495,17 +491,14 @@ async function initSortable() {
                 
                 if (res.message && res.message.status === 'overflow') {
                      const avail = res.message.available;
-                     const limit = res.message.limit;
-                     const current = res.message.current_load;
-                     const orderWt = res.message.order_weight;
                      
                      const d = new frappe.ui.Dialog({
                         title: '⚠️ Capacity Full',
                         fields: [{ fieldtype: 'HTML', options: `<div style="padding: 10px; border-radius: 8px; background: #fff1f2; border: 1px solid #fda4af;"><p class="text-lg font-bold text-red-600">Unit Capacity Exceeded!</p><p>Available: <b>${avail.toFixed(3)}T</b></p></div>` }],
                         primary_action_label: 'Move to Next Day',
-                        primary_action: async () => { d.hide(); revertDomMove(); const moveRes = await performMove(1, 0); if (moveRes.message && moveRes.message.status === 'success') fetchData(); },
+                        primary_action: async () => { d.hide(); const moveRes = await performMove(1, 0); if (moveRes.message && moveRes.message.status === 'success') fetchData(); },
                         secondary_action_label: 'Cancel',
-                        secondary_action: () => { d.hide(); revertDomMove(); fetchData(); }
+                        secondary_action: () => { d.hide(); fetchData(); }
                      });
                      d.show();
                 } else if (res.message && res.message.status === 'success') {
@@ -522,26 +515,23 @@ async function initSortable() {
                             const rawItem = rawData.value.find(d => d.itemName === item.itemName);
                             if (rawItem) rawItem.idx = i + 1;
                         });
-                        // Persist the new sequence to backend so table view matches
                         const sequencePayload = unitItems.map((item, i) => ({ name: item.itemName, idx: i + 1 }));
                         frappe.call({
                             method: "production_scheduler.api.update_sequence",
                             args: { items: sequencePayload }
                         });
-                        // DOM is already correct (Sortable moved it). Don't touch rawData ref = no freeze.
+                        // DOM is already correct (Sortable moved it). Don't touch rawData ref.
                     } else {
                         unitSortConfig[newUnit].mode = 'manual';
-                        revertDomMove(); // Revert Sortable's DOM move — let Vue re-render from fresh data
-                        await fetchData();
+                        await fetchData(); // Vue re-renders cleanly — hidden element is gone
                     }
                 }
              } catch (e) {
                  console.error(e);
                  frappe.msgprint("❌ Move Failed");
-                 revertDomMove();
                  fetchData(); 
              }
-             }, 100); // Delay lets SortableJS finalize DOM before we change Vue state
+             }, 100);
         }
       },
     });
