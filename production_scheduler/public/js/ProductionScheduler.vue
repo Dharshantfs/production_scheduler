@@ -265,10 +265,16 @@ const filteredData = computed(() => {
   });
 
   // 2. Filter out orders where Color Total < 800kg
-  // But ONLY if we actually have data to filter, otherwise keep empty
+  // Rule: only applies to NON-WHITE colors. Whites are handled by the excluded-whites filter.
+  // This ensures a single small colored order doesn't appear until the color has enough volume.
   if (data.length > 0) {
       data = data.filter(d => {
           const color = (d.color || "").toUpperCase().trim();
+          // Exempt white-family colors from the 800kg rule — they are filtered separately
+          const isWhiteFamily = color.includes("WHITE") || color.includes("IVORY") || 
+                                color.includes("CREAM") || color.includes("OFF WHITE") ||
+                                color.includes("BLEACH") || color.includes("RFD") || color.includes("R.F.D");
+          if (isWhiteFamily) return true; // Let the excluded-whites filter handle these
           const total = colorTotals[color] || 0;
           return total >= 800;
       });
