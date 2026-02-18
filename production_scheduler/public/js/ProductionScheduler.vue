@@ -39,10 +39,84 @@
       <button v-if="isAdmin" class="cc-clear-btn" style="color: #dc2626; border-color: #dc2626; margin-left: 8px;" @click="openRescueDialog" title="Rescue lost or stuck orders">
         🚑 Rescue Orders
       </button>
+      
+      <!-- View Toggle -->
+      <div class="cc-view-toggle">
+          <button class="cc-view-btn" :class="{ active: viewMode === 'kanban' }" @click="viewMode = 'kanban'">
+             📋 Board
+          </button>
+          <button class="cc-view-btn" :class="{ active: viewMode === 'table' }" @click="viewMode = 'table'">
+             📅 Table
+          </button>
+      </div>
+    </div>
+
+    <!-- TABLE VIEW -->
+    <div v-if="viewMode === 'table'" class="cc-table-container">
+        <div v-for="unitGroup in tableData" :key="unitGroup.unit" class="cc-table-unit-block">
+            <!-- Unit Header -->
+            <div class="cc-table-unit-header" :style="{ backgroundColor: getUnitHeaderColor(unitGroup.unit) }">
+                {{ unitGroup.unit.toUpperCase() }} (06:00 am to 06:00 am) - Total: {{ unitGroup.totalWeight.toFixed(2) }} T
+            </div>
+            
+            <table class="cc-prod-table">
+                <thead>
+                    <tr>
+                        <th style="width: 80px;">DATE</th>
+                        <th style="width: 80px;">DAY</th>
+                        <th style="width: 100px;">PARTY CODE</th>
+                        <th style="width: 150px;">PARTY NAME</th>
+                        <th style="width: 80px;">QUALITY</th>
+                        <th style="width: 100px;">COLOUR</th>
+                        <th style="width: 80px;">GSM</th>
+                        <th style="width: 80px;">WEIGHT (Kg)</th>
+                        <th style="width: 80px;">ACTUAL PROD</th>
+                        <th style="width: 100px;">STATUS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template v-for="dateGroup in unitGroup.dates" :key="dateGroup.date">
+                        <template v-for="(item, idx) in dateGroup.items" :key="item.itemName">
+                            <tr>
+                                <!-- Date & Day: Show only on first row of the date group -->
+                                <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center font-bold">
+                                    {{ formatDate(dateGroup.date) }}
+                                </td>
+                                <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center">
+                                    {{ getDayName(dateGroup.date) }}
+                                </td>
+                                
+                                <td class="cell-center">{{ item.partyCode }}</td>
+                                <td>{{ item.customer }}</td>
+                                <td class="cell-center">{{ item.quality }}</td>
+                                <td class="cell-center font-bold">{{ item.color }}</td>
+                                <td class="cell-center">{{ item.gsm }}</td>
+                                <td class="cell-right font-bold">{{ item.qty }}</td>
+                                
+                                <!-- Actual Prod: Show sum on first row -->
+                                <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center font-bold bg-yellow-50">
+                                    {{ dateGroup.dailyTotal.toFixed(0) }}
+                                </td>
+                                
+                                <td class="cell-center">
+                                    <span class="status-badge" :class="item.status === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-gray-100'">
+                                        {{ item.production_status || 'Pending' }}
+                                    </span>
+                                </td>
+                            </tr>
+                        </template>
+                        <!-- Daily Separator Row (Optional, maybe just border) -->
+                    </template>
+                    <tr v-if="unitGroup.dates.length === 0">
+                        <td colspan="10" style="text-align:center; padding: 20px; color:#999;">No production planned for this unit</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <!-- Color Chart Board (Production View) -->
-    <div class="cc-board" :key="renderKey">
+    <div v-else class="cc-board" :key="renderKey">
       <div
         v-for="unit in visibleUnits"
         :key="unit"
@@ -205,6 +279,7 @@ const unitSortConfig = reactive({});
 const rawData = ref([]);
 const columnRefs = ref(null);
 const renderKey = ref(0); 
+const viewMode = ref('kanban'); // 'kanban' | 'table'
 
 const visibleUnits = computed(() =>
   filterUnit.value ? units.filter((u) => u === filterUnit.value) : units
@@ -251,6 +326,72 @@ const filteredData = computed(() => {
   }
   return data;
 });
+
+// ---- TABLE VIEW DATA ----
+const tableData = computed(() => {
+    if (viewMode.value !== 'table') return [];
+    
+    // Group by Unit
+    const unitsData = visibleUnits.value.map(unit => {
+        let items = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
+        
+        // Sort items by Date -> Sequence (idx)
+        // If "Mixed", sort by Sequence maybe? Or just date.
+        // Excel shows date grouping.
+        // Assuming filteredData already contains sorted items from `getUnitEntries` logic? 
+        // No, `filteredData` is flat. But `rawData` has `idx` from backend.
+        // Let's sort manually here to be safe: Date ASC, then idx ASC
+        items.sort((a, b) => {
+            if (a.ordered_date !== b.ordered_date) return new Date(a.ordered_date) - new Date(b.ordered_date);
+            return (a.idx || 0) - (b.idx || 0);
+        });
+
+        // Group by Date
+        const dateGroupsObj = {};
+        items.forEach(item => {
+            const d = item.ordered_date || "No Date";
+            if (!dateGroupsObj[d]) dateGroupsObj[d] = { date: d, items: [], dailyTotal: 0 };
+            dateGroupsObj[d].items.push(item);
+            dateGroupsObj[d].dailyTotal += (item.qty || 0);
+        });
+        
+        // Convert to Array
+        const dates = Object.values(dateGroupsObj).sort((a, b) => new Date(a.date) - new Date(b.date));
+        
+        const totalWeight = items.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
+
+        return {
+            unit,
+            dates,
+            totalWeight
+        };
+    });
+    
+    return unitsData;
+});
+
+function formatDate(dateStr) {
+    if (!dateStr || dateStr === 'No Date') return '-';
+    // Format: DD/MM/YYYY
+    const d = new Date(dateStr);
+    return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+}
+
+function getDayName(dateStr) {
+    if (!dateStr || dateStr === 'No Date') return '-';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
+}
+
+function getUnitHeaderColor(unit) {
+    // Excel Header Colors: Yellowish
+    // User Request: "SEE THE EXCEL". Excel has specific colors.
+    // Unit 1: Yellow/Orange-ish
+    // Keep it simple for now: A standard header color or match functionality.
+    // Let's use a standard Production Header Gold.
+    return "#fcd34d"; // Amber-300
+}
+
 
 function clearFilters() {
   filterOrderDate.value = frappe.datetime.get_today();
@@ -845,4 +986,82 @@ onMounted(() => {
 .cc-mix-label.white-mix { background-color: #f3f4f6; color: #000; border: 1px solid #d1d5db; }
 .cc-mix-label.black-mix { background-color: #374151; color: #fff; }
 .cc-mix-label.color-mix { background-color: #dbeafe; color: #1e40af; }
+
+/* ---- TABLE VIEW STYLES ---- */
+.cc-view-toggle {
+    display: flex;
+    gap: 4px;
+    margin-left: auto; /* Push to right */
+    background: #e5e7eb;
+    padding: 2px;
+    border-radius: 6px;
+}
+.cc-view-btn {
+    border: none;
+    background: transparent;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #6b7280;
+    cursor: pointer;
+    border-radius: 4px;
+}
+.cc-view-btn.active {
+    background: white;
+    color: #1f2937;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.cc-table-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    background: #fff; /* White background for table view */
+}
+
+.cc-table-unit-block {
+    margin-bottom: 30px;
+    border: 1px solid #000; /* Distinct border like Excel */
+}
+
+.cc-table-unit-header {
+    text-align: center;
+    font-weight: 800;
+    padding: 8px;
+    background-color: #fcd34d; /* Fallback */
+    border-bottom: 1px solid #000;
+    font-size: 14px;
+    color: #000;
+}
+
+.cc-prod-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.cc-prod-table th, .cc-prod-table td {
+    border: 1px solid #000; /* Explicit grid lines */
+    padding: 4px 8px;
+}
+
+.cc-prod-table thead th {
+    background-color: #86efac; /* Green-300 like Excel 'Actual Production' header? Or the main header? */
+    /* Excel Screenshot: Headers are Green. */
+    background-color: #a7f3d0; /* Green-200 */
+    color: #064e3b;
+    font-weight: 700;
+    text-transform: uppercase;
+    text-align: center;
+}
+
+.cell-center { text-align: center; }
+.cell-right { text-align: right; }
+.bg-yellow-50 { background-color: #fefce8; }
+.status-badge {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+}
 </style>

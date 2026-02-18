@@ -181,11 +181,17 @@
                             {{ col.days }}
                         </th>
                     </tr>
-                    <!-- Row 3: Code -->
-                    <tr>
+                    <!-- Row 3: Code (Draggable Header) -->
+                    <tr ref="matrixHeaderRow">
                         <th class="matrix-sticky-col">CODE</th>
-                        <th v-for="col in matrixData.columns" :key="'code-'+col.id" class="text-center">
-                            {{ col.code }}
+                        <th 
+                            v-for="col in matrixData.columns" 
+                            :key="'code-'+col.id" 
+                            class="text-center matrix-col-header"
+                            :data-id="col.id"
+                            :data-date="col.date"
+                        >
+                            <div class="draggable-handle" style="cursor: grab;">{{ col.code }}</div>
                         </th>
                     </tr>
                     <!-- Row 4: GSM -->
@@ -210,9 +216,14 @@
                         </th>
                     </tr>
                 </thead>
-                <tbody>
-                    <tr v-for="row in matrixData.rows" :key="row.color">
-                        <td class="matrix-sticky-col matrix-row-header">
+                <tbody ref="matrixBody">
+                    <tr 
+                        v-for="row in matrixData.rows" 
+                        :key="row.color"
+                        :data-color="row.color"
+                        class="matrix-row"
+                    >
+                        <td class="matrix-sticky-col matrix-row-header" style="cursor: grab;">
                             <div class="flex items-center">
                                 <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
                                 {{ row.color }}
@@ -345,6 +356,9 @@ const unitSortConfig = reactive({});
 const viewMode = ref('kanban'); // 'kanban' | 'matrix'
 const rawData = ref([]);
 const columnRefs = ref(null);
+const matrixHeaderRow = ref(null); // Ref for Matrix Column sorting
+const matrixBody = ref(null);      // Ref for Matrix Row sorting
+const customRowOrder = ref([]);    // Store user-defined row order (List of Colors)
 const renderKey = ref(0); // Force re-render for drag revert
 
 // Matrix View Helpers
@@ -382,7 +396,9 @@ const matrixData = computed(() => {
                 gsm: d.gsm || "",
                 quality: d.quality || "",
                 customer: d.customer || d.partyCode || "",
-                items: []
+                items: [],
+                // Sort key for checks
+                idxSum: 0 
             };
             
             // Calculate Days (Diff from Today?)
@@ -417,9 +433,24 @@ const matrixData = computed(() => {
         if (d.color) allColors.add(d.color);
     });
     
-    const sortedColors = Array.from(allColors).sort((a, b) => {
-         return compareColor({color: a}, {color: b}, 'asc');
-    });
+    let sortedColors = [];
+    if (customRowOrder.value.length > 0) {
+        // Sort by Custom Order first, then New colors by Priority
+        const customSet = new Set(customRowOrder.value);
+        // Gets colors present in Data OR Custom Order (to maintain gaps if needed? No, only show data)
+        // Actually we only show colors present in Data.
+        
+        const presentColors = Array.from(allColors);
+        
+        const ordered = customRowOrder.value.filter(c => allColors.has(c));
+        const others = presentColors.filter(c => !customSet.has(c)).sort((a,b) => compareColor({color: a}, {color: b}, 'asc'));
+        
+        sortedColors = [...ordered, ...others];
+        sortedColors = [...ordered, ...others];
+    } else {
+        // Default: Use order of appearance in filteredData (which matches rawData / idx)
+        sortedColors = Array.from(allColors);
+    }
 
     const rows = sortedColors.map(color => {
         return {
@@ -676,6 +707,129 @@ async function initSortable() {
   columnRefs.value.forEach(col => {
       if (col._sortable) col._sortable.destroy();
   });
+  if (matrixHeaderRow.value && matrixHeaderRow.value._sortable) matrixHeaderRow.value._sortable.destroy();
+  if (matrixBody.value && matrixBody.value._sortable) matrixBody.value._sortable.destroy();
+
+  // MATRIX VIEW SORTABLE
+  if (viewMode.value === 'matrix') {
+      
+      // 1. COLUMNS (Headers)
+      if (matrixHeaderRow.value) {
+          matrixHeaderRow.value._sortable = new Sortable(matrixHeaderRow.value, {
+             group: 'matrix-cols',
+             animation: 150,
+             handle: '.draggable-handle', // Drag handle
+             draggable: '.matrix-col-header', // Only columns
+             ghostClass: 'cc-ghost',
+             onEnd: async (evt) => {
+                 const { oldIndex, newIndex, item } = evt;
+                 if (oldIndex === newIndex) return;
+
+                 // Determine Target Date
+                 // The 'children' of the tr include the first TH (CODE label) which is NOT draggable.
+                 // So valid indices start from 1?
+                 // sortablejs indices are based on draggable elements if we specific draggable?
+                 // If 'draggable' is set, indices might still be DOM based. 
+                 // The first TH is class 'matrix-sticky-col' NOT 'matrix-col-header'.
+                 // So Sortable ignores it?
+                 // Let's rely on VISUAL placement.
+                 
+                 // We need to find the "Target Date" of the column we dropped onto (or near).
+                 // Better: Get data from the element at newIndex.
+                 const allCols = Array.from(matrixHeaderRow.value.querySelectorAll('.matrix-col-header'));
+                 // Verify the list matches internal state
+                 // The list `allCols` now reflects the NEW DOM order.
+                 
+                 const targetEl = allCols[newIndex]; // The element now at this position
+                 // Wait, `onEnd` fires AFTER DOM Move.
+                 // So `allCols[newIndex]` IS the dragged element `item`? YES.
+                 // This doesn't help us find the DATE of the *position*.
+                 // We need the date of the column that *was* there or is *neighboring*.
+                 
+                 // Actually, the goal is to RESCHEDULE.
+                 // We need to know which "Block" (Date) we landed in.
+                 // Visually, the Date Headers (Row 1) are merged.
+                 // The Code Headers (Row 3) are individual.
+                 // If I drag Code A (Date 1) to Code B (Date 2), I want Code A to change to Date 2.
+                 
+                 // Let's look at the Neighbors to guess the date.
+                 let targetDate = null;
+                 
+                 // Check Left Neighbor
+                 const leftEl = allCols[newIndex - 1]; // Neighbor
+                 if (leftEl) {
+                     targetDate = leftEl.dataset.date;
+                 } else {
+                     // Check Right Neighbor (if dropped at start)
+                     const rightEl = allCols[newIndex + 1];
+                     if (rightEl) {
+                         targetDate = rightEl.dataset.date;
+                     }
+                 }
+                 
+                 // If we found a date (and it's different)
+                 if (targetDate) {
+                     const originalDate = item.dataset.date;
+                     if (originalDate === targetDate) return; // Same date, just reorder? (No backend support for manual sheet order yet)
+                     
+                     if (confirm(`Move Order to ${targetDate}?`)) {
+                         const colId = item.dataset.id;
+                         // Find items for this Column (Group)
+                         // We need the Group from matrixData.columns
+                         const group = matrixData.value.columns.find(c => c.id === colId);
+                         if (group && group.items.length) {
+                             const itemNames = group.items.map(i => i.itemName); // Use actual Item Name
+                             
+                             frappe.show_alert("Rescheduling Order...");
+                             try {
+                                 await frappe.call({
+                                     method: "production_scheduler.api.move_orders_to_date",
+                                     args: {
+                                         item_names: itemNames,
+                                         target_date: targetDate
+                                     }
+                                 });
+                                 fetchData(); // Refresh
+                             } catch(e) {
+                                 console.error(e);
+                                 renderKey.value++; // Revert
+                             }
+                         }
+                     } else {
+                         renderKey.value++; // Revert
+                     }
+                 } else {
+                     renderKey.value++; // Could not determine date
+                 }
+             }
+          });
+      }
+
+      // 2. ROWS (Colors)
+      if (matrixBody.value) {
+          matrixBody.value._sortable = new Sortable(matrixBody.value, {
+              group: 'matrix-rows',
+              animation: 150,
+              handle: '.matrix-row-header', // Drag via Color Name cell
+              draggable: '.matrix-row',
+              ghostClass: 'cc-ghost',
+              onEnd: (evt) => {
+                  const { oldIndex, newIndex } = evt;
+                  if (oldIndex === newIndex) return;
+
+                  // Update Custom Order
+                  // Extracts distinct colors from DOM order
+                  const rows = Array.from(matrixBody.value.querySelectorAll('.matrix-row'));
+                  customRowOrder.value = rows.map(r => r.dataset.color);
+                  
+                  // Vue will re-render based on `matrixData` which uses `customRowOrder`
+                  // Sorting relies on data, so we don't need to manually move DOM (Sortable did it, Vue will correct it).
+              }
+          });
+      }
+      
+      return; 
+  }
 
   columnRefs.value.forEach((colEl) => {
     colEl._sortable = new Sortable(colEl, {
@@ -804,17 +958,22 @@ async function initSortable() {
                      idx: idx + 1 // 1-based index
                  }));
                  
-                 // Optimistic update? No need, Sortable already moved DOM. 
-                 // But Vue data needs update? 
-                 // We don't update rawData 'idx' here because we don't use it for sort locally (unless we switch to manual sort).
-                 // But to keep it consistent on refresh:
+                 // UPDATE LOCAL DATA (Crucial for visual consistency before refresh)
+                 updates.forEach(upd => {
+                     const item = rawData.value.find(d => d.itemName === upd.name);
+                     if (item) item.idx = upd.idx;
+                 });
+                 
+                 // FORCE MANUAL MODE
+                 const config = getUnitSortConfig(newUnit);
+                 config.priority = 'manual';
+                 
                  frappe.call({
                      method: "production_scheduler.api.update_sequence",
                      args: { items: updates }
                  }).then(() => {
-                     // Set Manual Sort Mode to prevent auto-sort snap back
-                     getUnitSortConfig(newUnit).priority = 'manual';
-                     frappe.show_alert({ message: "Order Updated", indicator: "green" }, 1); // Quick toast
+                     frappe.show_alert({ message: "Order Updated (Manual Mode)", indicator: "green" }, 1); 
+                     renderKey.value++; // Force re-render to apply 'manual' sort logic strictly
                  });
              }
         }
@@ -862,6 +1021,9 @@ function toggleUnitColor(unit) {
   } else {
       config.color = config.color === 'asc' ? 'desc' : 'asc';
   }
+  // Ensure manual mode is cleared (redundant but safe)
+  if (config.priority === 'manual') config.priority = 'color';
+  
   console.log(`Unit ${unit} Sort: Color ${config.color}, Priority: ${config.priority}`);
 }
 
@@ -873,12 +1035,16 @@ function toggleUnitGsm(unit) {
   } else {
       config.gsm = config.gsm === 'asc' ? 'desc' : 'asc';
   }
+  // Reset Manual
+  if (config.priority === 'manual') config.priority = 'gsm';
+  
   console.log(`Unit ${unit} Sort: GSM ${config.gsm}, Priority: ${config.priority}`);
 }
 
 function toggleUnitPriority(unit) {
-  const config = getUnitSortConfig(unit);
   config.priority = config.priority === 'color' ? 'gsm' : 'color';
+  // Ensure we are NOT in manual mode
+  if (config.priority === 'manual') config.priority = 'color';
   console.log(`Unit ${unit} Priority swapped to: ${config.priority}`);
 }
 
@@ -886,12 +1052,12 @@ function toggleUnitPriority(unit) {
 function sortItems(unit, items) {
   const config = getUnitSortConfig(unit);
   
-  // Manual Sort: Return as is (relies on rawData order / DOM order)
+  // Manual Sort: Sort by IDX
   if (config.priority === 'manual') {
-      return items;
+      return [...items].sort((a, b) => (a.idx || 0) - (b.idx || 0));
   }
   
-  // Create a copy to sort
+  // Auto Sort: Color / GSM
   return [...items].sort((a, b) => {
       let diff = 0;
       if (config.priority === 'color') {
@@ -1084,7 +1250,11 @@ async function fetchData() {
       method: "production_scheduler.api.get_color_chart_data",
       args: { date: filterOrderDate.value },
     });
-    rawData.value = r.message || [];
+    // Ensure idx is integer
+    rawData.value = (r.message || []).map(d => ({
+        ...d,
+        idx: parseInt(d.idx || 0) || 9999
+    }));
     console.log("Fetched Data:", rawData.value);
     
     // Force Reactive UI Refresh
@@ -2173,5 +2343,19 @@ function updateRescueSelection(d) {
 .matrix-total-col {
     background: #f1f5f9;
     font-weight: 700;
+}
+
+/* Drag & Drop Visuals */
+.cc-ghost {
+    opacity: 0.5;
+    background: #e2e8f0;
+    border: 2px dashed #94a3b8;
+}
+
+.draggable-handle {
+    cursor: grab;
+}
+.draggable-handle:active {
+    cursor: grabbing;
 }
 </style>
