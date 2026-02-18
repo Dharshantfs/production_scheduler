@@ -90,6 +90,88 @@
 <script setup>
 import { ref, computed, onMounted, nextTick } from "vue";
 
+// ── Color Groups (synced from Production Board) ────────────────────────────
+const COLOR_GROUPS = [
+  { keywords: ["WHITE MIX"], priority: 99, hex: "#f0f0f0" }, 
+  { keywords: ["BLACK MIX"], priority: 99, hex: "#404040" },
+  { keywords: ["COLOR MIX"], priority: 99, hex: "#c0c0c0" },
+  { keywords: ["BEIGE MIX"], priority: 99, hex: "#e0d5c0" }, 
+  { keywords: ["WHITE", "BRIGHT WHITE"], priority: 10, hex: "#FFFFFF" },
+  { keywords: ["IVORY", "OFF WHITE", "CREAM"], priority: 11, hex: "#FFFFF0" },
+  { keywords: ["LEMON YELLOW"], priority: 20, hex: "#FFF44F" },
+  { keywords: ["YELLOW"], priority: 21, hex: "#FFFF00" },
+  { keywords: ["GOLDEN YELLOW", "GOLD"], priority: 22, hex: "#FFD700" },
+  { keywords: ["PEACH"], priority: 30, hex: "#FFDAB9" },
+  { keywords: ["ORANGE", "BRIGHT ORANGE"], priority: 31, hex: "#FFA500" },
+  { keywords: ["BABY PINK", "LIGHT PINK"], priority: 40, hex: "#FFB6C1" },
+  { keywords: ["PINK", "ROSE"], priority: 41, hex: "#FFC0CB" },
+  { keywords: ["DARK PINK", "HOT PINK"], priority: 42, hex: "#FF69B4" },
+  { keywords: ["RED", "BRIGHT RED"], priority: 50, hex: "#FF0000" },
+  { keywords: ["CRIMSON", "SCARLET"], priority: 51, hex: "#DC143C" },
+  { keywords: ["MAROON", "DARK RED", "BURGUNDY"], priority: 52, hex: "#800000" },
+  { keywords: ["LAVENDER", "LILAC"], priority: 60, hex: "#E6E6FA" },
+  { keywords: ["VIOLET"], priority: 61, hex: "#EE82EE" },
+  { keywords: ["PURPLE", "MAGENTA"], priority: 62, hex: "#800080" },
+  { keywords: ["SKY BLUE", "LIGHT BLUE"], priority: 70, hex: "#87CEEB" },
+  { keywords: ["MEDICAL BLUE"], priority: 71, hex: "#0077B6" },
+  { keywords: ["BLUE", "ROYAL BLUE"], priority: 72, hex: "#4169E1" },
+  { keywords: ["PEACOCK BLUE"], priority: 73, hex: "#005F69" },
+  { keywords: ["NAVY BLUE", "DARK BLUE"], priority: 74, hex: "#000080" },
+  { keywords: ["MINT GREEN"], priority: 80, hex: "#98FF98" },
+  { keywords: ["PARROT GREEN", "LIGHT GREEN"], priority: 81, hex: "#90EE90" },
+  { keywords: ["APPLE GREEN", "LIME GREEN"], priority: 82, hex: "#32CD32" },
+  { keywords: ["GREEN", "KELLY GREEN"], priority: 83, hex: "#008000" },
+  { keywords: ["SEA GREEN"], priority: 84, hex: "#2E8B57" },
+  { keywords: ["BOTTLE GREEN"], priority: 85, hex: "#006A4E" },
+  { keywords: ["OLIVE GREEN"], priority: 86, hex: "#808000" },
+  { keywords: ["ARMY GREEN"], priority: 87, hex: "#4B5320" },
+  { keywords: ["DARK GREEN"], priority: 88, hex: "#006400" },
+  { keywords: ["SILVER", "LIGHT GREY"], priority: 95, hex: "#C0C0C0" },
+  { keywords: ["GREY", "GRAY", "DARK GREY"], priority: 96, hex: "#808080" },
+  { keywords: ["BLACK"], priority: 98, hex: "#000000" },
+  { keywords: ["BEIGE", "LIGHT BEIGE", "CREAM"], priority: 99, hex: "#F5F5DC" },
+  { keywords: ["DARK BEIGE", "KHAKI", "SAND"], priority: 99, hex: "#C2B280" }, 
+  { keywords: ["BROWN", "CHOCOLATE", "COFFEE"], priority: 90, hex: "#A52A2A" }, 
+];
+
+function findColorGroup(color) {
+  const upper = (color || "").toUpperCase().trim();
+  for (const group of COLOR_GROUPS) {
+    for (const keyword of group.keywords) {
+      if (upper.includes(keyword)) return group;
+    }
+  }
+  return null;
+}
+
+function getColorPriority(color) {
+  const group = findColorGroup(color);
+  return group ? group.priority : 50;
+}
+
+function compareColor(a, b, direction) {
+  const pA = getColorPriority(a.color);
+  const pB = getColorPriority(b.color);
+  return direction === 'asc' ? pA - pB : pB - pA;
+}
+
+function compareGsm(a, b, direction) {
+  const gsmA = parseFloat(a.gsm) || 0;
+  const gsmB = parseFloat(b.gsm) || 0;
+  return direction === 'asc' ? gsmA - gsmB : gsmB - gsmA;
+}
+
+function sortItems(unit, items) {
+  // Use same default sort as Production Board: Color ASC, GSM DESC
+  return [...items].sort((a, b) => {
+    let diff = compareColor(a, b, 'asc');
+    if (diff === 0) diff = compareGsm(a, b, 'desc');
+    if (diff === 0) diff = (a.idx || 0) - (b.idx || 0);
+    return diff;
+  });
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 const units = ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"];
 const filterOrderDate = ref(frappe.datetime.get_today());
 const filterPartyCode = ref("");
@@ -105,6 +187,21 @@ const filteredData = computed(() => {
   let data = rawData.value || [];
   data = data.map(d => ({ ...d, unit: d.unit || "Mixed" }));
 
+  // ── Same 800kg color filter as Production Board ──────────────────────────
+  if (data.length > 0) {
+    const colorTotals = {};
+    data.forEach(d => {
+      const color = (d.color || "").toUpperCase().trim();
+      colorTotals[color] = (colorTotals[color] || 0) + (d.qty || 0);
+    });
+
+    data = data.filter(d => {
+      const color = (d.color || "").toUpperCase().trim();
+      return (colorTotals[color] || 0) >= 800;
+    });
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
   if (filterPartyCode.value) {
     const search = filterPartyCode.value.toLowerCase();
     data = data.filter((d) =>
@@ -119,8 +216,8 @@ const tableData = computed(() => {
     return visibleUnits.value.map(unit => {
         let items = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
         
-        // Sort items by idx (sequence)
-        items = [...items].sort((a, b) => (a.idx || 0) - (b.idx || 0));
+        // Sort items using Board's color-priority logic (synced)
+        items = sortItems(unit, items);
 
         const dateGroupsObj = {};
         items.forEach(item => {

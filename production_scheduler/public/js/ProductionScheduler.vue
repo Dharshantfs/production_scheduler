@@ -586,37 +586,46 @@ function sortItems(unit, items) {
   });
 }
 
-function getUnitEntries(unit) {
-  let unitItems = filteredData.value.filter((d) => (d.unit || "Mixed") === unit);
-  unitItems = sortItems(unit, unitItems); 
-  const entries = [];
-  for (let i = 0; i < unitItems.length; i++) {
-    entries.push({ 
-      type: "order", 
-      ...unitItems[i],
-      uniqueKey: unitItems[i].itemName
-    });
-    if (i < unitItems.length - 1) {
-      const curPri = getColorPriority(unitItems[i].color);
-      const nextPri = getColorPriority(unitItems[i + 1].color);
-      const gap = Math.abs(curPri - nextPri);
-      
-      if (gap > 0 || (unitItems[i].color !== unitItems[i+1].color)) {
-         let mType = determineMixType(unitItems[i].color, unitItems[i + 1].color);
-         let mQty = 0;
-         if (gap > 0) {
-             mQty = getMixRollQty(gap);
-             entries.push({
-               type: "mix",
-               mixType: mType,
-               qty: mQty,
-               uniqueKey: `mix-${unitItems[i].itemName}-${unitItems[i + 1].itemName}`
-             });
-         }
+// Cached computed: builds entries for ALL units once per data change
+const unitEntriesCache = computed(() => {
+  const cache = {};
+  for (const unit of units) {
+    let unitItems = filteredData.value.filter((d) => (d.unit || "Mixed") === unit);
+    unitItems = sortItems(unit, unitItems); 
+    const entries = [];
+    for (let i = 0; i < unitItems.length; i++) {
+      entries.push({ 
+        type: "order", 
+        ...unitItems[i],
+        uniqueKey: unitItems[i].itemName
+      });
+      if (i < unitItems.length - 1) {
+        const curPri = getColorPriority(unitItems[i].color);
+        const nextPri = getColorPriority(unitItems[i + 1].color);
+        const gap = Math.abs(curPri - nextPri);
+        
+        if (gap > 0 || (unitItems[i].color !== unitItems[i+1].color)) {
+           let mType = determineMixType(unitItems[i].color, unitItems[i + 1].color);
+           let mQty = 0;
+           if (gap > 0) {
+               mQty = getMixRollQty(gap);
+               entries.push({
+                 type: "mix",
+                 mixType: mType,
+                 qty: mQty,
+                 uniqueKey: `mix-${unitItems[i].itemName}-${unitItems[i + 1].itemName}`
+               });
+           }
+        }
       }
     }
+    cache[unit] = entries;
   }
-  return entries;
+  return cache;
+});
+
+function getUnitEntries(unit) {
+  return unitEntriesCache.value[unit] || [];
 }
 
 function getUnitProductionTotal(unit) {
@@ -628,11 +637,11 @@ function getUnitProductionTotal(unit) {
 }
 
 function getMixRollCount(unit) {
-  return getUnitEntries(unit).filter((e) => e.type === "mix").length;
+  return (unitEntriesCache.value[unit] || []).filter((e) => e.type === "mix").length;
 }
 
 function getMixRollTotalWeight(unit) {
-  return getUnitEntries(unit)
+  return (unitEntriesCache.value[unit] || [])
     .filter((e) => e.type === "mix")
     .reduce((sum, e) => sum + e.qty, 0);
 }
