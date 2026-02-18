@@ -441,13 +441,20 @@ async function initSortable() {
         const oldUnitEl = evt.from;
         const itemName = itemEl.dataset.itemName;
         const newUnit = newUnitEl.dataset.unit;
+        const oldUnit = oldUnitEl.dataset.unit;
         
         if (!itemName || !newUnit) return;
         const newIndex = evt.newIndex + 1;
+        const isSameUnit = (newUnitEl === oldUnitEl);
 
-        if (newUnitEl !== oldUnitEl || evt.newIndex !== evt.oldIndex) {
+        if (!isSameUnit || evt.newIndex !== evt.oldIndex) {
+             // Use setTimeout to let SortableJS finish its internal cleanup before we do anything
+             // This prevents the page freeze caused by destroying Sortable instances mid-drag
+             setTimeout(async () => {
              try {
-                frappe.show_alert({ message: "Validating Capacity...", indicator: "orange" });
+                if (!isSameUnit) {
+                    frappe.show_alert({ message: "Validating Capacity...", indicator: "orange" });
+                }
                 
                 const performMove = async (force=0, split=0) => {
                     const res = await frappe.call({
@@ -474,21 +481,45 @@ async function initSortable() {
                      
                      const d = new frappe.ui.Dialog({
                         title: '⚠️ Capacity Full',
-                        fields: [{ fieldtype: 'HTML', options: `<div style="padding: 10px; border-radius: 8px; background: #fff1f2; border: 1px solid #fda4af;">...</div>` }],
+                        fields: [{ fieldtype: 'HTML', options: `<div style="padding: 10px; border-radius: 8px; background: #fff1f2; border: 1px solid #fda4af;"><p class="text-lg font-bold text-red-600">Unit Capacity Exceeded!</p><p>Available: <b>${avail.toFixed(3)}T</b></p></div>` }],
+                        primary_action_label: 'Move to Next Day',
                         primary_action: async () => { d.hide(); const moveRes = await performMove(1, 0); if (moveRes.message && moveRes.message.status === 'success') fetchData(); },
-                        secondary_action: async () => { d.hide(); const splitRes = await performMove(0, 1); if (splitRes.message && splitRes.message.status === 'success') fetchData(); }
+                        secondary_action_label: 'Cancel',
+                        secondary_action: () => { d.hide(); renderKey.value++; }
                      });
                      d.show();
                 } else if (res.message && res.message.status === 'success') {
-                    frappe.show_alert({ message: `Successfully moved`, indicator: "green" });
-                    unitSortConfig[newUnit].mode = 'manual';
-                    await fetchData(); 
+                    frappe.show_alert({ message: isSameUnit ? "Order resequenced" : "Successfully moved", indicator: "green" });
+                    // For same-unit reorder: do optimistic local update instead of full fetch
+                    // to avoid destroying sortable instances which causes freeze
+                    if (isSameUnit) {
+                        unitSortConfig[newUnit].mode = 'manual';
+                        // Update the idx values in rawData locally to reflect new order
+                        const unitItems = rawData.value
+                            .filter(d => (d.unit || "Mixed") === newUnit)
+                            .sort((a, b) => (a.idx || 0) - (b.idx || 0));
+                        // Move the dragged item from oldIndex to newIndex
+                        const oldIdx = evt.oldIndex;
+                        const newIdx = evt.newIndex;
+                        const moved = unitItems.splice(oldIdx, 1)[0];
+                        unitItems.splice(newIdx, 0, moved);
+                        // Reassign idx values silently — no spread, no re-render, no sortable reinit
+                        unitItems.forEach((item, i) => {
+                            const rawItem = rawData.value.find(d => d.itemName === item.itemName);
+                            if (rawItem) rawItem.idx = i + 1;
+                        });
+                        // DOM is already correct (Sortable moved it). Don't touch rawData ref.
+                    } else {
+                        unitSortConfig[newUnit].mode = 'manual';
+                        await fetchData(); 
+                    }
                 }
              } catch (e) {
                  console.error(e);
                  frappe.msgprint("❌ Move Failed");
                  renderKey.value++; 
              }
+             }, 50); // 50ms delay lets SortableJS finalize DOM before we change Vue state
         }
       },
     });
@@ -956,9 +987,8 @@ async function fetchData() {
         customRowOrder.value = orderRes.message || [];
     } catch(e) { console.error("Failed to load color order", e); }
     
-    renderKey.value++; 
-    await nextTick();
-    await initSortable();
+    // renderKey++ forces Vue to re-create DOM, watch(renderKey) then calls initSortable after nextTick
+    renderKey.value++;
   } catch (e) {
     frappe.msgprint("Error loading data");
     console.error(e);
@@ -967,6 +997,11 @@ async function fetchData() {
 
 onMounted(() => {
   fetchData();
+});
+
+// After renderKey forces DOM rebuild, reinit sortable
+watch(renderKey, () => {
+    nextTick(() => initSortable());
 });
 </script>
 

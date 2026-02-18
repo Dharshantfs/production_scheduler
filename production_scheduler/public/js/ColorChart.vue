@@ -366,6 +366,8 @@ const matrixHeaderRow = ref(null); // Ref for Matrix Column sorting
 const matrixBody = ref(null);      // Ref for Matrix Row sorting
 const customRowOrder = ref([]);    // Store user-defined row order (List of Colors)
 const renderKey = ref(0); // Force re-render for drag revert
+const matrixSortableInstances = []; // Track matrix sortable instances for cleanup
+let matrixInitTimer = null; // Track pending matrix sortable init timeout
 
 // Matrix View Helpers
 const matrixData = computed(() => {
@@ -533,8 +535,8 @@ const EXCLUDED_WHITES = [
 const filteredData = computed(() => {
   let data = rawData.value;
   
+  // Step 1: Normalize unit, exclude specific whites
   data = data.filter(d => {
-      // Normalize Unit for Display
       if (!d.unit) d.unit = "Mixed";
 
       const colorUpper = (d.color || "").toUpperCase();
@@ -545,6 +547,20 @@ const filteredData = computed(() => {
       // Remove Excluded Whites
       return !EXCLUDED_WHITES.some(ex => colorUpper.includes(ex));
   });
+
+  // Step 2: Apply 800kg threshold — only show colors with cumulative qty >= 800kg
+  // This mirrors the Production Board behavior so both views stay in sync
+  if (data.length > 0) {
+      const colorTotals = {};
+      data.forEach(d => {
+          const color = (d.color || "").toUpperCase().trim();
+          colorTotals[color] = (colorTotals[color] || 0) + (d.qty || 0);
+      });
+      data = data.filter(d => {
+          const color = (d.color || "").toUpperCase().trim();
+          return (colorTotals[color] || 0) >= 800;
+      });
+  }
 
   if (filterPartyCode.value) {
     const search = filterPartyCode.value.toLowerCase();
@@ -706,7 +722,7 @@ function getUnitCapacityStatus(unit) {
     if (total > limit * 0.9) {
         return { 
             class: 'text-orange-600 font-bold', 
-            warning: '⚠️ Near Limit' 
+            warning: `⚠️ Near Limit` 
         };
     }
     
@@ -717,87 +733,117 @@ function getUnitCapacityStatus(unit) {
 
 async function initSortable() {
   if (!columnRefs.value) return;
+
+  // Cancel any pending matrix init — prevents race condition where
+  // a second initSortable() destroys instances before the 100ms timer fires
+  if (matrixInitTimer !== null) {
+      clearTimeout(matrixInitTimer);
+      matrixInitTimer = null;
+  }
   
-  // Clear old instances
+  // Clear old kanban instances
   columnRefs.value.forEach(col => {
-      if (col._sortable) col._sortable.destroy();
+      if (col && col._sortable) { try { col._sortable.destroy(); } catch(e) {} }
   });
-  if (matrixHeaderRow.value && matrixHeaderRow.value._sortable) matrixHeaderRow.value._sortable.destroy();
-  if (matrixBody.value && matrixBody.value._sortable) matrixBody.value._sortable.destroy();
+  // Clear old matrix instances
+  while (matrixSortableInstances.length > 0) {
+      try { matrixSortableInstances.pop().destroy(); } catch(e) {}
+  }
 
   // MATRIX VIEW SORTABLE
   if (viewMode.value === 'matrix') {
-      // 1. COLUMNS (Headers)
-      if (matrixHeaderRow.value) {
-          matrixHeaderRow.value._sortable = new Sortable(matrixHeaderRow.value, {
-             group: 'matrix-cols',
-             animation: 150,
-             handle: '.draggable-handle',
-             draggable: '.matrix-col-header',
-             ghostClass: 'cc-ghost',
-             onEnd: async (evt) => {
-                 const { newIndex, item } = evt;
-                 const allCols = Array.from(matrixHeaderRow.value.querySelectorAll('.matrix-col-header'));
-                 let targetDate = null;
-                 const leftEl = allCols[newIndex - 1];
-                 if (leftEl) {
-                     targetDate = leftEl.dataset.date;
-                 } else {
-                     const rightEl = allCols[newIndex + 1];
-                     if (rightEl) targetDate = rightEl.dataset.date;
-                 }
-                 
-                 if (targetDate) {
-                     const originalDate = item.dataset.date;
-                     if (originalDate === targetDate) return;
-                     
-                     if (confirm(`Move Order to ${targetDate}?`)) {
-                         const colId = item.dataset.id;
-                         const group = matrixData.value.columns.find(c => c.id === colId);
-                         if (group && group.items.length) {
-                             const itemNames = group.items.map(i => i.itemName);
-                             try {
-                                 await frappe.call({
-                                     method: "production_scheduler.api.move_orders_to_date",
-                                     args: { item_names: itemNames, target_date: targetDate }
-                                 });
-                                 fetchData();
-                             } catch(e) { console.error(e); renderKey.value++; }
-                         }
-                     } else { renderKey.value++; }
-                 } else { renderKey.value++; }
-             }
-          });
-      }
+      // Use setTimeout to ensure DOM is fully settled after Vue render
+      // Store the timer so we can cancel it if initSortable is called again before it fires
+      matrixInitTimer = setTimeout(() => {
+          matrixInitTimer = null;
+          // Guard: if view changed before timer fired, abort
+          if (viewMode.value !== 'matrix') return;
 
-      // 2. ROWS (Colors)
-      if (matrixBody.value) {
-          matrixBody.value._sortable = new Sortable(matrixBody.value, {
-              group: 'matrix-rows',
-              animation: 150,
-              handle: '.matrix-row-header',
-              draggable: '.matrix-row',
-              ghostClass: 'cc-ghost',
-              onEnd: (evt) => {
-                  const { oldIndex, newIndex } = evt;
-                  if (oldIndex === newIndex) return;
-                  const rows = Array.from(matrixBody.value.querySelectorAll('.matrix-row'));
-                  customRowOrder.value = rows.map(r => r.dataset.color);
-                  frappe.call({
-                      method: "production_scheduler.api.save_color_order",
-                      args: { order: customRowOrder.value },
-                      callback: () => frappe.show_alert("Color Order Saved", 2)
-                  });
-              }
-          });
-      }
+          const headerRowEl = matrixHeaderRow.value;
+          if (headerRowEl) {
+              const colSortable = new Sortable(headerRowEl, {
+                 group: 'matrix-cols',
+                 animation: 150,
+                 handle: '.draggable-handle',
+                 draggable: '.matrix-col-header',
+                 ghostClass: 'cc-ghost',
+                 forceFallback: false,
+                 onStart: () => {
+                     // Prevent any other sortable from interfering
+                 },
+                 onEnd: async (evt) => {
+                     const { newIndex, item } = evt;
+                     // Use setTimeout to let SortableJS finalize before we interact with DOM
+                     setTimeout(async () => {
+                         const allCols = Array.from(headerRowEl.querySelectorAll('.matrix-col-header'));
+                         let targetDate = null;
+                         const leftEl = allCols[newIndex - 1];
+                         if (leftEl) {
+                             targetDate = leftEl.dataset.date;
+                         } else {
+                             const rightEl = allCols[newIndex + 1];
+                             if (rightEl) targetDate = rightEl.dataset.date;
+                         }
+                         
+                         if (targetDate) {
+                             const originalDate = item.dataset.date;
+                             if (originalDate === targetDate) return;
+                             
+                             if (confirm(`Move Order to ${targetDate}?`)) {
+                                 const colId = item.dataset.id;
+                                 const group = matrixData.value.columns.find(c => c.id === colId);
+                                 if (group && group.items.length) {
+                                     const itemNames = group.items.map(i => i.itemName);
+                                     try {
+                                         await frappe.call({
+                                             method: "production_scheduler.api.move_orders_to_date",
+                                             args: { item_names: itemNames, target_date: targetDate }
+                                         });
+                                         fetchData();
+                                     } catch(e) { console.error(e); }
+                                 }
+                             }
+                         }
+                     }, 50);
+                 }
+              });
+              matrixSortableInstances.push(colSortable);
+          }
+
+          // 2. ROWS (Colors)
+          const bodyEl = matrixBody.value;
+          if (bodyEl) {
+              const rowSortable = new Sortable(bodyEl, {
+                  group: 'matrix-rows',
+                  animation: 150,
+                  handle: '.matrix-row-header',
+                  draggable: '.matrix-row',
+                  ghostClass: 'cc-ghost',
+                  forceFallback: false,
+                  onEnd: (evt) => {
+                      const { oldIndex, newIndex } = evt;
+                      if (oldIndex === newIndex) return;
+                      setTimeout(() => {
+                          const rows = Array.from(bodyEl.querySelectorAll('.matrix-row'));
+                          customRowOrder.value = rows.map(r => r.dataset.color);
+                          frappe.call({
+                              method: "production_scheduler.api.save_color_order",
+                              args: { order: customRowOrder.value },
+                              callback: () => frappe.show_alert("Color Order Saved", 2)
+                          });
+                      }, 50);
+                  }
+              });
+              matrixSortableInstances.push(rowSortable);
+          }
+      }, 150); // 150ms — enough for Vue to fully render matrix DOM
       return; 
   }
 
   // KANBAN VIEW SORTABLE
   columnRefs.value.forEach((colEl) => {
     if (!colEl) return;
-    colEl._sortable = new Sortable(colEl, {
+    const kanbanSortable = new Sortable(colEl, {
       group: "kanban",
       animation: 150,
       ghostClass: "cc-ghost",
@@ -805,11 +851,16 @@ async function initSortable() {
         const { item, to, from, newIndex, oldIndex } = evt;
         const itemName = item.dataset.itemName;
         const newUnit = to.dataset.unit;
+        const isSameUnit = (to === from);
         if (!itemName || !newUnit) return;
 
-        if (to !== from || newIndex !== oldIndex) {
+        if (!isSameUnit || newIndex !== oldIndex) {
+             // Delay to let SortableJS finish DOM cleanup before we change Vue state
+             setTimeout(async () => {
              try {
-                frappe.show_alert({ message: "Validating Capacity...", indicator: "orange" });
+                if (!isSameUnit) {
+                    frappe.show_alert({ message: "Validating Capacity...", indicator: "orange" });
+                }
                 
                 const performMove = async (force=0, split=0) => {
                     return await frappe.call({
@@ -865,16 +916,37 @@ async function initSortable() {
                      }, 'btn-warning');
                      d.show();
                 } else {
-                     handleMoveSuccess(res, newUnit);
+                     if (isSameUnit && res.message && res.message.status === 'success') {
+                         // Same-unit reorder: update idx in-place WITHOUT triggering re-render
+                         // Re-render would destroy sortable mid-drag causing freeze
+                         frappe.show_alert({ message: "Order resequenced", indicator: "green" });
+                         unitSortConfig[newUnit].mode = 'manual';
+                         // Update idx values silently in rawData without spreading (no re-render)
+                         const unitItems = rawData.value
+                             .filter(d => (d.unit || "Mixed") === newUnit)
+                             .sort((a, b) => (a.idx || 0) - (b.idx || 0));
+                         const moved = unitItems.splice(oldIndex, 1)[0];
+                         unitItems.splice(newIndex, 0, moved);
+                         unitItems.forEach((itm, i) => {
+                             const rawItem = rawData.value.find(d => d.itemName === itm.itemName);
+                             if (rawItem) rawItem.idx = i + 1;
+                         });
+                         // Do NOT spread rawData here — that triggers re-render and destroys sortable
+                         // The DOM is already correct (Sortable moved it). Just keep data in sync.
+                     } else {
+                         handleMoveSuccess(res, newUnit);
+                     }
                 }
              } catch (e) {
                  console.error(e);
                  frappe.msgprint("❌ Move Failed");
                  renderKey.value++;
              }
+             }, 50);
         }
       },
     });
+    colEl._sortable = kanbanSortable;
   });
 }
 
@@ -1032,14 +1104,18 @@ async function analyzePreviousFlow() {
             const config = getUnitSortConfig(unit);
 
             if (prevItems && prevItems.length > 0) {
-               const lastItem = prevItems[prevItems.length - 1]; // sorted by idx
+               // Sort by idx so we get the actual last item run yesterday
+               prevItems.sort((a, b) => (a.idx || 0) - (b.idx || 0));
+               const lastItem = prevItems[prevItems.length - 1];
                
-               // Color Logic (Existing)
+               // Color Sort Logic:
+               // Yesterday ended DARK (priority > 50)  → today start DARK → LIGHT ('desc')
+               // Yesterday ended LIGHT (priority ≤ 50) → today start LIGHT → DARK  ('asc')
                const lastPri = getColorPriority(lastItem.color);
-               if (lastPri > 20) {
-                  config.color = 'desc'; // Ended Dark -> Start Dark->Light
+               if (lastPri > 50) {
+                  config.color = 'desc'; // Ended Dark  → continue Dark→Light
                } else {
-                  config.color = 'asc';
+                  config.color = 'asc';  // Ended Light → continue Light→Dark
                }
                
                // GSM Logic - Smart Gap Minimization
@@ -1067,9 +1143,11 @@ async function analyzePreviousFlow() {
          });
         
         
-        frappe.show_alert("Updated sort based on previous day flow");
-        // Force re-render of columns to ensure mix rolls are displayed correctly
-        renderKey.value++;
+        frappe.show_alert({ message: "Sort updated from previous day", indicator: "blue" }, 3);
+        // Only force re-render for kanban — matrix is already reactive via rawData
+        if (viewMode.value !== 'matrix') {
+            renderKey.value++;
+        }
       }
     }
   } catch (e) {
@@ -1095,11 +1173,16 @@ async function fetchData() {
         customRowOrder.value = orderRes.message || [];
     } catch(e) { console.error("Failed to load color order", e); }
 
-    // Force Reactive UI Refresh
-    renderKey.value++; 
-    
-    await nextTick();
-    initSortable();
+    // For matrix view: just update data reactively, DO NOT touch renderKey or initSortable
+    // Matrix Sortable is already bound to the live DOM — only reinit on view switch
+    if (viewMode.value === 'matrix') {
+        // Trigger Vue reactivity only (no sortable reinit)
+        rawData.value = [...rawData.value];
+        return;
+    }
+
+    // For kanban: increment renderKey to force re-render + reinit sortable via watch(renderKey)
+    renderKey.value++;
   } catch (e) {
     frappe.msgprint("Error loading color chart data");
     console.error(e);
@@ -1300,10 +1383,19 @@ watch(filterUnit, updateUrlParams);
 watch(filterStatus, updateUrlParams);
 
 // Re-init Sortable when renderKey changes (forced re-render)
+// Skip if matrix — matrix init is handled by its own 150ms timer inside initSortable()
 watch(renderKey, () => {
     nextTick(() => {
-        initSortable();
+        if (viewMode.value !== 'matrix') {
+            initSortable();
+        }
     });
+});
+
+// Re-init sortable when switching between kanban/matrix views
+watch(viewMode, async () => {
+    await nextTick();
+    initSortable();
 });
 
 onMounted(() => {
@@ -2003,7 +2095,7 @@ function updateRescueSelection(d) {
   letter-spacing: 0.3px;
 }
 
-.cc-card-customer {
+                <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> · {{ entry.customer }}</span>
   font-size: 10px;
   color: #94a3b8;
   font-weight: 600;
