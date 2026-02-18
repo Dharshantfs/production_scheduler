@@ -27,82 +27,12 @@
       </div>
       <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
       
-      <!-- View Toggle -->
-      <div class="cc-view-toggle">
-          <button class="cc-view-btn" :class="{ active: viewMode === 'kanban' }" @click="viewMode = 'kanban'">
-             📋 Board
-          </button>
-          <button class="cc-view-btn" :class="{ active: viewMode === 'table' }" @click="viewMode = 'table'">
-             📅 Table
-          </button>
-      </div>
+      <button class="cc-clear-btn" style="margin-left:auto; background-color: #3b82f6; color: white; border: none;" @click="goToPlan" title="View Production Plan (Table)">
+          📅 View Plan
+      </button>
     </div>
 
-    <!-- TABLE VIEW -->
-    <div v-if="viewMode === 'table'" class="cc-table-container">
-        <div v-for="unitGroup in tableData" :key="unitGroup.unit" class="cc-table-unit-block">
-            <!-- Unit Header -->
-            <div class="cc-table-unit-header" :style="{ backgroundColor: getUnitHeaderColor(unitGroup.unit) }">
-                {{ unitGroup.unit.toUpperCase() }} - Total: {{ unitGroup.totalWeight.toFixed(2) }} T
-            </div>
-            
-            <table class="cc-prod-table">
-                <thead>
-                    <tr>
-                        <th style="width: 80px;">DATE</th>
-                        <th style="width: 80px;">DAY</th>
-                        <th style="width: 100px;">PARTY CODE</th>
-                        <th style="width: 150px;">PARTY NAME</th>
-                        <th style="width: 80px;">QUALITY</th>
-                        <th style="width: 100px;">COLOUR</th>
-                        <th style="width: 80px;">GSM</th>
-                        <th style="width: 80px;">WEIGHT (Kg)</th>
-                        <th style="width: 80px;">ACTUAL PROD</th>
-                        <th style="width: 100px;">DESPATCH STATUS</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <template v-for="dateGroup in unitGroup.dates" :key="dateGroup.date">
-                        <template v-for="(item, idx) in dateGroup.items" :key="item.itemName">
-                            <tr>
-                                <!-- Date & Day: Show only on first row of the date group -->
-                                <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center font-bold">
-                                    {{ formatDate(dateGroup.date) }}
-                                </td>
-                                <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center">
-                                    {{ getDayName(dateGroup.date) }}
-                                </td>
-                                
-                                <td class="cell-center">{{ item.partyCode }}</td>
-                                <td>{{ item.customer }}</td>
-                                <td class="cell-center">{{ item.quality }}</td>
-                                <td class="cell-center font-bold">{{ item.color }}</td>
-                                <td class="cell-center">{{ item.gsm }}</td>
-                                <td class="cell-right font-bold">{{ item.qty }}</td>
-                                
-                                <!-- Actual Prod: Show sum on first row -->
-                                <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center font-bold bg-yellow-50">
-                                    {{ dateGroup.dailyTotal.toFixed(0) }}
-                                </td>
-                                
-                                <td class="cell-center">
-                                    <span class="status-badge" :class="getDispatchStatusClass(item.delivery_status)">
-                                        {{ formatDispatchStatus(item.delivery_status) }}
-                                    </span>
-                                </td>
-                            </tr>
-                        </template>
-                    </template>
-                     <tr v-if="unitGroup.totalWeight === 0">
-                        <td colspan="10" style="text-align:center; padding: 20px; color:#999;">No orders for this unit</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- Color Chart Board -->
-    <div v-else class="cc-board" :key="renderKey">
+    <div class="cc-board" :key="renderKey">
       <div
         v-for="unit in visibleUnits"
         :key="unit"
@@ -268,7 +198,11 @@ const unitSortConfig = reactive({});
 const rawData = ref([]);
 const columnRefs = ref(null);
 const renderKey = ref(0);
-const viewMode = ref('kanban'); // 'kanban' | 'table'
+const viewMode = ref('kanban'); // 'kanban' 
+
+function goToPlan() {
+    frappe.set_route("production-plan");
+}
 
 const visibleUnits = computed(() =>
   filterUnit.value ? units.filter((u) => u === filterUnit.value) : units
@@ -300,73 +234,6 @@ const filteredData = computed(() => {
 });
 
 // ---- TABLE VIEW DATA ----
-const tableData = computed(() => {
-    if (viewMode.value !== 'table') return [];
-    
-    // Group by Unit
-    const unitsData = visibleUnits.value.map(unit => {
-        let items = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
-        
-        // Sort: Date ASC
-        items.sort((a, b) => {
-            if (a.ordered_date !== b.ordered_date) return new Date(a.ordered_date) - new Date(b.ordered_date);
-            return 0; 
-        });
-
-        // Group by Date
-        const dateGroupsObj = {};
-        items.forEach(item => {
-            const d = item.ordered_date || "No Date";
-            if (!dateGroupsObj[d]) dateGroupsObj[d] = { date: d, items: [], dailyTotal: 0 };
-            dateGroupsObj[d].items.push(item);
-            dateGroupsObj[d].dailyTotal += (item.qty || 0);
-        });
-        
-        // Convert to Array
-        const dates = Object.values(dateGroupsObj).sort((a, b) => new Date(a.date) - new Date(b.date));
-        
-        const totalWeight = items.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
-
-        return {
-            unit,
-            dates,
-            totalWeight
-        };
-    });
-    
-    return unitsData;
-});
-
-function formatDate(dateStr) {
-    if (!dateStr || dateStr === 'No Date') return '-';
-    const d = new Date(dateStr);
-    return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
-}
-
-function getDayName(dateStr) {
-    if (!dateStr || dateStr === 'No Date') return '-';
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
-}
-
-function getUnitHeaderColor(unit) {
-    return "#fcd34d"; // Amber-300
-}
-
-function formatDispatchStatus(status) {
-    if (!status || status === 'Not Delivered') return 'NOT DESPATCHED';
-    if (status === 'Fully Delivered') return 'DESPATCHED';
-    if (status === 'Partly Delivered') return 'PARTLY DESPATCHED';
-    return status.toUpperCase();
-}
-
-function getDispatchStatusClass(status) {
-    if (!status || status === 'Not Delivered') return 'bg-red-100 text-red-800'; // Red
-    if (status === 'Fully Delivered') return 'bg-green-100 text-green-800'; // Green
-    if (status === 'Partly Delivered') return 'bg-orange-100 text-orange-800'; // Orange
-    return 'bg-gray-100 text-gray-800';
-}
-
 
 function clearFilters() {
   filterOrderDate.value = "";
@@ -793,51 +660,5 @@ onMounted(() => {
 .cc-table-container {
     flex: 1;
     overflow-y: auto;
-    padding: 20px;
-    background: #fff; 
-}
-
-.cc-table-unit-block {
-    margin-bottom: 30px;
-    border: 1px solid #000; 
-}
-
-.cc-table-unit-header {
-    text-align: center;
-    font-weight: 800;
-    padding: 8px;
-    background-color: #fcd34d; 
-    border-bottom: 1px solid #000;
-    font-size: 14px;
-    color: #000;
-}
-
-.cc-prod-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-}
-
-.cc-prod-table th, .cc-prod-table td {
-    border: 1px solid #000; 
-    padding: 4px 8px;
-}
-
-.cc-prod-table thead th {
-    background-color: #a7f3d0; 
-    color: #064e3b;
-    font-weight: 700;
-    text-transform: uppercase;
-    text-align: center;
-}
-
-.cell-center { text-align: center; }
-.cell-right { text-align: right; }
-.bg-yellow-50 { background-color: #fefce8; }
-.status-badge {
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 10px;
-    font-weight: 600;
 }
 </style>
