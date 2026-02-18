@@ -696,6 +696,11 @@ function sortItems(unit, items) {
           diff = compareGsm(a, b, config.gsm);
           if (diff === 0) diff = compareColor(a, b, config.color);
       }
+      
+      // Default Tie-Breaker: idx (Sequence)
+      if (diff === 0) {
+          diff = (a.idx || 0) - (b.idx || 0);
+      }
       return diff;
   });
 }

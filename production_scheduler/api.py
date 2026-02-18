@@ -241,19 +241,22 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None):
 			target_sheet_name = new_sheet.name
 
 	# 2. Handle IDX Shifting if inserting at specific position
-	# If new_idx is provided, we need to shift items in the target unit/sheet >= new_idx
+	# WE MUST SHIFT GLOBAL VIEW (All Sheets for this Date/Unit) unlike before
 	if new_idx is not None:
-		# Get items in target sheet/unit to shift
-		# Note: 'idx' is global per Planning Sheet usually. 
-		# But here we are checking Unit ordering.
-		# If we use global 'idx' for sheet, we need to shift ALL items in sheet.
-		frappe.db.sql("""
-			UPDATE `tabPlanning Sheet Item`
-			SET idx = idx + 1
-			WHERE parent = %s AND idx >= %s
-		""", (target_sheet_name, new_idx))
-		
-	# 3. Update Item
+		try:
+			# Shift all items in this Unit & Date >= new_idx
+			frappe.db.sql("""
+				UPDATE `tabPlanning Sheet Item` item
+				JOIN `tabPlanning Sheet` sheet ON item.parent = sheet.name
+				SET item.idx = item.idx + 1
+				WHERE sheet.ordered_date = %s 
+				  AND item.unit = %s 
+				  AND item.idx >= %s
+			""", (target_date, unit, new_idx))
+		except Exception as e:
+			frappe.log_error(f"Shift Error: {str(e)}")
+
+	# Update Item
 	item_doc.unit = unit
 	item_doc.parent = target_sheet_name
 	item_doc.parenttype = "Planning sheet"
@@ -1162,4 +1165,19 @@ def get_color_order():
         except:
             return []
     return []
+
+@frappe.whitelist()
+def update_sequence(items):
+    """
+    Updates the idx of items for manual reordering.
+    Expects items = [{name: 'ITEM-ID', idx: 1}, ...]
+    """
+    import json
+    if isinstance(items, str):
+        items = json.loads(items)
+        
+    for i in items:
+        frappe.db.set_value("Planning Sheet Item", i["name"], "idx", i["idx"])
+        
+    return "ok"
 
