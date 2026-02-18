@@ -36,7 +36,7 @@
             @click="viewMode = 'kanban'"
             title="Kanban Board View"
           >
-            ðŸ“‹ Kanban
+            📋 Kanban
           </button>
           <button 
             class="cc-view-btn" 
@@ -44,13 +44,13 @@
             @click="viewMode = 'matrix'"
             title="Matrix Pivot View"
           >
-            ðŸ“Š Matrix
+            📊 Matrix
           </button>
       </div>
       
-      <button class="cc-clear-btn" @click="clearFilters">âœ• Clear</button>
+      <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
       <button class="cc-clear-btn" style="color: #2563eb; border-color: #2563eb; margin-left: 8px;" @click="autoAllocate" title="Auto-assign orders based on Width & Quality">
-        ðŸª„ Auto Alloc
+        🪄 Auto Alloc
       </button>
       <button class="cc-clear-btn" style="color: #059669; border-color: #059669; margin-left: 8px;" @click="openPullOrdersDialog" title="Pull orders from a future date">
         📥 Pull Orders
@@ -75,16 +75,17 @@
             <div class="cc-unit-controls">
               <span style="font-size:10px; color:#64748b; margin-right:4px;">{{ getSortLabel(unit) }}</span>
               <button class="cc-mini-btn" @click="toggleUnitColor(unit)" :title="getUnitSortConfig(unit).color === 'asc' ? 'Light->Dark' : 'Dark->Light'">
-                {{ getUnitSortConfig(unit).color === 'asc' ? 'â˜€ï¸' : 'ðŸŒ™' }}
+                {{ getUnitSortConfig(unit).color === 'asc' ? '☀️' : '🌙' }}
               </button>
               <button class="cc-mini-btn" @click="toggleUnitGsm(unit)" :title="getUnitSortConfig(unit).gsm === 'desc' ? 'High->Low' : 'Low->High'">
-                {{ getUnitSortConfig(unit).gsm === 'desc' ? 'â¬‡ï¸' : 'â¬†ï¸' }}
+                {{ getUnitSortConfig(unit).gsm === 'desc' ? '⬇️' : '⬆️' }}
               </button>
               <button class="cc-mini-btn" @click="toggleUnitPriority(unit)" :title="getUnitSortConfig(unit).priority === 'color' ? 'Color Priority' : 'GSM Priority'">
-                {{ getUnitSortConfig(unit).priority === 'color' ? 'ðŸŽ¨' : 'ðŸ“' }}
+                {{ getUnitSortConfig(unit).priority === 'color' ? '🎨' : '📏' }}
               </button>
             </div>
           </div>
+          <div class="cc-header-stats">
             <span class="cc-stat-weight" :class="getUnitCapacityStatus(unit).class">
               {{ getUnitTotal(unit).toFixed(2) }} / {{ UNIT_TONNAGE_LIMITS[unit] }}T
               <span v-if="getHiddenWhiteTotal(unit) > 0" style="font-size:10px; font-weight:400; color:#64748b; display:block;">
@@ -95,19 +96,20 @@
               {{ getUnitCapacityStatus(unit).warning }}
             </div>
             <span class="cc-stat-mix" v-if="getMixRollCount(unit) > 0">
-              âš ï¸ {{ getMixRollCount(unit) }} mix{{ getMixRollCount(unit) > 1 ? 'es' : '' }}
+              ⚠️ {{ getMixRollCount(unit) }} mix{{ getMixRollCount(unit) > 1 ? 'es' : '' }}
               ({{ getMixRollTotalWeight(unit) }} Kg)
             </span>
           </div>
+        </div>
 
         <div class="cc-col-body" :data-unit="unit" ref="columnRefs">
           <template v-for="(entry, idx) in getUnitEntries(unit)" :key="entry.uniqueKey">
             <!-- Mix Roll Marker -->
             <div v-if="entry.type === 'mix'" class="cc-mix-marker">
               <div class="cc-mix-line"></div>
-              <span class="cc-mix-label" :class="entry.mixType.toLowerCase().replace(' ', '-')">
-                {{ entry.mixType }} â€” ~{{ entry.qty }} Kg
-              </span>
+          <span class="cc-mix-label" :class="entry.mixType.toLowerCase().replace(' ', '-')">
+            {{ entry.mixType }} — ~{{ entry.qty }} Kg
+          </span>
               <div class="cc-mix-line"></div>
             </div>
             <!-- Order Card -->
@@ -130,10 +132,10 @@
                   <div class="cc-card-color-name">{{ entry.color }}</div>
                   <div class="cc-card-customer">
                     <span style="font-weight:700; color:#111827;">{{ entry.partyCode }}</span>
-                    <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> Â· {{ entry.customer }}</span>
+                    <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> · {{ entry.customer }}</span>
                   </div>
                   <div class="cc-card-details">
-                    {{ entry.quality }} Â· {{ entry.gsm }} GSM
+                    {{ entry.quality }} · {{ entry.gsm }} GSM
                   </div>
                 </div>
               </div>
@@ -557,7 +559,7 @@ const filteredData = computed(() => {
   return data;
 });
 
-function clearFilters() {
+      <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
   filterOrderDate.value = frappe.datetime.get_today();
   filterPartyCode.value = "";
   filterUnit.value = "";
@@ -697,14 +699,14 @@ function getUnitCapacityStatus(unit) {
     if (total > limit) {
         return { 
             class: 'text-red-600 font-bold', 
-            warning: `âš ï¸ Over Limit (${(total - limit).toFixed(2)}T)!` 
+            warning: `⚠️ Over Limit (${(total - limit).toFixed(2)}T)!` 
         };
     }
     // Warning (Orange) if near limit (within 10%)
     if (total > limit * 0.9) {
         return { 
             class: 'text-orange-600 font-bold', 
-            warning: `âš ï¸ Near Limit` 
+            warning: $warn Near Limit 
         };
     }
     
@@ -832,7 +834,7 @@ async function initSortable() {
                      const orderWt = res.message.order_weight;
                      
                      const d = new frappe.ui.Dialog({
-                        title: 'âš ï¸ Capacity Full',
+                        title: '⚠️ Capacity Full',
                         fields: [{
                              fieldtype: 'HTML', fieldname: 'msg',
                              options: `<div style="text-align:center; padding:10px;">
@@ -867,7 +869,7 @@ async function initSortable() {
                 }
              } catch (e) {
                  console.error(e);
-                 frappe.msgprint("âŒ Move Failed");
+                 frappe.msgprint("❌ Move Failed");
                  renderKey.value++;
              }
         }
@@ -1453,7 +1455,7 @@ function openPullOrdersDialog() {
     
     // Create Dialog
     const d = new frappe.ui.Dialog({
-        title: 'ðŸ“¥ Pull Orders from Date',
+        title: '📥 Pull Orders from Date',
         fields: [
             {
                 label: 'Source Date',
@@ -1629,7 +1631,7 @@ const isAdmin = computed(() => {
 
 function openRescueDialog() {
     const d = new frappe.ui.Dialog({
-        title: 'ðŸš‘ Rescue / Re-Queue Orders',
+        title: '🚑 Rescue / Re-Queue Orders',
         fields: [
             {
                 label: 'Source Planning Sheet',
@@ -2001,7 +2003,7 @@ function updateRescueSelection(d) {
   letter-spacing: 0.3px;
 }
 
-.cc-card-customer {
+                <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> · {{ entry.customer }}</span>
   font-size: 10px;
   color: #94a3b8;
   font-weight: 600;
