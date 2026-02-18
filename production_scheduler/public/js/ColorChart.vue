@@ -548,20 +548,6 @@ const filteredData = computed(() => {
       return !EXCLUDED_WHITES.some(ex => colorUpper.includes(ex));
   });
 
-  // Step 2: Apply 800kg threshold — only show colors with cumulative qty >= 800kg
-  // This mirrors the Production Board behavior so both views stay in sync
-  if (data.length > 0) {
-      const colorTotals = {};
-      data.forEach(d => {
-          const color = (d.color || "").toUpperCase().trim();
-          colorTotals[color] = (colorTotals[color] || 0) + (d.qty || 0);
-      });
-      data = data.filter(d => {
-          const color = (d.color || "").toUpperCase().trim();
-          return (colorTotals[color] || 0) >= 800;
-      });
-  }
-
   if (filterPartyCode.value) {
     const search = filterPartyCode.value.toLowerCase();
     data = data.filter((d) =>
