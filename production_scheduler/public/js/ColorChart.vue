@@ -74,13 +74,13 @@
             <!-- Sort Controls -->
             <div class="cc-unit-controls">
               <span style="font-size:10px; color:#64748b; margin-right:4px;">{{ getSortLabel(unit) }}</span>
-              <button class="cc-mini-btn" @click="toggleUnitColor(unit)" :title="getUnitSortConfig(unit).color === 'asc' ? 'Light->Dark' : 'Dark->Light'">
-                {{ getUnitSortConfig(unit).color === 'asc' ? '☀️' : '🌙' }}
+              <button class="cc-mini-btn" @click="toggleUnitColor(unit)" :title="getUnitSortConfig(unit).color === 'asc' ? 'Currently: Light→Dark (click for Dark→Light)' : 'Currently: Dark→Light (click for Light→Dark)'">
+                {{ getUnitSortConfig(unit).color === 'asc' ? '☀️→🌙' : '🌙→☀️' }}
               </button>
-              <button class="cc-mini-btn" @click="toggleUnitGsm(unit)" :title="getUnitSortConfig(unit).gsm === 'desc' ? 'High->Low' : 'Low->High'">
+              <button class="cc-mini-btn" @click="toggleUnitGsm(unit)" :title="getUnitSortConfig(unit).gsm === 'desc' ? 'GSM: High→Low (click to reverse)' : 'GSM: Low→High (click to reverse)'">
                 {{ getUnitSortConfig(unit).gsm === 'desc' ? '⬇️' : '⬆️' }}
               </button>
-              <button class="cc-mini-btn" @click="toggleUnitPriority(unit)" :title="getUnitSortConfig(unit).priority === 'color' ? 'Color Priority' : 'GSM Priority'">
+              <button class="cc-mini-btn" @click="toggleUnitPriority(unit)" :title="getUnitSortConfig(unit).priority === 'color' ? 'Priority: Color (click for GSM)' : 'Priority: GSM (click for Color)'">
                 {{ getUnitSortConfig(unit).priority === 'color' ? '🎨' : '📏' }}
               </button>
             </div>
@@ -680,9 +680,12 @@ function compareGsm(a, b, direction) {
 function getSortLabel(unit) {
     const config = getUnitSortConfig(unit);
     if (config.mode === 'manual') return 'Manual Sort';
-    const p = config.priority === 'color' ? 'Color' : (config.priority === 'gsm' ? 'GSM' : 'Quality');
-    const d = config.priority === 'color' ? config.color : (config.priority === 'gsm' ? config.gsm : 'ASC');
-    return `${p} (${d.toUpperCase()})`; 
+    if (config.priority === 'color') {
+        return config.color === 'asc' ? 'Color (Light→Dark)' : 'Color (Dark→Light)';
+    } else if (config.priority === 'gsm') {
+        return config.gsm === 'desc' ? 'GSM (High→Low)' : 'GSM (Low→High)';
+    }
+    return 'Color Sort';
 }
 
 // Capacity Helper - Uses RAW DATA (Correct!) to include Hidden White Orders
@@ -771,41 +774,49 @@ async function initSortable() {
                  onStart: () => {
                      // Prevent any other sortable from interfering
                  },
-                 onEnd: async (evt) => {
-                     const { newIndex, item } = evt;
-                     // Use setTimeout to let SortableJS finalize before we interact with DOM
-                     setTimeout(async () => {
-                         const allCols = Array.from(headerRowEl.querySelectorAll('.matrix-col-header'));
-                         let targetDate = null;
-                         const leftEl = allCols[newIndex - 1];
-                         if (leftEl) {
-                             targetDate = leftEl.dataset.date;
-                         } else {
-                             const rightEl = allCols[newIndex + 1];
-                             if (rightEl) targetDate = rightEl.dataset.date;
-                         }
-                         
-                         if (targetDate) {
-                             const originalDate = item.dataset.date;
-                             if (originalDate === targetDate) return;
-                             
-                             if (confirm(`Move Order to ${targetDate}?`)) {
-                                 const colId = item.dataset.id;
-                                 const group = matrixData.value.columns.find(c => c.id === colId);
-                                 if (group && group.items.length) {
-                                     const itemNames = group.items.map(i => i.itemName);
-                                     try {
-                                         await frappe.call({
-                                             method: "production_scheduler.api.move_orders_to_date",
-                                             args: { item_names: itemNames, target_date: targetDate }
-                                         });
-                                         fetchData();
-                                     } catch(e) { console.error(e); }
-                                 }
-                             }
-                         }
-                     }, 50);
-                 }
+                  onEnd: async (evt) => {
+                      const { newIndex, item } = evt;
+                      // Use setTimeout to let SortableJS finalize before we interact with DOM
+                      setTimeout(async () => {
+                          // After column drag, rebuild the column order from current DOM state
+                          // and save it — do NOT call fetchData() as that would cause Vue to
+                          // re-render and overwrite the Sortable-moved DOM (making matrix empty)
+                          const allCols = Array.from(headerRowEl.querySelectorAll('.matrix-col-header'));
+                          let targetDate = null;
+                          const leftEl = allCols[newIndex - 1];
+                          if (leftEl) {
+                              targetDate = leftEl.dataset.date;
+                          } else {
+                              const rightEl = allCols[newIndex + 1];
+                              if (rightEl) targetDate = rightEl.dataset.date;
+                          }
+                          
+                          if (targetDate) {
+                              const originalDate = item.dataset.date;
+                              if (originalDate === targetDate) return;
+                              
+                              if (confirm(`Move Order to ${targetDate}?`)) {
+                                  const colId = item.dataset.id;
+                                  const group = matrixData.value.columns.find(c => c.id === colId);
+                                  if (group && group.items.length) {
+                                      const itemNames = group.items.map(i => i.itemName);
+                                      try {
+                                          await frappe.call({
+                                              method: "production_scheduler.api.move_orders_to_date",
+                                              args: { item_names: itemNames, target_date: targetDate }
+                                          });
+                                          // Hide the moved column element before fetchData re-renders
+                                          item.style.display = 'none';
+                                          fetchData();
+                                      } catch(e) { console.error(e); }
+                                  }
+                              } else {
+                                  // User cancelled — revert DOM by calling fetchData
+                                  fetchData();
+                              }
+                          }
+                      }, 50);
+                  }
               });
               matrixSortableInstances.push(colSortable);
           }
@@ -1173,11 +1184,11 @@ async function fetchData() {
         customRowOrder.value = orderRes.message || [];
     } catch(e) { console.error("Failed to load color order", e); }
 
-    // For matrix view: just update data reactively, DO NOT touch renderKey or initSortable
-    // Matrix Sortable is already bound to the live DOM — only reinit on view switch
+    // For matrix view: update data reactively, then reinit sortable for the fresh DOM
     if (viewMode.value === 'matrix') {
-        // Trigger Vue reactivity only (no sortable reinit)
         rawData.value = [...rawData.value];
+        await nextTick();
+        initSortable(); // Rebind matrix sortable to freshly-rendered DOM
         return;
     }
 
