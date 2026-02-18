@@ -147,8 +147,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUpdate, nextTick, watch, reactive } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch, reactive } from "vue";
 import Sortable from "sortablejs";
+
+const isLoading = ref(false);
 
 // Color groups 
 const COLOR_GROUPS = [
@@ -217,18 +219,16 @@ units.forEach(u => {
 const rawData = ref([]);
 
 const columnRefs = ref([]);
-const setColumnRef = (el) => {
-  if (el && !columnRefs.value.includes(el)) {
-    columnRefs.value.push(el);
-  }
-};
 
 // Robust Sortable Tracking
 const sortableInstances = []; // Non-reactive array to track instances
 
-// Reset on update/re-render
-onBeforeUpdate(() => {
-  columnRefs.value = [];
+// Proper cleanup on unmount only (NOT on every update — that caused freeze loops)
+onBeforeUnmount(() => {
+  sortableInstances.forEach(s => {
+    try { s.destroy(); } catch(e) {}
+  });
+  sortableInstances.length = 0;
 });
 
 const renderKey = ref(0); 
@@ -380,18 +380,36 @@ function compareGsm(a, b, direction) {
     return direction === 'asc' ? gsmA - gsmB : gsmB - gsmA;
 }
 
-function getHiddenWhiteTotal(unit) {
-  return rawData.value
-    .filter((d) => {
-        if ((d.unit || "Mixed") !== unit) return false;
+// ── Cached unit statistics (computed once per data change, not per render) ──
+const unitStatsCache = computed(() => {
+  const stats = {};
+  for (const unit of units) {
+    const allUnitData = rawData.value.filter(d => (d.unit || "Mixed") === unit);
+    const total = allUnitData.reduce((sum, d) => sum + d.qty, 0) / 1000;
+    const hiddenWhite = allUnitData
+      .filter(d => {
         const colorUpper = (d.color || "").toUpperCase();
-        // Check if it IS an excluded white
         if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return false;
         return EXCLUDED_WHITES.some(ex => colorUpper.includes(ex));
-    })
-    .reduce((sum, d) => sum + d.qty, 0) / 1000;
-}
+      })
+      .reduce((sum, d) => sum + d.qty, 0) / 1000;
+    const limit = UNIT_TONNAGE_LIMITS[unit] || 999;
+    let capacityStatus;
+    if (total > limit) {
+      capacityStatus = { class: 'text-red-600 font-bold', warning: `⚠️ Over Limit (${(total - limit).toFixed(2)}T)!` };
+    } else if (total > limit * 0.9) {
+      capacityStatus = { class: 'text-orange-600 font-bold', warning: `⚠️ Near Limit` };
+    } else {
+      capacityStatus = { class: 'text-gray-600', warning: '' };
+    }
+    stats[unit] = { total, hiddenWhite, capacityStatus };
+  }
+  return stats;
+});
 
+function getHiddenWhiteTotal(unit) {
+  return (unitStatsCache.value[unit] || {}).hiddenWhite || 0;
+}
 
 function getSortLabel(unit) {
     const config = getUnitSortConfig(unit);
@@ -402,39 +420,31 @@ function getSortLabel(unit) {
 }
 
 function getUnitTotal(unit) {
-  return rawData.value
-    .filter((d) => (d.unit || "Mixed") === unit)
-    .reduce((sum, d) => sum + d.qty, 0) / 1000;
+  return (unitStatsCache.value[unit] || {}).total || 0;
 }
 
 function getUnitCapacityStatus(unit) {
-    const total = getUnitTotal(unit);
-    const limit = UNIT_TONNAGE_LIMITS[unit] || 999;
-    if (total > limit) {
-        return { class: 'text-red-600 font-bold', warning: `⚠️ Over Limit (${(total - limit).toFixed(2)}T)!` };
-    }
-    if (total > limit * 0.9) {
-        return { class: 'text-orange-600 font-bold', warning: `⚠️ Near Limit` };
-    }
-    return { class: 'text-gray-600', warning: '' };
+    return (unitStatsCache.value[unit] || {}).capacityStatus || { class: 'text-gray-600', warning: '' };
 }
 
 async function initSortable() {
-  if (!columnRefs.value) return;
+  await nextTick(); // Ensure DOM is settled
+  const columns = document.querySelectorAll('.cc-col-body[data-unit]');
+  if (!columns.length) return;
   
-  // ROBUST CLEANUP
+  // Only destroy if we need to rebuild
   sortableInstances.forEach(s => {
       try { s.destroy(); } catch(e) {}
   });
   sortableInstances.length = 0;
 
-  // Kanban Columns
-  columnRefs.value.forEach((colEl) => {
+  columns.forEach((colEl) => {
     if (!colEl) return;
     const s = new Sortable(colEl, {
       group: "kanban",
       animation: 150,
       ghostClass: "cc-ghost",
+      disabled: isLoading.value,
       onEnd: async (evt) => {
         const itemEl = evt.item;
         const newUnitEl = evt.to;
@@ -449,7 +459,6 @@ async function initSortable() {
 
         if (!isSameUnit || evt.newIndex !== evt.oldIndex) {
              // Use setTimeout to let SortableJS finish its internal cleanup before we do anything
-             // This prevents the page freeze caused by destroying Sortable instances mid-drag
              setTimeout(async () => {
              try {
                 if (!isSameUnit) {
@@ -519,14 +528,12 @@ async function initSortable() {
                  frappe.msgprint("❌ Move Failed");
                  fetchData(); 
              }
-             }, 50); // 50ms delay lets SortableJS finalize DOM before we change Vue state
+             }, 100); // Delay lets SortableJS finalize DOM before we change Vue state
         }
       },
     });
     sortableInstances.push(s);
   });
-
-
 }
 
 function getUnitSortConfig(unit) {
@@ -979,30 +986,43 @@ function updateRescueSelection(d) {
 
 const isAdmin = computed(() => frappe.user.has_role("System Manager"));
 
+let fetchDebounceTimer = null;
 async function fetchData() {
-  try {
-    const r = await frappe.call({
-      method: "production_scheduler.api.get_color_chart_data",
-      args: { 
-          date: filterOrderDate.value,
-          party_code: filterPartyCode.value
-      },
-    });
-    rawData.value = r.message || [];
-    
-    // Load Custom Color Order
-    try {
-        const orderRes = await frappe.call("production_scheduler.api.get_color_order");
-        customRowOrder.value = orderRes.message || [];
-    } catch(e) { console.error("Failed to load color order", e); }
-    
-    // Reinit sortable after data loads — use nextTick to wait for Vue to finish rendering
-    await nextTick();
-    initSortable();
-  } catch (e) {
-    frappe.msgprint("Error loading data");
-    console.error(e);
-  }
+  // Debounce rapid calls (e.g. from filter typing)
+  if (fetchDebounceTimer) clearTimeout(fetchDebounceTimer);
+  
+  return new Promise((resolve) => {
+    fetchDebounceTimer = setTimeout(async () => {
+      isLoading.value = true;
+      try {
+        const r = await frappe.call({
+          method: "production_scheduler.api.get_color_chart_data",
+          args: { 
+              date: filterOrderDate.value,
+              party_code: filterPartyCode.value
+          },
+        });
+        rawData.value = r.message || [];
+        
+        // Load Custom Color Order
+        try {
+            const orderRes = await frappe.call("production_scheduler.api.get_color_order");
+            customRowOrder.value = orderRes.message || [];
+        } catch(e) { console.error("Failed to load color order", e); }
+        
+        // Reinit sortable after Vue settles
+        await nextTick();
+        await nextTick(); // Double tick — Vue needs two ticks for v-for to fully render
+        initSortable();
+      } catch (e) {
+        frappe.msgprint("Error loading data");
+        console.error(e);
+      } finally {
+        isLoading.value = false;
+      }
+      resolve();
+    }, 150); // 150ms debounce
+  });
 }
 
 onMounted(() => {
