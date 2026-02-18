@@ -961,12 +961,14 @@ function getUnitEntries(unit) {
       const curPri = getColorPriority(unitItems[i].color);
       const nextPri = getColorPriority(unitItems[i + 1].color);
       if (curPri !== nextPri || unitItems[i].color !== unitItems[i+1].color) {
+          const gap = Math.abs(curPri - nextPri);
           entries.push({
               type: "mix",
+              mixType: determineMixType(unitItems[i].color, unitItems[i+1].color),
               unit: unit,
               fromColor: unitItems[i].color,
               toColor: unitItems[i+1].color,
-              qty: getMixRollQty(unitItems[i].color, unitItems[i+1].color),
+              qty: getMixRollQty(gap),
               uniqueKey: `mix-${unitItems[i].itemName}-${unitItems[i+1].itemName}`
           });
       }

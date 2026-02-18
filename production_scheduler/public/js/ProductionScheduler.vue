@@ -45,7 +45,7 @@
       </button>
       
       <button class="cc-clear-btn" style="margin-left:auto; background-color: #3b82f6; color: white; border: none;" @click="goToPlan" title="View Production Plan (Table)">
-          📅 View Plan
+          📅 View Table
       </button>
     </div>
 
@@ -235,7 +235,7 @@ const renderKey = ref(0);
 const customRowOrder = ref([]); // Store user-defined color order
 
 function goToPlan() {
-    frappe.set_route("production-plan");
+    frappe.set_route("production-table", { date: filterOrderDate.value });
 }
 
 const visibleUnits = computed(() => {

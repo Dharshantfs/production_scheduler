@@ -6,14 +6,14 @@
     "icon": "list",
     "idx": 0,
     "module": "Production Scheduler",
-    "modified": "2026-02-18 13:00:00.000000",
+    "modified": "2026-02-18 14:00:00.000000",
     "modified_by": "Administrator",
-    "name": "production-plan",
+    "name": "production-table",
     "owner": "Administrator",
-    "page_name": "production-plan",
+    "page_name": "production-table",
     "restrict_to_domain": null,
     "roles": [],
     "standard": "Yes",
     "system_page": 0,
-    "title": "Production Plan"
+    "title": "Production Table"
 }

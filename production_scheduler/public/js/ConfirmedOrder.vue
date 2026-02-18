@@ -28,7 +28,7 @@
       <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
       
       <button class="cc-clear-btn" style="margin-left:auto; background-color: #3b82f6; color: white; border: none;" @click="goToPlan" title="View Production Plan (Table)">
-          📅 View Plan
+          📅 View Table
       </button>
     </div>
 
@@ -201,7 +201,7 @@ const renderKey = ref(0);
 const viewMode = ref('kanban'); // 'kanban' 
 
 function goToPlan() {
-    frappe.set_route("production-plan");
+    frappe.set_route("production-table", { date: filterOrderDate.value });
 }
 
 const visibleUnits = computed(() =>
