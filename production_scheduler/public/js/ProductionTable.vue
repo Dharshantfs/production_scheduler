@@ -163,9 +163,13 @@ function compareGsm(a, b, direction) {
 
 function sortItems(unit, items) {
   // Respect the database sequence (manual sort order) primarily
+
   return [...items].sort((a, b) => {
     // 1. Primary Sort: Database Index (User Manual Sort)
-    let diff = (a.idx || 0) - (b.idx || 0);
+    // Force integer comparison to avoid string concatenation or lexicographical sort "10" < "2" issues
+    const idxA = parseInt(a.idx || 0);
+    const idxB = parseInt(b.idx || 0);
+    let diff = idxA - idxB;
 
     // 2. Secondary Sort: Color Logic (if idx is 0 or same)
     if (diff === 0) diff = compareColor(a, b, 'asc');

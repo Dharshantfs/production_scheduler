@@ -102,8 +102,14 @@ def update_sequence(items):
 		
 	for item in items:
 		if item.get("name") and item.get("idx") is not None:
-			frappe.db.set_value("Planning Sheet Item", item.get("name"), "idx", item.get("idx"))
+			# Use SQL to bypass DocStatus immutability for reordering
+			frappe.db.sql("""
+				UPDATE `tabPlanning Sheet Item`
+				SET idx = %s
+				WHERE name = %s
+			""", (item.get("idx"), item.get("name")))
 			
+	frappe.db.commit()
 	return {"status": "success"}
 
 
