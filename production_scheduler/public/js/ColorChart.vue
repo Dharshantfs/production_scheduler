@@ -819,8 +819,7 @@ function getUnitCapacityStatus(unit) {
 async function initSortable() {
   if (!columnRefs.value && !monthlyCellRefs.value) return;
 
-  // Cancel any pending matrix init — prevents race condition where
-  // a second initSortable() destroys instances before the 100ms timer fires
+  // Cancel any pending matrix init — prevents race condition
   if (matrixInitTimer !== null) {
       clearTimeout(matrixInitTimer);
       matrixInitTimer = null;
@@ -845,13 +844,10 @@ async function initSortable() {
       try { matrixSortableInstances.pop().destroy(); } catch(e) {}
   }
 
-  // MATRIX VIEW SORTABLE
+  // MATRIX VIEW
   if (viewMode.value === 'matrix') {
-      // Use setTimeout to ensure DOM is fully settled after Vue render
-      // Store the timer so we can cancel it if initSortable is called again before it fires
       matrixInitTimer = setTimeout(() => {
           matrixInitTimer = null;
-          // Guard: if view changed before timer fired, abort
           if (viewMode.value !== 'matrix') return;
 
           const headerRowEl = matrixHeaderRow.value;
@@ -862,23 +858,14 @@ async function initSortable() {
                  handle: '.draggable-handle',
                  draggable: '.matrix-col-header',
                  ghostClass: 'cc-ghost',
-                 forceFallback: false,
-                 onStart: () => {
-                     // Prevent any other sortable from interfering
-                 },
-                  onEnd: async (evt) => {
+                 onEnd: async (evt) => {
                       const { newIndex, item } = evt;
-                      // Use setTimeout to let SortableJS finalize before we interact with DOM
                       setTimeout(async () => {
-                          // After column drag, rebuild the column order from current DOM state
-                          // and save it — do NOT call fetchData() as that would cause Vue to
-                          // re-render and overwrite the Sortable-moved DOM (making matrix empty)
                           const allCols = Array.from(headerRowEl.querySelectorAll('.matrix-col-header'));
                           let targetDate = null;
                           const leftEl = allCols[newIndex - 1];
-                          if (leftEl) {
-                              targetDate = leftEl.dataset.date;
-                          } else {
+                          if (leftEl) targetDate = leftEl.dataset.date;
+                          else {
                               const rightEl = allCols[newIndex + 1];
                               if (rightEl) targetDate = rightEl.dataset.date;
                           }
@@ -897,13 +884,11 @@ async function initSortable() {
                                               method: "production_scheduler.api.move_orders_to_date",
                                               args: { item_names: itemNames, target_date: targetDate }
                                           });
-                                          // Hide the moved column element before fetchData re-renders
                                           item.style.display = 'none';
                                           fetchData();
                                       } catch(e) { console.error(e); }
                                   }
                               } else {
-                                  // User cancelled — revert DOM by calling fetchData
                                   fetchData();
                               }
                           }
@@ -913,7 +898,6 @@ async function initSortable() {
               matrixSortableInstances.push(colSortable);
           }
 
-          // 2. ROWS (Colors)
           const bodyEl = matrixBody.value;
           if (bodyEl) {
               const rowSortable = new Sortable(bodyEl, {
@@ -922,7 +906,6 @@ async function initSortable() {
                   handle: '.matrix-row-header',
                   draggable: '.matrix-row',
                   ghostClass: 'cc-ghost',
-                  forceFallback: false,
                   onEnd: (evt) => {
                       const { oldIndex, newIndex } = evt;
                       if (oldIndex === newIndex) return;
@@ -939,12 +922,11 @@ async function initSortable() {
               });
               matrixSortableInstances.push(rowSortable);
           }
-      }, 150); // 150ms — enough for Vue to fully render matrix DOM
+      }, 150);
       return; 
   }
 
-  // KANBAN VIEW SORTABLE
-  // 1. MONTHLY VIEW
+  // MONTHLY VIEW KANBAN
   if (viewScope.value === 'monthly' && monthlyCellRefs.value) {
      monthlyCellRefs.value.forEach(cellEl => {
          if (!cellEl) return;
@@ -953,30 +935,22 @@ async function initSortable() {
              animation: 150,
              ghostClass: "cc-ghost",
              onEnd: async (evt) => {
-                const { item, to, newIndex, oldIndex } = evt;
+                const { item, to, newIndex } = evt;
                 const itemName = item.dataset.itemName;
                 const newUnit = to.dataset.unit;
-                const newWeekStart = to.dataset.weekStart; // Target Date
+                const newWeekStart = to.dataset.weekStart;
                 
                 if (!itemName || !newUnit || !newWeekStart) return;
-                
-                // Optimistic UI update could be tricky with complex move API
-                // Let's rely on fetch
 
                 setTimeout(async () => {
                     try {
-                        // Call update_schedule
-                        // date: newWeekStart
-                        // unit: newUnit
-                        // index: newIndex (manual sort within the week cell)
-                        
                         await frappe.call({
                             method: "production_scheduler.api.update_schedule",
                             args: {
                                 item_name: itemName,
                                 unit: newUnit,
                                 date: newWeekStart,
-                                index: newIndex + 1, // API usually expects 1-based, or handles reorder
+                                index: newIndex + 1,
                                 force_move: 1
                             }
                         });
@@ -985,17 +959,17 @@ async function initSortable() {
                     } catch (e) {
                         console.error("Failed to move order", e);
                         frappe.msgprint("Failed to move order");
-                        fetchData(); // Create consistency
+                        fetchData(); 
                     }
                 }, 10);
              }
          });
          cellEl._sortable = monthlySortable;
-     })
+     });
      return;
   }
 
-  // 2. DAILY VIEW
+  // DAILY VIEW KANBAN
   if (columnRefs.value) {
     columnRefs.value.forEach((colEl) => {
         if (!colEl) return;
@@ -1011,99 +985,91 @@ async function initSortable() {
             if (!itemName || !newUnit) return;
 
             if (!isSameUnit || newIndex !== oldIndex) {
-                // Delay to let SortableJS finish DOM cleanup before we change Vue state
-             setTimeout(async () => {
-             try {
-                if (!isSameUnit) {
-                    frappe.show_alert({ message: "Validating Capacity...", indicator: "orange" });
-                }
-                
-                const performMove = async (force=0, split=0) => {
-                    return await frappe.call({
-                        method: "production_scheduler.api.update_schedule",
-                        args: {
-                            item_name: itemName, 
-                            unit: newUnit,
-                            date: filterOrderDate.value,
-                            index: newIndex + 1,
-                            force_move: force,
-                            perform_split: split
-                        }
-                    });
-                };
+                 setTimeout(async () => {
+                 try {
+                    const performMove = async (force=0, split=0) => {
+                        return await frappe.call({
+                            method: "production_scheduler.api.update_schedule",
+                            args: {
+                                item_name: itemName, 
+                                unit: newUnit,
+                                date: filterOrderDate.value,
+                                index: newIndex + 1,
+                                force_move: force,
+                                perform_split: split
+                            }
+                        });
+                    };
 
-                let res = await performMove();
-                
-                if (res.message && res.message.status === 'overflow') {
-                     const avail = res.message.available;
-                     const limit = res.message.limit;
-                     const current = res.message.current_load;
-                     const orderWt = res.message.order_weight;
-                     
-                     const d = new frappe.ui.Dialog({
-                        title: '⚠️ Capacity Full',
-                        fields: [{
-                             fieldtype: 'HTML', fieldname: 'msg',
-                             options: `<div style="text-align:center; padding:10px;">
-                                 <p class="text-lg font-bold text-red-600">Unit Capacity Exceeded!</p>
-                                 <p>Unit Limit: <b>${limit}T</b> | Current: <b>${current.toFixed(2)}T</b></p>
-                                 <p>Your Order: <b>${orderWt.toFixed(2)}T</b></p>
-                                 <p class="mt-2 text-green-600 font-bold">Available Space: ${avail.toFixed(3)}T</p>
-                             </div>`
-                        }],
-                        primary_action_label: 'Move to Next Day',
-                        primary_action: async () => {
-                            d.hide();
-                            const res2 = await performMove(1, 0);
-                            handleMoveSuccess(res2, newUnit);
-                        },
-                        secondary_action_label: 'Cancel',
-                        secondary_action: () => { d.hide(); renderKey.value++; }
-                     });
-                     
-                     d.add_custom_action('Split & Distribute', async () => {
-                         d.hide();
-                         if (avail < 0.1) {
-                             frappe.msgprint("Space too small to split.");
-                             renderKey.value++; return;
-                         }
-                         const res3 = await performMove(0, 1);
-                         handleMoveSuccess(res3, newUnit);
-                     }, 'btn-warning');
-                     d.show();
-                } else {
-                     if (isSameUnit && res.message && res.message.status === 'success') {
-                         // Same-unit reorder: update idx in-place WITHOUT triggering re-render
-                         // Re-render would destroy sortable mid-drag causing freeze
-                         frappe.show_alert({ message: "Order resequenced", indicator: "green" });
-                         unitSortConfig[newUnit].mode = 'manual';
-                         // Update idx values silently in rawData without spreading (no re-render)
-                         const unitItems = rawData.value
-                             .filter(d => (d.unit || "Mixed") === newUnit)
-                             .sort((a, b) => (a.idx || 0) - (b.idx || 0));
-                         const moved = unitItems.splice(oldIndex, 1)[0];
-                         unitItems.splice(newIndex, 0, moved);
-                         unitItems.forEach((itm, i) => {
-                             const rawItem = rawData.value.find(d => d.itemName === itm.itemName);
-                             if (rawItem) rawItem.idx = i + 1;
+                    let res = await performMove();
+                    
+                    if (res.message && res.message.status === 'overflow') {
+                         const avail = res.message.available;
+                         const limit = res.message.limit;
+                         const current = res.message.current_load;
+                         const orderWt = res.message.order_weight;
+                         
+                         const d = new frappe.ui.Dialog({
+                            title: '⚠️ Capacity Full',
+                            fields: [{
+                                 fieldtype: 'HTML', fieldname: 'msg',
+                                 options: `<div style="text-align:center; padding:10px;">
+                                     <p class="text-lg font-bold text-red-600">Unit Capacity Exceeded!</p>
+                                     <p>Unit Limit: <b>${limit}T</b> | Current: <b>${current.toFixed(2)}T</b></p>
+                                     <p>Your Order: <b>${orderWt.toFixed(2)}T</b></p>
+                                     <p class="mt-2 text-green-600 font-bold">Available Space: ${avail.toFixed(3)}T</p>
+                                 </div>`
+                            }],
+                            primary_action_label: 'Move to Next Day',
+                            primary_action: async () => {
+                                d.hide();
+                                const res2 = await performMove(1, 0);
+                                handleMoveSuccess(res2, newUnit);
+                            },
+                            secondary_action_label: 'Cancel',
+                            secondary_action: () => { d.hide(); renderKey.value++; }
                          });
-                         // Do NOT spread rawData here — that triggers re-render and destroys sortable
-                         // The DOM is already correct (Sortable moved it). Just keep data in sync.
-                     } else {
-                         handleMoveSuccess(res, newUnit);
-                     }
-                }
-             } catch (e) {
-                 console.error(e);
-                 frappe.msgprint("❌ Move Failed");
-                 renderKey.value++;
-             }
-             }, 50);
-        }
-      },
+                         
+                         d.add_custom_action('Split & Distribute', async () => {
+                             d.hide();
+                             if (avail < 0.1) {
+                                 frappe.msgprint("Space too small to split.");
+                                 renderKey.value++; return;
+                             }
+                             const res3 = await performMove(0, 1);
+                             handleMoveSuccess(res3, newUnit);
+                         }, 'btn-warning');
+                         d.show();
+                    } else {
+                         if (isSameUnit && res.message && res.message.status === 'success') {
+                             frappe.show_alert({ message: "Order resequenced", indicator: "green" });
+                             unitSortConfig[newUnit].mode = 'manual';
+                             // Silent update (no re-render)
+                             const unitItems = rawData.value
+                                 .filter(d => (d.unit || "Mixed") === newUnit)
+                                 .sort((a, b) => (a.idx || 0) - (b.idx || 0));
+                             const moved = unitItems.splice(oldIndex, 1)[0];
+                             unitItems.splice(newIndex, 0, moved);
+                             unitItems.forEach((itm, i) => {
+                                 const rawItem = rawData.value.find(d => d.itemName === itm.itemName);
+                                 if (rawItem) rawItem.idx = i + 1;
+                             });
+                         } else {
+                             handleMoveSuccess(res, newUnit);
+                         }
+                    }
+                 } catch (e) {
+                     console.error(e);
+                     frappe.msgprint("❌ Move Failed");
+                     renderKey.value++;
+                 }
+                 }, 50);
+            }
+        },
+        });
+        colEl._sortable = kanbanSortable;
     });
-    colEl._sortable = kanbanSortable;
-  });
+  }
 }
 
 async function handleMoveSuccess(res, newUnit) {
@@ -1215,6 +1181,12 @@ const weeks = computed(() => {
     
     return weekList;
 });
+
+function getMonthlyCellTotal(week, unit) {
+    const entries = getMonthlyCellEntries(week, unit);
+    const total = entries.reduce((sum, e) => sum + (parseFloat(e.qty) || 0), 0);
+    return (total / 1000).toFixed(2);
+}
 
 function getMonthlyCellEntries(week, unit) {
     if (!week || !week.start || !week.end) return [];
