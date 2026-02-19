@@ -1122,83 +1122,95 @@ function toggleUnitGsm(unit) {
 
 
 const weeks = computed(() => {
-    if (viewScope.value !== 'monthly' || !filterMonth.value) return [];
-    
-    const [year, month] = filterMonth.value.split('-').map(Number);
-    const date = new Date(year, month - 1, 1);
-    const lastDay = new Date(year, month, 0).getDate();
-    
-    const weekList = [];
-    let currentWeekStart = new Date(date);
-    let weekNum = 1;
+    try {
+        if (viewScope.value !== 'monthly' || !filterMonth.value) return [];
+        
+        let year, month;
+        if (filterMonth.value.includes('-')) {
+             [year, month] = filterMonth.value.split('-').map(Number);
+        } else {
+             // Fallback for non-standard formats? Assuming YYYY-MM
+             return [];
+        }
 
-    // Iterate until we pass the last day
-    while (currentWeekStart.getDate() <= lastDay && currentWeekStart.getMonth() === (month - 1)) {
-        // Calculate End of Week (Sunday)
-        const currentDay = currentWeekStart.getDay(); // 0=Sun, 1=Mon...
-        // Valid range for this week: start from currentWeekStart
-        // End is the next Sunday, OR last day of month
+        const date = new Date(year, month - 1, 1);
+        const lastDay = new Date(year, month, 0).getDate();
         
-        // Days to add to reach Sunday: (7 - currentDay) % 7? 
-        // If currentDay is 0 (Sun), we want to end today? Or next Sunday?
-        // Standard Week: Mon-Sun.
-        // If today is Mon (1), add 6 days to get Sunday.
-        // If today is Sun (0), add 0 days.
-        
-        let daysToSunday = (currentDay === 0) ? 0 : (7 - currentDay);
-        
-        let weekEnd = new Date(currentWeekStart);
-        weekEnd.setDate(weekEnd.getDate() + daysToSunday);
-        
-        // Cap at end of month
-        if (weekEnd.getMonth() !== (month - 1)) {
-            weekEnd = new Date(year, month, 0);
+        const weekList = [];
+        let currentWeekStart = new Date(date);
+        let weekNum = 1;
+
+        // Iterate until we pass the last day
+        while (currentWeekStart.getDate() <= lastDay && currentWeekStart.getMonth() === (month - 1)) {
+            const currentDay = currentWeekStart.getDay(); // 0=Sun, 1=Mon...            
+            let daysToSunday = (currentDay === 0) ? 0 : (7 - currentDay);
+            
+            let weekEnd = new Date(currentWeekStart);
+            weekEnd.setDate(weekEnd.getDate() + daysToSunday);
+            
+            // Cap at end of month
+            if (weekEnd.getMonth() !== (month - 1)) {
+                weekEnd = new Date(year, month, 0);
+            }
+            
+            // Format Dates
+            const startStr = frappe.datetime.obj_to_str(currentWeekStart);
+            const endStr = frappe.datetime.obj_to_str(weekEnd);
+            const label = `Week ${weekNum}`;
+            const dateRange = `${currentWeekStart.getDate()} ${frappe.datetime.month_abbrs[month-1]} - ${weekEnd.getDate()} ${frappe.datetime.month_abbrs[month-1]}`;
+            
+            weekList.push({
+                id: `w-${weekNum}-${startStr}`,
+                label: label,
+                dateRange: dateRange,
+                start: startStr,
+                end: endStr
+            });
+            
+            // Next week starts after weekEnd
+            currentWeekStart = new Date(weekEnd);
+            currentWeekStart.setDate(currentWeekStart.getDate() + 1);
+            weekNum++;
         }
         
-        // Format Dates
-        const startStr = frappe.datetime.obj_to_str(currentWeekStart);
-        const endStr = frappe.datetime.obj_to_str(weekEnd);
-        const label = `Week ${weekNum}`;
-        const dateRange = `${currentWeekStart.getDate()} ${frappe.datetime.month_abbrs[month-1]} - ${weekEnd.getDate()} ${frappe.datetime.month_abbrs[month-1]}`;
-        
-        weekList.push({
-            id: `w-${weekNum}-${startStr}`,
-            label: label,
-            dateRange: dateRange,
-            start: startStr,
-            end: endStr
-        });
-        
-        // Next week starts after weekEnd
-        currentWeekStart = new Date(weekEnd);
-        currentWeekStart.setDate(currentWeekStart.getDate() + 1);
-        weekNum++;
+        return weekList;
+    } catch (e) {
+        console.error("Error computing weeks:", e);
+        return [];
     }
-    
-    return weekList;
 });
 
 function getMonthlyCellTotal(week, unit) {
-    const entries = getMonthlyCellEntries(week, unit);
-    const total = entries.reduce((sum, e) => sum + (parseFloat(e.qty) || 0), 0);
-    return (total / 1000).toFixed(2);
+    try {
+        const entries = getMonthlyCellEntries(week, unit);
+        const total = entries.reduce((sum, e) => sum + (parseFloat(e.qty) || 0), 0);
+        return (total / 1000).toFixed(2);
+    } catch (e) {
+        return "0.00";
+    }
 }
 
 function getMonthlyCellEntries(week, unit) {
     if (!week || !week.start || !week.end) return [];
+    if (!filteredData.value) return [];
     
-    // Filter by Unit
-    let items = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
-    
-    // Filter by Date Range
-    items = items.filter(d => d.orderDate >= week.start && d.orderDate <= week.end);
-    
-    // Sort items within the cell using standard logic (or manual idx)
-    return sortItems(unit, items).map(d => ({
-        ...d,
-        type: 'order',
-        uniqueKey: d.itemName
-    }));
+    try {
+        // Filter by Unit
+        let items = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
+        
+        // Filter by Date Range
+        items = items.filter(d => d.orderDate >= week.start && d.orderDate <= week.end);
+        
+        // Sort items within the cell using standard logic (or manual idx)
+        return sortItems(unit, items).map(d => ({
+            ...d,
+            type: 'order',
+            uniqueKey: d.itemName
+        }));
+    } catch (e) {
+        console.error("Error getting monthly entries:", e);
+        return [];
+    }
 }
 
 function toggleUnitPriority(unit) {
