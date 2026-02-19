@@ -265,82 +265,103 @@ import Sortable from "sortablejs";
 // Color groups for keyword-based matching
 // Check MOST SPECIFIC (multi-word) first, then SINGLE-WORD catch-all groups
 const COLOR_GROUPS = [
-  // 1. WHITE & OFF-WHITE (10-19)
-  { keywords: ["WHITE MIX"], priority: 99, hex: "#f0f0f0" }, // Mixes at end
-  { keywords: ["BLACK MIX"], priority: 99, hex: "#404040" },
-  { keywords: ["COLOR MIX"], priority: 99, hex: "#c0c0c0" },
-  { keywords: ["BEIGE MIX"], priority: 99, hex: "#e0d5c0" }, // Mixes 99
-  
-  { keywords: ["WHITE", "BRIGHT WHITE"], priority: 10, hex: "#FFFFFF" },
-  { keywords: ["IVORY", "OFF WHITE", "CREAM"], priority: 11, hex: "#FFFFF0" },
-  
-  // 2. YELLOWS (20-29)
-  { keywords: ["LEMON YELLOW"], priority: 20, hex: "#FFF44F" },
-  { keywords: ["YELLOW"], priority: 21, hex: "#FFFF00" },
-  { keywords: ["GOLDEN YELLOW", "GOLD"], priority: 22, hex: "#FFD700" },
-  
-  // 3. ORANGES & PEACH (30-39)
-  { keywords: ["PEACH"], priority: 30, hex: "#FFDAB9" },
-  { keywords: ["ORANGE", "BRIGHT ORANGE"], priority: 31, hex: "#FFA500" },
-  
-  // 4. PINKS (40-49)
-  { keywords: ["BABY PINK", "LIGHT PINK"], priority: 40, hex: "#FFB6C1" },
-  { keywords: ["PINK", "ROSE"], priority: 41, hex: "#FFC0CB" },
-  { keywords: ["DARK PINK", "HOT PINK"], priority: 42, hex: "#FF69B4" },
-  
-  // 5. REDS & MAROONS (50-59)
-  { keywords: ["RED", "BRIGHT RED"], priority: 50, hex: "#FF0000" },
-  { keywords: ["CRIMSON", "SCARLET"], priority: 51, hex: "#DC143C" },
-  { keywords: ["MAROON", "DARK RED", "BURGUNDY"], priority: 52, hex: "#800000" },
-  
-  // 6. PURPLES & VIOLETS (60-69)
-  { keywords: ["LAVENDER", "LILAC"], priority: 60, hex: "#E6E6FA" },
-  { keywords: ["VIOLET"], priority: 61, hex: "#EE82EE" },
-  { keywords: ["PURPLE", "MAGENTA"], priority: 62, hex: "#800080" },
-  
-  // 7. BLUES (70-79) - Light to Dark
-  { keywords: ["SKY BLUE", "LIGHT BLUE"], priority: 70, hex: "#87CEEB" },
-  { keywords: ["MEDICAL BLUE"], priority: 71, hex: "#0077B6" },
-  { keywords: ["BLUE", "ROYAL BLUE"], priority: 72, hex: "#4169E1" },
-  { keywords: ["PEACOCK BLUE"], priority: 73, hex: "#005F69" },
-  { keywords: ["NAVY BLUE", "DARK BLUE"], priority: 74, hex: "#000080" }, // Darkest Blue
-  
-  // 8. GREENS (80-89) - Light to Dark
-  { keywords: ["MINT GREEN"], priority: 80, hex: "#98FF98" },
-  { keywords: ["PARROT GREEN", "LIGHT GREEN"], priority: 81, hex: "#90EE90" },
-  { keywords: ["APPLE GREEN", "LIME GREEN"], priority: 82, hex: "#32CD32" },
-  { keywords: ["GREEN", "KELLY GREEN"], priority: 83, hex: "#008000" },
-  { keywords: ["SEA GREEN"], priority: 84, hex: "#2E8B57" },
-  { keywords: ["BOTTLE GREEN"], priority: 85, hex: "#006A4E" },
-  { keywords: ["OLIVE GREEN"], priority: 86, hex: "#808000" },
-  { keywords: ["ARMY GREEN"], priority: 87, hex: "#4B5320" },
-  { keywords: ["DARK GREEN"], priority: 88, hex: "#006400" },
+  // ── MIX MARKERS (always at end, priority 199) ──────────────────
+  { keywords: ["WHITE MIX"],  priority: 199, hex: "#f0f0f0" },
+  { keywords: ["BLACK MIX"],  priority: 199, hex: "#404040" },
+  { keywords: ["COLOR MIX"],  priority: 199, hex: "#c0c0c0" },
+  { keywords: ["BEIGE MIX"],  priority: 199, hex: "#e0d5c0" },
 
-  // 10. GREYS & SILVER (95-97)
-  { keywords: ["SILVER", "LIGHT GREY"], priority: 95, hex: "#C0C0C0" },
-  { keywords: ["GREY", "GRAY", "DARK GREY"], priority: 96, hex: "#808080" },
-  
-  // 9. BROWNS & BEIGES (Moved to End as per Transition Rule)
-  // Transition: Black -> Beige -> [Others]
-  // So Beige must be > 98 (Black)? Or < 98?
-  // User said: "aftere black complusary need any color in beige after biege order placed allowed to place other colors"
-  // If sorting Ascending (Light -> Dark):
-  // White (10) ... Black (98).
-  // If Black is last, then Beige needs to be 99?
-  // But wait, user said "after black... beige".
-  // If we sort 10->98. Black is at bottom.
-  // Then next cycle starts?
-  // OR does user run Black -> Beige -> White?
-  // "red blue ... black ... after black compulsory beige ... after beige other colors"
-  // This implies a CYCLE: Light -> Dark (Black) -> Beige -> Light.
-  // So Beige should be effectively "Priority 100" or handle a wrap-around.
-  // Let's set Beige to 99 (after Black).
-  { keywords: ["BEIGE", "LIGHT BEIGE", "CREAM", "OFF WHITE", "IVORY"], priority: 99, hex: "#F5F5DC" }, 
-  { keywords: ["DARK BEIGE", "KHAKI", "SAND"], priority: 99, hex: "#C2B280" }, 
-  { keywords: ["BROWN", "CHOCOLATE", "COFFEE"], priority: 90, hex: "#A52A2A" }, // Brown can stay normal?
+  // ── WHITES (priority 5 — excluded by filter anyway) ─────────────
+  // IMPORTANT: multi-word phrases FIRST so "BRIGHT WHITE" matches here, not "WHITE"
+  { keywords: ["BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE", "SUPER WHITE",
+               "BLEACH WHITE", "OPTICAL WHITE"], priority: 5, hex: "#FFFFFF" },
+  { keywords: ["WHITE"], priority: 5, hex: "#FFFFFF" },
 
-  // 11. BLACK (98)
-  { keywords: ["BLACK"], priority: 98, hex: "#000000" },
+  // ── 1. IVORY / CREAM / OFF WHITE (10) ───────────────────────────
+  { keywords: ["IVORY", "OFF WHITE", "CREAM"], priority: 10, hex: "#FFFFF0" },
+
+  // ── 2. YELLOWS (20-22): Lemon → Yellow → Golden ─────────────────
+  { keywords: ["LEMON YELLOW"],          priority: 20, hex: "#FFF44F" },
+  { keywords: ["GOLDEN YELLOW"],         priority: 22, hex: "#FFD700" }, // before YELLOW & GOLD
+  { keywords: ["GOLD"],                  priority: 22, hex: "#FFD700" }, // before YELLOW
+  { keywords: ["YELLOW"],               priority: 21, hex: "#FFFF00" },
+
+  // ── 3. ORANGES (28-31): Light → Orange → Bright → Peach ─────────
+  { keywords: ["LIGHT ORANGE"],          priority: 28, hex: "#FFD580" },
+  { keywords: ["PEACH"],                 priority: 28, hex: "#FFDAB9" },
+  { keywords: ["BRIGHT ORANGE"],         priority: 31, hex: "#FF8C00" }, // before ORANGE
+  { keywords: ["ORANGE"],               priority: 30, hex: "#FFA500" },
+
+  // ── 4. PINKS (39-42): Baby → Light → Pink → Dark → Hot ──────────
+  { keywords: ["BABY PINK"],             priority: 39, hex: "#FFB6C1" },
+  { keywords: ["LIGHT PINK"],            priority: 39, hex: "#FFB6C1" },
+  { keywords: ["DARK PINK"],             priority: 42, hex: "#FF1493" }, // before PINK
+  { keywords: ["HOT PINK"],              priority: 42, hex: "#FF69B4" }, // before PINK
+  { keywords: ["ROSE", "PINK"],          priority: 40, hex: "#FFC0CB" },
+
+  // ── 5. REDS (50-51) ──────────────────────────────────────────────
+  { keywords: ["BRIGHT RED"],            priority: 50, hex: "#FF2400" }, // before RED
+  { keywords: ["SCARLET", "CRIMSON"],    priority: 50, hex: "#DC143C" },
+  { keywords: ["RED"],                   priority: 50, hex: "#FF0000" },
+
+  // ── 6. BLUES (55-59): Sky→Light→Royal→Peacock→Medical→Navy ──────
+  // IMPORTANT: multi-word specific names BEFORE generic "BLUE"
+  { keywords: ["SKY BLUE"],              priority: 55, hex: "#87CEEB" },
+  { keywords: ["LIGHT BLUE"],            priority: 55, hex: "#ADD8E6" },
+  { keywords: ["ROYAL BLUE"],            priority: 56, hex: "#4169E1" },
+  { keywords: ["PEACOCK BLUE"],          priority: 57, hex: "#005F69" },
+  { keywords: ["MEDICAL BLUE"],          priority: 58, hex: "#0077B6" },
+  { keywords: ["NAVY BLUE", "DARK BLUE"],priority: 59, hex: "#000080" },
+  { keywords: ["BLUE"],                  priority: 56, hex: "#0000FF" }, // generic → Royal Blue level
+
+  // ── 7. VIOLETS & PURPLES (60-61) ────────────────────────────────
+  { keywords: ["LAVENDER", "LILAC"],     priority: 60, hex: "#E6E6FA" },
+  { keywords: ["VIOLET"],               priority: 60, hex: "#EE82EE" },
+  { keywords: ["PURPLE", "MAGENTA"],     priority: 61, hex: "#800080" },
+
+  // ── 8. GREENS (65-79): exact user order ──────────────────────────
+  // Medical → Parrot → Reliance → Peacock → Aqua → Apple → Mint
+  // → Sea → Grass → Bottle → Pothys → Dark → Olive → Army
+  // IMPORTANT: all specific names BEFORE generic "GREEN"
+  { keywords: ["MEDICAL GREEN"],         priority: 65, hex: "#00897B" },
+  { keywords: ["PARROT GREEN"],          priority: 66, hex: "#57C84D" },
+  { keywords: ["LIGHT GREEN"],           priority: 66, hex: "#90EE90" }, // ≈ Parrot Green
+  { keywords: ["RELIANCE GREEN"],        priority: 67, hex: "#228B22" },
+  { keywords: ["PEACOCK GREEN"],         priority: 68, hex: "#00A693" },
+  { keywords: ["AQUA GREEN", "AQUA"],    priority: 69, hex: "#00FFFF" },
+  { keywords: ["APPLE GREEN"],           priority: 70, hex: "#32CD32" },
+  { keywords: ["LIME GREEN"],            priority: 70, hex: "#32CD32" },
+  { keywords: ["MINT GREEN", "MINT"],    priority: 71, hex: "#98FF98" },
+  { keywords: ["SEA GREEN"],             priority: 72, hex: "#2E8B57" },
+  { keywords: ["GRASS GREEN"],           priority: 73, hex: "#7CFC00" },
+  { keywords: ["BOTTLE GREEN"],          priority: 74, hex: "#006A4E" },
+  { keywords: ["POTHYS GREEN"],          priority: 75, hex: "#1A5C38" },
+  { keywords: ["DARK GREEN"],            priority: 76, hex: "#006400" },
+  { keywords: ["OLIVE GREEN", "OLIVE"],  priority: 77, hex: "#808000" },
+  { keywords: ["ARMY GREEN", "ARMY"],    priority: 78, hex: "#4B5320" },
+  { keywords: ["KELLY GREEN", "GREEN"],  priority: 67, hex: "#008000" }, // generic → Reliance level
+
+  // ── 9. SILVER & GREY (80-82) ────────────────────────────────────
+  { keywords: ["SILVER", "LIGHT GREY", "LIGHT GRAY"], priority: 80, hex: "#C0C0C0" },
+  { keywords: ["DARK GREY", "DARK GRAY"],             priority: 82, hex: "#696969" },
+  { keywords: ["GREY", "GRAY"],                       priority: 81, hex: "#808080" },
+
+  // ── 10. MAROON & BROWN (85-86) — after greens, per user spec ────
+  { keywords: ["DARK RED"],              priority: 85, hex: "#8B0000" }, // before RED match
+  { keywords: ["MAROON", "BURGUNDY"],    priority: 85, hex: "#800000" },
+  { keywords: ["DARK BROWN"],            priority: 86, hex: "#5C4033" },
+  { keywords: ["BROWN", "CHOCOLATE", "COFFEE"], priority: 86, hex: "#A52A2A" },
+
+  // ── 11. BEIGE (90-91) — mandatory transition before BLACK ────────
+  // In Light→Dark: BEIGE comes just before BLACK so the machine can
+  // transition from heavy dark colors before next cycle
+  { keywords: ["LIGHT BEIGE"],           priority: 90, hex: "#F5F5DC" },
+  { keywords: ["DARK BEIGE"],            priority: 91, hex: "#C2B280" }, // before BEIGE
+  { keywords: ["KHAKI", "SAND"],         priority: 91, hex: "#C2B280" },
+  { keywords: ["BEIGE"],                 priority: 90, hex: "#F5F5DC" },
+
+  // ── 12. BLACK (95) — always last in Light→Dark ──────────────────
+  { keywords: ["BLACK"],                 priority: 95, hex: "#000000" },
 ];
 
 const GAP_THRESHOLD = 0; // any color priority difference triggers mix roll
