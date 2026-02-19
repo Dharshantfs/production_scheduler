@@ -376,18 +376,22 @@ def get_kanban_board(start_date, end_date):
 
 
 @frappe.whitelist()
-def get_color_chart_data(date):
+def get_color_chart_data(date, end_date=None):
 	target_date = getdate(date)
+	target_end_date = getdate(end_date) if end_date else target_date
 
-	# Get all planning sheets for this date (by order date)
+	# Filter condition
+	date_filter = ["between", [target_date, target_end_date]] if end_date else target_date
+
+	# Get all planning sheets for this date range
 	planning_sheets = frappe.get_all(
 		"Planning sheet",
 		filters={
-			"ordered_date": target_date,
+			"ordered_date": date_filter,
 			"docstatus": ["<", 2]
 		},
 		fields=["name", "customer", "party_code", "dod", "ordered_date", "planning_status", "docstatus", "sales_order"],
-		order_by="creation asc"
+		order_by="ordered_date asc, creation asc"
 	)
 
 	# Fetch delivery statuses for referenced Sales Orders

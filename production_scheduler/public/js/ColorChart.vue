@@ -3,8 +3,15 @@
     <!-- Filter Bar -->
     <div class="cc-filters">
       <div class="cc-filter-item">
-        <label>Order Date</label>
-        <input type="date" v-model="filterOrderDate" @change="fetchData" />
+        <label>{{ viewScope === 'daily' ? 'Order Date' : 'Select Month' }}</label>
+        <div style="display:flex; gap:4px;">
+            <input v-if="viewScope === 'daily'" type="date" v-model="filterOrderDate" @change="fetchData" />
+            <input v-else type="month" v-model="filterMonth" @change="fetchData" />
+            
+            <button class="cc-mini-btn" @click="toggleViewScope" :title="viewScope === 'daily' ? 'Switch to Monthly View' : 'Switch to Daily View'">
+                {{ viewScope === 'daily' ? '📅 Month' : '📆 Day' }}
+            </button>
+        </div>
       </div>
       <div class="cc-filter-item">
         <label>Party Code</label>
@@ -62,102 +69,158 @@
 
     <!-- Kanban View -->
     <div v-if="viewMode === 'kanban'" class="cc-board" :key="renderKey">
-      <div
-        v-for="unit in visibleUnits"
-        :key="unit"
-        class="cc-column"
-        :data-unit="unit"
-      >
-        <div class="cc-col-header" :style="{ borderTopColor: headerColors[unit] }">
-          <div class="cc-header-top">
-            <span class="cc-col-title">{{ unit === 'Mixed' ? 'Unassigned' : unit }}</span>
-            <!-- Sort Controls -->
-            <div class="cc-unit-controls">
-              <span style="font-size:10px; color:#64748b; margin-right:4px;">{{ getSortLabel(unit) }}</span>
-              <button class="cc-mini-btn" @click="toggleUnitColor(unit)" :title="getUnitSortConfig(unit).color === 'asc' ? 'Currently: Light→Dark (click for Dark→Light)' : 'Currently: Dark→Light (click for Light→Dark)'">
-                {{ getUnitSortConfig(unit).color === 'asc' ? '☀️→🌙' : '🌙→☀️' }}
-              </button>
-              <button class="cc-mini-btn" @click="toggleUnitGsm(unit)" :title="getUnitSortConfig(unit).gsm === 'desc' ? 'GSM: High→Low (click to reverse)' : 'GSM: Low→High (click to reverse)'">
-                {{ getUnitSortConfig(unit).gsm === 'desc' ? '⬇️' : '⬆️' }}
-              </button>
-              <button class="cc-mini-btn" @click="toggleUnitPriority(unit)" :title="getUnitSortConfig(unit).priority === 'color' ? 'Priority: Color (click for GSM)' : 'Priority: GSM (click for Color)'">
-                {{ getUnitSortConfig(unit).priority === 'color' ? '🎨' : '📏' }}
-              </button>
-            </div>
-          </div>
-          <div class="cc-header-stats">
-            <span class="cc-stat-weight" :class="getUnitCapacityStatus(unit).class">
-              {{ getUnitTotal(unit).toFixed(2) }} / {{ UNIT_TONNAGE_LIMITS[unit] }}T
-              <span v-if="getHiddenWhiteTotal(unit) > 0" style="font-size:10px; font-weight:400; color:#64748b; display:block;">
-                 (Inc. {{ getHiddenWhiteTotal(unit).toFixed(2) }}T White)
-              </span>
-            </span>
-            <div v-if="getUnitCapacityStatus(unit).warning" class="text-xs text-red-600 font-bold">
-              {{ getUnitCapacityStatus(unit).warning }}
-            </div>
-            <span class="cc-stat-mix" v-if="getMixRollCount(unit) > 0">
-              ⚠️ {{ getMixRollCount(unit) }} mix{{ getMixRollCount(unit) > 1 ? 'es' : '' }}
-              ({{ getMixRollTotalWeight(unit) }} Kg)
-            </span>
-          </div>
-        </div>
-
-        <div class="cc-col-body" :data-unit="unit" ref="columnRefs">
-          <template v-for="(entry, idx) in getUnitEntries(unit)" :key="entry.uniqueKey">
-            <!-- Mix Roll Marker -->
-            <div v-if="entry.type === 'mix'" class="cc-mix-marker">
-              <div class="cc-mix-line"></div>
-          <span class="cc-mix-label" :class="entry.mixType.toLowerCase().replace(' ', '-')">
-            {{ entry.mixType }} — ~{{ entry.qty }} Kg
-          </span>
-              <div class="cc-mix-line"></div>
-            </div>
-            <!-- Order Card -->
-            <div
-              v-else
-              class="cc-card"
-              :data-name="entry.name"
-              :data-item-name="entry.itemName"
-              :data-color="entry.color"
-              :data-planning-sheet="entry.planningSheet"
-              @click="openForm(entry.planningSheet)"
-            >
-              <div class="cc-card-left">
-                <div
-                  class="cc-color-swatch"
-                  :style="{ backgroundColor: getHexColor(entry.color) }"
-                  :title="entry.color"
-                ></div>
-                <div class="cc-card-info">
-                  <div class="cc-card-color-name">{{ entry.color }}</div>
-                  <div class="cc-card-customer">
-                    <span style="font-weight:700; color:#111827;">{{ entry.partyCode }}</span>
-                    <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> · {{ entry.customer }}</span>
-                  </div>
-                  <div class="cc-card-details">
-                    {{ entry.quality }} · {{ entry.gsm }} GSM
-                  </div>
+      
+      <!-- DAILY VIEW -->
+      <template v-if="viewScope === 'daily'">
+        <div
+            v-for="unit in visibleUnits"
+            :key="unit"
+            class="cc-column"
+            :data-unit="unit"
+        >
+            <div class="cc-col-header" :style="{ borderTopColor: headerColors[unit] }">
+            <div class="cc-header-top">
+                <span class="cc-col-title">{{ unit === 'Mixed' ? 'Unassigned' : unit }}</span>
+                <!-- Sort Controls -->
+                <div class="cc-unit-controls">
+                <span style="font-size:10px; color:#64748b; margin-right:4px;">{{ getSortLabel(unit) }}</span>
+                <button class="cc-mini-btn" @click="toggleUnitColor(unit)" :title="getUnitSortConfig(unit).color === 'asc' ? 'Currently: Light→Dark (click for Dark→Light)' : 'Currently: Dark→Light (click for Light→Dark)'">
+                    {{ getUnitSortConfig(unit).color === 'asc' ? '☀️→🌙' : '🌙→☀️' }}
+                </button>
+                <button class="cc-mini-btn" @click="toggleUnitGsm(unit)" :title="getUnitSortConfig(unit).gsm === 'desc' ? 'GSM: High→Low (click to reverse)' : 'GSM: Low→High (click to reverse)'">
+                    {{ getUnitSortConfig(unit).gsm === 'desc' ? '⬇️' : '⬆️' }}
+                </button>
+                <button class="cc-mini-btn" @click="toggleUnitPriority(unit)" :title="getUnitSortConfig(unit).priority === 'color' ? 'Priority: Color (click for GSM)' : 'Priority: GSM (click for Color)'">
+                    {{ getUnitSortConfig(unit).priority === 'color' ? '🎨' : '📏' }}
+                </button>
                 </div>
-              </div>
-              <div class="cc-card-right">
-                <span class="cc-card-qty">{{ (entry.qty / 1000).toFixed(3) }} T</span>
-                <span class="cc-card-qty-kg">{{ entry.qty }} Kg</span>
-              </div>
             </div>
-          </template>
+            <div class="cc-header-stats">
+                <span class="cc-stat-weight" :class="getUnitCapacityStatus(unit).class">
+                {{ getUnitTotal(unit).toFixed(2) }} / {{ UNIT_TONNAGE_LIMITS[unit] }}T
+                <span v-if="getHiddenWhiteTotal(unit) > 0" style="font-size:10px; font-weight:400; color:#64748b; display:block;">
+                    (Inc. {{ getHiddenWhiteTotal(unit).toFixed(2) }}T White)
+                </span>
+                </span>
+                <div v-if="getUnitCapacityStatus(unit).warning" class="text-xs text-red-600 font-bold">
+                {{ getUnitCapacityStatus(unit).warning }}
+                </div>
+                <span class="cc-stat-mix" v-if="getMixRollCount(unit) > 0">
+                ⚠️ {{ getMixRollCount(unit) }} mix{{ getMixRollCount(unit) > 1 ? 'es' : '' }}
+                ({{ getMixRollTotalWeight(unit) }} Kg)
+                </span>
+            </div>
+            </div>
 
-          <div v-if="!getUnitEntries(unit).length" class="cc-empty">
-            No orders
+            <div class="cc-col-body" :data-unit="unit" ref="columnRefs">
+            <template v-for="(entry, idx) in getUnitEntries(unit)" :key="entry.uniqueKey">
+                <!-- Mix Roll Marker -->
+                <div v-if="entry.type === 'mix'" class="cc-mix-marker">
+                <div class="cc-mix-line"></div>
+            <span class="cc-mix-label" :class="entry.mixType.toLowerCase().replace(' ', '-')">
+                {{ entry.mixType }} — ~{{ entry.qty }} Kg
+            </span>
+                <div class="cc-mix-line"></div>
+                </div>
+                <!-- Order Card -->
+                <div
+                v-else
+                class="cc-card"
+                :data-name="entry.name"
+                :data-item-name="entry.itemName"
+                :data-color="entry.color"
+                :data-planning-sheet="entry.planningSheet"
+                @click="openForm(entry.planningSheet)"
+                >
+                <div class="cc-card-left">
+                    <div
+                    class="cc-color-swatch"
+                    :style="{ backgroundColor: getHexColor(entry.color) }"
+                    :title="entry.color"
+                    ></div>
+                    <div class="cc-card-info">
+                    <div class="cc-card-color-name">{{ entry.color }}</div>
+                    <div class="cc-card-customer">
+                        <span style="font-weight:700; color:#111827;">{{ entry.partyCode }}</span>
+                        <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> · {{ entry.customer }}</span>
+                    </div>
+                    <div class="cc-card-details">
+                        {{ entry.quality }} · {{ entry.gsm }} GSM
+                    </div>
+                    </div>
+                </div>
+                <div class="cc-card-right">
+                    <span class="cc-card-qty">{{ (entry.qty / 1000).toFixed(3) }} T</span>
+                    <span class="cc-card-qty-kg">{{ entry.qty }} Kg</span>
+                </div>
+                </div>
+            </template>
+
+            <div v-if="!getUnitEntries(unit).length" class="cc-empty">
+                No orders
+            </div>
+            </div>
+
+            <!-- Unit Footer -->
+            <div class="cc-col-footer">
+            <span>Production: {{ getUnitProductionTotal(unit).toFixed(2) }}T</span>
+            <span v-if="getMixRollTotalWeight(unit) > 0">
+                Mix Waste: {{ (getMixRollTotalWeight(unit) / 1000).toFixed(3) }}T
+            </span>
+            </div>
+        </div>
+      </template>
+
+      <!-- MONTHLY VIEW -->
+      <div v-else class="cc-monthly-container">
+          <!-- Header Row -->
+          <div class="cc-monthly-header">
+              <div class="cc-monthly-corner">Week / Unit</div>
+              <div v-for="unit in visibleUnits" :key="unit" class="cc-monthly-col-header" :style="{ borderTopColor: headerColors[unit] }">
+                  {{ unit }}
+                  <span class="text-xs text-gray-500 block font-normal">
+                      {{ getUnitProductionTotal(unit).toFixed(2) }}T
+                  </span>
+              </div>
           </div>
-        </div>
 
-        <!-- Unit Footer -->
-        <div class="cc-col-footer">
-          <span>Production: {{ getUnitProductionTotal(unit).toFixed(2) }}T</span>
-          <span v-if="getMixRollTotalWeight(unit) > 0">
-            Mix Waste: {{ (getMixRollTotalWeight(unit) / 1000).toFixed(3) }}T
-          </span>
-        </div>
+          <!-- Week Rows -->
+          <div v-for="week in weeks" :key="week.id" class="cc-monthly-row">
+              <div class="cc-monthly-row-label">
+                  <div class="font-bold text-gray-700">{{ week.label }}</div>
+                  <div class="text-xs text-gray-500">{{ week.dateRange }}</div>
+              </div>
+              
+              <div v-for="unit in visibleUnits" :key="unit" class="cc-monthly-cell" :data-week-id="week.id" :data-unit="unit" :data-week-start="week.start" :data-week-end="week.end">
+                  <div class="cc-cell-header-tiny">
+                      {{ getMonthlyCellTotal(week, unit) }}T
+                  </div>
+                  
+                  <div class="cc-cell-body" ref="monthlyCellRefs" :data-unit="unit" :data-week-start="week.start" :data-week-end="week.end">
+                      <div 
+                          v-for="entry in getMonthlyCellEntries(week, unit)" 
+                          :key="entry.uniqueKey"
+                          class="cc-card cc-card-mini"
+                          :data-name="entry.name"
+                          :data-item-name="entry.itemName"
+                          :data-color="entry.color"
+                          :data-planning-sheet="entry.planningSheet"
+                          :data-unit="unit"
+                          :data-week-start="week.start"
+                          :data-week-end="week.end"
+                          @click="openForm(entry.planningSheet)"
+                      >
+                          <div class="cc-card-left">
+                              <div class="cc-color-swatch-mini" :style="{ backgroundColor: getHexColor(entry.color) }"></div>
+                              <div class="cc-card-info">
+                                  <div class="cc-card-color-name text-xs truncate">{{ entry.color }}</div>
+                                  <div class="text-[10px] text-gray-500 truncate" :title="entry.customer + ' ' + entry.quality + ' ' + entry.gsm">{{ entry.customer }}</div>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              </div>
+          </div>
       </div>
     </div>
 
@@ -371,6 +434,8 @@ const UNIT_TONNAGE_LIMITS = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4"
 const headerColors = { "Unit 1": "#3b82f6", "Unit 2": "#10b981", "Unit 3": "#f59e0b", "Unit 4": "#8b5cf6", "Mixed": "#64748b" };
 
 const filterOrderDate = ref(frappe.datetime.get_today());
+const viewScope = ref('daily');
+const filterMonth = ref(frappe.datetime.get_today().substring(0, 7));
 const filterPartyCode = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
@@ -383,6 +448,7 @@ units.forEach(u => {
 const viewMode = ref('kanban'); // 'kanban' | 'matrix'
 const rawData = ref([]);
 const columnRefs = ref(null);
+const monthlyCellRefs = ref(null);
 const matrixHeaderRow = ref(null); // Ref for Matrix Column sorting
 const matrixBody = ref(null);      // Ref for Matrix Row sorting
 const customRowOrder = ref([]);    // Store user-defined row order (List of Colors)
@@ -751,7 +817,7 @@ function getUnitCapacityStatus(unit) {
 // ... (Mix Roll functions use getUnitEntries which uses filteredData - Correct for VISUALS) ...
 
 async function initSortable() {
-  if (!columnRefs.value) return;
+  if (!columnRefs.value && !monthlyCellRefs.value) return;
 
   // Cancel any pending matrix init — prevents race condition where
   // a second initSortable() destroys instances before the 100ms timer fires
@@ -761,9 +827,19 @@ async function initSortable() {
   }
   
   // Clear old kanban instances
-  columnRefs.value.forEach(col => {
-      if (col && col._sortable) { try { col._sortable.destroy(); } catch(e) {} }
-  });
+  if (columnRefs.value) {
+    columnRefs.value.forEach(col => {
+        if (col && col._sortable) { try { col._sortable.destroy(); } catch(e) {} }
+    });
+  }
+  
+  // Clear old monthly instances
+  if (monthlyCellRefs.value) {
+    monthlyCellRefs.value.forEach(col => {
+        if (col && col._sortable) { try { col._sortable.destroy(); } catch(e) {} }
+    });
+  }
+
   // Clear old matrix instances
   while (matrixSortableInstances.length > 0) {
       try { matrixSortableInstances.pop().destroy(); } catch(e) {}
@@ -868,21 +944,74 @@ async function initSortable() {
   }
 
   // KANBAN VIEW SORTABLE
-  columnRefs.value.forEach((colEl) => {
-    if (!colEl) return;
-    const kanbanSortable = new Sortable(colEl, {
-      group: "kanban",
-      animation: 150,
-      ghostClass: "cc-ghost",
-      onEnd: async (evt) => {
-        const { item, to, from, newIndex, oldIndex } = evt;
-        const itemName = item.dataset.itemName;
-        const newUnit = to.dataset.unit;
-        const isSameUnit = (to === from);
-        if (!itemName || !newUnit) return;
+  // 1. MONTHLY VIEW
+  if (viewScope.value === 'monthly' && monthlyCellRefs.value) {
+     monthlyCellRefs.value.forEach(cellEl => {
+         if (!cellEl) return;
+         const monthlySortable = new Sortable(cellEl, {
+             group: "monthly-kanban",
+             animation: 150,
+             ghostClass: "cc-ghost",
+             onEnd: async (evt) => {
+                const { item, to, newIndex, oldIndex } = evt;
+                const itemName = item.dataset.itemName;
+                const newUnit = to.dataset.unit;
+                const newWeekStart = to.dataset.weekStart; // Target Date
+                
+                if (!itemName || !newUnit || !newWeekStart) return;
+                
+                // Optimistic UI update could be tricky with complex move API
+                // Let's rely on fetch
 
-        if (!isSameUnit || newIndex !== oldIndex) {
-             // Delay to let SortableJS finish DOM cleanup before we change Vue state
+                setTimeout(async () => {
+                    try {
+                        // Call update_schedule
+                        // date: newWeekStart
+                        // unit: newUnit
+                        // index: newIndex (manual sort within the week cell)
+                        
+                        await frappe.call({
+                            method: "production_scheduler.api.update_schedule",
+                            args: {
+                                item_name: itemName,
+                                unit: newUnit,
+                                date: newWeekStart,
+                                index: newIndex + 1, // API usually expects 1-based, or handles reorder
+                                force_move: 1
+                            }
+                        });
+                        frappe.show_alert("Order moved successfully", 2);
+                        fetchData();
+                    } catch (e) {
+                        console.error("Failed to move order", e);
+                        frappe.msgprint("Failed to move order");
+                        fetchData(); // Create consistency
+                    }
+                }, 10);
+             }
+         });
+         cellEl._sortable = monthlySortable;
+     })
+     return;
+  }
+
+  // 2. DAILY VIEW
+  if (columnRefs.value) {
+    columnRefs.value.forEach((colEl) => {
+        if (!colEl) return;
+        const kanbanSortable = new Sortable(colEl, {
+        group: "kanban",
+        animation: 150,
+        ghostClass: "cc-ghost",
+        onEnd: async (evt) => {
+            const { item, to, from, newIndex, oldIndex } = evt;
+            const itemName = item.dataset.itemName;
+            const newUnit = to.dataset.unit;
+            const isSameUnit = (to === from);
+            if (!itemName || !newUnit) return;
+
+            if (!isSameUnit || newIndex !== oldIndex) {
+                // Delay to let SortableJS finish DOM cleanup before we change Vue state
              setTimeout(async () => {
              try {
                 if (!isSameUnit) {
@@ -1021,6 +1150,87 @@ function toggleUnitGsm(unit) {
       config.gsm = config.gsm === 'asc' ? 'desc' : 'asc';
   }
   renderKey.value++; // Force re-render so cards re-sort immediately
+}
+
+// ---- MONTHLY VIEW HELPERS ----
+function getMonthlyCellTotal(week, unit) {
+    const entries = getMonthlyCellEntries(week, unit);
+    const total = entries.reduce((sum, e) => sum + (parseFloat(e.qty) || 0), 0);
+    return (total / 1000).toFixed(2);
+}
+
+const weeks = computed(() => {
+    if (viewScope.value !== 'monthly' || !filterMonth.value) return [];
+    
+    const [year, month] = filterMonth.value.split('-').map(Number);
+    const date = new Date(year, month - 1, 1);
+    const lastDay = new Date(year, month, 0).getDate();
+    
+    const weekList = [];
+    let currentWeekStart = new Date(date);
+    let weekNum = 1;
+
+    // Iterate until we pass the last day
+    while (currentWeekStart.getDate() <= lastDay && currentWeekStart.getMonth() === (month - 1)) {
+        // Calculate End of Week (Sunday)
+        const currentDay = currentWeekStart.getDay(); // 0=Sun, 1=Mon...
+        // Valid range for this week: start from currentWeekStart
+        // End is the next Sunday, OR last day of month
+        
+        // Days to add to reach Sunday: (7 - currentDay) % 7? 
+        // If currentDay is 0 (Sun), we want to end today? Or next Sunday?
+        // Standard Week: Mon-Sun.
+        // If today is Mon (1), add 6 days to get Sunday.
+        // If today is Sun (0), add 0 days.
+        
+        let daysToSunday = (currentDay === 0) ? 0 : (7 - currentDay);
+        
+        let weekEnd = new Date(currentWeekStart);
+        weekEnd.setDate(weekEnd.getDate() + daysToSunday);
+        
+        // Cap at end of month
+        if (weekEnd.getMonth() !== (month - 1)) {
+            weekEnd = new Date(year, month, 0);
+        }
+        
+        // Format Dates
+        const startStr = frappe.datetime.obj_to_str(currentWeekStart);
+        const endStr = frappe.datetime.obj_to_str(weekEnd);
+        const label = `Week ${weekNum}`;
+        const dateRange = `${currentWeekStart.getDate()} ${frappe.datetime.month_abbrs[month-1]} - ${weekEnd.getDate()} ${frappe.datetime.month_abbrs[month-1]}`;
+        
+        weekList.push({
+            id: `w-${weekNum}-${startStr}`,
+            label: label,
+            dateRange: dateRange,
+            start: startStr,
+            end: endStr
+        });
+        
+        // Next week starts after weekEnd
+        currentWeekStart = new Date(weekEnd);
+        currentWeekStart.setDate(currentWeekStart.getDate() + 1);
+        weekNum++;
+    }
+    
+    return weekList;
+});
+
+function getMonthlyCellEntries(week, unit) {
+    if (!week || !week.start || !week.end) return [];
+    
+    // Filter by Unit
+    let items = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
+    
+    // Filter by Date Range
+    items = items.filter(d => d.orderDate >= week.start && d.orderDate <= week.end);
+    
+    // Sort items within the cell using standard logic (or manual idx)
+    return sortItems(unit, items).map(d => ({
+        ...d,
+        type: 'order',
+        uniqueKey: d.itemName
+    }));
 }
 
 function toggleUnitPriority(unit) {
@@ -1195,18 +1405,54 @@ async function analyzePreviousFlow() {
   }
 }
 
+// View Scope Logic
+async function toggleViewScope() {
+  if (viewScope.value === 'daily') {
+      viewScope.value = 'monthly';
+      if (!filterMonth.value) {
+          filterMonth.value = frappe.datetime.get_today().substring(0, 7);
+      }
+  } else {
+      viewScope.value = 'daily';
+      if (!filterOrderDate.value) {
+          filterOrderDate.value = frappe.datetime.get_today();
+      }
+  }
+  await fetchData();
+}
+
 async function fetchData() {
-  if (!filterOrderDate.value) return;
+  let args = {};
+  
+  if (viewScope.value === 'monthly') {
+      if (!filterMonth.value) return;
+      const [year, month] = filterMonth.value.split("-");
+      const startDate = `${filterMonth.value}-01`;
+      // Get last day of month
+      const lastDay = new Date(year, month, 0).getDate();
+      const endDate = `${filterMonth.value}-${lastDay}`;
+      
+      args = { date: startDate, end_date: endDate };
+      
+  } else {
+      if (!filterOrderDate.value) return;
+      args = { date: filterOrderDate.value };
+  }
+
   try {
     const r = await frappe.call({
       method: "production_scheduler.api.get_color_chart_data",
-      args: { date: filterOrderDate.value },
+      args: args,
     });
+    
     // Ensure idx is integer
     rawData.value = (r.message || []).map(d => ({
         ...d,
-        idx: parseInt(d.idx || 0) || 9999
+        idx: parseInt(d.idx || 0) || 9999,
+        // Ensure date is parsed for monthly grouping
+        orderDate: d.ordered_date || ""
     }));
+    
     // Load Custom Color Order (Sync)
     try {
         const orderRes = await frappe.call("production_scheduler.api.get_color_order");
@@ -1230,10 +1476,11 @@ async function fetchData() {
 }
 
 // Watch date to re-analyze flow
-// Watch date to re-analyze flow
 watch(filterOrderDate, async () => {
-  await fetchData();
-  await analyzePreviousFlow(); 
+    if (viewScope.value === 'daily') {
+        await fetchData();
+        await analyzePreviousFlow(); 
+    }
 });
 
 // ---- AUTO ALLOCATION (BIN PACKING) ----
@@ -2246,7 +2493,7 @@ function updateRescueSelection(d) {
     overflow: hidden;
     padding: 16px;
     display: flex;
-    flex-direction: column;
+    flex-direction: column; 
 }
 
 .cc-matrix-scroll {
@@ -2327,5 +2574,122 @@ function updateRescueSelection(d) {
 }
 .draggable-handle:active {
     cursor: grabbing;
+}
+</style>
+
+<style scoped>
+/* ---- MONTHLY VIEW ---- */
+.cc-monthly-container {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: auto;
+    padding: 10px;
+    gap: 10px;
+}
+
+.cc-monthly-header {
+    display: flex;
+    min-width: 1000px;
+}
+
+.cc-monthly-corner {
+    min-width: 150px;
+    width: 150px;
+    padding: 10px;
+    font-weight: bold;
+    background: #f1f5f9;
+    border-right: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: sticky;
+    left: 0;
+    z-index: 10;
+}
+
+.cc-monthly-col-header {
+    flex: 1;
+    min-width: 250px;
+    padding: 10px;
+    text-align: center;
+    font-weight: bold;
+    border-top: 4px solid transparent;
+    background: white;
+    border-right: 1px solid #f1f5f9;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.cc-monthly-row {
+    display: flex;
+    border-bottom: 1px solid #e2e8f0;
+    min-height: 150px;
+    min-width: 1000px;
+}
+
+.cc-monthly-row-label {
+    min-width: 150px;
+    width: 150px;
+    padding: 10px;
+    background: #f8fafc;
+    border-right: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    position: sticky;
+    left: 0;
+    z-index: 5;
+}
+
+.cc-monthly-cell {
+    flex: 1;
+    min-width: 250px;
+    border-right: 1px solid #f1f5f9;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+}
+
+.cc-cell-header-tiny {
+    font-size: 10px;
+    font-weight: bold;
+    text-align: right;
+    color: #94a3b8;
+    margin-bottom: 4px;
+    padding-right: 4px;
+}
+
+.cc-cell-body {
+    flex: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 6px;
+    min-height: 80px;
+    background: #fafafa; /* Slight tint to show droppable area */
+    border-radius: 4px;
+    padding: 4px;
+}
+
+.cc-card-mini {
+    width: 100%; /* Full width in cell */
+    padding: 6px;
+    margin-bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    cursor: grab;
+}
+
+.cc-color-swatch-mini {
+    width: 12px;
+    height: 12px;
+    border-radius: 4px;
+    margin-right: 6px;
+    border: 1px solid rgba(0,0,0,0.1);
+    flex-shrink: 0;
 }
 </style>
