@@ -1119,11 +1119,7 @@ function toggleUnitGsm(unit) {
 }
 
 // ---- MONTHLY VIEW HELPERS ----
-function getMonthlyCellTotal(week, unit) {
-    const entries = getMonthlyCellEntries(week, unit);
-    const total = entries.reduce((sum, e) => sum + (parseFloat(e.qty) || 0), 0);
-    return (total / 1000).toFixed(2);
-}
+
 
 const weeks = computed(() => {
     if (viewScope.value !== 'monthly' || !filterMonth.value) return [];
