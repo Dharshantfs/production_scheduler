@@ -1104,23 +1104,31 @@ async function analyzePreviousFlow() {
             const config = getUnitSortConfig(unit);
 
             if (prevItems && prevItems.length > 0) {
-               // Sort by idx so we get the actual last item run yesterday
-               prevItems.sort((a, b) => (a.idx || 0) - (b.idx || 0));
-               const lastItem = prevItems[prevItems.length - 1];
+               // Sort yesterday's items the same way they would have been displayed
+               // (by their stored idx — the actual run order saved to DB)
+               const sorted = [...prevItems].sort((a, b) => (a.idx || 0) - (b.idx || 0));
+               const lastItem = sorted[sorted.length - 1];
                
-               // Color Sort Logic:
-               // Yesterday ended DARK (priority > 50)  → today start DARK → LIGHT ('desc')
-               // Yesterday ended LIGHT (priority ≤ 50) → today start LIGHT → DARK  ('asc')
+               // DARK/LIGHT threshold:
+               // Dark = priority >= 50 (Red, Maroon, Purple, Blue, Green, Grey, Brown, Black)
+               // Light = priority < 50 (White, Ivory, Yellow, Orange, Pink)
                const lastPri = getColorPriority(lastItem.color);
-               if (lastPri > 50) {
-                  config.color = 'desc'; // Ended Dark  → continue Dark→Light
+               
+               // Rule (as stated by user):
+               // Yesterday ended LIGHT (pri < 50)  → today start LIGHT → DARK ('asc')
+               // Yesterday ended DARK  (pri >= 50) → today start DARK  → LIGHT ('desc')
+               if (lastPri >= 50) {
+                  config.color = 'desc'; // Ended Dark  → today: Dark → Light
                } else {
-                  config.color = 'asc';  // Ended Light → continue Light→Dark
+                  config.color = 'asc';  // Ended Light → today: Light → Dark
                }
+               config.mode = 'auto';
+               config.priority = 'color';
+               
+               console.log(`Unit ${unit}: Yesterday last color="${lastItem.color}" (pri=${lastPri}) → today sort: ${config.color}`);
                
                // GSM Logic - Smart Gap Minimization
                const lastGsm = parseFloat(lastItem.gsm || 0);
-               // Get Today's Items for this unit to find min/max
                const todayItems = filteredData.value.filter(d => d.unit === unit);
                
                if (todayItems.length > 0) {
@@ -1128,17 +1136,17 @@ async function analyzePreviousFlow() {
                    const minGsm = Math.min(...gsms);
                    const maxGsm = Math.max(...gsms);
                    
-                   const gapAsc = Math.abs(lastGsm - minGsm);  // If Start Low
-                   const gapDesc = Math.abs(lastGsm - maxGsm); // If Start High
+                   const gapAsc = Math.abs(lastGsm - minGsm);  // Start Low
+                   const gapDesc = Math.abs(lastGsm - maxGsm); // Start High
                    
-                   // Choose direction with smaller gap
-                   if (gapDesc < gapAsc) {
-                       config.gsm = 'desc';
-                   } else {
-                       config.gsm = 'asc';
-                   }
-                   console.log(`Unit ${unit} Smart Sort: Last GSM ${lastGsm}. Today Min ${minGsm}, Max ${maxGsm}. Chose ${config.gsm}`);
+                   config.gsm = gapDesc < gapAsc ? 'desc' : 'asc';
+                   console.log(`Unit ${unit} GSM: Last=${lastGsm} Min=${minGsm} Max=${maxGsm} → ${config.gsm}`);
                }
+            } else {
+               // No data yesterday for this unit — default to Light→Dark
+               config.color = 'asc';
+               config.mode = 'auto';
+               config.priority = 'color';
             }
          });
         
