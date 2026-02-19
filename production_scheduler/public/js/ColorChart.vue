@@ -352,16 +352,16 @@ const COLOR_GROUPS = [
   { keywords: ["DARK BROWN"],            priority: 86, hex: "#5C4033" },
   { keywords: ["BROWN", "CHOCOLATE", "COFFEE"], priority: 86, hex: "#A52A2A" },
 
-  // ── 11. BEIGE (90-91) — mandatory transition before BLACK ────────
-  // In Light→Dark: BEIGE comes just before BLACK so the machine can
-  // transition from heavy dark colors before next cycle
-  { keywords: ["LIGHT BEIGE"],           priority: 90, hex: "#F5F5DC" },
-  { keywords: ["DARK BEIGE"],            priority: 91, hex: "#C2B280" }, // before BEIGE
-  { keywords: ["KHAKI", "SAND"],         priority: 91, hex: "#C2B280" },
-  { keywords: ["BEIGE"],                 priority: 90, hex: "#F5F5DC" },
+  // ── 11. BLACK (92) — heaviest dark color ───────────────────────
+  { keywords: ["BLACK"],                 priority: 92, hex: "#000000" },
 
-  // ── 12. BLACK (95) — always last in Light→Dark ──────────────────
-  { keywords: ["BLACK"],                 priority: 95, hex: "#000000" },
+  // ── 12. BEIGE (95-96) — mandatory AFTER BLACK ────────────────────
+  // Machine MUST run BEIGE after BLACK (and other heavy dark colors)
+  // to recover/transition before next cycle. BEIGE is the last step.
+  { keywords: ["LIGHT BEIGE"],           priority: 95, hex: "#F5F5DC" },
+  { keywords: ["DARK BEIGE"],            priority: 96, hex: "#C2B280" }, // before BEIGE
+  { keywords: ["KHAKI", "SAND"],         priority: 96, hex: "#C2B280" },
+  { keywords: ["BEIGE"],                 priority: 95, hex: "#F5F5DC" },
 ];
 
 const GAP_THRESHOLD = 0; // any color priority difference triggers mix roll
