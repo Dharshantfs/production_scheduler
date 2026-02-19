@@ -1157,7 +1157,8 @@ const weeks = computed(() => {
             const startStr = frappe.datetime.obj_to_str(currentWeekStart);
             const endStr = frappe.datetime.obj_to_str(weekEnd);
             const label = `Week ${weekNum}`;
-            const dateRange = `${currentWeekStart.getDate()} ${frappe.datetime.month_abbrs[month-1]} - ${weekEnd.getDate()} ${frappe.datetime.month_abbrs[month-1]}`;
+            const MONTH_ABBRS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            const dateRange = `${currentWeekStart.getDate()} ${MONTH_ABBRS[month-1]} - ${weekEnd.getDate()} ${MONTH_ABBRS[month-1]}`;
             
             weekList.push({
                 id: `w-${weekNum}-${startStr}`,
@@ -1412,7 +1413,7 @@ async function fetchData() {
       const lastDay = new Date(year, month, 0).getDate();
       const endDate = `${filterMonth.value}-${lastDay}`;
       
-      args = { date: startDate, end_date: endDate };
+      args = { start_date: startDate, end_date: endDate };
       
   } else {
       if (!filterOrderDate.value) return;
