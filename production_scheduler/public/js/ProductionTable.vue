@@ -162,11 +162,17 @@ function compareGsm(a, b, direction) {
 }
 
 function sortItems(unit, items) {
-  // Use same default sort as Production Board: Color ASC, GSM DESC
+  // Respect the database sequence (manual sort order) primarily
   return [...items].sort((a, b) => {
-    let diff = compareColor(a, b, 'asc');
+    // 1. Primary Sort: Database Index (User Manual Sort)
+    let diff = (a.idx || 0) - (b.idx || 0);
+
+    // 2. Secondary Sort: Color Logic (if idx is 0 or same)
+    if (diff === 0) diff = compareColor(a, b, 'asc');
+    
+    // 3. Tertiary Sort: GSM Descending
     if (diff === 0) diff = compareGsm(a, b, 'desc');
-    if (diff === 0) diff = (a.idx || 0) - (b.idx || 0);
+
     return diff;
   });
 }
