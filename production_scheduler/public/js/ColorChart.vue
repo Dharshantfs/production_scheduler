@@ -597,6 +597,13 @@ function getColorPriority(color) {
   return group ? group.priority : 50;
 }
 
+// Pure group priority — ALWAYS uses COLOR_GROUPS only, ignores customRowOrder.
+// Use this for Kanban light/dark sorting so Matrix drag order doesn't interfere.
+function getGroupPriority(color) {
+  const group = findColorGroup(color);
+  return group ? group.priority : 50;
+}
+
 function getHexColor(color) {
   const group = findColorGroup(color);
   return group ? group.hex : "#ccc";
@@ -651,8 +658,10 @@ function compareQuality(unit, a, b) {
 }
 
 function compareColor(a, b, direction) {
-    const pA = getColorPriority(a.color);
-    const pB = getColorPriority(b.color);
+    // Use getGroupPriority (not getColorPriority) so Matrix customRowOrder
+    // does NOT interfere with Kanban light/dark sorting
+    const pA = getGroupPriority(a.color);
+    const pB = getGroupPriority(b.color);
     return direction === 'asc' ? pA - pB : pB - pA;
 }
 
@@ -1112,7 +1121,9 @@ async function analyzePreviousFlow() {
                // DARK/LIGHT threshold:
                // Dark = priority >= 50 (Red, Maroon, Purple, Blue, Green, Grey, Brown, Black)
                // Light = priority < 50 (White, Ivory, Yellow, Orange, Pink)
-               const lastPri = getColorPriority(lastItem.color);
+               // Use getGroupPriority — NOT getColorPriority — so Matrix customRowOrder
+               // does not affect this decision
+               const lastPri = getGroupPriority(lastItem.color);
                
                // Rule (as stated by user):
                // Yesterday ended LIGHT (pri < 50)  → today start LIGHT → DARK ('asc')
