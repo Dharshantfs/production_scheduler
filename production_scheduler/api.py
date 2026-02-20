@@ -420,10 +420,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None):
 
 		for item in items:
 			unit = item.get("unit") or ""
-			color = item.get("color") or item.get("colour") or ""
-			if not color:
-				continue
-
+			# Allow items without color (for capacity accuracy)
+			color = item.get("color") or item.get("colour") or "NO COLOR"
+			
 			# For Matrix view calculation - we might need date if it's a range
 			order_date_str = str(sheet.ordered_date)
 

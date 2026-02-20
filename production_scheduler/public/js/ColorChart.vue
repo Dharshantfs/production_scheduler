@@ -193,57 +193,51 @@
           </div>
 
           <!-- Week Rows -->
-          <div v-for="week in weeks" :key="week.id" class="cc-monthly-row">
-              <div class="cc-monthly-row-label">
-                  <div class="font-bold text-gray-700">{{ week.label }}</div>
-                  <div class="text-xs text-gray-500">{{ week.dateRange }}</div>
-              </div>
+          <div v-for="week in weeks" :key="week.id" class="cc-monthly-row-group">
               
-              <div v-for="unit in visibleUnits" :key="unit" class="cc-monthly-cell" :data-week-id="week.id" :data-unit="unit" :data-week-start="week.start" :data-week-end="week.end">
-                  <div class="cc-cell-header-tiny">
-                      {{ getMonthlyCellTotal(week, unit) }}T
-                  </div>
+              <!-- Week Label Header (Optional, if we want to separate weeks) -->
+              <!-- <div class="cc-week-header">{{ week.label }} ({{ week.dateRange }})</div> -->
+
+              <!-- Iterate Days in Week -->
+              <div v-for="day in getDaysInWeek(week)" :key="day.date" class="cc-matrix-row" style="display:flex; border-bottom:1px solid #e5e7eb;">
                   
-                  <div class="cc-cell-body" ref="monthlyCellRefs" :data-unit="unit" :data-week-start="week.start" :data-week-end="week.end">
-                      <!-- Iterating Days within Week -->
-                      <div v-for="day in getMonthlyCellDays(week, unit)" :key="day.date" class="cc-day-group" style="margin-bottom:4px;">
-                          <!-- Day Header -->
-                          <div class="cc-day-header" style="font-size:10px; font-weight:bold; background:#f3f4f6; padding:2px 4px; border-radius:2px; margin-bottom:2px; color:#374151; border:1px solid #e5e7eb;">
-                              {{ day.label }}
-                          </div>
-                          
-                          <!-- Items for Day -->
-                          <div 
-                              v-for="entry in day.items" 
-                              :key="entry.uniqueKey"
-                              class="cc-card cc-card-mini"
-                              :data-name="entry.name"
-                              :data-item-name="entry.itemName"
-                              :data-color="entry.color"
-                              :data-planning-sheet="entry.planningSheet"
-                              :data-unit="unit"
-                              :data-week-start="week.start"
-                              :data-week-end="week.end"
-                              @click="openForm(entry.planningSheet)"
-                          >
-                              <div class="cc-card-left">
-                                  <div class="cc-color-swatch-mini" :style="{ backgroundColor: getHexColor(entry.color) }">
-                                      <!-- Optional: Show Mix indicator if mix -->
-                                  </div>
-                                  <div class="cc-card-info" style="display:flex; flex-direction:column; justify-content:center;">
-                                      <div class="cc-card-color-name text-xs truncate font-bold" style="line-height:1.2;">{{ entry.color }}</div>
-                                      <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-                                          <div style="display:flex; flex-direction:column; max-width:65%;">
-                                              <div class="text-[10px] text-gray-800 truncate" style="line-height:1.1;" :title="entry.customer">
-                                                  <b>{{ entry.partyCode || entry.customer }}</b>
-                                              </div>
-                                              <div class="text-[9px] text-gray-500 truncate" style="line-height:1.1;">
-                                                  {{ entry.quality }}
-                                              </div>
+                  <!-- Date Column (Fixed Width) -->
+                  <div class="cc-matrix-date-col" style="width:120px; flex-shrink:0; padding:8px; background:#f9fafb; border-right:1px solid #e5e7eb; font-weight:bold; color:#374151; font-size:12px;">
+                      {{ day.label }}
+                      <div class="text-[10px] text-gray-500 font-normal mt-1">{{ week.label }}</div>
+                  </div>
+
+                  <!-- Unit Columns -->
+                  <div v-for="unit in visibleUnits" :key="unit" class="cc-matrix-cell" :data-date="day.date" :data-unit="unit" :style="{ flex:1, borderRight:'1px solid #e5e7eb', padding:'4px', minHeight:'60px' }">
+                      
+                      <!-- Items for this Day/Unit -->
+                      <div 
+                          v-for="entry in getItemsForDay(day.date, unit)" 
+                          :key="entry.uniqueKey"
+                          class="cc-card cc-card-mini"
+                          :data-name="entry.name"
+                          :data-item-name="entry.itemName"
+                          :data-color="entry.color"
+                          :data-planning-sheet="entry.planningSheet"
+                          :data-unit="unit"
+                          :data-date="day.date"
+                          @click="openForm(entry.planningSheet)"
+                      >
+                          <div class="cc-card-left">
+                              <div class="cc-color-swatch-mini" :style="{ backgroundColor: getHexColor(entry.color) }"></div>
+                              <div class="cc-card-info" style="display:flex; flex-direction:column; justify-content:center;">
+                                  <div class="cc-card-color-name text-xs truncate font-bold" style="line-height:1.2;">{{ entry.color }}</div>
+                                  <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                                      <div style="display:flex; flex-direction:column; max-width:65%;">
+                                          <div class="text-[10px] text-gray-800 truncate" style="line-height:1.1;" :title="entry.customer">
+                                              <b>{{ entry.partyCode || entry.customer }}</b>
                                           </div>
-                                          <div class="text-[10px] font-bold text-gray-700" style="white-space:nowrap;">
-                                              {{ formatWeight(entry.qty / 1000) }}
+                                          <div class="text-[9px] text-gray-500 truncate" style="line-height:1.1;">
+                                              {{ entry.quality }}
                                           </div>
+                                      </div>
+                                      <div class="text-[10px] font-bold text-gray-700" style="white-space:nowrap;">
+                                          {{ formatWeight(entry.qty / 1000) }}
                                       </div>
                                   </div>
                               </div>
@@ -364,6 +358,12 @@ const COLOR_GROUPS = [
   { keywords: ["BLACK MIX"],  priority: 199, hex: "#404040" },
   { keywords: ["COLOR MIX"],  priority: 199, hex: "#c0c0c0" },
   { keywords: ["BEIGE MIX"],  priority: 199, hex: "#e0d5c0" },
+  
+  // ── NO COLOR (Handling Unassigned/Empty Colors) ─────────────────
+  // High priority to push to end, or 0 to push to start? 
+  // User didn't specify sort order for these, let's put them at END (999) 
+  // so they don't interrupt the refined flow.
+  { keywords: ["NO COLOR"], priority: 999, hex: "#e5e7eb" }, // Grey-200
 
   // ── WHITES (priority 5 — excluded by filter anyway) ─────────────
   // IMPORTANT: multi-word phrases FIRST so "BRIGHT WHITE" matches here, not "WHITE"
@@ -1393,6 +1393,79 @@ function getMonthlyCellEntries(week, unit) {
         }));
     } catch (e) {
         console.error("Error getting monthly entries:", e);
+        return [];
+    }
+}
+
+// --- MATRIX LAYOUT HELPERS ---
+function getDaysInWeek(week) {
+    if (!filterMonth.value || !week) return [];
+    
+    try {
+        let year, month;
+        if (filterMonth.value.includes('-')) {
+             [year, month] = filterMonth.value.split('-').map(Number);
+        } else { return []; }
+
+        const days = [];
+        
+        for (let d = week.start; d <= week.end; d++) {
+             // Create date string manually: YYYY-MM-DD
+             const yyyy = year;
+             const mm = String(month).padStart(2, '0');
+             const dd = String(d).padStart(2, '0');
+             const dateStr = `${yyyy}-${mm}-${dd}`;
+             
+             // Label: "22 Feb"
+             const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+             const label = `${d} ${monthNames[month-1]}`;
+             
+             days.push({
+                 date: dateStr,
+                 label: label,
+                 dayNum: d
+             });
+        }
+        return days;
+    } catch (e) {
+        console.error("Error generating days:", e);
+        return [];
+    }
+}
+
+function getItemsForDay(dateStr, unit) {
+    if (!filteredData.value) return [];
+    
+    try {
+       // Filter by Unit and Exact Date
+       // Handle "Mixed" unit as well
+       let dayItems = filteredData.value.filter(d => 
+           (d.unit || "Mixed") === unit && 
+           d.orderDate === dateStr
+       );
+       
+       // Sort (Light -> Dark) Matches Daily-Ascending Logic
+       const config = getUnitSortConfig(unit);
+       dayItems.sort((a, b) => {
+              let diff = 0;
+              if (config.priority === 'color') {
+                  diff = compareColor(a, b, 'asc');
+                  if (diff === 0) diff = compareGsm(a, b, 'asc');
+              } else {
+                  diff = compareGsm(a, b, 'asc');
+                  if (diff === 0) diff = compareColor(a, b, 'asc');
+              }
+              if (diff === 0) diff = (a.idx || 0) - (b.idx || 0);
+              return diff;
+       });
+       
+       return dayItems.map(d => ({
+           ...d,
+           type: 'order',
+           uniqueKey: d.itemName
+       }));
+    } catch (e) {
+        console.error("Error fetching items for day:", e);
         return [];
     }
 }
