@@ -253,6 +253,7 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 			new_sheet.dod = target_date
 			new_sheet.party_code = source_parent.party_code
 			new_sheet.customer = source_parent.customer
+			new_sheet.sales_order = source_parent.sales_order
 			if target_plan:
 				new_sheet.custom_plan_name = target_plan
 			new_sheet.save(ignore_permissions=True)
@@ -802,6 +803,7 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
             target_sheet.ordered_date = target_date
             target_sheet.party_code = parent_doc.party_code
             target_sheet.customer = parent_doc.customer
+            target_sheet.sales_order = parent_doc.sales_order
             if target_plan:
                 target_sheet.custom_plan_name = target_plan
             target_sheet.save()
