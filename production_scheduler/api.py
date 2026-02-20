@@ -134,7 +134,7 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 		))
 
 	item_wt_tons = flt(item.qty) / 1000.0
-	quality = item.custom_quality or item.quality or ""
+	quality = item.custom_quality or ""
 	
 	# 3. Check Capacity of Target Slot
 	current_load = get_unit_load(target_date, unit)
@@ -670,7 +670,7 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
             # HEAL UNASSIGNED: If unit is missing OR "Unassigned"/"Mixed", auto-assign based on Quality
             if not new_unit or new_unit in ["Unassigned", "Mixed"]:
                 # Use item quality to find best unit
-                qual = item_doc.custom_quality or item_doc.quality
+                qual = item_doc.custom_quality or ""
                 new_unit = get_preferred_unit(qual)
             
             # Use SQL for direct re-parenting (Robust for rescue)
@@ -775,8 +775,6 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
             i.name, i.item_code, i.item_name, i.qty, i.unit, i.color, 
             i.gsm, i.custom_quality as quality, i.width_inch, i.idx,
             p.name as planning_sheet, p.party_code, p.customer, p.dod, p.planning_status, p.creation,
-            i.gsm, i.custom_quality as quality, i.width_inch, i.idx,
-            p.name as planning_sheet, p.party_code, p.customer, p.dod, p.planning_status, p.creation,
             so.transaction_date as so_date, so.custom_production_status, so.delivery_status
         FROM
             `tabPlanning Sheet Item` i
@@ -846,10 +844,12 @@ def create_planning_sheet_from_so(doc):
             preferred_date = doc.delivery_date or frappe.utils.nowdate()
             ps.dod = doc.delivery_date
             
-            # Assign Party Code
+            # Assign Party Code (Use doc.party_code if available, else Customer)
+            # User wants "need partycode kgs quality" - ensuring party_code
             if hasattr(doc, 'party_code') and doc.party_code:
                 ps.party_code = doc.party_code
             else:
+                ps.party_code = doc.customer
                 ps.party_code = doc.customer
             ps.planning_status = "Draft"
 
