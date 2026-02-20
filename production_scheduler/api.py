@@ -532,7 +532,7 @@ def create_plan_name_field():
 			"fieldtype": "Data",
 			"insert_after": "planning_status"
 		})
-		custom_field.insert()
+		custom_field.insert(ignore_permissions=True)
 	return {"status": "success"}
 
 @frappe.whitelist()

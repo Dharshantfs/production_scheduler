@@ -2110,7 +2110,7 @@ watch(viewMode, async () => {
     initSortable();
 });
 
-onMounted(() => {
+onMounted(async () => {
   // 1. Read URL Params
   const params = new URLSearchParams(window.location.search);
   const dateParam = params.get('date');
@@ -2133,11 +2133,15 @@ onMounted(() => {
   
   if (params.get('plan')) selectedPlan.value = params.get('plan');
   
-  // Create Plan Name custom field if not exist (fire and forget)
-  frappe.call("production_scheduler.api.create_plan_name_field").catch(e => console.log(e));
+  // Create Plan Name custom field if not exist (Must be awaited before fetching data to prevent MySQL error)
+  try {
+      await frappe.call("production_scheduler.api.create_plan_name_field");
+  } catch (e) {
+      console.log(e);
+  }
   
   // 2. Fetch Data
-  fetchData();
+  await fetchData();
   analyzePreviousFlow();
 });
 
