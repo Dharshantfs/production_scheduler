@@ -663,7 +663,13 @@ const filteredData = computed(() => {
       if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return true;
       
       // Remove Excluded Whites
-      return !EXCLUDED_WHITES.some(ex => colorUpper.includes(ex));
+      if (EXCLUDED_WHITES.some(ex => colorUpper.includes(ex))) return false;
+
+      // Hide "NO COLOR" items visually (User request: "dont show here")
+      // They remain in rawData so capacity calculation remains accurate.
+      if (colorUpper === "NO COLOR") return false;
+
+      return true;
   });
 
   if (filterPartyCode.value) {
@@ -1195,6 +1201,8 @@ const weeks = computed(() => {
                 id: `w-${idx+1}-${startStr}`,
                 label: `Week ${idx+1}`,
                 dateRange: `${range.start} ${monthAbbr} - ${effectiveEnd} ${monthAbbr}`,
+                startDay: range.start,
+                endDay: effectiveEnd,
                 start: startStr,
                 end: endStr
             });
@@ -1409,7 +1417,7 @@ function getDaysInWeek(week) {
 
         const days = [];
         
-        for (let d = week.start; d <= week.end; d++) {
+        for (let d = week.startDay; d <= week.endDay; d++) {
              // Create date string manually: YYYY-MM-DD
              const yyyy = year;
              const mm = String(month).padStart(2, '0');
@@ -1531,7 +1539,7 @@ function getUnitEntries(unit) {
 function getUnitProductionTotal(unit) {
   return rawData.value
     .filter((d) => (d.unit || "Mixed") === unit)
-    .reduce((sum, d) => sum + (parseFloat(d.actual_qty) || 0), 0) / 1000;
+    .reduce((sum, d) => sum + (parseFloat(d.qty) || 0), 0) / 1000;
 }
 
 function formatWeight(tonnage) {
