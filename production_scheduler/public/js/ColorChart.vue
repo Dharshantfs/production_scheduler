@@ -219,12 +219,24 @@
                           @click="openForm(entry.planningSheet)"
                       >
                           <div class="cc-card-left">
-                              <div class="cc-color-swatch-mini" :style="{ backgroundColor: getHexColor(entry.color) }"></div>
-                              <div class="cc-card-info">
-                                  <div class="cc-card-color-name text-xs truncate font-bold">{{ entry.color }}</div>
-                                  <div class="text-[10px] text-gray-600 truncate" :title="entry.customer">{{ entry.partyCode || entry.customer }}</div>
-                                  <div class="text-[9px] text-gray-500 truncate">{{ entry.quality }}</div>
-                                  <div class="text-[9px] text-gray-500 font-medium">{{ (entry.qty / 1000).toFixed(3) }}T</div>
+                              <div class="cc-color-swatch-mini" :style="{ backgroundColor: getHexColor(entry.color) }">
+                                  <!-- Optional: Show Mix indicator if mix -->
+                              </div>
+                              <div class="cc-card-info" style="display:flex; flex-direction:column; justify-content:center;">
+                                  <div class="cc-card-color-name text-xs truncate font-bold" style="line-height:1.2;">{{ entry.color }}</div>
+                                  <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                                      <div style="display:flex; flex-direction:column; max-width:65%;">
+                                          <div class="text-[10px] text-gray-800 truncate" style="line-height:1.1;" :title="entry.customer">
+                                              <b>{{ entry.partyCode || entry.customer }}</b>
+                                          </div>
+                                          <div class="text-[9px] text-gray-500 truncate" style="line-height:1.1;">
+                                              {{ entry.quality }}
+                                          </div>
+                                      </div>
+                                      <div class="text-[10px] font-bold text-gray-700" style="white-space:nowrap;">
+                                          {{ formatWeight(entry.qty / 1000) }}
+                                      </div>
+                                  </div>
                               </div>
                           </div>
                       </div>
@@ -1339,6 +1351,22 @@ function getUnitProductionTotal(unit) {
   return rawData.value
     .filter((d) => (d.unit || "Mixed") === unit)
     .reduce((sum, d) => sum + (parseFloat(d.actual_qty) || 0), 0) / 1000;
+}
+
+function formatWeight(tonnage) {
+  // Input is in Tons
+  if (tonnage >= 1) {
+      // If integer (e.g. 10.00), return "10 T"
+      if (Number.isInteger(tonnage)) return tonnage.toFixed(0) + " T";
+      // Else return with decimals, e.g. "1.23 T" or "1.20 T"
+      // User said "remove 2 digit make it whole" for 10.00 -> 10T
+      // Let's use clean logic:
+      return parseFloat(tonnage.toFixed(3)) + " T"; 
+  } else {
+      // Less than 1 Ton -> Show Kg
+      // 0.469 T -> 469 Kg
+      return (tonnage * 1000).toFixed(0) + " Kg";
+  }
 }
 
 function getMixRollCount(unit) {
