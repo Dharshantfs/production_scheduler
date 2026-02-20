@@ -377,65 +377,65 @@ def get_kanban_board(start_date, end_date):
 
 @frappe.whitelist()
 def get_color_chart_data(date=None, start_date=None, end_date=None):
-    # Support both single date and range
-    if start_date and end_date:
-        query_start = getdate(start_date)
-        query_end = getdate(end_date)
-        date_filter = ["between", [query_start, query_end]]
-    elif date:
-        target_date = getdate(date)
-        date_filter = target_date
-    else:
-        return []
+	# Support both single date and range
+	if start_date and end_date:
+		query_start = getdate(start_date)
+		query_end = getdate(end_date)
+		date_filter = ["between", [query_start, query_end]]
+	elif date:
+		target_date = getdate(date)
+		date_filter = target_date
+	else:
+		return []
 
-    # Get all planning sheets for this date range
-    filters = {
-        "ordered_date": date_filter,
-        "docstatus": ["<", 2]
-    }
-    
-    planning_sheets = frappe.get_all(
-        "Planning sheet",
-        filters=filters,
-        fields=["name", "customer", "party_code", "dod", "ordered_date", "planning_status", "docstatus", "sales_order"],
-        order_by="ordered_date asc, creation asc"
-    )
+	# Get all planning sheets for this date range
+	filters = {
+		"ordered_date": date_filter,
+		"docstatus": ["<", 2]
+	}
+	
+	planning_sheets = frappe.get_all(
+		"Planning sheet",
+		filters=filters,
+		fields=["name", "customer", "party_code", "dod", "ordered_date", "planning_status", "docstatus", "sales_order"],
+		order_by="ordered_date asc, creation asc"
+	)
 
-    # Fetch delivery statuses for referenced Sales Orders
-    so_names = [d.sales_order for d in planning_sheets if d.sales_order]
-    so_status_map = {}
-    if so_names:
-        sos = frappe.get_all("Sales Order", filters={"name": ["in", so_names]}, fields=["name", "delivery_status"])
-        for s in sos:
-            so_status_map[s.name] = s.delivery_status
+	# Fetch delivery statuses for referenced Sales Orders
+	so_names = [d.sales_order for d in planning_sheets if d.sales_order]
+	so_status_map = {}
+	if so_names:
+		sos = frappe.get_all("Sales Order", filters={"name": ["in", so_names]}, fields=["name", "delivery_status"])
+		for s in sos:
+			so_status_map[s.name] = s.delivery_status
 
-    data = []
-    for sheet in planning_sheets:
-        items = frappe.get_all(
-            "Planning Sheet Item",
-            filters={"parent": sheet.name},
-            fields=["*"],
-            order_by="idx"
-        )
+	data = []
+	for sheet in planning_sheets:
+		items = frappe.get_all(
+			"Planning Sheet Item",
+			filters={"parent": sheet.name},
+			fields=["*"],
+			order_by="idx"
+		)
 
-        for item in items:
-            unit = item.get("unit") or ""
-            color = item.get("color") or item.get("colour") or ""
-            if not color:
-                continue
+		for item in items:
+			unit = item.get("unit") or ""
+			color = item.get("color") or item.get("colour") or ""
+			if not color:
+				continue
 
-            # For Matrix view calculation - we might need date if it's a range
-            order_date_str = str(sheet.ordered_date)
+			# For Matrix view calculation - we might need date if it's a range
+			order_date_str = str(sheet.ordered_date)
 
-            data.append({
-                "name": "{}-{}".format(sheet.name, item.get("idx", 0)),
-                "itemName": item.name,
-                "planningSheet": sheet.name,
-                "customer": sheet.customer,
-                "partyCode": sheet.party_code,
-                "planningStatus": sheet.planning_status or "Draft",
-                "docstatus": sheet.docstatus,
-                "orderDate": order_date_str, # Add this for Monthly View filtering!
+			data.append({
+				"name": "{}-{}".format(sheet.name, item.get("idx", 0)),
+				"itemName": item.name,
+				"planningSheet": sheet.name,
+				"customer": sheet.customer,
+				"partyCode": sheet.party_code,
+				"planningStatus": sheet.planning_status or "Draft",
+				"docstatus": sheet.docstatus,
+				"orderDate": order_date_str, # Add this for Monthly View filtering!
 				"color": color.upper().strip(),
 				"quality": item.get("custom_quality") or item.get("quality") or "",
 				"gsm": item.get("gsm") or "",
