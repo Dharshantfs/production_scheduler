@@ -1830,11 +1830,45 @@ function createNewPlan() {
         fieldname: 'plan_name',
         fieldtype: 'Data',
         reqd: 1
-    }, (values) => {
+    }, async (values) => {
         if (!plans.value.includes(values.plan_name)) {
             plans.value.push(values.plan_name);
         }
-        selectedPlan.value = values.plan_name;
+        
+        const oldPlan = selectedPlan.value;
+        const newPlan = values.plan_name;
+        
+        let dateToCopy = null;
+        if (viewScope.value === 'daily') {
+            dateToCopy = filterOrderDate.value;
+        } else {
+            dateToCopy = `${filterMonth.value}-01`;
+        }
+        
+        // Wait for copy operation
+        frappe.show_alert({ message: `Creating Plan '${newPlan}' and checking for unset orders...`, indicator: 'blue' });
+        
+        try {
+            const r = await frappe.call({
+                method: "production_scheduler.api.duplicate_unprocessed_orders_to_plan",
+                args: {
+                    date: dateToCopy,
+                    old_plan: oldPlan,
+                    new_plan: newPlan
+                }
+            });
+            
+            if (r.message && r.message.copied_count > 0) {
+                 frappe.show_alert({ message: `Copied ${r.message.copied_count} unprocessed items to '${newPlan}'`, indicator: 'green' });
+            } else {
+                 frappe.show_alert({ message: `Created '${newPlan}' (No draft orders to copy)`, indicator: 'green' });
+            }
+        } catch (e) {
+            console.error("Failed to copy orders", e);
+            frappe.msgprint("Error while duplicating previous plan orders.");
+        }
+        
+        selectedPlan.value = newPlan;
         fetchData();
     }, 'Create New Plan Tab', 'Create');
 }

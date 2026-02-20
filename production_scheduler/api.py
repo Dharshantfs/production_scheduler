@@ -590,9 +590,62 @@ def split_order(item_name, split_qty, target_unit):
 	}
 
 @frappe.whitelist()
-
-
-@frappe.whitelist()
+def duplicate_unprocessed_orders_to_plan(date, old_plan, new_plan):
+	"""
+	Copies Planning Sheets and their Items from `old_plan` to `new_plan` on a specific date,
+	BUT ONLY IF the referenced Sales Order has NOT been processed into a Production Plan / Work Order.
+	"""
+	target_date = getdate(date)
+	
+	# Handle "Default" naming convention
+	old_plan_val = None if old_plan == "Default" else old_plan
+	new_plan_val = None if new_plan == "Default" else new_plan
+	
+	# Find all Planning Sheets on this date for the old plan
+	filters = {
+		"ordered_date": target_date,
+		"docstatus": ["<", 2]
+	}
+	if old_plan_val:
+		filters["custom_plan_name"] = old_plan_val
+	else:
+		filters["custom_plan_name"] = ["in", ["", None, "Default"]]
+		
+	old_sheets = frappe.get_all("Planning sheet", filters=filters, fields=["name", "sales_order"])
+	
+	copied_count = 0
+	
+	for sheet in old_sheets:
+		# Check if this Sales Order is already in a Production Plan
+		has_pp = False
+		if sheet.sales_order:
+			# Check Production Plan Sales Order child table
+			pp_exists = frappe.db.sql("""
+				SELECT parent FROM `tabProduction Plan Sales Order`
+				WHERE sales_order = %s AND docstatus < 2
+			""", (sheet.sales_order,))
+			
+			if pp_exists:
+				has_pp = True
+				
+		# If it has a Production Plan (and thus effectively a Work Order), SKIP copying to the new plan.
+		# The user said: "check the planning sheet goes to pp and that pp go to wo means no need to bring"
+		if has_pp:
+			continue
+			
+		# It DOES NOT have a PP. We must copy it.
+		old_doc = frappe.get_doc("Planning sheet", sheet.name)
+		
+		# Create new sheet
+		new_sheet = frappe.copy_doc(old_doc)
+		new_sheet.custom_plan_name = new_plan_val
+		
+		# Reset workflow/status fields if necessary
+		new_sheet.planning_status = "Draft"
+		new_sheet.insert(ignore_permissions=True)
+		copied_count += len(new_sheet.items)
+		
+	return {"status": "success", "copied_count": copied_count}
 def get_orders_for_date(date):
     """
     Fetch all Planning Sheet Items for a specific date that are NOT Cancelled/Completed (optional filter).
