@@ -182,9 +182,7 @@
               <div v-for="unit in visibleUnits" :key="unit" class="cc-monthly-col-header" :style="{ borderTopColor: headerColors[unit] }">
                   <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
                       <span>{{ unit }}</span>
-                      <button class="cc-mini-btn" @click="showSortInfo(unit)" title="Show Sorting & Mixing Rules" style="padding:1px 4px; font-size:10px;">
-                        ℹ️
-                      </button>
+                      <!-- Removed Info Button -->
                   </div>
                   <span class="text-xs text-gray-500 block font-normal">
                       {{ getUnitProductionTotal(unit).toFixed(2) }}T
@@ -201,8 +199,8 @@
               <!-- Iterate Days in Week -->
               <div v-for="day in getDaysInWeek(week)" :key="day.date" class="cc-matrix-row" style="display:flex; border-bottom:1px solid #e5e7eb;">
                   
-                  <!-- Date Column (Fixed Width) -->
-                  <div class="cc-matrix-date-col" style="width:120px; flex-shrink:0; padding:8px; background:#f9fafb; border-right:1px solid #e5e7eb; font-weight:bold; color:#374151; font-size:12px;">
+                  <!-- Date Column (Fixed Width & Centered) -->
+                  <div class="cc-matrix-date-col" style="width:120px; flex-shrink:0; padding:8px; background:#f9fafb; border-right:1px solid #e5e7eb; font-weight:bold; color:#374151; font-size:12px; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;">
                       {{ day.label }}
                       <div class="text-[10px] text-gray-500 font-normal mt-1">{{ week.label }}</div>
                   </div>
@@ -223,9 +221,9 @@
                           :data-date="day.date"
                           @click="openForm(entry.planningSheet)"
                       >
-                          <div class="cc-card-left">
+                          <div class="cc-card-left" style="width: 100%;">
                               <div class="cc-color-swatch-mini" :style="{ backgroundColor: getHexColor(entry.color) }"></div>
-                              <div class="cc-card-info" style="display:flex; flex-direction:column; justify-content:center;">
+                              <div class="cc-card-info" style="display:flex; flex-direction:column; justify-content:center; width: 100%;">
                                   <div class="cc-card-color-name text-xs truncate font-bold" style="line-height:1.2;">{{ entry.color }}</div>
                                   <div style="display:flex; justify-content:space-between; align-items:flex-end;">
                                       <div style="display:flex; flex-direction:column; max-width:65%;">
@@ -970,6 +968,8 @@ async function initSortable() {
          const monthlySortable = new Sortable(cellEl, {
              group: "monthly-kanban",
              animation: 150,
+             forceFallback: true, /* Prevents flickering with native HTML5 drag */
+             fallbackClass: "cc-ghost",
              ghostClass: "cc-ghost",
              onEnd: async (evt) => {
                 const { item, to, newIndex } = evt;
@@ -1452,16 +1452,16 @@ function getItemsForDay(dateStr, unit) {
            d.orderDate === dateStr
        );
        
-       // Sort (Light -> Dark) Matches Daily-Ascending Logic
+       // Sort matches User's Dynamic Choice
        const config = getUnitSortConfig(unit);
        dayItems.sort((a, b) => {
               let diff = 0;
               if (config.priority === 'color') {
-                  diff = compareColor(a, b, 'asc');
-                  if (diff === 0) diff = compareGsm(a, b, 'asc');
+                  diff = compareColor(a, b, config.color);
+                  if (diff === 0) diff = compareGsm(a, b, config.gsm);
               } else {
-                  diff = compareGsm(a, b, 'asc');
-                  if (diff === 0) diff = compareColor(a, b, 'asc');
+                  diff = compareGsm(a, b, config.gsm);
+                  if (diff === 0) diff = compareColor(a, b, config.color);
               }
               if (diff === 0) diff = (a.idx || 0) - (b.idx || 0);
               return diff;
@@ -2936,7 +2936,7 @@ function updateRescueSelection(d) {
 
 .cc-card-mini {
     width: 100%; /* Full width in cell */
-    padding: 6px;
+    padding: 4px 6px; /* Reduced vertical padding for compact view */
     margin-bottom: 0;
     display: flex;
     align-items: center;
