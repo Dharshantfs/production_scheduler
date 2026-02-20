@@ -161,8 +161,10 @@
                         <span style="font-weight:700; color:#111827;">{{ entry.partyCode }}</span>
                         <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> · {{ entry.customer }}</span>
                     </div>
-                    <div class="cc-card-details">
+                    <div class="cc-card-details" style="display:flex; align-items:center;">
                         {{ entry.quality }} · {{ entry.gsm }} GSM
+                        <span v-if="entry.has_wo" style="font-size:9px; padding:1px 4px; background:#dcfce7; color:#166534; border-radius:3px; margin-left:4px; font-weight:bold; border:1px solid #bbf7d0;" title="Work Order Created">WO</span>
+                        <span v-else-if="entry.has_pp" style="font-size:9px; padding:1px 4px; background:#dbeafe; color:#1e40af; border-radius:3px; margin-left:4px; font-weight:bold; border:1px solid #bfdbfe;" title="Production Plan Created">PP</span>
                     </div>
                     </div>
                 </div>
@@ -244,8 +246,10 @@
                                           <div class="text-[10px] text-gray-800 truncate" style="line-height:1.1;" :title="entry.customer">
                                               <b>{{ entry.partyCode || entry.customer }}</b>
                                           </div>
-                                          <div class="text-[9px] text-gray-500 truncate" style="line-height:1.1;">
-                                              {{ entry.quality }}
+                                          <div class="text-[9px] text-gray-500 truncate" style="line-height:1.1; display:flex; align-items:center; gap:3px;">
+                                              <span>{{ entry.quality }}</span>
+                                              <span v-if="entry.has_wo" style="font-size:8px; padding:0px 3px; background:#dcfce7; color:#166534; border-radius:2px; font-weight:bold;" title="Work Order Created">WO</span>
+                                              <span v-else-if="entry.has_pp" style="font-size:8px; padding:0px 3px; background:#dbeafe; color:#1e40af; border-radius:2px; font-weight:bold;" title="Production Plan Created">PP</span>
                                           </div>
                                       </div>
                                       <div class="text-[10px] font-bold text-gray-700" style="white-space:nowrap;">
@@ -1838,11 +1842,14 @@ function createNewPlan() {
         const oldPlan = selectedPlan.value;
         const newPlan = values.plan_name;
         
-        let dateToCopy = null;
+        let copyArgs = { old_plan: oldPlan, new_plan: newPlan };
         if (viewScope.value === 'daily') {
-            dateToCopy = filterOrderDate.value;
+            copyArgs.date = filterOrderDate.value;
         } else {
-            dateToCopy = `${filterMonth.value}-01`;
+            const [year, month] = filterMonth.value.split("-");
+            const lastDay = new Date(year, month, 0).getDate();
+            copyArgs.start_date = `${year}-${month}-01`;
+            copyArgs.end_date = `${year}-${month}-${lastDay}`;
         }
         
         // Wait for copy operation
@@ -1851,11 +1858,7 @@ function createNewPlan() {
         try {
             const r = await frappe.call({
                 method: "production_scheduler.api.duplicate_unprocessed_orders_to_plan",
-                args: {
-                    date: dateToCopy,
-                    old_plan: oldPlan,
-                    new_plan: newPlan
-                }
+                args: copyArgs
             });
             
             if (r.message && r.message.copied_count > 0) {

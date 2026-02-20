@@ -421,10 +421,33 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	# Fetch delivery statuses for referenced Sales Orders
 	so_names = [d.sales_order for d in planning_sheets if d.sales_order]
 	so_status_map = {}
+	so_pp_map = {}
+	so_wo_map = {}
+	
 	if so_names:
 		sos = frappe.get_all("Sales Order", filters={"name": ["in", so_names]}, fields=["name", "delivery_status"])
 		for s in sos:
 			so_status_map[s.name] = s.delivery_status
+			
+		format_string = ','.join(['%s'] * len(so_names))
+		
+		# Check Production Plan
+		pp_data = frappe.db.sql(f"""
+			SELECT sales_order, parent 
+			FROM `tabProduction Plan Sales Order` 
+			WHERE sales_order IN ({format_string}) AND docstatus < 2
+		""", tuple(so_names), as_dict=True)
+		for row in pp_data:
+			so_pp_map[row.sales_order] = row.parent
+			
+		# Check Work Order
+		wo_data = frappe.db.sql(f"""
+			SELECT sales_order, name 
+			FROM `tabWork Order` 
+			WHERE sales_order IN ({format_string}) AND docstatus < 2
+		""", tuple(so_names), as_dict=True)
+		for row in wo_data:
+			so_wo_map[row.sales_order] = row.name
 
 	data = []
 	for sheet in planning_sheets:
@@ -462,7 +485,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				"planName": sheet.get("custom_plan_name") or "Default",
 				"ordered_date": str(sheet.ordered_date) if sheet.ordered_date else "",
 				"dod": str(sheet.dod) if sheet.dod else "",
-				"delivery_status": so_status_map.get(sheet.sales_order) or "Not Delivered"
+				"delivery_status": so_status_map.get(sheet.sales_order) or "Not Delivered",
+				"has_pp": bool(sheet.sales_order and sheet.sales_order in so_pp_map),
+				"has_wo": bool(sheet.sales_order and sheet.sales_order in so_wo_map)
 			})
 
 	return data
@@ -590,12 +615,19 @@ def split_order(item_name, split_qty, target_unit):
 	}
 
 @frappe.whitelist()
-def duplicate_unprocessed_orders_to_plan(date, old_plan, new_plan):
+def duplicate_unprocessed_orders_to_plan(old_plan, new_plan, date=None, start_date=None, end_date=None):
 	"""
-	Copies Planning Sheets and their Items from `old_plan` to `new_plan` on a specific date,
+	Copies Planning Sheets and their Items from `old_plan` to `new_plan` on a specific date or date range.
 	BUT ONLY IF the referenced Sales Order has NOT been processed into a Production Plan / Work Order.
 	"""
-	target_date = getdate(date)
+	if start_date and end_date:
+		query_start = getdate(start_date)
+		query_end = getdate(end_date)
+		date_filter = ["between", [query_start, query_end]]
+	elif date:
+		date_filter = getdate(date)
+	else:
+		return {"status": "error", "message": "Date filter required"}
 	
 	# Handle "Default" naming convention
 	old_plan_val = None if old_plan == "Default" else old_plan
@@ -603,7 +635,7 @@ def duplicate_unprocessed_orders_to_plan(date, old_plan, new_plan):
 	
 	# Find all Planning Sheets on this date for the old plan
 	filters = {
-		"ordered_date": target_date,
+		"ordered_date": date_filter,
 		"docstatus": ["<", 2]
 	}
 	if old_plan_val:
