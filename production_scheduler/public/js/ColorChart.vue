@@ -180,7 +180,12 @@
           <div class="cc-monthly-header">
               <div class="cc-monthly-corner">Week / Unit</div>
               <div v-for="unit in visibleUnits" :key="unit" class="cc-monthly-col-header" :style="{ borderTopColor: headerColors[unit] }">
-                  {{ unit }}
+                  <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                      <span>{{ unit }}</span>
+                      <button class="cc-mini-btn" @click="showSortInfo(unit)" title="Show Sorting & Mixing Rules" style="padding:1px 4px; font-size:10px;">
+                        ℹ️
+                      </button>
+                  </div>
                   <span class="text-xs text-gray-500 block font-normal">
                       {{ getUnitProductionTotal(unit).toFixed(2) }}T
                   </span>
