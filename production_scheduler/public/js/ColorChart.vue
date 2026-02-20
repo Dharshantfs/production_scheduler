@@ -331,11 +331,34 @@
                 </tbody>
                 <tfoot>
                     <tr>
-                        <th class="matrix-sticky-col">TOTAL</th>
-                        <th v-for="col in matrixData.columns" :key="col.id" class="text-right">
-                            {{ matrixData.colTotals[col.id].toFixed(0) }}
+                        <th class="matrix-sticky-col" style="background:#ffeb3b; color:#000;">TOTAL</th>
+                        <th v-for="col in matrixData.columns" :key="col.id" class="text-right" style="background:#ffeb3b; color:#000;">
+                            {{ matrixData.colTotals[col.id] > 0 ? matrixData.colTotals[col.id].toFixed(0) : '' }}
                         </th>
-                        <th class="matrix-total-col text-right">{{ matrixData.grandTotal.toFixed(0) }}</th>
+                        <th class="matrix-total-col text-right" style="background:#ffeb3b; color:#000;">{{ matrixData.grandTotal.toFixed(0) }}</th>
+                    </tr>
+                    <!-- Whites Section -->
+                    <tr 
+                        v-for="row in matrixData.whiteRows" 
+                        :key="'w-' + row.color"
+                        class="matrix-row"
+                    >
+                        <td class="matrix-sticky-col bg-white">
+                            <div class="flex items-center">
+                                <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
+                                {{ row.color }}
+                            </div>
+                        </td>
+                        <td 
+                            v-for="col in matrixData.columns" 
+                            :key="'w-' + col.id" 
+                            class="text-right bg-white"
+                        >
+                            {{ (row.cells[col.id] || 0) > 0 ? (row.cells[col.id]).toFixed(0) : '' }}
+                        </td>
+                        <td class="matrix-total-col text-right font-bold bg-gray-50">
+                            {{ row.total.toFixed(0) }}
+                        </td>
                     </tr>
                 </tfoot>
             </table>
@@ -489,60 +512,66 @@ let matrixInitTimer = null; // Track pending matrix sortable init timeout
 const matrixData = computed(() => {
     if (viewMode.value !== 'matrix') return [];
     
-    // 1. Prepare Columns (Orders / Planning Sheets/Items)
-    // Group items by "Order Identity" -> (Date + Code/Sheet + Quality + Customer + GSM)?
-    // User wants "Date, Days, Code, GSM, Quality, Customer" as headers.
-    // Each COLUMN represents a unique "Production Run" or Order Context.
-    
-    // We need to group detailed items into columns.
-    // If an order has multiple colors, do they share a column?
-    // In the Excel, "Code A26192" has multiple colors below it (Ivory, Golden Yellow).
-    // So distinct columns are determined by: CODE (and its attributes).
-    
+    // We need Whites in the matrix view, but separated.
+    const baseData = rawData.value.filter(d => {
+        // UNIT FILTER
+        if (filterUnit.value && (d.unit || "Mixed") !== filterUnit.value) return false;
+        
+        // STATUS FILTER
+        if (filterStatus.value && d.planningStatus !== filterStatus.value) return false;
+
+        // PARTY CODE FILTER
+        if (filterPartyCode.value) {
+            const search = filterPartyCode.value.toLowerCase();
+            const pCode = (d.partyCode || "").toLowerCase();
+            const cust = (d.customer || "").toLowerCase();
+            if (!pCode.includes(search) && !cust.includes(search)) return false;
+        }
+
+        // Hide NO COLOR completely
+        const colorUpper = (d.color || "").toUpperCase();
+        if (colorUpper === "NO COLOR") return false;
+
+        return true;
+    });
+
     const groups = {};
     
-    filteredData.value.forEach(d => {
-        // UNIT FILTER (Matrix View needs this explicitly as filteredData doesn't filter unit)
-        if (filterUnit.value && (d.unit || "Mixed") !== filterUnit.value) return;
-
-        // ID for the Column Group
-        // Use Planning Sheet Name or Code? 
-        // d.planningSheet might be "PS-001". d.name is "PS-001-1".
-        // Let's use `planningSheet` as the Grouper?
-        const code = d.planningSheet; // Or d.partyCode? Excel says "Code A26192". This looks like a Sales Order or Sheet ID.
+    baseData.forEach(d => {
+        const sheetCode = d.planningSheet || "Unassigned";
+        const gsm = d.gsm || "-";
+        const quality = d.quality || "-";
+        const compositeKey = `${sheetCode}|${gsm}|${quality}`;
         
-        if (!groups[code]) {
-            groups[code] = {
-                id: code,
+        if (!groups[compositeKey]) {
+            groups[compositeKey] = {
+                id: compositeKey,
                 date: d.ordered_date || d.order_date || "", // Date
-                days: 0, // Calculate Diff?
-                code: code,
-                gsm: d.gsm || "",
-                quality: d.quality || "",
+                days: 0,
+                code: sheetCode,
+                gsm: gsm,
+                quality: quality,
                 customer: d.customer || d.partyCode || "",
                 items: [],
-                // Sort key for checks
                 idxSum: 0 
             };
             
-            // Calculate Days (Diff from Today?)
-            // If "Days Remaining" (DOD - Today):
+            // Calculate Days
             if (d.dod) {
                const d1 = new Date(d.dod);
                const today = new Date();
                const diffTime = d1 - today; 
                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-               groups[code].days = diffDays + " DAYS";
-            } else if (groups[code].date) {
-               // Fallback: Age (Today - Ordered Date)
-               const d1 = new Date(groups[code].date);
+               groups[compositeKey].days = diffDays + " DAYS";
+            } else if (groups[compositeKey].date) {
+               const d1 = new Date(groups[compositeKey].date);
                const today = new Date();
                const diffTime = today - d1;
                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); 
-               groups[code].days = diffDays + " DAYS";
+               groups[compositeKey].days = diffDays + " DAYS";
             }
         }
-        groups[code].items.push(d);
+        groups[compositeKey].items.push(d);
     });
 
     // Sort Groups (Columns) by Date then Code
@@ -551,50 +580,62 @@ const matrixData = computed(() => {
         return a.code.localeCompare(b.code);
     });
 
-    // 2. Prepare Rows (Unique Colors)
+    // 2. Prepare Rows (Unique Colors and Whites)
     const allColors = new Set();
-    filteredData.value.forEach(d => {
-        if (d.color) allColors.add(d.color);
+    const allWhites = new Set();
+    
+    baseData.forEach(d => {
+        if (!d.color) return;
+        const colorUpper = d.color.toUpperCase();
+        
+        let isWhite = false;
+        if (!colorUpper.includes("IVORY") && !colorUpper.includes("CREAM") && !colorUpper.includes("OFF WHITE")) {
+            if (EXCLUDED_WHITES.some(ex => colorUpper.includes(ex))) {
+                isWhite = true;
+            }
+        }
+        
+        if (isWhite) allWhites.add(d.color);
+        else allColors.add(d.color);
     });
     
     let sortedColors = [];
     if (customRowOrder.value.length > 0) {
-        // Sort by Custom Order first, then New colors by Priority
         const customSet = new Set(customRowOrder.value);
-        // Gets colors present in Data OR Custom Order (to maintain gaps if needed? No, only show data)
-        // Actually we only show colors present in Data.
-        
         const presentColors = Array.from(allColors);
-        
         const ordered = customRowOrder.value.filter(c => allColors.has(c));
         const others = presentColors.filter(c => !customSet.has(c)).sort((a,b) => compareColor({color: a}, {color: b}, 'asc'));
-        
-        sortedColors = [...ordered, ...others];
         sortedColors = [...ordered, ...others];
     } else {
-        // Default: Use order of appearance in filteredData (which matches rawData / idx)
-        sortedColors = Array.from(allColors);
+        sortedColors = Array.from(allColors).sort((a,b) => compareColor({color: a}, {color: b}, 'asc'));
     }
 
     const rows = sortedColors.map(color => {
-        return {
-            color: color,
-            cells: {}, // Key = Group ID (Code)
-            total: 0
-        };
+        return { color: color, cells: {}, total: 0 };
+    });
+    
+    // Sort whites
+    const sortedWhites = Array.from(allWhites).sort((a,b) => compareColor({color: a}, {color: b}, 'asc'));
+    const whiteRows = sortedWhites.map(color => {
+        return { color: color, cells: {}, total: 0 };
     });
 
     // 3. Fill Cells
-    rows.forEach(row => {
-        sortedGroups.forEach(group => {
-            // Find item with this color in this group
-            const match = group.items.find(i => i.color === row.color);
-            if (match) {
-                row.cells[group.id] = match.qty;
-                row.total += match.qty;
-            }
+    const processRows = (rowArray) => {
+        rowArray.forEach(row => {
+            sortedGroups.forEach(group => {
+                const matchs = group.items.filter(i => i.color === row.color);
+                const sumQty = matchs.reduce((sum, item) => sum + (item.qty || 0), 0);
+                if (sumQty > 0) {
+                    row.cells[group.id] = sumQty;
+                    row.total += sumQty;
+                }
+            });
         });
-    });
+    };
+    
+    processRows(rows);
+    processRows(whiteRows);
     
     // Group Columns by DATE for Merged Header
     const dateHeaders = [];
@@ -618,20 +659,29 @@ const matrixData = computed(() => {
          }
     });
 
-    // Column Totals
+    // Column Totals (Main Colors Only)
     const colTotals = {};
     sortedGroups.forEach(g => {
         colTotals[g.id] = rows.reduce((sum, r) => sum + (r.cells[g.id] || 0), 0);
     });
-    
     const grandTotal = rows.reduce((sum, r) => sum + r.total, 0);
+    
+    // Column Totals (Whites Only)
+    const whiteColTotals = {};
+    sortedGroups.forEach(g => {
+        whiteColTotals[g.id] = whiteRows.reduce((sum, r) => sum + (r.cells[g.id] || 0), 0);
+    });
+    const whiteGrandTotal = whiteRows.reduce((sum, r) => sum + r.total, 0);
 
     return {
         dateHeaders,
         columns: sortedGroups,
         rows,
+        whiteRows,
         colTotals,
-        grandTotal
+        grandTotal,
+        whiteColTotals,
+        whiteGrandTotal
     };
 });
 
@@ -1452,16 +1502,16 @@ function getItemsForDay(dateStr, unit) {
            d.orderDate === dateStr
        );
        
-       // Sort matches User's Dynamic Choice
+       // Force sorting to ALWAYS strictly be Light -> Dark 
        const config = getUnitSortConfig(unit);
        dayItems.sort((a, b) => {
               let diff = 0;
               if (config.priority === 'color') {
-                  diff = compareColor(a, b, config.color);
-                  if (diff === 0) diff = compareGsm(a, b, config.gsm);
+                  diff = compareColor(a, b, 'asc');
+                  if (diff === 0) diff = compareGsm(a, b, 'asc');
               } else {
-                  diff = compareGsm(a, b, config.gsm);
-                  if (diff === 0) diff = compareColor(a, b, config.color);
+                  diff = compareGsm(a, b, 'asc');
+                  if (diff === 0) diff = compareColor(a, b, 'asc');
               }
               if (diff === 0) diff = (a.idx || 0) - (b.idx || 0);
               return diff;
