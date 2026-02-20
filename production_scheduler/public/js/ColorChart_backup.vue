@@ -3,15 +3,8 @@
     <!-- Filter Bar -->
     <div class="cc-filters">
       <div class="cc-filter-item">
-        <label>{{ viewScope === 'daily' ? 'Order Date' : 'Select Month' }}</label>
-        <div style="display:flex; gap:4px;">
-            <input v-if="viewScope === 'daily'" type="date" v-model="filterOrderDate" @change="fetchData" />
-            <input v-else type="month" v-model="filterMonth" @change="fetchData" />
-            
-            <button class="cc-mini-btn" @click="toggleViewScope" :title="viewScope === 'daily' ? 'Switch to Monthly View' : 'Switch to Daily View'">
-                {{ viewScope === 'daily' ? '📅 Month' : '📆 Day' }}
-            </button>
-        </div>
+        <label>Order Date</label>
+        <input type="date" v-model="filterOrderDate" @change="fetchData" />
       </div>
       <div class="cc-filter-item">
         <label>Party Code</label>
@@ -69,183 +62,102 @@
 
     <!-- Kanban View -->
     <div v-if="viewMode === 'kanban'" class="cc-board" :key="renderKey">
-      
-      <!-- DAILY VIEW -->
-      <template v-if="viewScope === 'daily'">
-        <div
-            v-for="unit in visibleUnits"
-            :key="unit"
-            class="cc-column"
-            :data-unit="unit"
-        >
-            <div class="cc-col-header" :style="{ borderTopColor: headerColors[unit] }">
-            <div class="cc-header-top">
-                <span class="cc-col-title">{{ unit === 'Mixed' ? 'Unassigned' : unit }}</span>
-                <!-- Sort Controls -->
-                <div class="cc-unit-controls">
-                <span style="font-size:10px; color:#64748b; margin-right:4px;">{{ getSortLabel(unit) }}</span>
-                <button class="cc-mini-btn" @click="toggleUnitColor(unit)" :title="getUnitSortConfig(unit).color === 'asc' ? 'Currently: Light→Dark (click for Dark→Light)' : 'Currently: Dark→Light (click for Light→Dark)'">
-                    {{ getUnitSortConfig(unit).color === 'asc' ? '☀️→🌙' : '🌙→☀️' }}
-                </button>
-                <button class="cc-mini-btn" @click="toggleUnitGsm(unit)" :title="getUnitSortConfig(unit).gsm === 'desc' ? 'GSM: High→Low (click to reverse)' : 'GSM: Low→High (click to reverse)'">
-                    {{ getUnitSortConfig(unit).gsm === 'desc' ? '⬇️' : '⬆️' }}
-                </button>
-                <button class="cc-mini-btn" @click="toggleUnitPriority(unit)" :title="getUnitSortConfig(unit).priority === 'color' ? 'Priority: Color (click for GSM)' : 'Priority: GSM (click for Color)'">
-                    {{ getUnitSortConfig(unit).priority === 'color' ? '🎨' : '📏' }}
-                </button>
-                <button class="cc-mini-btn" @click="showSortInfo(unit)" title="Show Sorting & Mixing Rules">
-                    ℹ️
-                </button>
-                </div>
+      <div
+        v-for="unit in visibleUnits"
+        :key="unit"
+        class="cc-column"
+        :data-unit="unit"
+      >
+        <div class="cc-col-header" :style="{ borderTopColor: headerColors[unit] }">
+          <div class="cc-header-top">
+            <span class="cc-col-title">{{ unit === 'Mixed' ? 'Unassigned' : unit }}</span>
+            <!-- Sort Controls -->
+            <div class="cc-unit-controls">
+              <span style="font-size:10px; color:#64748b; margin-right:4px;">{{ getSortLabel(unit) }}</span>
+              <button class="cc-mini-btn" @click="toggleUnitColor(unit)" :title="getUnitSortConfig(unit).color === 'asc' ? 'Currently: Light→Dark (click for Dark→Light)' : 'Currently: Dark→Light (click for Light→Dark)'">
+                {{ getUnitSortConfig(unit).color === 'asc' ? '☀️→🌙' : '🌙→☀️' }}
+              </button>
+              <button class="cc-mini-btn" @click="toggleUnitGsm(unit)" :title="getUnitSortConfig(unit).gsm === 'desc' ? 'GSM: High→Low (click to reverse)' : 'GSM: Low→High (click to reverse)'">
+                {{ getUnitSortConfig(unit).gsm === 'desc' ? '⬇️' : '⬆️' }}
+              </button>
+              <button class="cc-mini-btn" @click="toggleUnitPriority(unit)" :title="getUnitSortConfig(unit).priority === 'color' ? 'Priority: Color (click for GSM)' : 'Priority: GSM (click for Color)'">
+                {{ getUnitSortConfig(unit).priority === 'color' ? '🎨' : '📏' }}
+              </button>
             </div>
-            <div class="cc-header-stats">
-                <span class="cc-stat-weight" :class="getUnitCapacityStatus(unit).class">
-                {{ getUnitTotal(unit).toFixed(2) }} / {{ UNIT_TONNAGE_LIMITS[unit] }}T
-                <span v-if="getHiddenWhiteTotal(unit) > 0" style="font-size:10px; font-weight:400; color:#64748b; display:block;">
-                    (Inc. {{ getHiddenWhiteTotal(unit).toFixed(2) }}T White)
-                </span>
-                </span>
-                <div v-if="getUnitCapacityStatus(unit).warning" class="text-xs text-red-600 font-bold">
-                {{ getUnitCapacityStatus(unit).warning }}
-                </div>
-                <span class="cc-stat-mix" v-if="getMixRollCount(unit) > 0">
-                ⚠️ {{ getMixRollCount(unit) }} mix{{ getMixRollCount(unit) > 1 ? 'es' : '' }}
-                ({{ getMixRollTotalWeight(unit) }} Kg)
-                </span>
-            </div>
-            </div>
-
-            <div class="cc-col-body" :data-unit="unit" ref="columnRefs">
-            <template v-for="(entry, idx) in getUnitEntries(unit)" :key="entry.uniqueKey">
-                <!-- Mix Roll Marker -->
-                <div v-if="entry.type === 'mix'" class="cc-mix-marker">
-                <div class="cc-mix-line"></div>
-            <span class="cc-mix-label" :class="entry.mixType.toLowerCase().replace(' ', '-')">
-                {{ entry.mixType }} — ~{{ entry.qty }} Kg
+          </div>
+          <div class="cc-header-stats">
+            <span class="cc-stat-weight" :class="getUnitCapacityStatus(unit).class">
+              {{ getUnitTotal(unit).toFixed(2) }} / {{ UNIT_TONNAGE_LIMITS[unit] }}T
+              <span v-if="getHiddenWhiteTotal(unit) > 0" style="font-size:10px; font-weight:400; color:#64748b; display:block;">
+                 (Inc. {{ getHiddenWhiteTotal(unit).toFixed(2) }}T White)
+              </span>
             </span>
-                <div class="cc-mix-line"></div>
-                </div>
-                <!-- Order Card -->
-                <div
-                v-else
-                class="cc-card"
-                :data-name="entry.name"
-                :data-item-name="entry.itemName"
-                :data-color="entry.color"
-                :data-planning-sheet="entry.planningSheet"
-                @click="openForm(entry.planningSheet)"
-                >
-                <div class="cc-card-left">
-                    <div
-                    class="cc-color-swatch"
-                    :style="{ backgroundColor: getHexColor(entry.color) }"
-                    :title="entry.color"
-                    ></div>
-                    <div class="cc-card-info">
-                    <div class="cc-card-color-name">{{ entry.color }}</div>
-                    <div class="cc-card-customer">
-                        <span style="font-weight:700; color:#111827;">{{ entry.partyCode }}</span>
-                        <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> · {{ entry.customer }}</span>
-                    </div>
-                    <div class="cc-card-details">
-                        {{ entry.quality }} · {{ entry.gsm }} GSM
-                    </div>
-                    </div>
-                </div>
-                <div class="cc-card-right">
-                    <span class="cc-card-qty">{{ (entry.qty / 1000).toFixed(3) }} T</span>
-                    <span class="cc-card-qty-kg">{{ entry.qty }} Kg</span>
-                </div>
-                </div>
-            </template>
-
-            <div v-if="!getUnitEntries(unit).length" class="cc-empty">
-                No orders
+            <div v-if="getUnitCapacityStatus(unit).warning" class="text-xs text-red-600 font-bold">
+              {{ getUnitCapacityStatus(unit).warning }}
             </div>
-            </div>
-
-            <!-- Unit Footer -->
-            <div class="cc-col-footer">
-            <span>Production: {{ getUnitProductionTotal(unit).toFixed(2) }}T</span>
-            <span v-if="getMixRollTotalWeight(unit) > 0">
-                Mix Waste: {{ (getMixRollTotalWeight(unit) / 1000).toFixed(3) }}T
+            <span class="cc-stat-mix" v-if="getMixRollCount(unit) > 0">
+              ⚠️ {{ getMixRollCount(unit) }} mix{{ getMixRollCount(unit) > 1 ? 'es' : '' }}
+              ({{ getMixRollTotalWeight(unit) }} Kg)
             </span>
-            </div>
+          </div>
         </div>
-      </template>
 
-      <!-- MONTHLY VIEW -->
-      <div v-else class="cc-monthly-container">
-          <!-- Header Row -->
-          <div class="cc-monthly-header">
-              <div class="cc-monthly-corner">Week / Unit</div>
-              <div v-for="unit in visibleUnits" :key="unit" class="cc-monthly-col-header" :style="{ borderTopColor: headerColors[unit] }">
-                  <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
-                      <span>{{ unit }}</span>
-                      <button class="cc-mini-btn" @click="showSortInfo(unit)" title="Show Sorting & Mixing Rules" style="padding:1px 4px; font-size:10px;">
-                        ℹ️
-                      </button>
+        <div class="cc-col-body" :data-unit="unit" ref="columnRefs">
+          <template v-for="(entry, idx) in getUnitEntries(unit)" :key="entry.uniqueKey">
+            <!-- Mix Roll Marker -->
+            <div v-if="entry.type === 'mix'" class="cc-mix-marker">
+              <div class="cc-mix-line"></div>
+          <span class="cc-mix-label" :class="entry.mixType.toLowerCase().replace(' ', '-')">
+            {{ entry.mixType }} — ~{{ entry.qty }} Kg
+          </span>
+              <div class="cc-mix-line"></div>
+            </div>
+            <!-- Order Card -->
+            <div
+              v-else
+              class="cc-card"
+              :data-name="entry.name"
+              :data-item-name="entry.itemName"
+              :data-color="entry.color"
+              :data-planning-sheet="entry.planningSheet"
+              @click="openForm(entry.planningSheet)"
+            >
+              <div class="cc-card-left">
+                <div
+                  class="cc-color-swatch"
+                  :style="{ backgroundColor: getHexColor(entry.color) }"
+                  :title="entry.color"
+                ></div>
+                <div class="cc-card-info">
+                  <div class="cc-card-color-name">{{ entry.color }}</div>
+                  <div class="cc-card-customer">
+                    <span style="font-weight:700; color:#111827;">{{ entry.partyCode }}</span>
+                    <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> · {{ entry.customer }}</span>
                   </div>
-                  <span class="text-xs text-gray-500 block font-normal">
-                      {{ getUnitProductionTotal(unit).toFixed(2) }}T
-                  </span>
+                  <div class="cc-card-details">
+                    {{ entry.quality }} · {{ entry.gsm }} GSM
+                  </div>
+                </div>
               </div>
-          </div>
-
-          <!-- Week Rows -->
-          <div v-for="week in weeks" :key="week.id" class="cc-monthly-row-group">
-              
-              <!-- Week Label Header (Optional, if we want to separate weeks) -->
-              <!-- <div class="cc-week-header">{{ week.label }} ({{ week.dateRange }})</div> -->
-
-              <!-- Iterate Days in Week -->
-              <div v-for="day in getDaysInWeek(week)" :key="day.date" class="cc-matrix-row" style="display:flex; border-bottom:1px solid #e5e7eb;">
-                  
-                  <!-- Date Column (Fixed Width) -->
-                  <div class="cc-matrix-date-col" style="width:120px; flex-shrink:0; padding:8px; background:#f9fafb; border-right:1px solid #e5e7eb; font-weight:bold; color:#374151; font-size:12px;">
-                      {{ day.label }}
-                      <div class="text-[10px] text-gray-500 font-normal mt-1">{{ week.label }}</div>
-                  </div>
-
-                  <!-- Unit Columns -->
-                  <div v-for="unit in visibleUnits" :key="unit" class="cc-matrix-cell" ref="monthlyCellRefs" :data-date="day.date" :data-unit="unit" :style="{ flex:1, borderRight:'1px solid #e5e7eb', padding:'4px', minHeight:'60px', display:'flex', flexDirection:'column', gap:'4px' }">
-                      
-                      <!-- Items for this Day/Unit -->
-                      <div 
-                          v-for="entry in getItemsForDay(day.date, unit)" 
-                          :key="entry.uniqueKey"
-                          class="cc-card cc-card-mini"
-                          :data-name="entry.name"
-                          :data-item-name="entry.itemName"
-                          :data-color="entry.color"
-                          :data-planning-sheet="entry.planningSheet"
-                          :data-unit="unit"
-                          :data-date="day.date"
-                          @click="openForm(entry.planningSheet)"
-                      >
-                          <div class="cc-card-left">
-                              <div class="cc-color-swatch-mini" :style="{ backgroundColor: getHexColor(entry.color) }"></div>
-                              <div class="cc-card-info" style="display:flex; flex-direction:column; justify-content:center;">
-                                  <div class="cc-card-color-name text-xs truncate font-bold" style="line-height:1.2;">{{ entry.color }}</div>
-                                  <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-                                      <div style="display:flex; flex-direction:column; max-width:65%;">
-                                          <div class="text-[10px] text-gray-800 truncate" style="line-height:1.1;" :title="entry.customer">
-                                              <b>{{ entry.partyCode || entry.customer }}</b>
-                                          </div>
-                                          <div class="text-[9px] text-gray-500 truncate" style="line-height:1.1;">
-                                              {{ entry.quality }}
-                                          </div>
-                                      </div>
-                                      <div class="text-[10px] font-bold text-gray-700" style="white-space:nowrap;">
-                                          {{ formatWeight(entry.qty / 1000) }}
-                                      </div>
-                                  </div>
-                              </div>
-                          </div>
-                      </div>
-                  </div>
+              <div class="cc-card-right">
+                <span class="cc-card-qty">{{ (entry.qty / 1000).toFixed(3) }} T</span>
+                <span class="cc-card-qty-kg">{{ entry.qty }} Kg</span>
               </div>
+            </div>
+          </template>
+
+          <div v-if="!getUnitEntries(unit).length" class="cc-empty">
+            No orders
           </div>
+        </div>
+
+        <!-- Unit Footer -->
+        <div class="cc-col-footer">
+          <span>Production: {{ getUnitProductionTotal(unit).toFixed(2) }}T</span>
+          <span v-if="getMixRollTotalWeight(unit) > 0">
+            Mix Waste: {{ (getMixRollTotalWeight(unit) / 1000).toFixed(3) }}T
+          </span>
+        </div>
       </div>
     </div>
 
@@ -358,12 +270,6 @@ const COLOR_GROUPS = [
   { keywords: ["BLACK MIX"],  priority: 199, hex: "#404040" },
   { keywords: ["COLOR MIX"],  priority: 199, hex: "#c0c0c0" },
   { keywords: ["BEIGE MIX"],  priority: 199, hex: "#e0d5c0" },
-  
-  // ── NO COLOR (Handling Unassigned/Empty Colors) ─────────────────
-  // High priority to push to end, or 0 to push to start? 
-  // User didn't specify sort order for these, let's put them at END (999) 
-  // so they don't interrupt the refined flow.
-  { keywords: ["NO COLOR"], priority: 999, hex: "#e5e7eb" }, // Grey-200
 
   // ── WHITES (priority 5 — excluded by filter anyway) ─────────────
   // IMPORTANT: multi-word phrases FIRST so "BRIGHT WHITE" matches here, not "WHITE"
@@ -371,8 +277,8 @@ const COLOR_GROUPS = [
                "BLEACH WHITE", "OPTICAL WHITE"], priority: 5, hex: "#FFFFFF" },
   { keywords: ["WHITE"], priority: 5, hex: "#FFFFFF" },
 
-  // ── 1. IVORY / CREAM / OFF WHITE (4) — User Req: Beige -> Ivory -> White 
-  { keywords: ["IVORY", "OFF WHITE", "CREAM"], priority: 4, hex: "#FFFFF0" },
+  // ── 1. IVORY / CREAM / OFF WHITE (10) ───────────────────────────
+  { keywords: ["IVORY", "OFF WHITE", "CREAM"], priority: 10, hex: "#FFFFF0" },
 
   // ── 2. YELLOWS (20-22): Lemon → Yellow → Golden ─────────────────
   { keywords: ["LEMON YELLOW"],          priority: 20, hex: "#FFF44F" },
@@ -465,8 +371,6 @@ const UNIT_TONNAGE_LIMITS = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4"
 const headerColors = { "Unit 1": "#3b82f6", "Unit 2": "#10b981", "Unit 3": "#f59e0b", "Unit 4": "#8b5cf6", "Mixed": "#64748b" };
 
 const filterOrderDate = ref(frappe.datetime.get_today());
-const viewScope = ref('daily');
-const filterMonth = ref(frappe.datetime.get_today().substring(0, 7));
 const filterPartyCode = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
@@ -479,7 +383,6 @@ units.forEach(u => {
 const viewMode = ref('kanban'); // 'kanban' | 'matrix'
 const rawData = ref([]);
 const columnRefs = ref(null);
-const monthlyCellRefs = ref(null);
 const matrixHeaderRow = ref(null); // Ref for Matrix Column sorting
 const matrixBody = ref(null);      // Ref for Matrix Row sorting
 const customRowOrder = ref([]);    // Store user-defined row order (List of Colors)
@@ -663,13 +566,7 @@ const filteredData = computed(() => {
       if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return true;
       
       // Remove Excluded Whites
-      if (EXCLUDED_WHITES.some(ex => colorUpper.includes(ex))) return false;
-
-      // Hide "NO COLOR" items visually (User request: "dont show here")
-      // They remain in rawData so capacity calculation remains accurate.
-      if (colorUpper === "NO COLOR") return false;
-
-      return true;
+      return !EXCLUDED_WHITES.some(ex => colorUpper.includes(ex));
   });
 
   if (filterPartyCode.value) {
@@ -854,37 +751,31 @@ function getUnitCapacityStatus(unit) {
 // ... (Mix Roll functions use getUnitEntries which uses filteredData - Correct for VISUALS) ...
 
 async function initSortable() {
-  if (!columnRefs.value && !monthlyCellRefs.value) return;
+  if (!columnRefs.value) return;
 
-  // Cancel any pending matrix init — prevents race condition
+  // Cancel any pending matrix init — prevents race condition where
+  // a second initSortable() destroys instances before the 100ms timer fires
   if (matrixInitTimer !== null) {
       clearTimeout(matrixInitTimer);
       matrixInitTimer = null;
   }
   
   // Clear old kanban instances
-  if (columnRefs.value) {
-    columnRefs.value.forEach(col => {
-        if (col && col._sortable) { try { col._sortable.destroy(); } catch(e) {} }
-    });
-  }
-  
-  // Clear old monthly instances
-  if (monthlyCellRefs.value) {
-    monthlyCellRefs.value.forEach(col => {
-        if (col && col._sortable) { try { col._sortable.destroy(); } catch(e) {} }
-    });
-  }
-
+  columnRefs.value.forEach(col => {
+      if (col && col._sortable) { try { col._sortable.destroy(); } catch(e) {} }
+  });
   // Clear old matrix instances
   while (matrixSortableInstances.length > 0) {
       try { matrixSortableInstances.pop().destroy(); } catch(e) {}
   }
 
-  // MATRIX VIEW
+  // MATRIX VIEW SORTABLE
   if (viewMode.value === 'matrix') {
+      // Use setTimeout to ensure DOM is fully settled after Vue render
+      // Store the timer so we can cancel it if initSortable is called again before it fires
       matrixInitTimer = setTimeout(() => {
           matrixInitTimer = null;
+          // Guard: if view changed before timer fired, abort
           if (viewMode.value !== 'matrix') return;
 
           const headerRowEl = matrixHeaderRow.value;
@@ -895,14 +786,23 @@ async function initSortable() {
                  handle: '.draggable-handle',
                  draggable: '.matrix-col-header',
                  ghostClass: 'cc-ghost',
-                 onEnd: async (evt) => {
+                 forceFallback: false,
+                 onStart: () => {
+                     // Prevent any other sortable from interfering
+                 },
+                  onEnd: async (evt) => {
                       const { newIndex, item } = evt;
+                      // Use setTimeout to let SortableJS finalize before we interact with DOM
                       setTimeout(async () => {
+                          // After column drag, rebuild the column order from current DOM state
+                          // and save it — do NOT call fetchData() as that would cause Vue to
+                          // re-render and overwrite the Sortable-moved DOM (making matrix empty)
                           const allCols = Array.from(headerRowEl.querySelectorAll('.matrix-col-header'));
                           let targetDate = null;
                           const leftEl = allCols[newIndex - 1];
-                          if (leftEl) targetDate = leftEl.dataset.date;
-                          else {
+                          if (leftEl) {
+                              targetDate = leftEl.dataset.date;
+                          } else {
                               const rightEl = allCols[newIndex + 1];
                               if (rightEl) targetDate = rightEl.dataset.date;
                           }
@@ -921,11 +821,13 @@ async function initSortable() {
                                               method: "production_scheduler.api.move_orders_to_date",
                                               args: { item_names: itemNames, target_date: targetDate }
                                           });
+                                          // Hide the moved column element before fetchData re-renders
                                           item.style.display = 'none';
                                           fetchData();
                                       } catch(e) { console.error(e); }
                                   }
                               } else {
+                                  // User cancelled — revert DOM by calling fetchData
                                   fetchData();
                               }
                           }
@@ -935,6 +837,7 @@ async function initSortable() {
               matrixSortableInstances.push(colSortable);
           }
 
+          // 2. ROWS (Colors)
           const bodyEl = matrixBody.value;
           if (bodyEl) {
               const rowSortable = new Sortable(bodyEl, {
@@ -943,6 +846,7 @@ async function initSortable() {
                   handle: '.matrix-row-header',
                   draggable: '.matrix-row',
                   ghostClass: 'cc-ghost',
+                  forceFallback: false,
                   onEnd: (evt) => {
                       const { oldIndex, newIndex } = evt;
                       if (oldIndex === newIndex) return;
@@ -959,154 +863,118 @@ async function initSortable() {
               });
               matrixSortableInstances.push(rowSortable);
           }
-      }, 150);
+      }, 150); // 150ms — enough for Vue to fully render matrix DOM
       return; 
   }
 
-  // MONTHLY VIEW KANBAN
-  if (viewScope.value === 'monthly' && monthlyCellRefs.value) {
-     monthlyCellRefs.value.forEach(cellEl => {
-         if (!cellEl) return;
-         const monthlySortable = new Sortable(cellEl, {
-             group: "monthly-kanban",
-             animation: 150,
-             ghostClass: "cc-ghost",
-             onEnd: async (evt) => {
-                const { item, to, newIndex } = evt;
-                const itemName = item.dataset.itemName;
-                const newUnit = to.dataset.unit;
-                const newDate = to.dataset.date;
+  // KANBAN VIEW SORTABLE
+  columnRefs.value.forEach((colEl) => {
+    if (!colEl) return;
+    const kanbanSortable = new Sortable(colEl, {
+      group: "kanban",
+      animation: 150,
+      ghostClass: "cc-ghost",
+      onEnd: async (evt) => {
+        const { item, to, from, newIndex, oldIndex } = evt;
+        const itemName = item.dataset.itemName;
+        const newUnit = to.dataset.unit;
+        const isSameUnit = (to === from);
+        if (!itemName || !newUnit) return;
+
+        if (!isSameUnit || newIndex !== oldIndex) {
+             // Delay to let SortableJS finish DOM cleanup before we change Vue state
+             setTimeout(async () => {
+             try {
+                if (!isSameUnit) {
+                    frappe.show_alert({ message: "Validating Capacity...", indicator: "orange" });
+                }
                 
-                if (!itemName || !newUnit || !newDate) return;
+                const performMove = async (force=0, split=0) => {
+                    return await frappe.call({
+                        method: "production_scheduler.api.update_schedule",
+                        args: {
+                            item_name: itemName, 
+                            unit: newUnit,
+                            date: filterOrderDate.value,
+                            index: newIndex + 1,
+                            force_move: force,
+                            perform_split: split
+                        }
+                    });
+                };
 
-                setTimeout(async () => {
-                    try {
-                        await frappe.call({
-                            method: "production_scheduler.api.update_schedule",
-                            args: {
-                                item_name: itemName,
-                                unit: newUnit,
-                                date: newDate,
-                                index: newIndex + 1,
-                                force_move: 1
-                            }
-                        });
-                        frappe.show_alert("Order moved successfully", 2);
-                        fetchData();
-                    } catch (e) {
-                        console.error("Failed to move order", e);
-                        frappe.msgprint("Failed to move order");
-                        fetchData(); 
-                    }
-                }, 10);
-             }
-         });
-         cellEl._sortable = monthlySortable;
-     });
-     return;
-  }
-
-  // DAILY VIEW KANBAN
-  if (columnRefs.value) {
-    columnRefs.value.forEach((colEl) => {
-        if (!colEl) return;
-        const kanbanSortable = new Sortable(colEl, {
-        group: "kanban",
-        animation: 150,
-        ghostClass: "cc-ghost",
-        onEnd: async (evt) => {
-            const { item, to, from, newIndex, oldIndex } = evt;
-            const itemName = item.dataset.itemName;
-            const newUnit = to.dataset.unit;
-            const isSameUnit = (to === from);
-            if (!itemName || !newUnit) return;
-
-            if (!isSameUnit || newIndex !== oldIndex) {
-                 setTimeout(async () => {
-                 try {
-                    const performMove = async (force=0, split=0) => {
-                        return await frappe.call({
-                            method: "production_scheduler.api.update_schedule",
-                            args: {
-                                item_name: itemName, 
-                                unit: newUnit,
-                                date: filterOrderDate.value,
-                                index: newIndex + 1,
-                                force_move: force,
-                                perform_split: split
-                            }
-                        });
-                    };
-
-                    let res = await performMove();
-                    
-                    if (res.message && res.message.status === 'overflow') {
-                         const avail = res.message.available;
-                         const limit = res.message.limit;
-                         const current = res.message.current_load;
-                         const orderWt = res.message.order_weight;
-                         
-                         const d = new frappe.ui.Dialog({
-                            title: '⚠️ Capacity Full',
-                            fields: [{
-                                 fieldtype: 'HTML', fieldname: 'msg',
-                                 options: `<div style="text-align:center; padding:10px;">
-                                     <p class="text-lg font-bold text-red-600">Unit Capacity Exceeded!</p>
-                                     <p>Unit Limit: <b>${limit}T</b> | Current: <b>${current.toFixed(2)}T</b></p>
-                                     <p>Your Order: <b>${orderWt.toFixed(2)}T</b></p>
-                                     <p class="mt-2 text-green-600 font-bold">Available Space: ${avail.toFixed(3)}T</p>
-                                 </div>`
-                            }],
-                            primary_action_label: 'Move to Next Day',
-                            primary_action: async () => {
-                                d.hide();
-                                const res2 = await performMove(1, 0);
-                                handleMoveSuccess(res2, newUnit);
-                            },
-                            secondary_action_label: 'Cancel',
-                            secondary_action: () => { d.hide(); renderKey.value++; }
-                         });
-                         
-                         d.add_custom_action('Split & Distribute', async () => {
-                             d.hide();
-                             if (avail < 0.1) {
-                                 frappe.msgprint("Space too small to split.");
-                                 renderKey.value++; return;
-                             }
-                             const res3 = await performMove(0, 1);
-                             handleMoveSuccess(res3, newUnit);
-                         }, 'btn-warning');
-                         d.show();
-                    } else {
-                         if (isSameUnit && res.message && res.message.status === 'success') {
-                             frappe.show_alert({ message: "Order resequenced", indicator: "green" });
-                             unitSortConfig[newUnit].mode = 'manual';
-                             // Silent update (no re-render)
-                             const unitItems = rawData.value
-                                 .filter(d => (d.unit || "Mixed") === newUnit)
-                                 .sort((a, b) => (a.idx || 0) - (b.idx || 0));
-                             const moved = unitItems.splice(oldIndex, 1)[0];
-                             unitItems.splice(newIndex, 0, moved);
-                             unitItems.forEach((itm, i) => {
-                                 const rawItem = rawData.value.find(d => d.itemName === itm.itemName);
-                                 if (rawItem) rawItem.idx = i + 1;
-                             });
-                         } else {
-                             handleMoveSuccess(res, newUnit);
+                let res = await performMove();
+                
+                if (res.message && res.message.status === 'overflow') {
+                     const avail = res.message.available;
+                     const limit = res.message.limit;
+                     const current = res.message.current_load;
+                     const orderWt = res.message.order_weight;
+                     
+                     const d = new frappe.ui.Dialog({
+                        title: '⚠️ Capacity Full',
+                        fields: [{
+                             fieldtype: 'HTML', fieldname: 'msg',
+                             options: `<div style="text-align:center; padding:10px;">
+                                 <p class="text-lg font-bold text-red-600">Unit Capacity Exceeded!</p>
+                                 <p>Unit Limit: <b>${limit}T</b> | Current: <b>${current.toFixed(2)}T</b></p>
+                                 <p>Your Order: <b>${orderWt.toFixed(2)}T</b></p>
+                                 <p class="mt-2 text-green-600 font-bold">Available Space: ${avail.toFixed(3)}T</p>
+                             </div>`
+                        }],
+                        primary_action_label: 'Move to Next Day',
+                        primary_action: async () => {
+                            d.hide();
+                            const res2 = await performMove(1, 0);
+                            handleMoveSuccess(res2, newUnit);
+                        },
+                        secondary_action_label: 'Cancel',
+                        secondary_action: () => { d.hide(); renderKey.value++; }
+                     });
+                     
+                     d.add_custom_action('Split & Distribute', async () => {
+                         d.hide();
+                         if (avail < 0.1) {
+                             frappe.msgprint("Space too small to split.");
+                             renderKey.value++; return;
                          }
-                    }
-                 } catch (e) {
-                     console.error(e);
-                     frappe.msgprint("❌ Move Failed");
-                     renderKey.value++;
-                 }
-                 }, 50);
-            }
-        },
-        });
-        colEl._sortable = kanbanSortable;
+                         const res3 = await performMove(0, 1);
+                         handleMoveSuccess(res3, newUnit);
+                     }, 'btn-warning');
+                     d.show();
+                } else {
+                     if (isSameUnit && res.message && res.message.status === 'success') {
+                         // Same-unit reorder: update idx in-place WITHOUT triggering re-render
+                         // Re-render would destroy sortable mid-drag causing freeze
+                         frappe.show_alert({ message: "Order resequenced", indicator: "green" });
+                         unitSortConfig[newUnit].mode = 'manual';
+                         // Update idx values silently in rawData without spreading (no re-render)
+                         const unitItems = rawData.value
+                             .filter(d => (d.unit || "Mixed") === newUnit)
+                             .sort((a, b) => (a.idx || 0) - (b.idx || 0));
+                         const moved = unitItems.splice(oldIndex, 1)[0];
+                         unitItems.splice(newIndex, 0, moved);
+                         unitItems.forEach((itm, i) => {
+                             const rawItem = rawData.value.find(d => d.itemName === itm.itemName);
+                             if (rawItem) rawItem.idx = i + 1;
+                         });
+                         // Do NOT spread rawData here — that triggers re-render and destroys sortable
+                         // The DOM is already correct (Sortable moved it). Just keep data in sync.
+                     } else {
+                         handleMoveSuccess(res, newUnit);
+                     }
+                }
+             } catch (e) {
+                 console.error(e);
+                 frappe.msgprint("❌ Move Failed");
+                 renderKey.value++;
+             }
+             }, 50);
+        }
+      },
     });
-  }
+    colEl._sortable = kanbanSortable;
+  });
 }
 
 async function handleMoveSuccess(res, newUnit) {
@@ -1153,329 +1021,6 @@ function toggleUnitGsm(unit) {
       config.gsm = config.gsm === 'asc' ? 'desc' : 'asc';
   }
   renderKey.value++; // Force re-render so cards re-sort immediately
-}
-
-// ---- MONTHLY VIEW HELPERS ----
-
-
-const weeks = computed(() => {
-    try {
-        if (viewScope.value !== 'monthly' || !filterMonth.value) return [];
-        
-        // Strict 7-Day Logic (User Request: "Accurate Date")
-        // Week 1: Day 1-7
-        // Week 2: Day 8-14
-        // Week 3: Day 15-21
-        // Week 4: Day 22-28
-        // Week 5: Day 29-End
-        
-        let year, month;
-        if (filterMonth.value.includes('-')) {
-             [year, month] = filterMonth.value.split('-').map(Number);
-        } else { return []; }
-
-        const lastDayOfMonth = new Date(year, month, 0).getDate();
-        const weekList = [];
-        
-        const ranges = [
-            { start: 1, end: 7 },
-            { start: 8, end: 14 },
-            { start: 15, end: 21 },
-            { start: 22, end: 28 },
-            { start: 29, end: lastDayOfMonth }
-        ];
-
-        ranges.forEach((range, idx) => {
-            if (range.start > lastDayOfMonth) return;
-            
-            const effectiveEnd = Math.min(range.end, lastDayOfMonth);
-            
-            // Format Dates YYYY-MM-DD
-            const startStr = `${year}-${String(month).padStart(2, '0')}-${String(range.start).padStart(2, '0')}`;
-            const endStr = `${year}-${String(month).padStart(2, '0')}-${String(effectiveEnd).padStart(2, '0')}`;
-            
-            const MONTH_ABBRS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-            const monthAbbr = MONTH_ABBRS[month-1];
-            
-            weekList.push({
-                id: `w-${idx+1}-${startStr}`,
-                label: `Week ${idx+1}`,
-                dateRange: `${range.start} ${monthAbbr} - ${effectiveEnd} ${monthAbbr}`,
-                startDay: range.start,
-                endDay: effectiveEnd,
-                start: startStr,
-                end: endStr
-            });
-        });
-        
-        return weekList;
-    } catch (e) {
-        console.error("Error computing weeks:", e);
-        return [];
-    }
-});
-
-function showSortInfo(unit) {
-    const config = getUnitSortConfig(unit);
-    const isColor = config.priority === 'color';
-    const direction = isColor ? config.color : config.gsm;
-    
-// Build Color Order List (Corrected Iteration)
-    const colorOrder = COLOR_GROUPS
-        .map(g => {
-             // Use first keyword as label
-             const label = g.keywords[0];
-             return { label, priority: g.priority };
-        })
-        .sort((a,b) => a.priority - b.priority)
-        .map(g => `<li style="font-size:11px; margin-bottom:2px;">${g.priority}. <b>${g.label}</b></li>`)
-        .join("");
-
-    const d = new frappe.ui.Dialog({
-        title: `ℹ️ Sort & Mix Rules: ${unit}`,
-        fields: [{
-            fieldtype: 'HTML',
-            fieldname: 'info',
-            options: `
-                <div style="padding:10px;">
-                    <div style="margin-bottom:15px; padding:8px; background:#f3f4f6; border-radius:4px;">
-                        <p style="font-weight:bold; margin-bottom:4px;">Current Strategy:</p>
-                        <p>Priority: <b>${isColor ? 'Color' : 'GSM'}</b></p>
-                        <p>Direction: <b>${direction === 'asc' ? (isColor ? 'Light → Dark' : 'Low → High') : (isColor ? 'Dark → Light' : 'High → Low')}</b></p>
-                    </div>
-                    
-                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
-                        <div>
-                            <p style="font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;">Color Sequence (Light→Dark)</p>
-                            <ul style="list-style:none; padding:0; height:200px; overflow-y:auto; border:1px solid #eee;">
-                                ${colorOrder}
-                            </ul>
-                        </div>
-                        <div>
-                            <p style="font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;">Mixing Rules</p>
-                            <div style="font-size:11px;">
-                                <p><b>Gap Calculation:</b> Difference in Color Priority.</p>
-                                <ul style="list-style:disc; padding-left:15px; margin-top:5px;">
-                                    <li>Gap 0 (Same Color): <b>0 Kg</b></li>
-                                    <li>Gap 1-5 (Similar): <b>10 Kg</b></li>
-                                    <li>Gap > 20 (Contrast): <b>50 Kg+</b></li>
-                                </ul>
-                                <p style="margin-top:8px; font-style:italic; color:#666;">
-                                    *High gaps create significant waste. Try to group similar colors!
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `
-        }]
-    });
-    d.show();
-}
-
-function getMonthlyCellTotal(week, unit) {
-    try {
-        const entries = getMonthlyCellEntries(week, unit);
-        const total = entries.reduce((sum, e) => sum + (parseFloat(e.qty) || 0), 0);
-        return (total / 1000).toFixed(2);
-    } catch (e) {
-        return "0.00";
-    }
-}
-
-function getMonthlyCellDays(week, unit) {
-    if (!week || !week.start || !week.end) return [];
-    if (!filteredData.value) return [];
-
-    try {
-        // Filter by Unit
-        let items = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
-        
-        // Filter by Date Range
-        items = items.filter(d => d.orderDate >= week.start && d.orderDate <= week.end);
-
-        // Group by Date
-        const itemsByDate = {};
-        items.forEach(item => {
-            const d = item.orderDate;
-            if (!itemsByDate[d]) itemsByDate[d] = [];
-            itemsByDate[d].push(item);
-        });
-
-        // Create Day Objects (Sorted Chronologically)
-        const days = Object.keys(itemsByDate).sort().map(dateStr => {
-           let dayItems = itemsByDate[dateStr];
-           
-           // Sort Items within Day (Light -> Dark)
-           // Use existing logic for priority
-           const config = getUnitSortConfig(unit);
-           dayItems.sort((a, b) => {
-                  let diff = 0;
-                  if (config.priority === 'color') {
-                      diff = compareColor(a, b, 'asc');
-                      if (diff === 0) diff = compareGsm(a, b, 'asc');
-                  } else {
-                      diff = compareGsm(a, b, 'asc');
-                      if (diff === 0) diff = compareColor(a, b, 'asc');
-                  }
-                  if (diff === 0) diff = (a.idx || 0) - (b.idx || 0);
-                  return diff;
-           });
-
-           // Format Date Label (e.g., "2026-02-18" -> "18 Feb")
-           const [y, m, d] = dateStr.split('-');
-           const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-           const label = `${parseInt(d)} ${monthNames[parseInt(m)-1]}`;
-
-           return {
-               date: dateStr,
-               label: label,
-               items: dayItems.map(d => ({
-                   ...d,
-                   type: 'order',
-                   uniqueKey: d.itemName
-               }))
-           };
-        });
-
-        return days;
-    } catch (e) {
-        console.error("Error grouping monthly days:", e);
-        return [];
-    }
-}
-
-function getMonthlyCellEntries(week, unit) {
-    if (!week || !week.start || !week.end) return [];
-    if (!filteredData.value) return [];
-    
-    try {
-        // Filter by Unit
-        let items = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
-        
-        // Filter by Date Range
-        items = items.filter(d => d.orderDate >= week.start && d.orderDate <= week.end);
-        
-        // --- DAILY-ASCENDING SORT [DATE -> COLOR] ---
-        // 1. Group by Date (Locking Principle)
-        const itemsByDate = {};
-        items.forEach(item => {
-            const d = item.orderDate;
-            if (!itemsByDate[d]) itemsByDate[d] = [];
-            itemsByDate[d].push(item);
-        });
-        
-        // 2. Sort Dates Chronologically
-        const distinctDates = Object.keys(itemsByDate).sort();
-        
-        // 3. Sort Items within Date (Always Light -> Dark)
-        let finalSortedItems = [];
-        distinctDates.forEach(date => {
-             const dayItems = itemsByDate[date];
-             
-             // ALWAYS Sort Light -> Dark (Ascending)
-             // This ensures Beige (96) is at End of Day 1
-             // And White/Ivory (4/5) is at Start of Day 2
-             const config = getUnitSortConfig(unit);
-             
-             dayItems.sort((a, b) => {
-                  let diff = 0;
-                  if (config.priority === 'color') {
-                      diff = compareColor(a, b, 'asc'); // Force ASC
-                      if (diff === 0) diff = compareGsm(a, b, 'asc');
-                  } else {
-                      diff = compareGsm(a, b, 'asc');
-                      if (diff === 0) diff = compareColor(a, b, 'asc');
-                  }
-                  if (diff === 0) diff = (a.idx || 0) - (b.idx || 0);
-                  return diff;
-             });
-             
-             finalSortedItems = finalSortedItems.concat(dayItems);
-        });
-        
-        return finalSortedItems.map(d => ({
-            ...d,
-            type: 'order',
-            uniqueKey: d.itemName
-        }));
-    } catch (e) {
-        console.error("Error getting monthly entries:", e);
-        return [];
-    }
-}
-
-// --- MATRIX LAYOUT HELPERS ---
-function getDaysInWeek(week) {
-    if (!filterMonth.value || !week) return [];
-    
-    try {
-        let year, month;
-        if (filterMonth.value.includes('-')) {
-             [year, month] = filterMonth.value.split('-').map(Number);
-        } else { return []; }
-
-        const days = [];
-        
-        for (let d = week.startDay; d <= week.endDay; d++) {
-             // Create date string manually: YYYY-MM-DD
-             const yyyy = year;
-             const mm = String(month).padStart(2, '0');
-             const dd = String(d).padStart(2, '0');
-             const dateStr = `${yyyy}-${mm}-${dd}`;
-             
-             // Label: "22 Feb"
-             const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-             const label = `${d} ${monthNames[month-1]}`;
-             
-             days.push({
-                 date: dateStr,
-                 label: label,
-                 dayNum: d
-             });
-        }
-        return days;
-    } catch (e) {
-        console.error("Error generating days:", e);
-        return [];
-    }
-}
-
-function getItemsForDay(dateStr, unit) {
-    if (!filteredData.value) return [];
-    
-    try {
-       // Filter by Unit and Exact Date
-       // Handle "Mixed" unit as well
-       let dayItems = filteredData.value.filter(d => 
-           (d.unit || "Mixed") === unit && 
-           d.orderDate === dateStr
-       );
-       
-       // Sort (Light -> Dark) Matches Daily-Ascending Logic
-       const config = getUnitSortConfig(unit);
-       dayItems.sort((a, b) => {
-              let diff = 0;
-              if (config.priority === 'color') {
-                  diff = compareColor(a, b, 'asc');
-                  if (diff === 0) diff = compareGsm(a, b, 'asc');
-              } else {
-                  diff = compareGsm(a, b, 'asc');
-                  if (diff === 0) diff = compareColor(a, b, 'asc');
-              }
-              if (diff === 0) diff = (a.idx || 0) - (b.idx || 0);
-              return diff;
-       });
-       
-       return dayItems.map(d => ({
-           ...d,
-           type: 'order',
-           uniqueKey: d.itemName
-       }));
-    } catch (e) {
-        console.error("Error fetching items for day:", e);
-        return [];
-    }
 }
 
 function toggleUnitPriority(unit) {
@@ -1539,23 +1084,7 @@ function getUnitEntries(unit) {
 function getUnitProductionTotal(unit) {
   return rawData.value
     .filter((d) => (d.unit || "Mixed") === unit)
-    .reduce((sum, d) => sum + (parseFloat(d.qty) || 0), 0) / 1000;
-}
-
-function formatWeight(tonnage) {
-  // Input is in Tons
-  if (tonnage >= 1) {
-      // If integer (e.g. 10.00), return "10 T"
-      if (Number.isInteger(tonnage)) return tonnage.toFixed(0) + " T";
-      // Else return with decimals, e.g. "1.23 T" or "1.20 T"
-      // User said "remove 2 digit make it whole" for 10.00 -> 10T
-      // Let's use clean logic:
-      return parseFloat(tonnage.toFixed(3)) + " T"; 
-  } else {
-      // Less than 1 Ton -> Show Kg
-      // 0.469 T -> 469 Kg
-      return (tonnage * 1000).toFixed(0) + " Kg";
-  }
+    .reduce((sum, d) => sum + (parseFloat(d.actual_qty) || 0), 0) / 1000;
 }
 
 function getMixRollCount(unit) {
@@ -1666,54 +1195,18 @@ async function analyzePreviousFlow() {
   }
 }
 
-// View Scope Logic
-async function toggleViewScope() {
-  if (viewScope.value === 'daily') {
-      viewScope.value = 'monthly';
-      if (!filterMonth.value) {
-          filterMonth.value = frappe.datetime.get_today().substring(0, 7);
-      }
-  } else {
-      viewScope.value = 'daily';
-      if (!filterOrderDate.value) {
-          filterOrderDate.value = frappe.datetime.get_today();
-      }
-  }
-  await fetchData();
-}
-
 async function fetchData() {
-  let args = {};
-  
-  if (viewScope.value === 'monthly') {
-      if (!filterMonth.value) return;
-      const [year, month] = filterMonth.value.split("-");
-      const startDate = `${filterMonth.value}-01`;
-      // Get last day of month
-      const lastDay = new Date(year, month, 0).getDate();
-      const endDate = `${filterMonth.value}-${lastDay}`;
-      
-      args = { start_date: startDate, end_date: endDate };
-      
-  } else {
-      if (!filterOrderDate.value) return;
-      args = { date: filterOrderDate.value };
-  }
-
+  if (!filterOrderDate.value) return;
   try {
     const r = await frappe.call({
       method: "production_scheduler.api.get_color_chart_data",
-      args: args,
+      args: { date: filterOrderDate.value },
     });
-    
     // Ensure idx is integer
     rawData.value = (r.message || []).map(d => ({
         ...d,
-        idx: parseInt(d.idx || 0) || 9999,
-        // Ensure date is parsed for monthly grouping
-        orderDate: d.ordered_date || ""
+        idx: parseInt(d.idx || 0) || 9999
     }));
-    
     // Load Custom Color Order (Sync)
     try {
         const orderRes = await frappe.call("production_scheduler.api.get_color_order");
@@ -1737,11 +1230,10 @@ async function fetchData() {
 }
 
 // Watch date to re-analyze flow
+// Watch date to re-analyze flow
 watch(filterOrderDate, async () => {
-    if (viewScope.value === 'daily') {
-        await fetchData();
-        await analyzePreviousFlow(); 
-    }
+  await fetchData();
+  await analyzePreviousFlow(); 
 });
 
 // ---- AUTO ALLOCATION (BIN PACKING) ----
@@ -2754,7 +2246,7 @@ function updateRescueSelection(d) {
     overflow: hidden;
     padding: 16px;
     display: flex;
-    flex-direction: column; 
+    flex-direction: column;
 }
 
 .cc-matrix-scroll {
@@ -2835,122 +2327,5 @@ function updateRescueSelection(d) {
 }
 .draggable-handle:active {
     cursor: grabbing;
-}
-</style>
-
-<style scoped>
-/* ---- MONTHLY VIEW ---- */
-.cc-monthly-container {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: auto;
-    padding: 10px;
-    gap: 10px;
-}
-
-.cc-monthly-header {
-    display: flex;
-    min-width: 1000px;
-}
-
-.cc-monthly-corner {
-    min-width: 150px;
-    width: 150px;
-    padding: 10px;
-    font-weight: bold;
-    background: #f1f5f9;
-    border-right: 1px solid #e2e8f0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: sticky;
-    left: 0;
-    z-index: 10;
-}
-
-.cc-monthly-col-header {
-    flex: 1;
-    min-width: 250px;
-    padding: 10px;
-    text-align: center;
-    font-weight: bold;
-    border-top: 4px solid transparent;
-    background: white;
-    border-right: 1px solid #f1f5f9;
-    border-bottom: 2px solid #e2e8f0;
-}
-
-.cc-monthly-row {
-    display: flex;
-    border-bottom: 1px solid #e2e8f0;
-    min-height: 150px;
-    min-width: 1000px;
-}
-
-.cc-monthly-row-label {
-    min-width: 150px;
-    width: 150px;
-    padding: 10px;
-    background: #f8fafc;
-    border-right: 1px solid #e2e8f0;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    position: sticky;
-    left: 0;
-    z-index: 5;
-}
-
-.cc-monthly-cell {
-    flex: 1;
-    min-width: 250px;
-    border-right: 1px solid #f1f5f9;
-    padding: 4px;
-    display: flex;
-    flex-direction: column;
-    background: #fff;
-}
-
-.cc-cell-header-tiny {
-    font-size: 10px;
-    font-weight: bold;
-    text-align: right;
-    color: #94a3b8;
-    margin-bottom: 4px;
-    padding-right: 4px;
-}
-
-.cc-cell-body {
-    flex: 1;
-    display: flex;
-    flex-wrap: wrap;
-    align-content: flex-start;
-    gap: 6px;
-    min-height: 80px;
-    background: #fafafa; /* Slight tint to show droppable area */
-    border-radius: 4px;
-    padding: 4px;
-}
-
-.cc-card-mini {
-    width: 100%; /* Full width in cell */
-    padding: 6px;
-    margin-bottom: 0;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    cursor: grab;
-}
-
-.cc-color-swatch-mini {
-    width: 12px;
-    height: 12px;
-    border-radius: 4px;
-    margin-right: 6px;
-    border: 1px solid rgba(0,0,0,0.1);
-    flex-shrink: 0;
 }
 </style>
