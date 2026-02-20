@@ -205,36 +205,45 @@
                   </div>
                   
                   <div class="cc-cell-body" ref="monthlyCellRefs" :data-unit="unit" :data-week-start="week.start" :data-week-end="week.end">
-                      <div 
-                          v-for="entry in getMonthlyCellEntries(week, unit)" 
-                          :key="entry.uniqueKey"
-                          class="cc-card cc-card-mini"
-                          :data-name="entry.name"
-                          :data-item-name="entry.itemName"
-                          :data-color="entry.color"
-                          :data-planning-sheet="entry.planningSheet"
-                          :data-unit="unit"
-                          :data-week-start="week.start"
-                          :data-week-end="week.end"
-                          @click="openForm(entry.planningSheet)"
-                      >
-                          <div class="cc-card-left">
-                              <div class="cc-color-swatch-mini" :style="{ backgroundColor: getHexColor(entry.color) }">
-                                  <!-- Optional: Show Mix indicator if mix -->
-                              </div>
-                              <div class="cc-card-info" style="display:flex; flex-direction:column; justify-content:center;">
-                                  <div class="cc-card-color-name text-xs truncate font-bold" style="line-height:1.2;">{{ entry.color }}</div>
-                                  <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-                                      <div style="display:flex; flex-direction:column; max-width:65%;">
-                                          <div class="text-[10px] text-gray-800 truncate" style="line-height:1.1;" :title="entry.customer">
-                                              <b>{{ entry.partyCode || entry.customer }}</b>
+                      <!-- Iterating Days within Week -->
+                      <div v-for="day in getMonthlyCellDays(week, unit)" :key="day.date" class="cc-day-group" style="margin-bottom:4px;">
+                          <!-- Day Header -->
+                          <div class="cc-day-header" style="font-size:10px; font-weight:bold; background:#f3f4f6; padding:2px 4px; border-radius:2px; margin-bottom:2px; color:#374151; border:1px solid #e5e7eb;">
+                              {{ day.label }}
+                          </div>
+                          
+                          <!-- Items for Day -->
+                          <div 
+                              v-for="entry in day.items" 
+                              :key="entry.uniqueKey"
+                              class="cc-card cc-card-mini"
+                              :data-name="entry.name"
+                              :data-item-name="entry.itemName"
+                              :data-color="entry.color"
+                              :data-planning-sheet="entry.planningSheet"
+                              :data-unit="unit"
+                              :data-week-start="week.start"
+                              :data-week-end="week.end"
+                              @click="openForm(entry.planningSheet)"
+                          >
+                              <div class="cc-card-left">
+                                  <div class="cc-color-swatch-mini" :style="{ backgroundColor: getHexColor(entry.color) }">
+                                      <!-- Optional: Show Mix indicator if mix -->
+                                  </div>
+                                  <div class="cc-card-info" style="display:flex; flex-direction:column; justify-content:center;">
+                                      <div class="cc-card-color-name text-xs truncate font-bold" style="line-height:1.2;">{{ entry.color }}</div>
+                                      <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+                                          <div style="display:flex; flex-direction:column; max-width:65%;">
+                                              <div class="text-[10px] text-gray-800 truncate" style="line-height:1.1;" :title="entry.customer">
+                                                  <b>{{ entry.partyCode || entry.customer }}</b>
+                                              </div>
+                                              <div class="text-[9px] text-gray-500 truncate" style="line-height:1.1;">
+                                                  {{ entry.quality }}
+                                              </div>
                                           </div>
-                                          <div class="text-[9px] text-gray-500 truncate" style="line-height:1.1;">
-                                              {{ entry.quality }}
+                                          <div class="text-[10px] font-bold text-gray-700" style="white-space:nowrap;">
+                                              {{ formatWeight(entry.qty / 1000) }}
                                           </div>
-                                      </div>
-                                      <div class="text-[10px] font-bold text-gray-700" style="white-space:nowrap;">
-                                          {{ formatWeight(entry.qty / 1000) }}
                                       </div>
                                   </div>
                               </div>
@@ -1263,6 +1272,68 @@ function getMonthlyCellTotal(week, unit) {
         return (total / 1000).toFixed(2);
     } catch (e) {
         return "0.00";
+    }
+}
+
+function getMonthlyCellDays(week, unit) {
+    if (!week || !week.start || !week.end) return [];
+    if (!filteredData.value) return [];
+
+    try {
+        // Filter by Unit
+        let items = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
+        
+        // Filter by Date Range
+        items = items.filter(d => d.orderDate >= week.start && d.orderDate <= week.end);
+
+        // Group by Date
+        const itemsByDate = {};
+        items.forEach(item => {
+            const d = item.orderDate;
+            if (!itemsByDate[d]) itemsByDate[d] = [];
+            itemsByDate[d].push(item);
+        });
+
+        // Create Day Objects (Sorted Chronologically)
+        const days = Object.keys(itemsByDate).sort().map(dateStr => {
+           let dayItems = itemsByDate[dateStr];
+           
+           // Sort Items within Day (Light -> Dark)
+           // Use existing logic for priority
+           const config = getUnitSortConfig(unit);
+           dayItems.sort((a, b) => {
+                  let diff = 0;
+                  if (config.priority === 'color') {
+                      diff = compareColor(a, b, 'asc');
+                      if (diff === 0) diff = compareGsm(a, b, 'asc');
+                  } else {
+                      diff = compareGsm(a, b, 'asc');
+                      if (diff === 0) diff = compareColor(a, b, 'asc');
+                  }
+                  if (diff === 0) diff = (a.idx || 0) - (b.idx || 0);
+                  return diff;
+           });
+
+           // Format Date Label (e.g., "2026-02-18" -> "18 Feb")
+           const [y, m, d] = dateStr.split('-');
+           const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+           const label = `${parseInt(d)} ${monthNames[parseInt(m)-1]}`;
+
+           return {
+               date: dateStr,
+               label: label,
+               items: dayItems.map(d => ({
+                   ...d,
+                   type: 'order',
+                   uniqueKey: d.itemName
+               }))
+           };
+        });
+
+        return days;
+    } catch (e) {
+        console.error("Error grouping monthly days:", e);
+        return [];
     }
 }
 
