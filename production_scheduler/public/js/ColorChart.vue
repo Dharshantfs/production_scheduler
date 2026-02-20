@@ -221,8 +221,10 @@
                           <div class="cc-card-left">
                               <div class="cc-color-swatch-mini" :style="{ backgroundColor: getHexColor(entry.color) }"></div>
                               <div class="cc-card-info">
-                                  <div class="cc-card-color-name text-xs truncate">{{ entry.color }}</div>
-                                  <div class="text-[10px] text-gray-500 truncate" :title="entry.customer + ' ' + entry.quality + ' ' + entry.gsm">{{ entry.customer }}</div>
+                                  <div class="cc-card-color-name text-xs truncate font-bold">{{ entry.color }}</div>
+                                  <div class="text-[10px] text-gray-600 truncate" :title="entry.customer">{{ entry.partyCode || entry.customer }}</div>
+                                  <div class="text-[9px] text-gray-500 truncate">{{ entry.quality }}</div>
+                                  <div class="text-[9px] text-gray-500 font-medium">{{ (entry.qty / 1000).toFixed(3) }}T</div>
                               </div>
                           </div>
                       </div>
@@ -1263,58 +1265,8 @@ function getMonthlyCellEntries(week, unit) {
         // Filter by Date Range
         items = items.filter(d => d.orderDate >= week.start && d.orderDate <= week.end);
         
-        // --- ZIG-ZAG DAY SORT STRATEGY ---
-        // 1. Group by Date
-        const itemsByDate = {};
-        items.forEach(item => {
-            const d = item.orderDate;
-            if (!itemsByDate[d]) itemsByDate[d] = [];
-            itemsByDate[d].push(item);
-        });
-        
-        // 2. Sort Dates
-        const distinctDates = Object.keys(itemsByDate).sort();
-        
-        let finalSortedItems = [];
-        let toggle = true; // Start true (Ascending / Light->Dark)
-        
-        // 3. Iterate Dates and Alternate Sort Direction
-        distinctDates.forEach(date => {
-             const dayItems = itemsByDate[date];
-             
-             // Sort this day's items based on Unit Config + Toggle Support
-             const config = getUnitSortConfig(unit); // Use base config for priority type (Color vs GSM)
-             
-             // Temporarily override direction for sorting logic
-             const tempConfig = { ...config };
-             if (config.priority === 'color') {
-                 tempConfig.color = toggle ? 'asc' : 'desc';
-             } else {
-                 tempConfig.gsm = toggle ? 'asc' : 'desc'; // Low->High vs High->Low? Maybe keep GSM standard?
-                 // User wants "Flow". Alternate GSM flow makes sense too.
-             }
-             
-             // Sort using temp config
-             dayItems.sort((a, b) => {
-                  let diff = 0;
-                  if (tempConfig.priority === 'color') {
-                      diff = compareColor(a, b, tempConfig.color);
-                      if (diff === 0) diff = compareGsm(a, b, tempConfig.gsm);
-                  } else {
-                      diff = compareGsm(a, b, tempConfig.gsm);
-                      if (diff === 0) diff = compareColor(a, b, tempConfig.color);
-                  }
-                  if (diff === 0) diff = (a.idx || 0) - (b.idx || 0);
-                  return diff;
-             });
-             
-             finalSortedItems = finalSortedItems.concat(dayItems);
-             
-             // Flip for next day
-             toggle = !toggle;
-        });
-        
-        return finalSortedItems.map(d => ({
+        // Sort items within the cell using standard logic (or manual idx)
+        return sortItems(unit, items).map(d => ({
             ...d,
             type: 'order',
             uniqueKey: d.itemName
