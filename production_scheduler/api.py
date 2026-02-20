@@ -421,34 +421,68 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
 	# Fetch delivery statuses for referenced Sales Orders
 	so_names = [d.sales_order for d in planning_sheets if d.sales_order]
+	sheet_names = [d.name for d in planning_sheets]
+	
 	so_status_map = {}
 	so_pp_map = {}
 	so_wo_map = {}
+	sheet_pp_map = {}
+	pp_wo_map = {}
+	
+	valid_pps = set()
 	
 	if so_names:
 		sos = frappe.get_all("Sales Order", filters={"name": ["in", so_names]}, fields=["name", "delivery_status"])
 		for s in sos:
 			so_status_map[s.name] = s.delivery_status
 			
-		format_string = ','.join(['%s'] * len(so_names))
+		format_string_so = ','.join(['%s'] * len(so_names))
 		
-		# Check Production Plan
+		# Check Production Plan via Sales Order
 		pp_data = frappe.db.sql(f"""
 			SELECT sales_order, parent 
 			FROM `tabProduction Plan Sales Order` 
-			WHERE sales_order IN ({format_string}) AND docstatus < 2
+			WHERE sales_order IN ({format_string_so}) AND docstatus < 2
 		""", tuple(so_names), as_dict=True)
 		for row in pp_data:
 			so_pp_map[row.sales_order] = row.parent
+			valid_pps.add(row.parent)
 			
-		# Check Work Order
-		wo_data = frappe.db.sql(f"""
+		# Check Work Order via Sales Order
+		wo_data_so = frappe.db.sql(f"""
 			SELECT sales_order, name 
 			FROM `tabWork Order` 
-			WHERE sales_order IN ({format_string}) AND docstatus < 2
+			WHERE sales_order IN ({format_string_so}) AND docstatus < 2
 		""", tuple(so_names), as_dict=True)
-		for row in wo_data:
+		for row in wo_data_so:
 			so_wo_map[row.sales_order] = row.name
+
+	if sheet_names:
+		format_string_sheet = ','.join(['%s'] * len(sheet_names))
+		# Check Production Plan via Planning Sheet custom field
+		# Wrap in try-except in case custom field doesn't exist
+		try:
+			pp_sheet_data = frappe.db.sql(f"""
+				SELECT planning_sheet, name 
+				FROM `tabProduction Plan` 
+				WHERE planning_sheet IN ({format_string_sheet}) AND docstatus < 2
+			""", tuple(sheet_names), as_dict=True)
+			for row in pp_sheet_data:
+				sheet_pp_map[row.planning_sheet] = row.name
+				valid_pps.add(row.name)
+		except Exception:
+			pass
+			
+	if valid_pps:
+		format_string_pp = ','.join(['%s'] * len(valid_pps))
+		# Check Work Order via Production Plan
+		wo_data_pp = frappe.db.sql(f"""
+			SELECT production_plan, name 
+			FROM `tabWork Order` 
+			WHERE production_plan IN ({format_string_pp}) AND docstatus < 2
+		""", tuple(valid_pps), as_dict=True)
+		for row in wo_data_pp:
+			pp_wo_map[row.production_plan] = row.name
 
 	data = []
 	for sheet in planning_sheets:
@@ -458,6 +492,23 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			fields=["*"],
 			order_by="idx"
 		)
+		
+		# Determine PP and WO boolean states for this sheet
+		sheet_has_pp = False
+		sheet_has_wo = False
+		
+		my_pp_name = sheet_pp_map.get(sheet.name)
+		if not my_pp_name and sheet.sales_order:
+			my_pp_name = so_pp_map.get(sheet.sales_order)
+			
+		if my_pp_name:
+			sheet_has_pp = True
+			
+		# Check WO mapping
+		if my_pp_name and my_pp_name in pp_wo_map:
+			sheet_has_wo = True
+		elif sheet.sales_order and sheet.sales_order in so_wo_map:
+			sheet_has_wo = True
 
 		for item in items:
 			unit = item.get("unit") or ""
@@ -487,8 +538,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				"ordered_date": str(sheet.ordered_date) if sheet.ordered_date else "",
 				"dod": str(sheet.dod) if sheet.dod else "",
 				"delivery_status": so_status_map.get(sheet.sales_order) or "Not Delivered",
-				"has_pp": bool(sheet.sales_order and sheet.sales_order in so_pp_map),
-				"has_wo": bool(sheet.sales_order and sheet.sales_order in so_wo_map)
+				"has_pp": sheet_has_pp,
+				"has_wo": sheet_has_wo
 			})
 
 	return data
@@ -649,24 +700,60 @@ def duplicate_unprocessed_orders_to_plan(old_plan, new_plan, date=None, start_da
 	copied_count = 0
 	
 	for sheet in old_sheets:
-		# Check if this Sales Order is already in a Production Plan
 		has_pp = False
+		has_wo = False
+		pp_name = None
+
+		# 1. Find PP via sales_order OR planning_sheet custom field
 		if sheet.sales_order:
-			# Check Production Plan Sales Order child table
-			pp_exists = frappe.db.sql("""
+			pp_exists_so = frappe.db.sql("""
 				SELECT parent FROM `tabProduction Plan Sales Order`
 				WHERE sales_order = %s AND docstatus < 2
+				LIMIT 1
 			""", (sheet.sales_order,))
-			
-			if pp_exists:
-				has_pp = True
+			if pp_exists_so:
+				pp_name = pp_exists_so[0][0]
 				
-		# If it has a Production Plan (and thus effectively a Work Order), SKIP copying to the new plan.
-		# The user said: "check the planning sheet goes to pp and that pp go to wo means no need to bring"
-		if has_pp:
+		if not pp_name:
+			try:
+				pp_exists_sheet = frappe.db.sql("""
+					SELECT name FROM `tabProduction Plan`
+					WHERE planning_sheet = %s AND docstatus < 2
+					LIMIT 1
+				""", (sheet.name,))
+				if pp_exists_sheet:
+					pp_name = pp_exists_sheet[0][0]
+			except Exception:
+				pass
+				
+		if pp_name:
+			has_pp = True
+			# 2. Check WO via PP
+			wo_exists_pp = frappe.db.sql("""
+				SELECT name FROM `tabWork Order`
+				WHERE production_plan = %s AND docstatus < 2
+				LIMIT 1
+			""", (pp_name,))
+			if wo_exists_pp:
+				has_wo = True
+				
+		# 3. Also check WO via SO if not found
+		if not has_wo and sheet.sales_order:
+			wo_exists_so = frappe.db.sql("""
+				SELECT name FROM `tabWork Order`
+				WHERE sales_order = %s AND docstatus < 2
+				LIMIT 1
+			""", (sheet.sales_order,))
+			if wo_exists_so:
+				has_wo = True
+				
+		# User requirement: "if created [PP] and also created workorder means u no need to show for creation of new plan"
+		# "either one conditon or both false u shooul show for new plan"
+		# Therefore: ONLY skip if it has BOTH a Production Plan AND a Work Order!
+		if has_pp and has_wo:
 			continue
 			
-		# It DOES NOT have a PP. We must copy it.
+		# It DOES NOT have both PP and WO. We must copy it.
 		old_doc = frappe.get_doc("Planning sheet", sheet.name)
 		
 		# Create new sheet
