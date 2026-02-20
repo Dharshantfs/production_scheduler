@@ -1189,10 +1189,15 @@ function showSortInfo(unit) {
     const isColor = config.priority === 'color';
     const direction = isColor ? config.color : config.gsm;
     
-    // Build Color Order List (Sample based on known map)
-    const colorOrder = Object.entries(COLOR_GROUPS)
-        .sort((a,b) => a[1] - b[1])
-        .map(([c, p]) => `<li style="font-size:11px; margin-bottom:2px;">${p}. <b>${c}</b></li>`)
+// Build Color Order List (Corrected Iteration)
+    const colorOrder = COLOR_GROUPS
+        .map(g => {
+             // Use first keyword as label
+             const label = g.keywords[0];
+             return { label, priority: g.priority };
+        })
+        .sort((a,b) => a.priority - b.priority)
+        .map(g => `<li style="font-size:11px; margin-bottom:2px;">${g.priority}. <b>${g.label}</b></li>`)
         .join("");
 
     const d = new frappe.ui.Dialog({
@@ -1258,8 +1263,58 @@ function getMonthlyCellEntries(week, unit) {
         // Filter by Date Range
         items = items.filter(d => d.orderDate >= week.start && d.orderDate <= week.end);
         
-        // Sort items within the cell using standard logic (or manual idx)
-        return sortItems(unit, items).map(d => ({
+        // --- ZIG-ZAG DAY SORT STRATEGY ---
+        // 1. Group by Date
+        const itemsByDate = {};
+        items.forEach(item => {
+            const d = item.orderDate;
+            if (!itemsByDate[d]) itemsByDate[d] = [];
+            itemsByDate[d].push(item);
+        });
+        
+        // 2. Sort Dates
+        const distinctDates = Object.keys(itemsByDate).sort();
+        
+        let finalSortedItems = [];
+        let toggle = true; // Start true (Ascending / Light->Dark)
+        
+        // 3. Iterate Dates and Alternate Sort Direction
+        distinctDates.forEach(date => {
+             const dayItems = itemsByDate[date];
+             
+             // Sort this day's items based on Unit Config + Toggle Support
+             const config = getUnitSortConfig(unit); // Use base config for priority type (Color vs GSM)
+             
+             // Temporarily override direction for sorting logic
+             const tempConfig = { ...config };
+             if (config.priority === 'color') {
+                 tempConfig.color = toggle ? 'asc' : 'desc';
+             } else {
+                 tempConfig.gsm = toggle ? 'asc' : 'desc'; // Low->High vs High->Low? Maybe keep GSM standard?
+                 // User wants "Flow". Alternate GSM flow makes sense too.
+             }
+             
+             // Sort using temp config
+             dayItems.sort((a, b) => {
+                  let diff = 0;
+                  if (tempConfig.priority === 'color') {
+                      diff = compareColor(a, b, tempConfig.color);
+                      if (diff === 0) diff = compareGsm(a, b, tempConfig.gsm);
+                  } else {
+                      diff = compareGsm(a, b, tempConfig.gsm);
+                      if (diff === 0) diff = compareColor(a, b, tempConfig.color);
+                  }
+                  if (diff === 0) diff = (a.idx || 0) - (b.idx || 0);
+                  return diff;
+             });
+             
+             finalSortedItems = finalSortedItems.concat(dayItems);
+             
+             // Flip for next day
+             toggle = !toggle;
+        });
+        
+        return finalSortedItems.map(d => ({
             ...d,
             type: 'order',
             uniqueKey: d.itemName
