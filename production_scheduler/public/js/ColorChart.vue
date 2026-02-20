@@ -22,6 +22,17 @@
         />
       </div>
       <div class="cc-filter-item">
+        <label>Plan</label>
+        <div style="display:flex; gap:4px;">
+            <select v-model="selectedPlan" @change="fetchData">
+                <option v-for="p in plans" :key="p" :value="p">{{ p }}</option>
+            </select>
+            <button class="cc-mini-btn" @click="createNewPlan" title="Create New Plan Tab" style="color:#2563eb; font-weight:bold;">
+                ➕ New
+            </button>
+        </div>
+      </div>
+      <div class="cc-filter-item">
         <label>Unit</label>
         <select v-model="filterUnit">
           <option value="">All Units</option>
@@ -56,6 +67,9 @@
       </div>
       
       <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
+      <button class="cc-clear-btn" style="color: #6366f1; border-color: #6366f1; margin-left: 8px;" @click="showGlobalSortInfo" title="View Color Hierarchy Rules">
+        🎨 Sort Info
+      </button>
       <button class="cc-clear-btn" style="color: #2563eb; border-color: #2563eb; margin-left: 8px;" @click="autoAllocate" title="Auto-assign orders based on Width & Quality">
         🪄 Auto Alloc
       </button>
@@ -491,6 +505,8 @@ const filterMonth = ref(frappe.datetime.get_today().substring(0, 7));
 const filterPartyCode = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
+const selectedPlan = ref("Default");
+const plans = ref(["Default"]);
 // Per-unit sort configuration
 const unitSortConfig = reactive({});
 // Pre-initialize for all units
@@ -738,6 +754,7 @@ function clearFilters() {
   filterPartyCode.value = "";
   filterUnit.value = "";
   filterStatus.value = "";
+  selectedPlan.value = "Default";
   // Reset all unit configs to default? Or keep them?
   // Let's keep them or reset them. User might want to clear filters but keep sort.
   // We'll leave unitSortConfig as is.
@@ -1265,6 +1282,59 @@ const weeks = computed(() => {
     }
 });
 
+function showGlobalSortInfo() {
+    // Build Color Order List
+    const colorOrder = COLOR_GROUPS
+        .map(g => {
+             // Use first keyword as label
+             const label = g.keywords[0];
+             return { label, priority: g.priority };
+        })
+        .sort((a,b) => a.priority - b.priority)
+        .map(g => `<li style="font-size:11px; margin-bottom:2px;">${g.priority}. <b>${g.label}</b></li>`)
+        .join("");
+
+    const d = new frappe.ui.Dialog({
+        title: `🎨 Global Sort & Mix Rules`,
+        fields: [{
+            fieldtype: 'HTML',
+            fieldname: 'info',
+            options: `
+                <div style="padding:10px;">
+                    <div style="margin-bottom:15px; padding:8px; background:#f3f4f6; border-radius:4px;">
+                        <p style="font-weight:bold; margin-bottom:4px;">Global Sorting Strategy</p>
+                        <p>All views enforce <b>Light → Dark</b> and <b>Low → High GSM</b> sorting by default.</p>
+                    </div>
+                    
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                        <div>
+                            <p style="font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;">Color Sequence (Light→Dark)</p>
+                            <ul style="list-style:none; padding:0; height:200px; overflow-y:auto; border:1px solid #eee;">
+                                ${colorOrder}
+                            </ul>
+                        </div>
+                        <div>
+                            <p style="font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;">Mixing Rules</p>
+                            <div style="font-size:11px;">
+                                <p><b>Gap Calculation:</b> Difference in Color Priority.</p>
+                                <ul style="list-style:disc; padding-left:15px; margin-top:5px;">
+                                    <li>Gap 0 (Same Color): <b>0 Kg</b></li>
+                                    <li>Gap 1-5 (Similar): <b>10 Kg</b></li>
+                                    <li>Gap > 20 (Contrast): <b>50 Kg+</b></li>
+                                </ul>
+                                <p style="margin-top:8px; font-style:italic; color:#666;">
+                                    *High gaps create significant waste. Try to group similar colors!
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `
+        }]
+    });
+    d.show();
+}
+
 function showSortInfo(unit) {
     const config = getUnitSortConfig(unit);
     const isColor = config.priority === 'color';
@@ -1732,6 +1802,43 @@ async function toggleViewScope() {
   await fetchData();
 }
 
+async function fetchPlans(args) {
+    try {
+        const planArgs = { ...args };
+        if (planArgs.date && !planArgs.start_date) {
+            const [year, month] = planArgs.date.split("-");
+            const lastDay = new Date(year, month, 0).getDate();
+            planArgs.start_date = `${year}-${month}-01`;
+            planArgs.end_date = `${year}-${month}-${lastDay}`;
+            delete planArgs.date;
+        }
+        
+        const r = await frappe.call({
+            method: "production_scheduler.api.get_monthly_plans",
+            args: planArgs
+        });
+        plans.value = r.message || ["Default"];
+        if (!plans.value.includes(selectedPlan.value)) {
+            selectedPlan.value = "Default"; // Fallback if plan doesn't exist in this month
+        }
+    } catch(e) { console.error("Error fetching plans", e); }
+}
+
+function createNewPlan() {
+    frappe.prompt({
+        label: 'New Plan Name',
+        fieldname: 'plan_name',
+        fieldtype: 'Data',
+        reqd: 1
+    }, (values) => {
+        if (!plans.value.includes(values.plan_name)) {
+            plans.value.push(values.plan_name);
+        }
+        selectedPlan.value = values.plan_name;
+        fetchData();
+    }, 'Create New Plan Tab', 'Create');
+}
+
 async function fetchData() {
   let args = {};
   
@@ -1749,6 +1856,9 @@ async function fetchData() {
       if (!filterOrderDate.value) return;
       args = { date: filterOrderDate.value };
   }
+  
+  await fetchPlans(args);
+  args.plan_name = selectedPlan.value;
 
   try {
     const r = await frappe.call({
@@ -1969,6 +2079,9 @@ function updateUrlParams() {
   if (filterStatus.value) url.searchParams.set('status', filterStatus.value);
   else url.searchParams.delete('status');
   
+  if (selectedPlan.value && selectedPlan.value !== "Default") url.searchParams.set('plan', selectedPlan.value);
+  else url.searchParams.delete('plan');
+  
   window.history.replaceState({}, '', url);
 }
 
@@ -1979,6 +2092,7 @@ watch(filterOrderDate, () => {
 });
 watch(filterUnit, updateUrlParams);
 watch(filterStatus, updateUrlParams);
+watch(selectedPlan, updateUrlParams);
 
 // Re-init Sortable when renderKey changes (forced re-render)
 // Skip if matrix — matrix init is handled by its own 150ms timer inside initSortable()
@@ -2016,6 +2130,11 @@ onMounted(() => {
        // Ensure valid status
        if (["Draft", "Finalized"].includes(statusParam)) filterStatus.value = statusParam;
   }
+  
+  if (params.get('plan')) selectedPlan.value = params.get('plan');
+  
+  // Create Plan Name custom field if not exist (fire and forget)
+  frappe.call("production_scheduler.api.create_plan_name_field").catch(e => console.log(e));
   
   // 2. Fetch Data
   fetchData();

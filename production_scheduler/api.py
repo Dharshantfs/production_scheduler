@@ -114,7 +114,7 @@ def update_sequence(items):
 
 
 @frappe.whitelist()
-def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=0):
+def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=0, plan_name=None):
 	"""
 	Moves a specific Planning Sheet Item to a new unit/date.
 	If date changes, the item is re-parented to a suitable Planning Sheet for that date.
@@ -186,7 +186,7 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 			# Move Original Item to the best slot
 			# Note: We recurse or just manually move? Manually move is safer here.
 			# But we need to handle re-parenting if date is different.
-			_move_item_to_slot(item, best_slot_rem["unit"], best_slot_rem["date"])
+			_move_item_to_slot(item, best_slot_rem["unit"], best_slot_rem["date"], None, plan_name)
 			
 			frappe.db.commit()
 			return {"status": "success", "message": "Split successful"}
@@ -211,7 +211,7 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 	# User drags to specific position. index is the new index in the list.
 	# We should respect it.
 	
-	_move_item_to_slot(item, final_unit, final_date, idx_val)
+	_move_item_to_slot(item, final_unit, final_date, idx_val, plan_name)
 	
 	frappe.db.commit()
 	return {
@@ -219,22 +219,32 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 		"moved_to": {"date": final_date, "unit": final_unit}
 	}
 
-def _move_item_to_slot(item_doc, unit, date, new_idx=None):
+def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 	"""Internal helper to re-parent a Planning Sheet Item to a specific slot."""
 	target_date = getdate(date)
 	source_parent = frappe.get_doc("Planning sheet", item_doc.parent)
 	
+	# Determine logical plan_name to use
+	target_plan = plan_name if plan_name and plan_name != "Default" else source_parent.get("custom_plan_name")
+	if target_plan == "Default": target_plan = None
+	
 	# 1. Determine Target Sheet
 	target_sheet_name = None
-	if source_parent.ordered_date == target_date:
+	if source_parent.ordered_date == target_date and (source_parent.get("custom_plan_name") == target_plan or (not source_parent.get("custom_plan_name") and not target_plan)):
 		target_sheet_name = source_parent.name
 	else:
 		# Find suitable sheet
-		target_sheet_name = frappe.db.get_value("Planning sheet", {
+		find_filters = {
 			"ordered_date": target_date,
 			"party_code": source_parent.party_code,
 			"docstatus": 0
-		}, "name")
+		}
+		if target_plan:
+			find_filters["custom_plan_name"] = target_plan
+		else:
+			find_filters["custom_plan_name"] = ["in", ["", None, "Default"]]
+			
+		target_sheet_name = frappe.db.get_value("Planning sheet", find_filters, "name")
 		
 		if not target_sheet_name:
 			# Create new sheet
@@ -243,6 +253,8 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None):
 			new_sheet.dod = target_date
 			new_sheet.party_code = source_parent.party_code
 			new_sheet.customer = source_parent.customer
+			if target_plan:
+				new_sheet.custom_plan_name = target_plan
 			new_sheet.save(ignore_permissions=True)
 			target_sheet_name = new_sheet.name
 
@@ -376,7 +388,7 @@ def get_kanban_board(start_date, end_date):
 
 
 @frappe.whitelist()
-def get_color_chart_data(date=None, start_date=None, end_date=None):
+def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=None):
 	# Support both single date and range
 	if start_date and end_date:
 		query_start = getdate(start_date)
@@ -394,10 +406,15 @@ def get_color_chart_data(date=None, start_date=None, end_date=None):
 		"docstatus": ["<", 2]
 	}
 	
+	if plan_name and plan_name != "Default":
+		filters["custom_plan_name"] = plan_name
+	else:
+		filters["custom_plan_name"] = ["in", ["", None, "Default"]]
+	
 	planning_sheets = frappe.get_all(
 		"Planning sheet",
 		filters=filters,
-		fields=["name", "customer", "party_code", "dod", "ordered_date", "planning_status", "docstatus", "sales_order"],
+		fields=["name", "customer", "party_code", "dod", "ordered_date", "planning_status", "docstatus", "sales_order", "custom_plan_name"],
 		order_by="ordered_date asc, creation asc"
 	)
 
@@ -442,6 +459,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None):
 				"idx": item.get("idx", 0),
 				"width": flt(item.get("width") or item.get("custom_width") or item.get("width_inches") or item.get("width_inch") or item.get("width_in") or 0),
 				"unit": unit,
+				"planName": sheet.get("custom_plan_name") or "Default",
 				"ordered_date": str(sheet.ordered_date) if sheet.ordered_date else "",
 				"dod": str(sheet.dod) if sheet.dod else "",
 				"delivery_status": so_status_map.get(sheet.sales_order) or "Not Delivered"
@@ -480,6 +498,42 @@ def update_items_bulk(items):
 
 	return {"status": "success"}
 
+@frappe.whitelist()
+def get_monthly_plans(start_date, end_date):
+	query_start = getdate(start_date)
+	query_end = getdate(end_date)
+	
+	plans = frappe.db.get_all(
+		"Planning sheet", 
+		filters={
+			"ordered_date": ["between", [query_start, query_end]],
+			"docstatus": ["<", 2]
+		}, 
+		fields=["custom_plan_name"], 
+		order_by="custom_plan_name asc"
+	)
+	
+	unique_plans = set([p.custom_plan_name or "Default" for p in plans])
+	sorted_plans = sorted(list(unique_plans))
+	if "Default" in sorted_plans:
+		sorted_plans.remove("Default")
+		sorted_plans.insert(0, "Default")
+		
+	return sorted_plans
+
+@frappe.whitelist()
+def create_plan_name_field():
+	if not frappe.db.exists('Custom Field', 'Planning sheet-custom_plan_name'):
+		custom_field = frappe.get_doc({
+			"doctype": "Custom Field",
+			"dt": "Planning sheet",
+			"fieldname": "custom_plan_name",
+			"label": "Plan Name",
+			"fieldtype": "Data",
+			"insert_after": "planning_status"
+		})
+		custom_field.insert()
+	return {"status": "success"}
 
 @frappe.whitelist()
 def get_previous_production_date(date):
@@ -577,7 +631,7 @@ def get_orders_for_date(date):
     return data
 
 @frappe.whitelist()
-def move_orders_to_date(item_names, target_date, target_unit=None):
+def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=None):
     """
     Moves list of Planning Sheet Items to a new Date.
     Supports item-level granularity by re-parenting items if necessary.
@@ -637,11 +691,21 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
         moving_docs = items  # items is already a list
         
         # Determine Target Sheet
-        target_sheet_name = frappe.db.get_value("Planning sheet", {
+        find_filters = {
             "ordered_date": target_date,
             "party_code": parent_doc.party_code,
             "docstatus": 0
-        }, "name")
+        }
+        
+        target_plan = plan_name if plan_name and plan_name != "Default" else parent_doc.get("custom_plan_name")
+        if target_plan == "Default": target_plan = None
+        
+        if target_plan:
+             find_filters["custom_plan_name"] = target_plan
+        else:
+             find_filters["custom_plan_name"] = ["in", ["", None, "Default"]]
+             
+        target_sheet_name = frappe.db.get_value("Planning sheet", find_filters, "name")
         
         if target_sheet_name and target_sheet_name != parent_name:
             target_sheet = frappe.get_doc("Planning sheet", target_sheet_name)
@@ -653,6 +717,8 @@ def move_orders_to_date(item_names, target_date, target_unit=None):
             target_sheet.ordered_date = target_date
             target_sheet.party_code = parent_doc.party_code
             target_sheet.customer = parent_doc.customer
+            if target_plan:
+                target_sheet.custom_plan_name = target_plan
             target_sheet.save()
         
         # Get starting idx for target
