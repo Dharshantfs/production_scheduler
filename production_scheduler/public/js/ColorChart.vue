@@ -362,8 +362,8 @@ const COLOR_GROUPS = [
                "BLEACH WHITE", "OPTICAL WHITE"], priority: 5, hex: "#FFFFFF" },
   { keywords: ["WHITE"], priority: 5, hex: "#FFFFFF" },
 
-  // ── 1. IVORY / CREAM / OFF WHITE (10) ───────────────────────────
-  { keywords: ["IVORY", "OFF WHITE", "CREAM"], priority: 10, hex: "#FFFFF0" },
+  // ── 1. IVORY / CREAM / OFF WHITE (4) — User Req: Beige -> Ivory -> White 
+  { keywords: ["IVORY", "OFF WHITE", "CREAM"], priority: 4, hex: "#FFFFF0" },
 
   // ── 2. YELLOWS (20-22): Lemon → Yellow → Golden ─────────────────
   { keywords: ["LEMON YELLOW"],          priority: 20, hex: "#FFF44F" },
@@ -1277,8 +1277,45 @@ function getMonthlyCellEntries(week, unit) {
         // Filter by Date Range
         items = items.filter(d => d.orderDate >= week.start && d.orderDate <= week.end);
         
-        // Sort items within the cell using standard logic (or manual idx)
-        return sortItems(unit, items).map(d => ({
+        // --- DAILY-ASCENDING SORT [DATE -> COLOR] ---
+        // 1. Group by Date (Locking Principle)
+        const itemsByDate = {};
+        items.forEach(item => {
+            const d = item.orderDate;
+            if (!itemsByDate[d]) itemsByDate[d] = [];
+            itemsByDate[d].push(item);
+        });
+        
+        // 2. Sort Dates Chronologically
+        const distinctDates = Object.keys(itemsByDate).sort();
+        
+        // 3. Sort Items within Date (Always Light -> Dark)
+        let finalSortedItems = [];
+        distinctDates.forEach(date => {
+             const dayItems = itemsByDate[date];
+             
+             // ALWAYS Sort Light -> Dark (Ascending)
+             // This ensures Beige (96) is at End of Day 1
+             // And White/Ivory (4/5) is at Start of Day 2
+             const config = getUnitSortConfig(unit);
+             
+             dayItems.sort((a, b) => {
+                  let diff = 0;
+                  if (config.priority === 'color') {
+                      diff = compareColor(a, b, 'asc'); // Force ASC
+                      if (diff === 0) diff = compareGsm(a, b, 'asc');
+                  } else {
+                      diff = compareGsm(a, b, 'asc');
+                      if (diff === 0) diff = compareColor(a, b, 'asc');
+                  }
+                  if (diff === 0) diff = (a.idx || 0) - (b.idx || 0);
+                  return diff;
+             });
+             
+             finalSortedItems = finalSortedItems.concat(dayItems);
+        });
+        
+        return finalSortedItems.map(d => ({
             ...d,
             type: 'order',
             uniqueKey: d.itemName
