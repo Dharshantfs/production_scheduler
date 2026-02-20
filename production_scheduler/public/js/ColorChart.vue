@@ -93,6 +93,9 @@
                 <button class="cc-mini-btn" @click="toggleUnitPriority(unit)" :title="getUnitSortConfig(unit).priority === 'color' ? 'Priority: Color (click for GSM)' : 'Priority: GSM (click for Color)'">
                     {{ getUnitSortConfig(unit).priority === 'color' ? '🎨' : '📏' }}
                 </button>
+                <button class="cc-mini-btn" @click="showSortInfo(unit)" title="Show Sorting & Mixing Rules">
+                    ℹ️
+                </button>
                 </div>
             </div>
             <div class="cc-header-stats">
@@ -1125,54 +1128,49 @@ const weeks = computed(() => {
     try {
         if (viewScope.value !== 'monthly' || !filterMonth.value) return [];
         
+        // Strict 7-Day Logic (User Request: "Accurate Date")
+        // Week 1: Day 1-7
+        // Week 2: Day 8-14
+        // Week 3: Day 15-21
+        // Week 4: Day 22-28
+        // Week 5: Day 29-End
+        
         let year, month;
         if (filterMonth.value.includes('-')) {
              [year, month] = filterMonth.value.split('-').map(Number);
-        } else {
-             // Fallback for non-standard formats? Assuming YYYY-MM
-             return [];
-        }
+        } else { return []; }
 
-        const date = new Date(year, month - 1, 1);
-        const lastDay = new Date(year, month, 0).getDate();
-        
+        const lastDayOfMonth = new Date(year, month, 0).getDate();
         const weekList = [];
-        let currentWeekStart = new Date(date);
-        let weekNum = 1;
+        
+        const ranges = [
+            { start: 1, end: 7 },
+            { start: 8, end: 14 },
+            { start: 15, end: 21 },
+            { start: 22, end: 28 },
+            { start: 29, end: lastDayOfMonth }
+        ];
 
-        // Iterate until we pass the last day
-        while (currentWeekStart.getDate() <= lastDay && currentWeekStart.getMonth() === (month - 1)) {
-            const currentDay = currentWeekStart.getDay(); // 0=Sun, 1=Mon...            
-            let daysToSunday = (currentDay === 0) ? 0 : (7 - currentDay);
+        ranges.forEach((range, idx) => {
+            if (range.start > lastDayOfMonth) return;
             
-            let weekEnd = new Date(currentWeekStart);
-            weekEnd.setDate(weekEnd.getDate() + daysToSunday);
+            const effectiveEnd = Math.min(range.end, lastDayOfMonth);
             
-            // Cap at end of month
-            if (weekEnd.getMonth() !== (month - 1)) {
-                weekEnd = new Date(year, month, 0);
-            }
+            // Format Dates YYYY-MM-DD
+            const startStr = `${year}-${String(month).padStart(2, '0')}-${String(range.start).padStart(2, '0')}`;
+            const endStr = `${year}-${String(month).padStart(2, '0')}-${String(effectiveEnd).padStart(2, '0')}`;
             
-            // Format Dates
-            const startStr = frappe.datetime.obj_to_str(currentWeekStart);
-            const endStr = frappe.datetime.obj_to_str(weekEnd);
-            const label = `Week ${weekNum}`;
             const MONTH_ABBRS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-            const dateRange = `${currentWeekStart.getDate()} ${MONTH_ABBRS[month-1]} - ${weekEnd.getDate()} ${MONTH_ABBRS[month-1]}`;
+            const monthAbbr = MONTH_ABBRS[month-1];
             
             weekList.push({
-                id: `w-${weekNum}-${startStr}`,
-                label: label,
-                dateRange: dateRange,
+                id: `w-${idx+1}-${startStr}`,
+                label: `Week ${idx+1}`,
+                dateRange: `${range.start} ${monthAbbr} - ${effectiveEnd} ${monthAbbr}`,
                 start: startStr,
                 end: endStr
             });
-            
-            // Next week starts after weekEnd
-            currentWeekStart = new Date(weekEnd);
-            currentWeekStart.setDate(currentWeekStart.getDate() + 1);
-            weekNum++;
-        }
+        });
         
         return weekList;
     } catch (e) {
@@ -1180,6 +1178,59 @@ const weeks = computed(() => {
         return [];
     }
 });
+
+function showSortInfo(unit) {
+    const config = getUnitSortConfig(unit);
+    const isColor = config.priority === 'color';
+    const direction = isColor ? config.color : config.gsm;
+    
+    // Build Color Order List (Sample based on known map)
+    const colorOrder = Object.entries(COLOR_GROUPS)
+        .sort((a,b) => a[1] - b[1])
+        .map(([c, p]) => `<li style="font-size:11px; margin-bottom:2px;">${p}. <b>${c}</b></li>`)
+        .join("");
+
+    const d = new frappe.ui.Dialog({
+        title: `ℹ️ Sort & Mix Rules: ${unit}`,
+        fields: [{
+            fieldtype: 'HTML',
+            fieldname: 'info',
+            options: `
+                <div style="padding:10px;">
+                    <div style="margin-bottom:15px; padding:8px; background:#f3f4f6; border-radius:4px;">
+                        <p style="font-weight:bold; margin-bottom:4px;">Current Strategy:</p>
+                        <p>Priority: <b>${isColor ? 'Color' : 'GSM'}</b></p>
+                        <p>Direction: <b>${direction === 'asc' ? (isColor ? 'Light → Dark' : 'Low → High') : (isColor ? 'Dark → Light' : 'High → Low')}</b></p>
+                    </div>
+                    
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                        <div>
+                            <p style="font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;">Color Sequence (Light→Dark)</p>
+                            <ul style="list-style:none; padding:0; height:200px; overflow-y:auto; border:1px solid #eee;">
+                                ${colorOrder}
+                            </ul>
+                        </div>
+                        <div>
+                            <p style="font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;">Mixing Rules</p>
+                            <div style="font-size:11px;">
+                                <p><b>Gap Calculation:</b> Difference in Color Priority.</p>
+                                <ul style="list-style:disc; padding-left:15px; margin-top:5px;">
+                                    <li>Gap 0 (Same Color): <b>0 Kg</b></li>
+                                    <li>Gap 1-5 (Similar): <b>10 Kg</b></li>
+                                    <li>Gap > 20 (Contrast): <b>50 Kg+</b></li>
+                                </ul>
+                                <p style="margin-top:8px; font-style:italic; color:#666;">
+                                    *High gaps create significant waste. Try to group similar colors!
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `
+        }]
+    });
+    d.show();
+}
 
 function getMonthlyCellTotal(week, unit) {
     try {
