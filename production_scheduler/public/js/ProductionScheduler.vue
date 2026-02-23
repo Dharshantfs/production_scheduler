@@ -4,8 +4,25 @@
     <!-- Filter Bar -->
     <div class="cc-filters">
       <div class="cc-filter-item">
+        <label>View Scope</label>
+        <select v-model="viewScope" @change="toggleViewScope" style="font-weight: bold; color: #4f46e5;">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </div>
+      
+      <div class="cc-filter-item" v-if="viewScope === 'daily'">
         <label>Order Date</label>
         <input type="date" v-model="filterOrderDate" @change="fetchData" />
+      </div>
+      <div class="cc-filter-item" v-else-if="viewScope === 'weekly'">
+        <label>Select Week</label>
+        <input type="week" v-model="filterWeek" @change="fetchData" />
+      </div>
+      <div class="cc-filter-item" v-else-if="viewScope === 'monthly'">
+        <label>Select Month</label>
+        <input type="month" v-model="filterMonth" @change="fetchData" />
       </div>
       <div class="cc-filter-item">
         <label>Party Code</label>
@@ -210,6 +227,10 @@ const UNIT_TONNAGE_LIMITS = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4"
 const headerColors = { "Unit 1": "#3b82f6", "Unit 2": "#10b981", "Unit 3": "#f59e0b", "Unit 4": "#8b5cf6", "Mixed": "#64748b" };
 
 const filterOrderDate = ref(frappe.datetime.get_today());
+const filterWeek = ref("");
+const filterMonth = ref("");
+const viewScope = ref("daily");
+
 const filterPartyCode = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
@@ -238,7 +259,25 @@ const renderKey = ref(0);
 const customRowOrder = ref([]); // Store user-defined color order
 
 function goToPlan() {
-    frappe.set_route("production-table", { date: filterOrderDate.value });
+    let query = {};
+    if (viewScope.value === 'daily') query.date = filterOrderDate.value;
+    if (viewScope.value === 'weekly') query.week = filterWeek.value;
+    if (viewScope.value === 'monthly') query.month = filterMonth.value;
+    query.scope = viewScope.value;
+    frappe.set_route("production-table", query);
+}
+
+function toggleViewScope() {
+    if (viewScope.value === 'monthly' && !filterMonth.value) {
+        filterMonth.value = frappe.datetime.get_today().substring(0, 7);
+    } else if (viewScope.value === 'weekly' && !filterWeek.value) {
+        const d = new Date();
+        const dStart = new Date(d.getFullYear(), 0, 1);
+        const days = Math.floor((d - dStart) / (24 * 60 * 60 * 1000));
+        const weekNum = Math.ceil(days / 7);
+        filterWeek.value = `${d.getFullYear()}-W${String(weekNum).padStart(2,'0')}`;
+    }
+    fetchData();
 }
 
 const visibleUnits = computed(() => {
@@ -1025,21 +1064,48 @@ function updateRescueSelection(d) {
 
 const isAdmin = computed(() => frappe.user.has_role("System Manager"));
 
-let fetchDebounceTimer = null;
+let fetchTimeout = null;
+
 async function fetchData() {
-  // Debounce rapid calls (e.g. from filter typing)
-  if (fetchDebounceTimer) clearTimeout(fetchDebounceTimer);
-  
   return new Promise((resolve) => {
-    fetchDebounceTimer = setTimeout(async () => {
+    if (fetchTimeout) clearTimeout(fetchTimeout);
+    fetchTimeout = setTimeout(async () => {
       isLoading.value = true;
       try {
+        let args = { party_code: filterPartyCode.value };
+        
+        if (viewScope.value === 'monthly') {
+            if (!filterMonth.value) return resolve();
+            const startDate = `${filterMonth.value}-01`;
+            const [year, month] = filterMonth.value.split("-");
+            const lastDay = new Date(year, month, 0).getDate();
+            const endDate = `${filterMonth.value}-${lastDay}`;
+            args.start_date = startDate;
+            args.end_date = endDate;
+        } else if (viewScope.value === 'weekly') {
+            if (!filterWeek.value) return resolve();
+            const [yearStr, weekStr] = filterWeek.value.split('-W');
+            const y = parseInt(yearStr);
+            const w = parseInt(weekStr);
+            const simple = new Date(y, 0, 1 + (w - 1) * 7);
+            const dow = simple.getDay();
+            const ISOweekStart = new Date(simple);
+            if (dow <= 4) ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+            else ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+            
+            const ISOweekEnd = new Date(ISOweekStart);
+            ISOweekEnd.setDate(ISOweekEnd.getDate() + 6);
+            
+            const format = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            args.start_date = format(ISOweekStart);
+            args.end_date = format(ISOweekEnd);
+        } else {
+            args.date = filterOrderDate.value;
+        }
+
         const r = await frappe.call({
           method: "production_scheduler.api.get_color_chart_data",
-          args: { 
-              date: filterOrderDate.value,
-              party_code: filterPartyCode.value
-          },
+          args: args,
         });
         rawData.value = r.message || [];
         
