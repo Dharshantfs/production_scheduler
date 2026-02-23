@@ -30,14 +30,34 @@ UNIT_QUALITY_MAP = {
 	"Unit 4": UNIT_4
 }
 
+# Cache for column existence check
+_planned_date_col_exists = None
+def _has_planned_date_column():
+	"""Check if custom_planned_date column exists on Planning sheet table."""
+	global _planned_date_col_exists
+	if _planned_date_col_exists is None:
+		try:
+			frappe.db.sql("SELECT custom_planned_date FROM `tabPlanning sheet` LIMIT 1")
+			_planned_date_col_exists = True
+		except Exception:
+			_planned_date_col_exists = False
+	return _planned_date_col_exists
+
+def _effective_date_expr(alias="p"):
+	"""Returns SQL expression for effective date."""
+	if _has_planned_date_column():
+		return f"COALESCE({alias}.custom_planned_date, {alias}.ordered_date)"
+	return f"{alias}.ordered_date"
+
 def get_unit_load(date, unit):
 	"""Calculates current load (in Tons) for a unit on a given date.
 	Uses custom_planned_date if set, otherwise falls back to ordered_date."""
-	sql = """
+	eff = _effective_date_expr("p")
+	sql = f"""
 		SELECT SUM(i.qty) as total_qty
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
-		WHERE COALESCE(p.custom_planned_date, p.ordered_date) = %s 
+		WHERE {eff} = %s 
 		  AND i.unit = %s AND p.docstatus < 2 AND i.docstatus < 2
 	"""
 	result = frappe.db.sql(sql, (date, unit))
@@ -230,17 +250,18 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 	source_effective_date = getdate(source_parent.get("custom_planned_date") or source_parent.ordered_date)
 	
 	# If date is changing, update custom_planned_date on the parent sheet
-	if source_effective_date != target_date:
+	if source_effective_date != target_date and _has_planned_date_column():
 		frappe.db.set_value("Planning sheet", source_parent.name, "custom_planned_date", target_date)
 
 	# 2. Handle IDX Shifting if inserting at specific position
 	if new_idx is not None:
 		try:
-			frappe.db.sql("""
+			eff = _effective_date_expr("sheet")
+			frappe.db.sql(f"""
 				UPDATE `tabPlanning Sheet Item` item
 				JOIN `tabPlanning sheet` sheet ON item.parent = sheet.name
 				SET item.idx = item.idx + 1
-				WHERE COALESCE(sheet.custom_planned_date, sheet.ordered_date) = %s 
+				WHERE {eff} = %s 
 				  AND item.unit = %s 
 				  AND item.idx >= %s
 			""", (target_date, unit, new_idx))
@@ -362,14 +383,15 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	else:
 		return []
 
-	# Build SQL with COALESCE(custom_planned_date, ordered_date) for date filtering
+	# Build SQL with effective date expression for date filtering
+	eff = _effective_date_expr("p")
 	plan_condition = ""
 	params = []
 	if start_date and end_date:
-		date_condition = "COALESCE(p.custom_planned_date, p.ordered_date) BETWEEN %s AND %s"
+		date_condition = f"{eff} BETWEEN %s AND %s"
 		params.extend([query_start, query_end])
 	else:
-		date_condition = "COALESCE(p.custom_planned_date, p.ordered_date) = %s"
+		date_condition = f"{eff} = %s"
 		params.append(target_date)
 	
 	if plan_name and plan_name != "Default":
@@ -378,15 +400,18 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	else:
 		plan_condition = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
 	
+	# Build SELECT fields — include custom_planned_date only if column exists
+	extra_fields = ", p.custom_planned_date" if _has_planned_date_column() else ""
+	
 	planning_sheets = frappe.db.sql(f"""
 		SELECT p.name, p.customer, p.party_code, p.dod, p.ordered_date, 
-			p.planning_status, p.docstatus, p.sales_order, p.custom_plan_name,
-			p.custom_planned_date,
-			COALESCE(p.custom_planned_date, p.ordered_date) as effective_date
+			p.planning_status, p.docstatus, p.sales_order, p.custom_plan_name
+			{extra_fields},
+			{eff} as effective_date
 		FROM `tabPlanning sheet` p
 		WHERE {date_condition} AND p.docstatus < 2
 		{plan_condition}
-		ORDER BY COALESCE(p.custom_planned_date, p.ordered_date) ASC, p.creation ASC
+		ORDER BY {eff} ASC, p.creation ASC
 	""", tuple(params), as_dict=True)
 
 	# Fetch delivery statuses for referenced Sales Orders
@@ -518,22 +543,23 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
 @frappe.whitelist()
 def get_orders_for_date(date):
-	"""Returns all Planning Sheet Items for a specific date (used by Pull Orders dialog).
-	Uses COALESCE(custom_planned_date, ordered_date) for effective date."""
+	"""Returns all Planning Sheet Items for a specific date (used by Pull Orders dialog)."""
 	if not date:
 		return []
 	target_date = getdate(date)
+	eff = _effective_date_expr("p")
+	extra_fields = ", p.custom_planned_date" if _has_planned_date_column() else ""
 	
-	items = frappe.db.sql("""
+	items = frappe.db.sql(f"""
 		SELECT 
 			i.name, i.item_code, i.item_name, i.qty, i.uom, i.unit,
 			i.color, i.custom_quality as quality, i.gsm, i.width,
 			p.name as planning_sheet, p.party_code, p.customer,
-			p.ordered_date, p.custom_planned_date,
-			COALESCE(p.custom_planned_date, p.ordered_date) as effective_date
+			p.ordered_date{extra_fields},
+			{eff} as effective_date
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
-		WHERE COALESCE(p.custom_planned_date, p.ordered_date) = %s
+		WHERE {eff} = %s
 		  AND p.docstatus < 2
 		ORDER BY i.unit, i.idx
 	""", (target_date,), as_dict=True)
