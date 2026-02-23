@@ -2599,7 +2599,7 @@ function openPushColorDialog(color) {
              
              const targetDate = d.get_value("target_date");
              const targetUnit = d.get_value("target_unit");
-             handleMoveOrders(selectedNames, targetDate, targetUnit, null, d);
+             handleMoveOrders(selectedNames, targetDate, targetUnit, "Default", d);
         }
     });
 

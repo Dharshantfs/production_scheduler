@@ -1085,8 +1085,14 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
             "docstatus": 0
         }
         
-        target_plan = plan_name if plan_name and plan_name != "Default" else parent_doc.get("custom_plan_name")
-        if target_plan == "Default": target_plan = None
+        # Determine target plan: if explicitly "Default", force to None (no plan = Default view)
+        if plan_name and plan_name != "Default":
+            target_plan = plan_name
+        elif plan_name == "Default":
+            target_plan = None  # Explicitly targeting Default = no custom plan name
+        else:
+            target_plan = parent_doc.get("custom_plan_name")
+            if target_plan == "Default": target_plan = None
         
         if target_plan:
              find_filters["custom_plan_name"] = target_plan
