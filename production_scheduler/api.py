@@ -715,6 +715,40 @@ def update_items_bulk(items):
 	return {"status": "success"}
 
 @frappe.whitelist()
+def get_plans(date=None, start_date=None, end_date=None, **kwargs):
+	"""Get unique plan names for a date or date range."""
+	eff = _effective_date_expr("p")
+	
+	if start_date and end_date:
+		query_start = getdate(start_date)
+		query_end = getdate(end_date)
+		date_condition = f"{eff} BETWEEN %s AND %s"
+		params = [query_start, query_end]
+	elif date:
+		target_date = getdate(date)
+		date_condition = f"{eff} = %s"
+		params = [target_date]
+	else:
+		return ["Default"]
+	
+	plans = frappe.db.sql(f"""
+		SELECT DISTINCT IFNULL(p.custom_plan_name, 'Default') as plan_name
+		FROM `tabPlanning sheet` p
+		WHERE {date_condition} AND p.docstatus < 2
+		ORDER BY plan_name ASC
+	""", tuple(params), as_dict=True)
+	
+	unique_plans = [p.plan_name or "Default" for p in plans]
+	if "Default" not in unique_plans:
+		unique_plans.insert(0, "Default")
+	# Ensure Default is first
+	if unique_plans[0] != "Default":
+		unique_plans.remove("Default")
+		unique_plans.insert(0, "Default")
+	
+	return unique_plans
+
+@frappe.whitelist()
 def get_monthly_plans(start_date, end_date):
 	query_start = getdate(start_date)
 	query_end = getdate(end_date)
