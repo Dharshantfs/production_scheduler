@@ -57,6 +57,20 @@
           <option value="Finalized">Finalized</option>
         </select>
       </div>
+      <div class="cc-filter-item">
+        <label>Plan</label>
+        <div style="display:flex; gap:4px;">
+            <select v-model="selectedPlan" @change="fetchData" style="font-weight: bold;">
+                <option v-for="p in plans" :key="p" :value="p">{{ p }}</option>
+            </select>
+            <button class="cc-mini-btn" @click="createNewPlan" title="Create New Plan" style="color:#2563eb; font-weight:bold; font-size:14px;">
+                ➕ New
+            </button>
+            <button v-if="selectedPlan !== 'Default'" class="cc-mini-btn" @click="deletePlan" title="Delete this Plan" style="color:#dc2626; font-weight:bold;">
+                🗑️
+            </button>
+        </div>
+      </div>
       <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
       <button class="cc-clear-btn" style="color: #2563eb; border-color: #2563eb; margin-left: 8px;" @click="autoAllocate" title="Auto-assign orders based on Width & Quality">
         🪄 Auto Alloc
@@ -245,6 +259,8 @@ const filterPartyCode = ref("");
 const filterCustomer = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
+const selectedPlan = ref("Default");
+const plans = ref(["Default"]);
 const unitSortConfig = reactive({});
 // Pre-initialize for all units to prevent reactive loops during render
 units.forEach(u => {
@@ -361,7 +377,67 @@ function clearFilters() {
   filterCustomer.value = "";
   filterUnit.value = "";
   filterStatus.value = "";
+  selectedPlan.value = "Default";
   fetchData();
+}
+
+async function fetchPlans(args) {
+    try {
+        const r = await frappe.call({ method: "production_scheduler.api.get_plans", args: args });
+        const serverPlans = r.message || [];
+        if (!serverPlans.includes("Default")) serverPlans.unshift("Default");
+        plans.value = serverPlans;
+        if (!serverPlans.includes(selectedPlan.value)) selectedPlan.value = "Default";
+    } catch(e) { console.error("Error fetching plans", e); }
+}
+
+function createNewPlan() {
+    frappe.prompt({
+        label: 'New Plan Name',
+        fieldname: 'plan_name',
+        fieldtype: 'Data',
+        reqd: 1
+    }, async (values) => {
+        if (!plans.value.includes(values.plan_name)) {
+            plans.value.push(values.plan_name);
+        }
+        selectedPlan.value = values.plan_name;
+        fetchData();
+    }, 'Create New Plan', 'Create');
+}
+
+function deletePlan() {
+    const planName = selectedPlan.value;
+    if (!planName || planName === 'Default') {
+        frappe.msgprint('Cannot delete the Default plan.');
+        return;
+    }
+    frappe.confirm(
+        `Delete plan "<b>${planName}</b>"?`,
+        async () => {
+            let deleteArgs = { plan_name: planName };
+            if (viewScope.value === 'daily') {
+                deleteArgs.date = filterOrderDate.value;
+            } else if (viewScope.value === 'weekly') {
+                deleteArgs.start_date = '';
+                deleteArgs.end_date = '';
+            } else {
+                const [year, month] = filterMonth.value.split("-");
+                const lastDay = new Date(year, month, 0).getDate();
+                deleteArgs.start_date = `${year}-${month}-01`;
+                deleteArgs.end_date = `${year}-${month}-${lastDay}`;
+            }
+            try {
+                await frappe.call({ method: "production_scheduler.api.delete_plan", args: deleteArgs });
+                plans.value = plans.value.filter(p => p !== planName);
+                selectedPlan.value = "Default";
+                fetchData();
+                frappe.show_alert({ message: `Plan "${planName}" deleted.`, indicator: 'green' });
+            } catch (e) {
+                frappe.msgprint('Error deleting plan.');
+            }
+        }
+    );
 }
 
 // Find matching color group by checking if color name contains any keyword
@@ -1118,6 +1194,9 @@ async function fetchData() {
         } else {
             args.date = filterOrderDate.value;
         }
+
+        await fetchPlans(args);
+        args.plan_name = selectedPlan.value;
 
         const r = await frappe.call({
           method: "production_scheduler.api.get_color_chart_data",

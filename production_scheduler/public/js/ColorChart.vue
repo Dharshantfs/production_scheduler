@@ -373,8 +373,13 @@
                             <div class="flex items-center">
                                 <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
                                 {{ row.color }}
-                                <button v-if="row.total >= 800 || isWhiteExempt(row.color)" class="ml-2 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold py-[2px] px-2 rounded shadow-sm" @click.stop="openPushColorDialog(row.color)">
-                                    Push
+                                <button v-if="row.total >= 800 || isWhiteExempt(row.color)" 
+                                    @click.stop="openPushColorDialog(row.color)"
+                                    style="margin-left:8px; background: linear-gradient(135deg, #3b82f6, #2563eb); color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(37,99,235,0.3); transition: all 0.2s;"
+                                    onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(37,99,235,0.4)'"
+                                    onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 4px rgba(37,99,235,0.3)'"
+                                >
+                                    📤 Push
                                 </button>
                             </div>
                         </td>
@@ -408,8 +413,13 @@
                             <div class="flex items-center">
                                 <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
                                 {{ row.color }}
-                                <button v-if="isWhiteExempt(row.color)" class="ml-2 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold py-[2px] px-2 rounded shadow-sm" @click.stop="openPushColorDialog(row.color)">
-                                    Push
+                                <button v-if="isWhiteExempt(row.color)" 
+                                    @click.stop="openPushColorDialog(row.color)"
+                                    style="margin-left:8px; background: linear-gradient(135deg, #3b82f6, #2563eb); color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(37,99,235,0.3); transition: all 0.2s;"
+                                    onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(37,99,235,0.4)'"
+                                    onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 4px rgba(37,99,235,0.3)'"
+                                >
+                                    📤 Push
                                 </button>
                             </div>
                         </td>
@@ -872,7 +882,7 @@ const filteredData = computed(() => {
   }
   
   if (selectedPlan.value && selectedPlan.value !== "Default") {
-      data = data.filter((d) => d.plan_name === selectedPlan.value);
+      data = data.filter((d) => d.planName === selectedPlan.value);
   }
 
   return data;
