@@ -766,6 +766,42 @@ def duplicate_unprocessed_orders_to_plan(old_plan, new_plan, date=None, start_da
 		copied_count += len(new_sheet.items)
 		
 	return {"status": "success", "copied_count": copied_count}
+
+@frappe.whitelist()
+def delete_plan(plan_name, date=None, start_date=None, end_date=None):
+	"""
+	Deletes all Planning Sheets belonging to a specific plan on a given date or date range.
+	The 'Default' plan cannot be deleted.
+	"""
+	if not plan_name or plan_name == "Default":
+		frappe.throw(_("Cannot delete the Default plan"))
+
+	if start_date and end_date:
+		query_start = getdate(start_date)
+		query_end = getdate(end_date)
+		date_filter = ["between", [query_start, query_end]]
+	elif date:
+		date_filter = getdate(date)
+	else:
+		return {"status": "error", "message": "Date filter required"}
+
+	filters = {
+		"ordered_date": date_filter,
+		"docstatus": ["<", 2],
+		"custom_plan_name": plan_name
+	}
+
+	sheets = frappe.get_all("Planning sheet", filters=filters, fields=["name"])
+
+	deleted_count = 0
+	for sheet in sheets:
+		frappe.delete_doc("Planning sheet", sheet.name, force=1)
+		deleted_count += 1
+
+	frappe.db.commit()
+
+	return {"status": "success", "deleted_count": deleted_count}
+
 def get_orders_for_date(date):
     """
     Fetch all Planning Sheet Items for a specific date that are NOT Cancelled/Completed (optional filter).

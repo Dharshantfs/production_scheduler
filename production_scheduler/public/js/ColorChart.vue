@@ -30,6 +30,9 @@
             <button class="cc-mini-btn" @click="createNewPlan" title="Create New Plan Tab" style="color:#2563eb; font-weight:bold;">
                 ➕ New
             </button>
+            <button v-if="selectedPlan !== 'Default'" class="cc-mini-btn" @click="deletePlan" title="Delete this Plan" style="color:#dc2626; font-weight:bold;">
+                🗑️
+            </button>
         </div>
       </div>
       <div class="cc-filter-item">
@@ -1874,6 +1877,43 @@ function createNewPlan() {
         selectedPlan.value = newPlan;
         fetchData();
     }, 'Create New Plan Tab', 'Create');
+}
+
+function deletePlan() {
+    const planName = selectedPlan.value;
+    if (!planName || planName === 'Default') {
+        frappe.msgprint('Cannot delete the Default plan.');
+        return;
+    }
+    frappe.confirm(
+        `Delete plan "<b>${planName}</b>"? This will permanently remove all Planning Sheets under this plan for the current ${viewScope.value === 'daily' ? 'date' : 'month'}.`,
+        async () => {
+            let deleteArgs = { plan_name: planName };
+            if (viewScope.value === 'daily') {
+                deleteArgs.date = filterOrderDate.value;
+            } else {
+                const [year, month] = filterMonth.value.split("-");
+                const lastDay = new Date(year, month, 0).getDate();
+                deleteArgs.start_date = `${year}-${month}-01`;
+                deleteArgs.end_date = `${year}-${month}-${lastDay}`;
+            }
+            try {
+                const r = await frappe.call({
+                    method: "production_scheduler.api.delete_plan",
+                    args: deleteArgs
+                });
+                const count = (r.message && r.message.deleted_count) || 0;
+                frappe.show_alert({ message: `Deleted plan "${planName}" (${count} sheet${count !== 1 ? 's' : ''} removed)`, indicator: 'green' });
+                // Remove from dropdown and switch to Default
+                plans.value = plans.value.filter(p => p !== planName);
+                selectedPlan.value = 'Default';
+                fetchData();
+            } catch (e) {
+                console.error('Failed to delete plan', e);
+                frappe.msgprint('Error deleting plan.');
+            }
+        }
+    );
 }
 
 async function fetchData() {
