@@ -1169,42 +1169,73 @@ async function initSortable() {
                     let res = await performMove();
                     
                     if (res.message && res.message.status === 'overflow') {
-                         const avail = res.message.available;
-                         const limit = res.message.limit;
-                         const current = res.message.current_load;
-                         const orderWt = res.message.order_weight;
+                         const showOverflowDialog = (overflowData, moveDate, moveUnit) => {
+                             const avail = overflowData.available;
+                             const limit = overflowData.limit;
+                             const current = overflowData.current_load;
+                             const orderWt = overflowData.order_weight;
+                             const extraMsg = overflowData.message || '';
+                             
+                             const d = new frappe.ui.Dialog({
+                                title: '⚠️ Capacity Full',
+                                fields: [{
+                                     fieldtype: 'HTML', fieldname: 'msg',
+                                     options: `<div style="text-align:center; padding:10px;">
+                                         <p class="text-lg font-bold text-red-600">Unit Capacity Exceeded!</p>
+                                         ${extraMsg ? `<p style="color:#b45309; font-weight:600; margin-bottom:8px;">${extraMsg}</p>` : ''}
+                                         <p>Unit Limit: <b>${limit}T</b> | Current: <b>${current.toFixed(2)}T</b></p>
+                                         <p>Your Order: <b>${orderWt.toFixed(2)}T</b></p>
+                                         <p class="mt-2 text-green-600 font-bold">Available Space: ${avail.toFixed(3)}T</p>
+                                     </div>`
+                                }],
+                                primary_action_label: '🧠 Smart Move',
+                                primary_action: async () => {
+                                    d.hide();
+                                    const res2 = await frappe.call({
+                                        method: "production_scheduler.api.update_schedule",
+                                        args: { item_name: itemName, unit: moveUnit, date: moveDate, index: newIndex + 1, force_move: 1 }
+                                    });
+                                    if (res2.message && res2.message.status === 'success') {
+                                        const dest = res2.message.moved_to;
+                                        frappe.show_alert({ message: `Placed in ${dest.unit} (${dest.date})`, indicator: 'green' });
+                                    }
+                                    fetchData();
+                                },
+                                secondary_action_label: 'Cancel',
+                                secondary_action: () => { d.hide(); renderKey.value++; }
+                             });
+                             
+                             // Move to Next Day button (strict — same unit, next day)
+                             d.add_custom_action('📅 Next Day', async () => {
+                                 d.hide();
+                                 const res3 = await frappe.call({
+                                     method: "production_scheduler.api.update_schedule",
+                                     args: { item_name: itemName, unit: moveUnit, date: moveDate, index: 0, strict_next_day: 1 }
+                                 });
+                                 if (res3.message && res3.message.status === 'overflow') {
+                                     // Next day also full — show dialog again for that date
+                                     showOverflowDialog(res3.message, res3.message.target_date, res3.message.target_unit);
+                                 } else if (res3.message && res3.message.status === 'success') {
+                                     const dest = res3.message.moved_to;
+                                     frappe.show_alert({ message: `Moved to ${dest.unit} on ${dest.date}`, indicator: 'green' });
+                                     fetchData();
+                                 }
+                             }, 'btn-info');
+                             
+                             // Split & Distribute button
+                             d.add_custom_action('Split & Distribute', async () => {
+                                 d.hide();
+                                 if (avail < 0.1) {
+                                     frappe.msgprint("Space too small to split.");
+                                     renderKey.value++; return;
+                                 }
+                                 const res3 = await performMove(0, 1);
+                                 handleMoveSuccess(res3, newUnit);
+                             }, 'btn-warning');
+                             d.show();
+                         };
                          
-                         const d = new frappe.ui.Dialog({
-                            title: '⚠️ Capacity Full',
-                            fields: [{
-                                 fieldtype: 'HTML', fieldname: 'msg',
-                                 options: `<div style="text-align:center; padding:10px;">
-                                     <p class="text-lg font-bold text-red-600">Unit Capacity Exceeded!</p>
-                                     <p>Unit Limit: <b>${limit}T</b> | Current: <b>${current.toFixed(2)}T</b></p>
-                                     <p>Your Order: <b>${orderWt.toFixed(2)}T</b></p>
-                                     <p class="mt-2 text-green-600 font-bold">Available Space: ${avail.toFixed(3)}T</p>
-                                 </div>`
-                            }],
-                            primary_action_label: 'Move to Next Day',
-                            primary_action: async () => {
-                                d.hide();
-                                const res2 = await performMove(1, 0);
-                                handleMoveSuccess(res2, newUnit);
-                            },
-                            secondary_action_label: 'Cancel',
-                            secondary_action: () => { d.hide(); renderKey.value++; }
-                         });
-                         
-                         d.add_custom_action('Split & Distribute', async () => {
-                             d.hide();
-                             if (avail < 0.1) {
-                                 frappe.msgprint("Space too small to split.");
-                                 renderKey.value++; return;
-                             }
-                             const res3 = await performMove(0, 1);
-                             handleMoveSuccess(res3, newUnit);
-                         }, 'btn-warning');
-                         d.show();
+                         showOverflowDialog(res.message, filterOrderDate.value, newUnit);
                     } else {
                          // Fix 3: Re-fetch data instead of silent splice for same-unit resequence
                          if (isSameUnit && res.message && res.message.status === 'success') {

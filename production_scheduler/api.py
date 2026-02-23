@@ -135,7 +135,7 @@ def update_sequence(items):
 
 
 @frappe.whitelist()
-def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=0, plan_name=None):
+def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=0, plan_name=None, strict_next_day=0):
 	"""
 	Moves a specific Planning Sheet Item to a new unit/date.
 	If date changes, the item is re-parented to a suitable Planning Sheet for that date.
@@ -143,6 +143,7 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 	target_date = getdate(date)
 	force_move = flt(force_move)
 	perform_split = flt(perform_split)
+	strict_next_day = flt(strict_next_day)
 	
 	# 1. Get Item and Parent Details
 	item = frappe.get_doc("Planning Sheet Item", item_name)
@@ -169,13 +170,35 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 		# Exceeds Capacity
 		available_space = max(0, limit - current_load)
 		
-		# Scenario A: FORCE MOVE (User said "Move to Next Day")
+		# Scenario A: SMART MOVE (find best slot - checks neighbor units first, then next day)
 		if force_move:
 			best_slot = find_best_slot(item_wt_tons, quality, unit, target_date)
 			if not best_slot:
 				frappe.throw(_("Could not find a valid slot on future dates."))
 			final_unit = best_slot["unit"]
 			final_date = getdate(best_slot["date"])
+			
+		# Scenario A2: STRICT NEXT DAY (same unit, next day - re-check capacity)
+		elif strict_next_day:
+			next_day = frappe.utils.add_days(target_date, 1)
+			next_load = get_unit_load(next_day, unit)
+			next_limit = HARD_LIMITS.get(unit, 999.0)
+			
+			if next_load + item_wt_tons > next_limit:
+				# Next day also full — ask user again
+				return {
+					"status": "overflow",
+					"available": max(0, next_limit - next_load),
+					"limit": next_limit,
+					"current_load": next_load,
+					"order_weight": item_wt_tons,
+					"target_date": str(next_day),
+					"target_unit": unit,
+					"message": f"Next day ({next_day}) is also full for {unit}"
+				}
+			else:
+				final_unit = unit
+				final_date = next_day
 			
 		# Scenario B: SMART SPLIT
 		elif perform_split:

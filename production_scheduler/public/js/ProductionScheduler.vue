@@ -499,17 +499,58 @@ async function initSortable() {
                 let res = await performMove();
                 
                 if (res.message && res.message.status === 'overflow') {
-                     const avail = res.message.available;
+                     const showOverflowDialog = (overflowData, moveDate, moveUnit) => {
+                         const avail = overflowData.available;
+                         const limit = overflowData.limit;
+                         const current = overflowData.current_load;
+                         const orderWt = overflowData.order_weight;
+                         const extraMsg = overflowData.message || '';
+                         
+                         const d = new frappe.ui.Dialog({
+                            title: '⚠️ Capacity Full',
+                            fields: [{ fieldtype: 'HTML', options: `<div style="padding: 10px; border-radius: 8px; background: #fff1f2; border: 1px solid #fda4af;">
+                                <p class="text-lg font-bold text-red-600">Unit Capacity Exceeded!</p>
+                                ${extraMsg ? `<p style="color:#b45309; font-weight:600; margin:8px 0;">${extraMsg}</p>` : ''}
+                                <p>Unit Limit: <b>${limit}T</b> | Current: <b>${current.toFixed(2)}T</b></p>
+                                <p>Your Order: <b>${orderWt.toFixed(2)}T</b></p>
+                                <p style="color:#16a34a; font-weight:700; margin-top:8px;">Available: ${avail.toFixed(3)}T</p>
+                            </div>` }],
+                            primary_action_label: '🧠 Smart Move',
+                            primary_action: async () => {
+                                d.hide();
+                                const res2 = await frappe.call({
+                                    method: "production_scheduler.api.update_schedule",
+                                    args: { item_name: itemName, unit: moveUnit, date: moveDate, index: newIndex, force_move: 1 }
+                                });
+                                if (res2.message && res2.message.status === 'success') {
+                                    const dest = res2.message.moved_to;
+                                    frappe.show_alert({ message: `Placed in ${dest.unit} (${dest.date})`, indicator: 'green' });
+                                }
+                                fetchData();
+                            },
+                            secondary_action_label: 'Cancel',
+                            secondary_action: () => { d.hide(); fetchData(); }
+                         });
+                         
+                         // Move to Next Day (strict — same unit, next day)
+                         d.add_custom_action('📅 Next Day', async () => {
+                             d.hide();
+                             const res3 = await frappe.call({
+                                 method: "production_scheduler.api.update_schedule",
+                                 args: { item_name: itemName, unit: moveUnit, date: moveDate, index: 0, strict_next_day: 1 }
+                             });
+                             if (res3.message && res3.message.status === 'overflow') {
+                                 showOverflowDialog(res3.message, res3.message.target_date, res3.message.target_unit);
+                             } else if (res3.message && res3.message.status === 'success') {
+                                 const dest = res3.message.moved_to;
+                                 frappe.show_alert({ message: `Moved to ${dest.unit} on ${dest.date}`, indicator: 'green' });
+                                 fetchData();
+                             }
+                         }, 'btn-info');
+                         d.show();
+                     };
                      
-                     const d = new frappe.ui.Dialog({
-                        title: '⚠️ Capacity Full',
-                        fields: [{ fieldtype: 'HTML', options: `<div style="padding: 10px; border-radius: 8px; background: #fff1f2; border: 1px solid #fda4af;"><p class="text-lg font-bold text-red-600">Unit Capacity Exceeded!</p><p>Available: <b>${avail.toFixed(3)}T</b></p></div>` }],
-                        primary_action_label: 'Move to Next Day',
-                        primary_action: async () => { d.hide(); const moveRes = await performMove(1, 0); if (moveRes.message && moveRes.message.status === 'success') fetchData(); },
-                        secondary_action_label: 'Cancel',
-                        secondary_action: () => { d.hide(); fetchData(); }
-                     });
-                     d.show();
+                     showOverflowDialog(res.message, filterOrderDate.value, newUnit);
                 } else if (res.message && res.message.status === 'success') {
                     frappe.show_alert({ message: isSameUnit ? "Order resequenced" : "Successfully moved", indicator: "green" });
                     if (isSameUnit) {
