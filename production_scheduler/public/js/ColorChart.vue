@@ -2452,7 +2452,7 @@ async function loadOrders(d) {
     try {
         const r = await frappe.call({
             method: "production_scheduler.api.get_color_chart_data",
-            args: { date: date }
+            args: { date: date, mode: 'pull' }
         });
         
         const items = r.message || [];

@@ -373,7 +373,23 @@ def get_kanban_board(start_date, end_date):
 
 
 @frappe.whitelist()
-def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=None):
+def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=None, mode=None):
+	# PULL MODE: Return raw items by ordered_date (no filters, no PP/WO checks)
+	if mode == "pull" and date:
+		target_date = getdate(date)
+		items = frappe.db.sql("""
+			SELECT 
+				i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
+				i.color, i.custom_quality as quality, i.gsm, i.width, i.idx,
+				p.name as planningSheet, p.party_code as partyCode, p.customer,
+				p.ordered_date, p.dod
+			FROM `tabPlanning Sheet Item` i
+			JOIN `tabPlanning sheet` p ON i.parent = p.name
+			WHERE p.ordered_date = %s AND p.docstatus < 2
+			ORDER BY i.unit, i.idx
+		""", (target_date,), as_dict=True)
+		return items
+	
 	# Support both single date and range
 	if start_date and end_date:
 		query_start = getdate(start_date)
