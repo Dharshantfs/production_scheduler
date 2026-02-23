@@ -2451,7 +2451,7 @@ async function loadOrders(d) {
     
     try {
         const r = await frappe.call({
-            method: "production_scheduler.api.get_orders_for_date",
+            method: "production_scheduler.api.get_color_chart_data",
             args: { date: date }
         });
         
@@ -2486,7 +2486,7 @@ async function loadOrders(d) {
             html += `
                 <div class="pull-item-row" style="display: grid; grid-template-columns: 40px 80px 1fr 100px; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; align-items: center; transition: background 0.2s;">
                     <div style="display:flex; align-items:center; justify-content:center;">
-                        <input type="checkbox" class="pull-item-cb" data-name="${item.name}" style="cursor:pointer; transform: scale(1.1);" />
+                        <input type="checkbox" class="pull-item-cb" data-name="${item.itemName}" style="cursor:pointer; transform: scale(1.1);" />
                     </div>
                     
                     <!-- Unit -->
@@ -2499,9 +2499,9 @@ async function loadOrders(d) {
                     <!-- Details -->
                     <div style="display: flex; flex-direction: column; gap: 2px;">
                         <span style="font-size: 13px; font-weight: 600; color: #1e293b;">
-                            ${item.item_name}
+                            ${item.color || 'No Color'}
                             <span style="font-weight: 400; color: #94a3b8; font-size: 12px; margin-left: 4px;">
-                                &bull; <span style="color: #0f172a;">${item.party_code || item.customer || '-'}</span>
+                                &bull; <span style="color: #0f172a;">${item.partyCode || item.customer || '-'}</span>
                             </span>
                         </span>
                         

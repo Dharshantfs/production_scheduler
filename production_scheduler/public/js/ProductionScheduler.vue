@@ -793,7 +793,7 @@ async function loadOrders(d) {
     
     try {
         const r = await frappe.call({
-            method: "production_scheduler.api.get_orders_for_date",
+            method: "production_scheduler.api.get_color_chart_data",
             args: { date: date }
         });
         
@@ -819,11 +819,11 @@ async function loadOrders(d) {
             html += `
                 <div class="pull-item-row" style="display: grid; grid-template-columns: 40px 80px 1fr 100px; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; align-items: center;">
                     <div style="display:flex; align-items:center; justify-content:center;">
-                        <input type="checkbox" class="pull-item-cb" data-name="${item.name}" style="cursor:pointer; transform: scale(1.1);" />
+                        <input type="checkbox" class="pull-item-cb" data-name="${item.itemName}" style="cursor:pointer; transform: scale(1.1);" />
                     </div>
                     <div><span style="font-size: 11px; font-weight: 700; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">${item.unit || 'UNASSIGNED'}</span></div>
                     <div style="display: flex; flex-direction: column; gap: 2px;">
-                        <span style="font-size: 13px; font-weight: 600; color: #1e293b;">${item.item_name} <span style="font-weight: 400; color: #94a3b8; font-size: 12px;">&bull; ${item.party_code || item.customer || '-'}</span></span>
+                        <span style="font-size: 13px; font-weight: 600; color: #1e293b;">${item.color || 'No Color'} <span style="font-weight: 400; color: #94a3b8; font-size: 12px;">&bull; ${item.partyCode || item.customer || '-'}</span></span>
                         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                             <span style="display: inline-flex; align-items: center; gap: 4px; border: 1px solid #e2e8f0; padding: 1px 6px; border-radius: 99px; font-size: 11px; background: #fff;">
                                 <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color: ${getHexColor(item.color)};"></span>${item.color || 'No Color'}
