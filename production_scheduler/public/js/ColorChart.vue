@@ -549,7 +549,8 @@ let matrixInitTimer = null; // Track pending matrix sortable init timeout
 
 // Matrix View Helpers
 const matrixData = computed(() => {
-    if (viewMode.value !== 'matrix') return [];
+    const emptyResult = { dateHeaders: [], sheetHeaders: [], columns: [], rows: [], whiteRows: [], colTotals: {}, grandTotal: 0, whiteColTotals: {}, whiteGrandTotal: 0 };
+    if (viewMode.value !== 'matrix') return emptyResult;
     
     // We need Whites in the matrix view, but separated.
     const baseData = rawData.value.filter(d => {
@@ -1194,19 +1195,12 @@ async function initSortable() {
                          }, 'btn-warning');
                          d.show();
                     } else {
+                         // Fix 3: Re-fetch data instead of silent splice for same-unit resequence
                          if (isSameUnit && res.message && res.message.status === 'success') {
                              frappe.show_alert({ message: "Order resequenced", indicator: "green" });
                              unitSortConfig[newUnit].mode = 'manual';
-                             // Silent update (no re-render)
-                             const unitItems = rawData.value
-                                 .filter(d => (d.unit || "Mixed") === newUnit)
-                                 .sort((a, b) => (a.idx || 0) - (b.idx || 0));
-                             const moved = unitItems.splice(oldIndex, 1)[0];
-                             unitItems.splice(newIndex, 0, moved);
-                             unitItems.forEach((itm, i) => {
-                                 const rawItem = rawData.value.find(d => d.itemName === itm.itemName);
-                                 if (rawItem) rawItem.idx = i + 1;
-                             });
+                             // Re-fetch to get correct order from server
+                             fetchData();
                          } else {
                              handleMoveSuccess(res, newUnit);
                          }
@@ -2201,6 +2195,12 @@ function updateUrlParams() {
   if (selectedPlan.value && selectedPlan.value !== "Default") url.searchParams.set('plan', selectedPlan.value);
   else url.searchParams.delete('plan');
   
+  // Persist view state
+  url.searchParams.set('view', viewMode.value);
+  url.searchParams.set('scope', viewScope.value);
+  if (viewScope.value === 'monthly' && filterMonth.value) url.searchParams.set('month', filterMonth.value);
+  else url.searchParams.delete('month');
+  
   window.history.replaceState({}, '', url);
 }
 
@@ -2225,9 +2225,12 @@ watch(renderKey, () => {
 
 // Re-init sortable when switching between kanban/matrix views
 watch(viewMode, async () => {
+    updateUrlParams();
     await nextTick();
     initSortable();
 });
+watch(viewScope, updateUrlParams);
+watch(filterMonth, updateUrlParams);
 
 onMounted(async () => {
   // 1. Read URL Params
@@ -2235,24 +2238,29 @@ onMounted(async () => {
   const dateParam = params.get('date');
   const unitParam = params.get('unit');
   const statusParam = params.get('status');
+  const viewParam = params.get('view');
+  const scopeParam = params.get('scope');
+  const monthParam = params.get('month');
+  
+  // Restore view mode and scope FIRST (before data fetch)
+  if (viewParam && ['kanban', 'matrix'].includes(viewParam)) viewMode.value = viewParam;
+  if (scopeParam && ['daily', 'monthly'].includes(scopeParam)) viewScope.value = scopeParam;
+  if (monthParam) filterMonth.value = monthParam;
   
   if (dateParam) {
       filterOrderDate.value = dateParam;
   } else {
-      // Default to today if not provided
-      // If filterOrderDate was already set in setup(), this is fine.
       if (!filterOrderDate.value) filterOrderDate.value = frappe.datetime.get_today();
   }
   
   if (unitParam) filterUnit.value = unitParam;
   if (statusParam) {
-       // Ensure valid status
        if (["Draft", "Finalized"].includes(statusParam)) filterStatus.value = statusParam;
   }
   
   if (params.get('plan')) selectedPlan.value = params.get('plan');
   
-  // Create Plan Name custom field if not exist (Must be awaited before fetching data to prevent MySQL error)
+  // Create Plan Name custom field if not exist
   try {
       await frappe.call("production_scheduler.api.create_plan_name_field");
   } catch (e) {
