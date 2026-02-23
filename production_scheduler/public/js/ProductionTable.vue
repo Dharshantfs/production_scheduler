@@ -205,12 +205,10 @@ const filteredData = computed(() => {
       colorTotals[color] = (colorTotals[color] || 0) + (d.qty || 0);
     });
 
+    const NO_RULE_WHITES = ["BRIGHT WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"];
     data = data.filter(d => {
       const color = (d.color || "").toUpperCase().trim();
-      const isWhiteFamily = color.includes("WHITE") || color.includes("IVORY") || 
-                            color.includes("CREAM") || color.includes("OFF WHITE") ||
-                            color.includes("BLEACH") || color.includes("RFD") || color.includes("R.F.D");
-      if (isWhiteFamily) return true;
+      if (NO_RULE_WHITES.includes(color)) return true;
       return (colorTotals[color] || 0) >= 800;
     });
   }

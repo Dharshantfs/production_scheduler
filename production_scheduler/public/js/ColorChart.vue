@@ -363,6 +363,9 @@
                             <div class="flex items-center">
                                 <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
                                 {{ row.color }}
+                                <button v-if="row.total >= 800 || isWhiteExempt(row.color)" class="ml-2 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold py-[2px] px-2 rounded shadow-sm" @click.stop="openPushColorDialog(row.color)">
+                                    Push
+                                </button>
                             </div>
                         </td>
                         <td 
@@ -395,6 +398,9 @@
                             <div class="flex items-center">
                                 <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
                                 {{ row.color }}
+                                <button v-if="isWhiteExempt(row.color)" class="ml-2 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold py-[2px] px-2 rounded shadow-sm" @click.stop="openPushColorDialog(row.color)">
+                                    Push
+                                </button>
                             </div>
                         </td>
                         <td 
@@ -2308,18 +2314,25 @@ onMounted(async () => {
   analyzePreviousFlow();
 });
 
+const NO_RULE_WHITES = ["BRIGHT WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"];
+function isWhiteExempt(color) {
+    if (!color) return false;
+    return NO_RULE_WHITES.includes(color.toUpperCase().trim());
+}
+
 // ---- SHARED ACTION ----
-async function handleMoveOrders(items, date, unit, dialog) {
-    // If unit is "Keep Original", passed as empty string
+async function handleMoveOrders(items, date, unit, plan, dialog) {
     try {
-        // We use freeze:true to prevent UI interaction, but we settle generic errors manually to parse them
+        const args = {
+            item_names: items,
+            target_date: date,
+            target_unit: unit || ""
+        };
+        if (plan) args.plan_name = plan;
+
         const r = await frappe.call({
             method: "production_scheduler.api.move_orders_to_date",
-            args: {
-                item_names: items,
-                target_date: date,
-                target_unit: unit
-            },
+            args: args,
             freeze: true
         });
         
@@ -2423,6 +2436,83 @@ async function handleMoveOrders(items, date, unit, dialog) {
              frappe.msgprint(msg || "An error occurred while moving orders.");
         }
     }
+}
+
+function openPushColorDialog(color) {
+    const items = rawData.value.filter(d => {
+        if ((d.color || "").toUpperCase().trim() !== color.toUpperCase().trim()) return false;
+        if (filterUnit.value && (d.unit || "Mixed") !== filterUnit.value) return false;
+        if (filterStatus.value && d.planningStatus !== filterStatus.value) return false;
+        // The matrix view NO COLOR skip doesn't apply because they clicked a color row
+        return true;
+    });
+
+    if (!items.length) {
+        frappe.msgprint("No items found for this color in the current view.");
+        return;
+    }
+
+    // Auto-suggest unit logic (simplified heuristc based on first item)
+    let suggestedUnit = items[0].unit || "Unit 1";
+    if (suggestedUnit === "Mixed") suggestedUnit = "Unit 1"; // Pick a real unit
+
+    const d = new frappe.ui.Dialog({
+        title: `📤 Push ${color} to Production`,
+        fields: [
+            { fieldname: "target_date", label: "Target Date", fieldtype: "Date", reqd: 1, default: filterOrderDate.value || frappe.datetime.get_today() },
+            { fieldname: "target_plan", label: "Target Plan", fieldtype: "Select", options: plans.value, reqd: 1, default: selectedPlan.value },
+            { fieldname: "target_unit", label: "Target Unit", fieldtype: "Select", options: ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"], reqd: 1, default: suggestedUnit },
+            { fieldname: "items_info", label: "Order Selection", fieldtype: "HTML" }
+        ],
+        primary_action_label: "Push Selected",
+        primary_action: () => {
+             const selectedNames = d.calc_selected_items || [];
+             if (!selectedNames.length) { frappe.msgprint("Please select at least one order."); return; }
+             
+             handleMoveOrders(selectedNames, d.get_value("target_date"), d.get_value("target_unit"), d.get_value("target_plan"), d);
+        }
+    });
+
+    // Generate HTML for item selection (checkbox list)
+    let html = `
+        <div style="max-height: 300px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;">
+            <div style="position: sticky; top: 0; background: #f8fafc; z-index: 10; padding: 10px; border-bottom: 1px solid #e2e8f0; display:flex; gap: 8px; font-weight: 600; font-size: 12px; color: #64748b;">
+               <input type="checkbox" checked onchange="document.querySelectorAll('.push-chk').forEach(c => c.checked = this.checked); window.updatePushSelection()" /> Select All
+            </div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                <tbody>
+    `;
+
+    items.forEach(item => {
+        html += `
+            <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px; text-align:center; width:30px;">
+                    <input type="checkbox" class="push-chk" value="${item.itemName}" checked onchange="window.updatePushSelection()" />
+                </td>
+                <td style="padding: 8px;">
+                    <div><b style="color:#1e293b;">${item.partyCode}</b> · ${item.customer}</div>
+                    <div style="color:#64748b; font-size:10px;">${item.quality} · ${item.gsm} GSM</div>
+                </td>
+                <td style="padding: 8px; text-align:right;">
+                    <b>${item.qty} Kg</b>
+                </td>
+            </tr>
+        `;
+    });
+
+    html += `</tbody></table></div>`;
+    d.set_value("items_info", html);
+
+    // Track selections
+    window.updatePushSelection = () => {
+        const c = Array.from(document.querySelectorAll('.push-chk')).filter(chk => chk.checked).map(chk => chk.value);
+        d.calc_selected_items = c;
+    };
+    
+    // Initial tracking
+    setTimeout(() => window.updatePushSelection(), 100);
+
+    d.show();
 }
 
 // ---- PULL ORDERS FROM FUTURE ----

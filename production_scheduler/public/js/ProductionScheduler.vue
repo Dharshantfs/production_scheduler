@@ -285,7 +285,7 @@ const visibleUnits = computed(() => {
   return units.filter((u) => u === filterUnit.value);
 });
 
-const EXCLUDED_WHITES = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE"];
+const NO_RULE_WHITES = ["BRIGHT WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"];
 
 // Filter data by party code and status
 // Filter data by party code and status
@@ -311,13 +311,11 @@ const filteredData = computed(() => {
   // This ensures a single small colored order doesn't appear until the color has enough volume.
   if (data.length > 0) {
       data = data.filter(d => {
-          const color = (d.color || "").toUpperCase().trim();
-          // Exempt white-family colors from the 800kg rule — they are filtered separately
-          const isWhiteFamily = color.includes("WHITE") || color.includes("IVORY") || 
-                                color.includes("CREAM") || color.includes("OFF WHITE") ||
-                                color.includes("BLEACH") || color.includes("RFD") || color.includes("R.F.D");
-          if (isWhiteFamily) return true; // Let the excluded-whites filter handle these
-          const total = colorTotals[color] || 0;
+      const color = (d.color || "").toUpperCase().trim();
+      // Exempt specific White colors from the 800kg rule
+      if (NO_RULE_WHITES.includes(color)) return true;
+      
+      const total = colorTotals[color] || 0;
           return total >= 800;
       });
   }
