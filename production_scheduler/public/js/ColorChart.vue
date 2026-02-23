@@ -281,7 +281,7 @@
                                 {{ h.date }}
                             </th>
                         </template>
-                        <th class="matrix-total-col" rowspan="8">TOTAL</th>
+                        <th class="matrix-total-col" rowspan="9">TOTAL</th>
                     </tr>
                     <!-- Row 2: Days (Merged by Sheet) -->
                     <tr>
@@ -301,7 +301,16 @@
                             </th>
                         </template>
                     </tr>
-                    <!-- Row 4: Party Code (Merged by Sheet) -->
+                    <!-- Row 4: Customer (Merged by Sheet) -->
+                    <tr>
+                        <th class="matrix-sticky-col">CUSTOMER</th>
+                        <template v-for="(sh, si) in matrixData.sheetHeaders" :key="'cust2-sh-'+si">
+                            <th :colspan="sh.span" class="text-center font-normal" style="font-size:10px; border-left:1px solid #cbd5e1;">
+                                {{ sh.customer }}
+                            </th>
+                        </template>
+                    </tr>
+                    <!-- Row 5: Party Code (Merged by Sheet) -->
                     <tr ref="matrixHeaderRow">
                         <th class="matrix-sticky-col">CODE</th>
                         <template v-for="(sh, si) in matrixData.sheetHeaders" :key="'code-sh-'+si">
@@ -1993,16 +2002,10 @@ async function fetchData() {
         customRowOrder.value = orderRes.message || [];
     } catch(e) { console.error("Failed to load color order", e); }
 
-    // For matrix view: update data reactively, then reinit sortable for the fresh DOM
-    if (viewMode.value === 'matrix') {
-        rawData.value = [...rawData.value];
-        await nextTick();
-        initSortable(); // Rebind matrix sortable to freshly-rendered DOM
-        return;
-    }
-
-    // For kanban: increment renderKey to force re-render + reinit sortable via watch(renderKey)
-    renderKey.value++;
+    // Re-init sortable for fresh DOM (all view modes)
+    await nextTick();
+    // Small delay ensures monthly refs are ready
+    setTimeout(() => initSortable(), 200);
   } catch (e) {
     frappe.msgprint("Error loading color chart data");
     console.error(e);
@@ -3076,8 +3079,7 @@ function updateRescueSelection(d) {
 .cc-matrix-table th, 
 .cc-matrix-table td {
     padding: 8px 12px;
-    border-bottom: 1px solid #e5e7eb;
-    border-right: 1px solid #e5e7eb;
+    border: 1px solid #d1d5db;
 }
 
 .cc-matrix-table thead th {
@@ -3087,7 +3089,7 @@ function updateRescueSelection(d) {
     position: sticky;
     top: 0;
     z-index: 20;
-    border-bottom: 2px solid #e2e8f0;
+    border-bottom: 2px solid #94a3b8;
 }
 
 .cc-matrix-table tbody tr:hover td {
@@ -3099,7 +3101,8 @@ function updateRescueSelection(d) {
     left: 0;
     z-index: 10;
     background: #f8fafc;
-    border-right: 2px solid #e2e8f0;
+    border-right: 2px solid #94a3b8 !important;
+    min-width: 130px;
 }
 
 .cc-matrix-table thead th.matrix-sticky-col {
