@@ -517,6 +517,32 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
 
 @frappe.whitelist()
+def get_orders_for_date(date):
+	"""Returns all Planning Sheet Items for a specific date (used by Pull Orders dialog).
+	Uses COALESCE(custom_planned_date, ordered_date) for effective date."""
+	if not date:
+		return []
+	target_date = getdate(date)
+	
+	items = frappe.db.sql("""
+		SELECT 
+			i.name, i.item_code, i.item_name, i.qty, i.uom, i.unit,
+			i.color, i.custom_quality as quality, i.gsm, i.width,
+			p.name as planning_sheet, p.party_code, p.customer,
+			p.ordered_date, p.custom_planned_date,
+			COALESCE(p.custom_planned_date, p.ordered_date) as effective_date
+		FROM `tabPlanning Sheet Item` i
+		JOIN `tabPlanning sheet` p ON i.parent = p.name
+		WHERE COALESCE(p.custom_planned_date, p.ordered_date) = %s
+		  AND p.docstatus < 2
+		ORDER BY i.unit, i.idx
+	""", (target_date,), as_dict=True)
+	
+	return items
+
+
+
+@frappe.whitelist()
 def update_item_unit(item_name, unit):
 	if not item_name or not unit:
 		frappe.throw(_("Item Name and Unit are required"))
