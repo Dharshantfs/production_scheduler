@@ -510,7 +510,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		date_condition = f"{eff} = %s"
 		params.append(target_date)
 	
-	if plan_name and plan_name != "Default":
+	if plan_name == "__all__":
+		plan_condition = ""  # No plan filter — return all items
+	elif plan_name and plan_name != "Default":
 		plan_condition = "AND p.custom_plan_name = %s"
 		params.append(plan_name)
 	else:

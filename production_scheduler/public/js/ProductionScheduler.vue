@@ -315,37 +315,31 @@ const visibleUnits = computed(() => {
 const NO_RULE_WHITES = ["BRIGHT WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"];
 const EXCLUDED_WHITES = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE"];
 
-// Filter data by party code and status
-// Filter data by party code and status
+// Filter data by plan + party code + status
 const filteredData = computed(() => {
   let data = rawData.value || [];
   
-  // Data Cleanup (Normalize Unit)
+  // Normalize Unit
   data = data.map(d => ({
       ...d,
       unit: d.unit || "Mixed"
   }));
 
-  // 1. Calculate Total Weight Per Color (Across ALL units)
-  const colorTotals = {};
-  data.forEach(d => {
+  // PLAN FILTERING (Production Board specific)
+  if (selectedPlan.value === 'Default') {
+    // Default plan: Show ONLY white colors (all whites, NO 800kg rule)
+    // These are items that bypass Color Chart processing
+    data = data.filter(d => {
       const color = (d.color || "").toUpperCase().trim();
-      if (!colorTotals[color]) colorTotals[color] = 0;
-      colorTotals[color] += (d.qty || 0);
-  });
-
-  // 2. Filter out orders where Color Total < 800kg
-  // Rule: only applies to NON-WHITE colors. Whites are handled by the excluded-whites filter.
-  // This ensures a single small colored order doesn't appear until the color has enough volume.
-  if (data.length > 0) {
-      data = data.filter(d => {
-      const color = (d.color || "").toUpperCase().trim();
-      // Exempt specific White colors from the 800kg rule
+      // Include if it's any white variant
+      if (EXCLUDED_WHITES.some(ex => color.includes(ex))) return true;
       if (NO_RULE_WHITES.includes(color)) return true;
-      
-      const total = colorTotals[color] || 0;
-          return total >= 800;
-      });
+      if (color.includes('IVORY') || color.includes('CREAM') || color.includes('OFF WHITE')) return true;
+      return false;
+    });
+  } else {
+    // Non-Default plans: Show only items that were pushed to this plan
+    data = data.filter(d => d.planName === selectedPlan.value);
   }
 
   if (filterPartyCode.value) {
@@ -361,7 +355,6 @@ const filteredData = computed(() => {
     );
   }
 
-  // Use production_status or planning_status based on API
   if (filterStatus.value) {
     data = data.filter((d) => (d.status === filterStatus.value || d.production_status === filterStatus.value));
   }
@@ -381,28 +374,22 @@ function clearFilters() {
   fetchData();
 }
 
-async function fetchPlans(args) {
-    try {
-        const r = await frappe.call({ method: "production_scheduler.api.get_plans", args: args });
-        const serverPlans = r.message || [];
-        if (!serverPlans.includes("Default")) serverPlans.unshift("Default");
-        plans.value = serverPlans;
-        if (!serverPlans.includes(selectedPlan.value)) selectedPlan.value = "Default";
-    } catch(e) { console.error("Error fetching plans", e); }
-}
-
+// Production Board has its own plan management (separate from Color Chart)
 function createNewPlan() {
     frappe.prompt({
         label: 'New Plan Name',
         fieldname: 'plan_name',
         fieldtype: 'Data',
         reqd: 1
-    }, async (values) => {
-        if (!plans.value.includes(values.plan_name)) {
-            plans.value.push(values.plan_name);
+    }, (values) => {
+        const name = values.plan_name.trim();
+        if (!name) return;
+        if (!plans.value.includes(name)) {
+            plans.value.push(name);
         }
-        selectedPlan.value = values.plan_name;
-        fetchData();
+        selectedPlan.value = name;
+        // No server copy — plan starts empty, items come via Push from Color Chart
+        frappe.show_alert({ message: `Plan "${name}" created. Push orders from Color Chart to populate it.`, indicator: 'green' });
     }, 'Create New Plan', 'Create');
 }
 
@@ -413,29 +400,11 @@ function deletePlan() {
         return;
     }
     frappe.confirm(
-        `Delete plan "<b>${planName}</b>"?`,
-        async () => {
-            let deleteArgs = { plan_name: planName };
-            if (viewScope.value === 'daily') {
-                deleteArgs.date = filterOrderDate.value;
-            } else if (viewScope.value === 'weekly') {
-                deleteArgs.start_date = '';
-                deleteArgs.end_date = '';
-            } else {
-                const [year, month] = filterMonth.value.split("-");
-                const lastDay = new Date(year, month, 0).getDate();
-                deleteArgs.start_date = `${year}-${month}-01`;
-                deleteArgs.end_date = `${year}-${month}-${lastDay}`;
-            }
-            try {
-                await frappe.call({ method: "production_scheduler.api.delete_plan", args: deleteArgs });
-                plans.value = plans.value.filter(p => p !== planName);
-                selectedPlan.value = "Default";
-                fetchData();
-                frappe.show_alert({ message: `Plan "${planName}" deleted.`, indicator: 'green' });
-            } catch (e) {
-                frappe.msgprint('Error deleting plan.');
-            }
+        `Remove plan "<b>${planName}</b>" from Production Board?`,
+        () => {
+            plans.value = plans.value.filter(p => p !== planName);
+            selectedPlan.value = "Default";
+            frappe.show_alert({ message: `Plan "${planName}" removed.`, indicator: 'green' });
         }
     );
 }
@@ -1195,8 +1164,9 @@ async function fetchData() {
             args.date = filterOrderDate.value;
         }
 
-        await fetchPlans(args);
-        args.plan_name = selectedPlan.value;
+        // Production Board: fetch ALL data across all plans
+        // Plan filtering happens on frontend in filteredData
+        args.plan_name = "__all__";
 
         const r = await frappe.call({
           method: "production_scheduler.api.get_color_chart_data",
