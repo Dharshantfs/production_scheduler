@@ -463,9 +463,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		# Wrap in try-except in case custom field doesn't exist
 		try:
 			pp_sheet_data = frappe.db.sql(f"""
-				SELECT planning_sheet, name 
+				SELECT custom_planning_sheet as planning_sheet, name 
 				FROM `tabProduction Plan` 
-				WHERE planning_sheet IN ({format_string_sheet}) AND docstatus < 2
+				WHERE custom_planning_sheet IN ({format_string_sheet}) AND docstatus < 2
 			""", tuple(sheet_names), as_dict=True)
 			for row in pp_sheet_data:
 				sheet_pp_map[row.planning_sheet] = row.name
@@ -719,7 +719,7 @@ def duplicate_unprocessed_orders_to_plan(old_plan, new_plan, date=None, start_da
 			try:
 				pp_exists_sheet = frappe.db.sql("""
 					SELECT name FROM `tabProduction Plan`
-					WHERE planning_sheet = %s AND docstatus < 2
+					WHERE custom_planning_sheet = %s AND docstatus < 2
 					LIMIT 1
 				""", (sheet.name,))
 				if pp_exists_sheet:

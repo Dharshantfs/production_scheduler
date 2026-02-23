@@ -168,6 +168,7 @@
                         {{ entry.quality }} · {{ entry.gsm }} GSM
                         <span v-if="entry.has_wo" style="font-size:9px; padding:1px 4px; background:#dcfce7; color:#166534; border-radius:3px; margin-left:4px; font-weight:bold; border:1px solid #bbf7d0;" title="Work Order Created">WO</span>
                         <span v-else-if="entry.has_pp" style="font-size:9px; padding:1px 4px; background:#dbeafe; color:#1e40af; border-radius:3px; margin-left:4px; font-weight:bold; border:1px solid #bfdbfe;" title="Production Plan Created">PP</span>
+                        <span v-else style="font-size:9px; padding:1px 4px; background:#fef3c7; color:#92400e; border-radius:3px; margin-left:4px; font-weight:bold; border:1px solid #fde68a;" title="Planning Sheet">PS</span>
                     </div>
                     </div>
                 </div>
@@ -253,6 +254,7 @@
                                               <span>{{ entry.quality }}</span>
                                               <span v-if="entry.has_wo" style="font-size:8px; padding:0px 3px; background:#dcfce7; color:#166534; border-radius:2px; font-weight:bold;" title="Work Order Created">WO</span>
                                               <span v-else-if="entry.has_pp" style="font-size:8px; padding:0px 3px; background:#dbeafe; color:#1e40af; border-radius:2px; font-weight:bold;" title="Production Plan Created">PP</span>
+                                              <span v-else style="font-size:8px; padding:0px 3px; background:#fef3c7; color:#92400e; border-radius:2px; font-weight:bold;" title="Planning Sheet">PS</span>
                                           </div>
                                       </div>
                                       <div class="text-[10px] font-bold text-gray-700" style="white-space:nowrap;">
