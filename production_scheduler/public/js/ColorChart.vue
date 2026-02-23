@@ -281,7 +281,7 @@
                                 {{ h.date }}
                             </th>
                         </template>
-                        <th class="matrix-total-col" rowspan="6">TOTAL</th>
+                        <th class="matrix-total-col" rowspan="7">TOTAL</th>
                     </tr>
                     <!-- Row 2: Days -->
                     <tr>
@@ -290,7 +290,14 @@
                             {{ col.days }}
                         </th>
                     </tr>
-                    <!-- Row 3: Code (Draggable Header) -->
+                    <!-- Row 3: Planning Sheet (Clickable) -->
+                    <tr>
+                        <th class="matrix-sticky-col">PLANNING SHEET</th>
+                        <th v-for="col in matrixData.columns" :key="'sheet-'+col.id" class="text-center font-normal" style="font-size:10px;">
+                            <a href="javascript:void(0)" @click.stop="openForm(col.code)" style="color:#2563eb; text-decoration:underline; cursor:pointer; font-weight:600;">{{ col.code }}</a>
+                        </th>
+                    </tr>
+                    <!-- Row 4: Party Code (Draggable Header) -->
                     <tr ref="matrixHeaderRow">
                         <th class="matrix-sticky-col">CODE</th>
                         <th 
@@ -300,7 +307,7 @@
                             :data-id="col.id"
                             :data-date="col.date"
                         >
-                            <div class="draggable-handle" style="cursor: grab;">{{ col.code }}</div>
+                            <div class="draggable-handle" style="cursor: grab;">{{ col.partyCode }}</div>
                         </th>
                     </tr>
                     <!-- Row 4: GSM -->
@@ -520,7 +527,7 @@ const unitSortConfig = reactive({});
 units.forEach(u => {
     unitSortConfig[u] = { mode: 'auto', color: 'asc', gsm: 'desc', priority: 'color' };
 });
-const viewMode = ref('kanban'); // 'kanban' | 'matrix'
+const viewMode = ref('matrix'); // 'kanban' | 'matrix'
 const rawData = ref([]);
 const columnRefs = ref(null);
 const monthlyCellRefs = ref(null);
@@ -572,6 +579,7 @@ const matrixData = computed(() => {
                 date: d.ordered_date || d.order_date || "", // Date
                 days: 0,
                 code: sheetCode,
+                partyCode: d.partyCode || d.customer || "",
                 gsm: gsm,
                 quality: quality,
                 customer: d.customer || d.partyCode || "",

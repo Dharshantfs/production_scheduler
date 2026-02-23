@@ -669,8 +669,9 @@ def split_order(item_name, split_qty, target_unit):
 @frappe.whitelist()
 def duplicate_unprocessed_orders_to_plan(old_plan, new_plan, date=None, start_date=None, end_date=None):
 	"""
-	Copies Planning Sheets and their Items from `old_plan` to `new_plan` on a specific date or date range.
-	BUT ONLY IF the referenced Sales Order has NOT been processed into a Production Plan / Work Order.
+	Moves unprocessed Planning Sheets from `old_plan` to `new_plan` by updating custom_plan_name.
+	Does NOT create new sheets — just updates the plan name on existing ones.
+	Only moves sheets that do NOT have BOTH a Production Plan AND a Work Order.
 	"""
 	if start_date and end_date:
 		query_start = getdate(start_date)
@@ -747,24 +748,15 @@ def duplicate_unprocessed_orders_to_plan(old_plan, new_plan, date=None, start_da
 			if wo_exists_so:
 				has_wo = True
 				
-		# User requirement: "if created [PP] and also created workorder means u no need to show for creation of new plan"
-		# "either one conditon or both false u shooul show for new plan"
-		# Therefore: ONLY skip if it has BOTH a Production Plan AND a Work Order!
+		# ONLY skip if it has BOTH a Production Plan AND a Work Order
 		if has_pp and has_wo:
 			continue
 			
-		# It DOES NOT have both PP and WO. We must copy it.
-		old_doc = frappe.get_doc("Planning sheet", sheet.name)
+		# Just update the plan name on the existing sheet — no duplication
+		frappe.db.set_value("Planning sheet", sheet.name, "custom_plan_name", new_plan_val or "")
+		copied_count += 1
 		
-		# Create new sheet
-		new_sheet = frappe.copy_doc(old_doc)
-		new_sheet.custom_plan_name = new_plan_val
-		
-		# Reset workflow/status fields if necessary
-		new_sheet.planning_status = "Draft"
-		new_sheet.insert(ignore_permissions=True)
-		copied_count += len(new_sheet.items)
-		
+	frappe.db.commit()
 	return {"status": "success", "copied_count": copied_count}
 
 @frappe.whitelist()
