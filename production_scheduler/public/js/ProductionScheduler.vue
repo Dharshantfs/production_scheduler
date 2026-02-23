@@ -117,8 +117,11 @@
                     <span style="font-weight:700; color:#111827;">{{ entry.partyCode }}</span>
                     <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> · {{ entry.customer }}</span>
                   </div>
-                  <div class="cc-card-details">
+                  <div class="cc-card-details" style="display:flex; align-items:center;">
                     {{ entry.quality }} · {{ entry.gsm }} GSM
+                    <span v-if="entry.has_wo" style="font-size:9px; padding:1px 4px; background:#dcfce7; color:#166534; border-radius:3px; margin-left:4px; font-weight:bold; border:1px solid #bbf7d0;" title="Work Order Created">WO</span>
+                    <span v-else-if="entry.has_pp" style="font-size:9px; padding:1px 4px; background:#dbeafe; color:#1e40af; border-radius:3px; margin-left:4px; font-weight:bold; border:1px solid #bfdbfe;" title="Production Plan Created">PP</span>
+                    <span v-else style="font-size:9px; padding:1px 4px; background:#fef3c7; color:#92400e; border-radius:3px; margin-left:4px; font-weight:bold; border:1px solid #fde68a;" title="Planning Sheet">PS</span>
                   </div>
                 </div>
               </div>
@@ -511,22 +514,8 @@ async function initSortable() {
                     frappe.show_alert({ message: isSameUnit ? "Order resequenced" : "Successfully moved", indicator: "green" });
                     if (isSameUnit) {
                         unitSortConfig[newUnit].mode = 'manual';
-                        // Update idx in memory only — no re-render, no sortable reinit, no freeze
-                        const unitItems = rawData.value
-                            .filter(d => (d.unit || "Mixed") === newUnit)
-                            .sort((a, b) => (a.idx || 0) - (b.idx || 0));
-                        const moved = unitItems.splice(evt.oldIndex, 1)[0];
-                        unitItems.splice(evt.newIndex, 0, moved);
-                        unitItems.forEach((item, i) => {
-                            const rawItem = rawData.value.find(d => d.itemName === item.itemName);
-                            if (rawItem) rawItem.idx = i + 1;
-                        });
-                        const sequencePayload = unitItems.map((item, i) => ({ name: item.itemName, idx: i + 1 }));
-                        frappe.call({
-                            method: "production_scheduler.api.update_sequence",
-                            args: { items: sequencePayload }
-                        });
-                        // DOM is already correct (Sortable moved it). Don't touch rawData ref.
+                        // Re-fetch from server to get correct order
+                        fetchData();
                     } else {
                         unitSortConfig[newUnit].mode = 'manual';
                         await fetchData(); // Vue re-renders cleanly — hidden element is gone

@@ -31,13 +31,14 @@ UNIT_QUALITY_MAP = {
 }
 
 def get_unit_load(date, unit):
-	"""Calculates current load (in Tons) for a unit on a given date."""
-	# Optimized query
+	"""Calculates current load (in Tons) for a unit on a given date.
+	Uses custom_planned_date if set, otherwise falls back to ordered_date."""
 	sql = """
 		SELECT SUM(i.qty) as total_qty
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
-		WHERE p.ordered_date = %s AND i.unit = %s AND p.docstatus < 2 AND i.docstatus < 2
+		WHERE COALESCE(p.custom_planned_date, p.ordered_date) = %s 
+		  AND i.unit = %s AND p.docstatus < 2 AND i.docstatus < 2
 	"""
 	result = frappe.db.sql(sql, (date, unit))
 	return flt(result[0][0]) / 1000.0 if result and result[0][0] else 0.0
@@ -220,76 +221,38 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 	}
 
 def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
-	"""Internal helper to re-parent a Planning Sheet Item to a specific slot."""
+	"""Internal helper to move a Planning Sheet Item to a specific slot.
+	Sets custom_planned_date on parent sheet instead of re-parenting."""
 	target_date = getdate(date)
 	source_parent = frappe.get_doc("Planning sheet", item_doc.parent)
 	
-	# Determine logical plan_name to use
-	target_plan = plan_name if plan_name and plan_name != "Default" else source_parent.get("custom_plan_name")
-	if target_plan == "Default": target_plan = None
+	# Get the effective date of the source (what date it's currently shown on)
+	source_effective_date = getdate(source_parent.get("custom_planned_date") or source_parent.ordered_date)
 	
-	# 1. Determine Target Sheet
-	target_sheet_name = None
-	if source_parent.ordered_date == target_date and (source_parent.get("custom_plan_name") == target_plan or (not source_parent.get("custom_plan_name") and not target_plan)):
-		target_sheet_name = source_parent.name
-	else:
-		# Find suitable sheet
-		find_filters = {
-			"ordered_date": target_date,
-			"party_code": source_parent.party_code,
-			"docstatus": 0
-		}
-		if target_plan:
-			find_filters["custom_plan_name"] = target_plan
-		else:
-			find_filters["custom_plan_name"] = ["in", ["", None, "Default"]]
-			
-		target_sheet_name = frappe.db.get_value("Planning sheet", find_filters, "name")
-		
-		if not target_sheet_name:
-			# Create new sheet
-			new_sheet = frappe.new_doc("Planning sheet")
-			new_sheet.ordered_date = target_date
-			new_sheet.dod = target_date
-			new_sheet.party_code = source_parent.party_code
-			new_sheet.customer = source_parent.customer
-			new_sheet.sales_order = source_parent.sales_order
-			if target_plan:
-				new_sheet.custom_plan_name = target_plan
-			new_sheet.save(ignore_permissions=True)
-			target_sheet_name = new_sheet.name
+	# If date is changing, update custom_planned_date on the parent sheet
+	if source_effective_date != target_date:
+		frappe.db.set_value("Planning sheet", source_parent.name, "custom_planned_date", target_date)
 
 	# 2. Handle IDX Shifting if inserting at specific position
-	# WE MUST SHIFT GLOBAL VIEW (All Sheets for this Date/Unit) unlike before
 	if new_idx is not None:
 		try:
-			# Shift all items in this Unit & Date >= new_idx
 			frappe.db.sql("""
 				UPDATE `tabPlanning Sheet Item` item
-				JOIN `tabPlanning Sheet` sheet ON item.parent = sheet.name
+				JOIN `tabPlanning sheet` sheet ON item.parent = sheet.name
 				SET item.idx = item.idx + 1
-				WHERE sheet.ordered_date = %s 
+				WHERE COALESCE(sheet.custom_planned_date, sheet.ordered_date) = %s 
 				  AND item.unit = %s 
 				  AND item.idx >= %s
 			""", (target_date, unit, new_idx))
 		except Exception as e:
 			frappe.log_error(f"Shift Error: {str(e)}")
 
-	# Update Item
+	# Update Item unit and idx
 	item_doc.unit = unit
-	item_doc.parent = target_sheet_name
-	item_doc.parenttype = "Planning sheet"
-	item_doc.parentfield = "items"
 	if new_idx is not None:
 		item_doc.idx = new_idx
 	
 	item_doc.save()
-	
-	# 4. Cleanup Source
-	if source_parent.name != target_sheet_name:
-		source_parent.reload()
-		if not source_parent.get("items"):
-			frappe.delete_doc("Planning sheet", source_parent.name, force=1)
 
 
 @frappe.whitelist()
@@ -394,30 +357,37 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	if start_date and end_date:
 		query_start = getdate(start_date)
 		query_end = getdate(end_date)
-		date_filter = ["between", [query_start, query_end]]
 	elif date:
 		target_date = getdate(date)
-		date_filter = target_date
 	else:
 		return []
 
-	# Get all planning sheets for this date range
-	filters = {
-		"ordered_date": date_filter,
-		"docstatus": ["<", 2]
-	}
+	# Build SQL with COALESCE(custom_planned_date, ordered_date) for date filtering
+	plan_condition = ""
+	params = []
+	if start_date and end_date:
+		date_condition = "COALESCE(p.custom_planned_date, p.ordered_date) BETWEEN %s AND %s"
+		params.extend([query_start, query_end])
+	else:
+		date_condition = "COALESCE(p.custom_planned_date, p.ordered_date) = %s"
+		params.append(target_date)
 	
 	if plan_name and plan_name != "Default":
-		filters["custom_plan_name"] = plan_name
+		plan_condition = "AND p.custom_plan_name = %s"
+		params.append(plan_name)
 	else:
-		filters["custom_plan_name"] = ["in", ["", None, "Default"]]
+		plan_condition = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
 	
-	planning_sheets = frappe.get_all(
-		"Planning sheet",
-		filters=filters,
-		fields=["name", "customer", "party_code", "dod", "ordered_date", "planning_status", "docstatus", "sales_order", "custom_plan_name"],
-		order_by="ordered_date asc, creation asc"
-	)
+	planning_sheets = frappe.db.sql(f"""
+		SELECT p.name, p.customer, p.party_code, p.dod, p.ordered_date, 
+			p.planning_status, p.docstatus, p.sales_order, p.custom_plan_name,
+			p.custom_planned_date,
+			COALESCE(p.custom_planned_date, p.ordered_date) as effective_date
+		FROM `tabPlanning sheet` p
+		WHERE {date_condition} AND p.docstatus < 2
+		{plan_condition}
+		ORDER BY COALESCE(p.custom_planned_date, p.ordered_date) ASC, p.creation ASC
+	""", tuple(params), as_dict=True)
 
 	# Fetch delivery statuses for referenced Sales Orders
 	so_names = [d.sales_order for d in planning_sheets if d.sales_order]
@@ -515,8 +485,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			# Allow items without color (for capacity accuracy)
 			color = item.get("color") or item.get("colour") or "NO COLOR"
 			
-			# For Matrix view calculation - we might need date if it's a range
-			order_date_str = str(sheet.ordered_date)
+			# For Matrix view calculation - use effective_date (planned or ordered)
+			effective_date_str = str(sheet.effective_date) if sheet.get("effective_date") else str(sheet.ordered_date)
 
 			data.append({
 				"name": "{}-{}".format(sheet.name, item.get("idx", 0)),
@@ -526,7 +496,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				"partyCode": sheet.party_code,
 				"planningStatus": sheet.planning_status or "Draft",
 				"docstatus": sheet.docstatus,
-				"orderDate": order_date_str, # Add this for Monthly View filtering!
+				"orderDate": effective_date_str,
 				"color": color.upper().strip(),
 				"quality": item.get("custom_quality") or item.get("quality") or "",
 				"gsm": item.get("gsm") or "",
@@ -536,6 +506,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				"unit": unit,
 				"planName": sheet.get("custom_plan_name") or "Default",
 				"ordered_date": str(sheet.ordered_date) if sheet.ordered_date else "",
+				"planned_date": str(sheet.custom_planned_date) if sheet.get("custom_planned_date") else "",
 				"dod": str(sheet.dod) if sheet.dod else "",
 				"delivery_status": so_status_map.get(sheet.sales_order) or "Not Delivered",
 				"has_pp": sheet_has_pp,
@@ -610,6 +581,20 @@ def create_plan_name_field():
 			"insert_after": "planning_status"
 		})
 		custom_field.insert(ignore_permissions=True)
+	
+	# Create Planned Date custom field
+	if not frappe.db.exists('Custom Field', 'Planning sheet-custom_planned_date'):
+		custom_field2 = frappe.get_doc({
+			"doctype": "Custom Field",
+			"dt": "Planning sheet",
+			"fieldname": "custom_planned_date",
+			"label": "Planned Date",
+			"fieldtype": "Date",
+			"insert_after": "ordered_date",
+			"description": "Actual planned production date. If empty, ordered_date is used."
+		})
+		custom_field2.insert(ignore_permissions=True)
+	
 	return {"status": "success"}
 
 @frappe.whitelist()
