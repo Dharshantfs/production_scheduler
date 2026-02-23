@@ -197,7 +197,7 @@ const filteredData = computed(() => {
   let data = rawData.value || [];
   data = data.map(d => ({ ...d, unit: d.unit || "Mixed" }));
 
-  // ── Same 800kg color filter as Production Board ──────────────────────────
+  // ── 800kg color filter (Exempt Whites) ─────────────────────────
   if (data.length > 0) {
     const colorTotals = {};
     data.forEach(d => {
@@ -207,6 +207,10 @@ const filteredData = computed(() => {
 
     data = data.filter(d => {
       const color = (d.color || "").toUpperCase().trim();
+      const isWhiteFamily = color.includes("WHITE") || color.includes("IVORY") || 
+                            color.includes("CREAM") || color.includes("OFF WHITE") ||
+                            color.includes("BLEACH") || color.includes("RFD") || color.includes("R.F.D");
+      if (isWhiteFamily) return true;
       return (colorTotals[color] || 0) >= 800;
     });
   }
