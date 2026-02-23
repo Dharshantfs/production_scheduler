@@ -281,55 +281,64 @@
                                 {{ h.date }}
                             </th>
                         </template>
-                        <th class="matrix-total-col" rowspan="7">TOTAL</th>
+                        <th class="matrix-total-col" rowspan="8">TOTAL</th>
                     </tr>
-                    <!-- Row 2: Days -->
+                    <!-- Row 2: Days (Merged by Sheet) -->
                     <tr>
                         <th class="matrix-sticky-col">DAYS</th>
-                        <th v-for="col in matrixData.columns" :key="'days-'+col.id" class="text-center font-normal">
-                            {{ col.days }}
-                        </th>
+                        <template v-for="(sh, si) in matrixData.sheetHeaders" :key="'days-sh-'+si">
+                            <th :colspan="sh.span" class="text-center font-normal" style="border-left:1px solid #cbd5e1;">
+                                {{ sh.days }}
+                            </th>
+                        </template>
                     </tr>
-                    <!-- Row 3: Planning Sheet (Clickable) -->
+                    <!-- Row 3: Planning Sheet (Merged by Sheet, Clickable) -->
                     <tr>
                         <th class="matrix-sticky-col">PLANNING SHEET</th>
-                        <th v-for="col in matrixData.columns" :key="'sheet-'+col.id" class="text-center font-normal" style="font-size:10px;">
-                            <a href="javascript:void(0)" @click.stop="openForm(col.code)" style="color:#2563eb; text-decoration:underline; cursor:pointer; font-weight:600;">{{ col.code }}</a>
-                        </th>
+                        <template v-for="(sh, si) in matrixData.sheetHeaders" :key="'sheet-sh-'+si">
+                            <th :colspan="sh.span" class="text-center font-normal" style="font-size:10px; border-left:1px solid #cbd5e1;">
+                                <a href="javascript:void(0)" @click.stop="openForm(sh.code)" style="color:#2563eb; text-decoration:underline; cursor:pointer; font-weight:600;">{{ sh.code }}</a>
+                            </th>
+                        </template>
                     </tr>
-                    <!-- Row 4: Party Code (Draggable Header) -->
+                    <!-- Row 4: Party Code (Merged by Sheet) -->
                     <tr ref="matrixHeaderRow">
                         <th class="matrix-sticky-col">CODE</th>
-                        <th 
-                            v-for="col in matrixData.columns" 
-                            :key="'code-'+col.id" 
-                            class="text-center matrix-col-header"
-                            :data-id="col.id"
-                            :data-date="col.date"
-                        >
-                            <div class="draggable-handle" style="cursor: grab;">{{ col.partyCode }}</div>
+                        <template v-for="(sh, si) in matrixData.sheetHeaders" :key="'code-sh-'+si">
+                            <th :colspan="sh.span" class="text-center matrix-col-header" style="border-left:1px solid #cbd5e1;">
+                                <div class="draggable-handle" style="cursor: grab;">{{ sh.partyCode }}</div>
+                            </th>
+                        </template>
+                    </tr>
+                    <!-- Row 5: Unit (Per Column) -->
+                    <tr>
+                        <th class="matrix-sticky-col">UNIT</th>
+                        <th v-for="col in matrixData.columns" :key="'unit-'+col.id" class="text-center font-normal" style="font-size:10px;">
+                            {{ col.unit }}
                         </th>
                     </tr>
-                    <!-- Row 4: GSM -->
+                    <!-- Row 6: GSM -->
                     <tr>
                         <th class="matrix-sticky-col">GSM TYPE</th>
                         <th v-for="col in matrixData.columns" :key="'gsm-'+col.id" class="text-center font-normal">
                             {{ col.gsm }}
                         </th>
                     </tr>
-                    <!-- Row 5: Quality -->
+                    <!-- Row 7: Quality -->
                     <tr>
                         <th class="matrix-sticky-col">QUALITY</th>
                         <th v-for="col in matrixData.columns" :key="'qual-'+col.id" class="text-center">
                             {{ col.quality }}
                         </th>
                     </tr>
-                    <!-- Row 6: Customer (Green Header) -->
+                    <!-- Row 8: Customer (Merged by Sheet, Green Header) -->
                     <tr>
                         <th class="matrix-sticky-col" style="background:#dcfce7; color:#166534;">COLOURS</th>
-                        <th v-for="col in matrixData.columns" :key="'cust-'+col.id" class="text-center" style="background:#dcfce7; color:#166534; font-size:10px;">
-                            {{ col.customer }}
-                        </th>
+                        <template v-for="(sh, si) in matrixData.sheetHeaders" :key="'cust-sh-'+si">
+                            <th :colspan="sh.span" class="text-center" style="background:#dcfce7; color:#166534; font-size:10px; border-left:1px solid #cbd5e1;">
+                                {{ sh.customer }}
+                            </th>
+                        </template>
                     </tr>
                 </thead>
                 <tbody ref="matrixBody">
@@ -583,6 +592,7 @@ const matrixData = computed(() => {
                 gsm: gsm,
                 quality: quality,
                 customer: d.customer || d.partyCode || "",
+                unit: d.unit || "Mixed",
                 items: [],
                 idxSum: 0 
             };
@@ -690,6 +700,29 @@ const matrixData = computed(() => {
          }
     });
 
+    // Group Columns by Planning Sheet for Merged Headers (DAYS, SHEET, CODE, COLOURS)
+    const sheetHeaders = [];
+    let lastSheetCode = null;
+    let sheetSpan = 0;
+    let sheetData = null;
+
+    sortedGroups.forEach((g, index) => {
+        if (g.code !== lastSheetCode) {
+            if (lastSheetCode !== null) {
+                sheetHeaders.push(sheetData);
+            }
+            lastSheetCode = g.code;
+            sheetSpan = 1;
+            sheetData = { code: g.code, partyCode: g.partyCode, days: g.days, customer: g.customer, span: 1 };
+        } else {
+            sheetSpan++;
+            sheetData.span = sheetSpan;
+        }
+        if (index === sortedGroups.length - 1) {
+            sheetHeaders.push(sheetData);
+        }
+    });
+
     // Column Totals (Main Colors Only)
     const colTotals = {};
     sortedGroups.forEach(g => {
@@ -706,6 +739,7 @@ const matrixData = computed(() => {
 
     return {
         dateHeaders,
+        sheetHeaders,
         columns: sortedGroups,
         rows,
         whiteRows,
