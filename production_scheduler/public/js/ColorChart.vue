@@ -1197,7 +1197,7 @@ async function initSortable() {
                                     });
                                     if (res2.message && res2.message.status === 'success') {
                                         const dest = res2.message.moved_to;
-                                        frappe.show_alert({ message: `Placed in ${dest.unit} (${dest.date})`, indicator: 'green' });
+                                        frappe.show_alert(`Placed in ${dest.unit} (${dest.date})`, 5);
                                     }
                                     fetchData();
                                 },
@@ -1217,7 +1217,7 @@ async function initSortable() {
                                      showOverflowDialog(res3.message, res3.message.target_date, res3.message.target_unit);
                                  } else if (res3.message && res3.message.status === 'success') {
                                      const dest = res3.message.moved_to;
-                                     frappe.show_alert({ message: `Moved to ${dest.unit} on ${dest.date}`, indicator: 'green' });
+                                     frappe.show_alert(`Moved to ${dest.unit} on ${dest.date}`, 5);
                                      fetchData();
                                  }
                              }, 'btn-info');

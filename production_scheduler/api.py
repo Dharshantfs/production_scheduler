@@ -265,16 +265,54 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 
 def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 	"""Internal helper to move a Planning Sheet Item to a specific slot.
-	Sets custom_planned_date on parent sheet instead of re-parenting."""
+	Re-parents item if date changes, avoiding moving the entire order."""
 	target_date = getdate(date)
 	source_parent = frappe.get_doc("Planning sheet", item_doc.parent)
 	
-	# Get the effective date of the source (what date it's currently shown on)
 	source_effective_date = getdate(source_parent.get("custom_planned_date") or source_parent.ordered_date)
 	
-	# If date is changing, update custom_planned_date on the parent sheet
-	if source_effective_date != target_date and _has_planned_date_column():
-		frappe.db.set_value("Planning sheet", source_parent.name, "custom_planned_date", target_date)
+	# 1. Reparent if date is changing
+	if source_effective_date != target_date:
+		# Find existing sheet for this Sales Order on target date
+		has_col = _has_planned_date_column()
+		date_cond = "COALESCE(custom_planned_date, ordered_date) = %(target)s" if has_col else "ordered_date = %(target)s"
+		so_cond = "sales_order = %(so)s" if source_parent.sales_order else "party_code = %(party)s"
+		
+		existing = frappe.db.sql(f"""
+			SELECT name FROM `tabPlanning sheet`
+			WHERE {so_cond}
+			  AND {date_cond}
+			  AND docstatus < 2
+			  AND name != %(source)s
+			LIMIT 1
+		""", {
+			"so": source_parent.sales_order,
+			"party": source_parent.party_code,
+			"target": target_date,
+			"source": source_parent.name
+		})
+		
+		if existing:
+			new_parent_name = existing[0][0]
+		else:
+			# Create new sheet for the target date
+			new_sheet = frappe.copy_doc(source_parent)
+			new_sheet.name = None
+			new_sheet.set("items", []) # clear items
+			if has_col:
+				new_sheet.custom_planned_date = target_date
+			else:
+				new_sheet.ordered_date = target_date
+			new_sheet.insert(ignore_permissions=True)
+			new_parent_name = new_sheet.name
+		
+		# Reparent the item
+		item_doc.parent = new_parent_name
+		item_doc.save(ignore_permissions=True)
+		
+		# Clean up source parent if empty
+		if frappe.db.count("Planning Sheet Item", {"parent": source_parent.name}) == 0:
+			frappe.delete_doc("Planning sheet", source_parent.name, ignore_permissions=True)
 
 	# 2. Handle IDX Shifting if inserting at specific position
 	if new_idx is not None:
@@ -287,7 +325,8 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 				WHERE {eff} = %s 
 				  AND item.unit = %s 
 				  AND item.idx >= %s
-			""", (target_date, unit, new_idx))
+				  AND item.name != %s
+			""", (target_date, unit, new_idx, item_doc.name))
 		except Exception as e:
 			frappe.log_error(f"Shift Error: {str(e)}")
 
@@ -296,7 +335,7 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 	if new_idx is not None:
 		item_doc.idx = new_idx
 	
-	item_doc.save()
+	item_doc.save(ignore_permissions=True)
 
 
 @frappe.whitelist()
