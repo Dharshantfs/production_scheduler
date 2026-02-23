@@ -30,6 +30,16 @@
           type="text"
           v-model="filterPartyCode"
           placeholder="Search party..."
+          @input="fetchData"
+        />
+      </div>
+      <div class="cc-filter-item">
+        <label>Customer</label>
+        <input
+          type="text"
+          v-model="filterCustomer"
+          placeholder="Search customer..."
+          @input="fetchData"
         />
       </div>
       <div class="cc-filter-item">
@@ -232,6 +242,7 @@ const filterMonth = ref("");
 const viewScope = ref("daily");
 
 const filterPartyCode = ref("");
+const filterCustomer = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
 const unitSortConfig = reactive({});
@@ -286,6 +297,7 @@ const visibleUnits = computed(() => {
 });
 
 const NO_RULE_WHITES = ["BRIGHT WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"];
+const EXCLUDED_WHITES = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE"];
 
 // Filter data by party code and status
 // Filter data by party code and status
@@ -323,7 +335,12 @@ const filteredData = computed(() => {
   if (filterPartyCode.value) {
     const search = filterPartyCode.value.toLowerCase();
     data = data.filter((d) =>
-      (d.partyCode || "").toLowerCase().includes(search) ||
+      (d.partyCode || "").toLowerCase().includes(search)
+    );
+  }
+  if (filterCustomer.value) {
+    const search = filterCustomer.value.toLowerCase();
+    data = data.filter((d) =>
       (d.customer || "").toLowerCase().includes(search)
     );
   }
@@ -341,6 +358,7 @@ const filteredData = computed(() => {
 function clearFilters() {
   filterOrderDate.value = frappe.datetime.get_today();
   filterPartyCode.value = "";
+  filterCustomer.value = "";
   filterUnit.value = "";
   filterStatus.value = "";
   fetchData();

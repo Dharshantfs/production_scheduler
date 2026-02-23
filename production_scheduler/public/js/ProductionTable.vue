@@ -28,6 +28,10 @@
         <input type="text" v-model="filterPartyCode" placeholder="Search party..." @input="fetchData" />
       </div>
       <div class="cc-filter-item">
+        <label>Customer</label>
+        <input type="text" v-model="filterCustomer" placeholder="Search customer..." @input="fetchData" />
+      </div>
+      <div class="cc-filter-item">
         <label>Unit</label>
         <select v-model="filterUnit" @change="fetchData">
           <option value="">All Units</option>
@@ -206,6 +210,7 @@ const filterMonth = ref("");
 const viewScope = ref("daily");
 
 const filterPartyCode = ref("");
+const filterCustomer = ref("");
 const filterUnit = ref("");
 const rawData = ref([]);
 
@@ -247,7 +252,12 @@ const filteredData = computed(() => {
   if (filterPartyCode.value) {
     const search = filterPartyCode.value.toLowerCase();
     data = data.filter((d) =>
-      (d.partyCode || "").toLowerCase().includes(search) ||
+      (d.partyCode || "").toLowerCase().includes(search)
+    );
+  }
+  if (filterCustomer.value) {
+    const search = filterCustomer.value.toLowerCase();
+    data = data.filter((d) =>
       (d.customer || "").toLowerCase().includes(search)
     );
   }

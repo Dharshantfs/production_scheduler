@@ -3,8 +3,25 @@
     <!-- Filter Bar -->
     <div class="cc-filters">
       <div class="cc-filter-item">
+        <label>View Scope</label>
+        <select v-model="viewScope" @change="toggleViewScope" style="font-weight: bold; color: #4f46e5;">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </div>
+      
+      <div class="cc-filter-item" v-if="viewScope === 'daily'">
         <label>Order Date</label>
         <input type="date" v-model="filterOrderDate" @change="fetchData" />
+      </div>
+      <div class="cc-filter-item" v-else-if="viewScope === 'weekly'">
+        <label>Select Week</label>
+        <input type="week" v-model="filterWeek" @change="fetchData" />
+      </div>
+      <div class="cc-filter-item" v-else-if="viewScope === 'monthly'">
+        <label>Select Month</label>
+        <input type="month" v-model="filterMonth" @change="fetchData" />
       </div>
       <div class="cc-filter-item">
         <label>Delivery Date</label>
@@ -12,11 +29,11 @@
       </div>
       <div class="cc-filter-item">
         <label>Party Code</label>
-        <input
-          type="text"
-          v-model="filterPartyCode"
-          placeholder="Search party..."
-        />
+        <input type="text" v-model="filterPartyCode" placeholder="Search party..." @input="fetchData" />
+      </div>
+      <div class="cc-filter-item">
+        <label>Customer</label>
+        <input type="text" v-model="filterCustomer" placeholder="Search customer..." @input="fetchData" />
       </div>
       <div class="cc-filter-item">
         <label>Unit</label>
@@ -27,12 +44,13 @@
       </div>
       <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
       
-      <button class="cc-clear-btn" style="margin-left:auto; background-color: #3b82f6; color: white; border: none;" @click="goToPlan" title="View Production Plan (Table)">
-          📅 View Table
-      </button>
+      <div class="cc-filter-item" style="flex-direction:row; align-items:flex-end; gap:4px; margin-left:auto;">
+          <button class="cc-view-btn" :class="{ active: viewMode === 'kanban' }" @click="viewMode = 'kanban'">📋 Kanban</button>
+          <button class="cc-view-btn" :class="{ active: viewMode === 'table' }" @click="viewMode = 'table'">📊 Table</button>
+      </div>
     </div>
 
-    <div class="cc-board" :key="renderKey">
+    <div v-if="viewMode === 'kanban'" class="cc-board" :key="renderKey">
       <div
         v-for="unit in visibleUnits"
         :key="unit"
@@ -122,6 +140,43 @@
         </div>
       </div>
     </div>
+
+    <!-- TABLE VIEW -->
+    <div v-else-if="viewMode === 'table'" style="flex:1; overflow:auto; padding:16px;">
+        <table style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <thead>
+                <tr style="background:#f8fafc; border-bottom:2px solid #e2e8f0;">
+                    <th style="padding:10px 12px; text-align:left; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; cursor:pointer;" @click="toggleSort('unit')">Unit</th>
+                    <th style="padding:10px 12px; text-align:left; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; cursor:pointer;" @click="toggleSort('color')">Color</th>
+                    <th style="padding:10px 12px; text-align:left; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; cursor:pointer;" @click="toggleSort('partyCode')">Party Code</th>
+                    <th style="padding:10px 12px; text-align:left; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; cursor:pointer;" @click="toggleSort('customer')">Customer</th>
+                    <th style="padding:10px 12px; text-align:left; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Quality</th>
+                    <th style="padding:10px 12px; text-align:center; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">GSM</th>
+                    <th style="padding:10px 12px; text-align:right; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; cursor:pointer;" @click="toggleSort('qty')">Qty (Kg)</th>
+                    <th style="padding:10px 12px; text-align:right; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Qty (T)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr v-for="item in tableData" :key="item.itemName" style="border-bottom:1px solid #f1f5f9;" class="hover:bg-gray-50" @click="openForm(item.planningSheet)">
+                    <td style="padding:8px 12px; font-size:12px; font-weight:600; color:#64748b;"><span style="background:#f1f5f9; padding:2px 8px; border-radius:4px;">{{ item.unit || 'Mixed' }}</span></td>
+                    <td style="padding:8px 12px; font-size:13px; font-weight:700; color:#1e293b;"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:middle;" :style="{backgroundColor: getHexColor(item.color)}"></span>{{ item.color }}</td>
+                    <td style="padding:8px 12px; font-size:12px; font-weight:600; color:#111827;">{{ item.partyCode }}</td>
+                    <td style="padding:8px 12px; font-size:12px; color:#6b7280;">{{ item.customer }}</td>
+                    <td style="padding:8px 12px; font-size:12px;"><span style="background:#e2e8f0; padding:1px 6px; border-radius:4px; font-weight:600; font-size:10px;">{{ item.quality || 'N/A' }}</span></td>
+                    <td style="padding:8px 12px; font-size:12px; text-align:center;">{{ item.gsm || '-' }}</td>
+                    <td style="padding:8px 12px; font-size:13px; font-weight:700; text-align:right; color:#0f172a;">{{ item.qty }}</td>
+                    <td style="padding:8px 12px; font-size:13px; font-weight:600; text-align:right; color:#475569;">{{ (item.qty / 1000).toFixed(3) }}</td>
+                </tr>
+            </tbody>
+            <tfoot>
+                <tr style="background:#fffbeb; border-top:2px solid #fbbf24;">
+                    <td colspan="6" style="padding:10px 12px; font-weight:700; color:#92400e;">TOTAL</td>
+                    <td style="padding:10px 12px; font-weight:700; text-align:right; color:#92400e;">{{ tableTotal.toFixed(0) }}</td>
+                    <td style="padding:10px 12px; font-weight:700; text-align:right; color:#92400e;">{{ (tableTotal / 1000).toFixed(3) }}</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
   </div>
 </template>
 
@@ -186,22 +241,65 @@ const headerColors = { "Unit 1": "#3b82f6", "Unit 2": "#10b981", "Unit 3": "#f59
 const storedDate = localStorage.getItem("confirmed_order_date");
 const defaultDate = frappe.datetime.get_today();
 const filterOrderDate = ref(storedDate || defaultDate); 
+const filterWeek = ref("");
+const filterMonth = ref("");
+const viewScope = ref("daily");
 
 watch(filterOrderDate, (newVal) => {
     localStorage.setItem("confirmed_order_date", newVal || "");
 });
 const filterDeliveryDate = ref("");
 const filterPartyCode = ref("");
+const filterCustomer = ref("");
 const filterUnit = ref("");
 
 const unitSortConfig = reactive({});
 const rawData = ref([]);
 const columnRefs = ref(null);
 const renderKey = ref(0);
-const viewMode = ref('kanban'); // 'kanban' 
+const viewMode = ref('kanban'); // 'kanban' | 'table'
+const tableSortKey = ref('unit');
+const tableSortDir = ref('asc');
+
+function toggleSort(key) {
+    if (tableSortKey.value === key) {
+        tableSortDir.value = tableSortDir.value === 'asc' ? 'desc' : 'asc';
+    } else {
+        tableSortKey.value = key;
+        tableSortDir.value = 'asc';
+    }
+}
+
+const tableData = computed(() => {
+    let data = [...filteredData.value];
+    const k = tableSortKey.value;
+    const dir = tableSortDir.value === 'asc' ? 1 : -1;
+    data.sort((a, b) => {
+        let vA = a[k] || '';
+        let vB = b[k] || '';
+        if (k === 'qty') return (parseFloat(vA) - parseFloat(vB)) * dir;
+        return String(vA).localeCompare(String(vB)) * dir;
+    });
+    return data;
+});
+
+const tableTotal = computed(() => filteredData.value.reduce((s, d) => s + (d.qty || 0), 0));
+
+function toggleViewScope() {
+    if (viewScope.value === 'monthly' && !filterMonth.value) {
+        filterMonth.value = frappe.datetime.get_today().substring(0, 7);
+    } else if (viewScope.value === 'weekly' && !filterWeek.value) {
+        const d = new Date();
+        const dStart = new Date(d.getFullYear(), 0, 1);
+        const days = Math.floor((d - dStart) / (24 * 60 * 60 * 1000));
+        const weekNum = Math.ceil(days / 7);
+        filterWeek.value = `${d.getFullYear()}-W${String(weekNum).padStart(2,'0')}`;
+    }
+    fetchData();
+}
 
 function goToPlan() {
-    frappe.set_route("production-table", { date: filterOrderDate.value });
+    frappe.set_route("production-table");
 }
 
 const visibleUnits = computed(() =>
@@ -212,22 +310,26 @@ const EXCLUDED_WHITES = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D"
 
 const filteredData = computed(() => {
   let data = rawData.value;
-  
-  // EXCLUDE WHITES LOGIC (Shared) - DISABLED (Show All)
-  // const EXCLUDED_WHITES = [];
 
   data = data.filter(d => {
-      // Normalize Unit for Display
       if (!d.unit) d.unit = "Mixed";
-      return true; // SHOW ALL COLORS (WHITES INCLUDED)
+      return true;
   });
 
   if (filterPartyCode.value) {
     const search = filterPartyCode.value.toLowerCase();
     data = data.filter((d) =>
-      (d.partyCode || "").toLowerCase().includes(search) ||
+      (d.partyCode || "").toLowerCase().includes(search)
+    );
+  }
+  if (filterCustomer.value) {
+    const search = filterCustomer.value.toLowerCase();
+    data = data.filter((d) =>
       (d.customer || "").toLowerCase().includes(search)
     );
+  }
+  if (filterUnit.value) {
+    data = data.filter((d) => d.unit === filterUnit.value);
   }
   
   return data;
@@ -236,10 +338,14 @@ const filteredData = computed(() => {
 // ---- TABLE VIEW DATA ----
 
 function clearFilters() {
-  filterOrderDate.value = "";
+  filterOrderDate.value = frappe.datetime.get_today();
   filterDeliveryDate.value = "";
   filterPartyCode.value = "";
+  filterCustomer.value = "";
   filterUnit.value = "";
+  filterWeek.value = "";
+  filterMonth.value = "";
+  viewScope.value = 'daily';
   fetchData();
 }
 
@@ -433,21 +539,44 @@ function openForm(name) {
 
 async function fetchData() {
   try {
+    let args = {
+        party_code: filterPartyCode.value || null,
+        delivery_date: filterDeliveryDate.value || null
+    };
+    
+    if (viewScope.value === 'monthly') {
+        if (!filterMonth.value) return;
+        const startDate = `${filterMonth.value}-01`;
+        const [year, month] = filterMonth.value.split("-");
+        const lastDay = new Date(year, month, 0).getDate();
+        const endDate = `${filterMonth.value}-${lastDay}`;
+        args.start_date = startDate;
+        args.end_date = endDate;
+    } else if (viewScope.value === 'weekly') {
+        if (!filterWeek.value) return;
+        const [yearStr, weekStr] = filterWeek.value.split('-W');
+        const y = parseInt(yearStr);
+        const w = parseInt(weekStr);
+        const simple = new Date(y, 0, 1 + (w - 1) * 7);
+        const dow = simple.getDay();
+        const ISOweekStart = new Date(simple);
+        if (dow <= 4) ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+        else ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+        const ISOweekEnd = new Date(ISOweekStart);
+        ISOweekEnd.setDate(ISOweekEnd.getDate() + 6);
+        const format = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+        args.start_date = format(ISOweekStart);
+        args.end_date = format(ISOweekEnd);
+    } else {
+        args.order_date = filterOrderDate.value || null;
+    }
+
     const r = await frappe.call({
       method: "production_scheduler.api.get_confirmed_orders_kanban", 
-      args: { 
-          order_date: filterOrderDate.value || null,
-          delivery_date: filterDeliveryDate.value || null,
-          party_code: filterPartyCode.value || null
-      },
+      args: args,
     });
     rawData.value = r.message || [];
     renderKey.value++; 
-    
-    // No Drag & Drop needed for this Read-Only View
-    // await nextTick();
-    // initSortable();
-
   } catch (e) {
     frappe.msgprint("Error loading confirmed orders");
     console.error(e);

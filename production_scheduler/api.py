@@ -1169,18 +1169,19 @@ def get_unscheduled_planning_sheets():
     return sheets
 
 @frappe.whitelist()
-def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=None):
+def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=None, start_date=None, end_date=None):
     """
     Fetches Planning Sheet Items where the linked Sales Order is 'Confirmed'.
-    These items are already in Planning Sheets (scheduled or unscheduled).
-    Supports independent filtering by Order Date and Delivery Date.
+    Supports date, start_date/end_date range, delivery_date, and party_code filters.
     """
     conditions = ["so.custom_production_status = 'Confirmed'", "p.docstatus < 2"]
     values = []
 
-    # Filter by Sales Order Date (Transaction Date)
-    # Fallback to Creation Date if SO date is missing (unlikely for matched SOs)
-    if order_date:
+    # Date range support (weekly/monthly)
+    if start_date and end_date:
+        conditions.append("((so.transaction_date BETWEEN %s AND %s) OR (so.transaction_date IS NULL AND DATE(p.creation) BETWEEN %s AND %s))")
+        values.extend([start_date, end_date, start_date, end_date])
+    elif order_date:
         conditions.append("((so.transaction_date IS NOT NULL AND so.transaction_date = %s) OR (so.transaction_date IS NULL AND DATE(p.creation) = %s))")
         values.extend([order_date, order_date])
 

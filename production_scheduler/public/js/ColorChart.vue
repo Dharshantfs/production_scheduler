@@ -19,6 +19,16 @@
           type="text"
           v-model="filterPartyCode"
           placeholder="Search party..."
+          @input="fetchData"
+        />
+      </div>
+      <div class="cc-filter-item">
+        <label>Customer</label>
+        <input
+          type="text"
+          v-model="filterCustomer"
+          placeholder="Search customer..."
+          @input="fetchData"
         />
       </div>
       <div class="cc-filter-item">
@@ -576,6 +586,7 @@ const filterOrderDate = ref(frappe.datetime.get_today());
 const viewScope = ref('daily');
 const filterMonth = ref(frappe.datetime.get_today().substring(0, 7));
 const filterPartyCode = ref("");
+const filterCustomer = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
 const selectedPlan = ref("Default");
@@ -614,8 +625,13 @@ const matrixData = computed(() => {
         if (filterPartyCode.value) {
             const search = filterPartyCode.value.toLowerCase();
             const pCode = (d.partyCode || "").toLowerCase();
+            if (!pCode.includes(search)) return false;
+        }
+        // CUSTOMER FILTER
+        if (filterCustomer.value) {
+            const search = filterCustomer.value.toLowerCase();
             const cust = (d.customer || "").toLowerCase();
-            if (!pCode.includes(search) && !cust.includes(search)) return false;
+            if (!cust.includes(search)) return false;
         }
 
         // Hide NO COLOR completely
@@ -839,7 +855,12 @@ const filteredData = computed(() => {
   if (filterPartyCode.value) {
     const search = filterPartyCode.value.toLowerCase();
     data = data.filter((d) =>
-      (d.partyCode || "").toLowerCase().includes(search) ||
+      (d.partyCode || "").toLowerCase().includes(search)
+    );
+  }
+  if (filterCustomer.value) {
+    const search = filterCustomer.value.toLowerCase();
+    data = data.filter((d) =>
       (d.customer || "").toLowerCase().includes(search)
     );
   }
@@ -912,6 +933,7 @@ const mixRolls = computed(() => {
 function clearFilters() {
   filterOrderDate.value = frappe.datetime.get_today();
   filterPartyCode.value = "";
+  filterCustomer.value = "";
   filterUnit.value = "";
   filterStatus.value = "";
   selectedPlan.value = "Default";
@@ -2536,7 +2558,6 @@ function openPushColorDialog(color) {
         if ((d.color || "").toUpperCase().trim() !== color.toUpperCase().trim()) return false;
         if (filterUnit.value && (d.unit || "Mixed") !== filterUnit.value) return false;
         if (filterStatus.value && d.planningStatus !== filterStatus.value) return false;
-        // The matrix view NO COLOR skip doesn't apply because they clicked a color row
         return true;
     });
 
@@ -2545,24 +2566,30 @@ function openPushColorDialog(color) {
         return;
     }
 
-    // Auto-suggest unit logic (simplified heuristc based on first item)
+    // Auto-suggest unit based on first item
     let suggestedUnit = items[0].unit || "Unit 1";
-    if (suggestedUnit === "Mixed") suggestedUnit = "Unit 1"; // Pick a real unit
+    if (suggestedUnit === "Mixed") suggestedUnit = "Unit 1";
 
     const d = new frappe.ui.Dialog({
-        title: `📤 Push ${color} to Production`,
+        title: `📤 Push ${color} to Production Board`,
         fields: [
-            { fieldname: "target_date", label: "Target Date", fieldtype: "Date", reqd: 1, default: filterOrderDate.value || frappe.datetime.get_today() },
-            { fieldname: "target_plan", label: "Target Plan", fieldtype: "Select", options: plans.value, reqd: 1, default: selectedPlan.value },
-            { fieldname: "target_unit", label: "Target Unit", fieldtype: "Select", options: ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"], reqd: 1, default: suggestedUnit },
+            { fieldname: "target_date", label: "Target Date", fieldtype: "Date", reqd: 1, default: frappe.datetime.get_today(),
+              onchange: () => loadCapacityPreview(d)
+            },
+            { fieldname: "target_unit", label: "Target Unit", fieldtype: "Select", options: ["Unit 1", "Unit 2", "Unit 3", "Unit 4"], reqd: 1, default: suggestedUnit,
+              onchange: () => loadCapacityPreview(d)
+            },
+            { fieldname: "capacity_info", label: "", fieldtype: "HTML" },
             { fieldname: "items_info", label: "Order Selection", fieldtype: "HTML" }
         ],
-        primary_action_label: "Push Selected",
+        primary_action_label: "Push to Production Board",
         primary_action: () => {
              const selectedNames = d.calc_selected_items || [];
              if (!selectedNames.length) { frappe.msgprint("Please select at least one order."); return; }
              
-             handleMoveOrders(selectedNames, d.get_value("target_date"), d.get_value("target_unit"), d.get_value("target_plan"), d);
+             const targetDate = d.get_value("target_date");
+             const targetUnit = d.get_value("target_unit");
+             handleMoveOrders(selectedNames, targetDate, targetUnit, null, d);
         }
     });
 
@@ -2584,7 +2611,7 @@ function openPushColorDialog(color) {
                 </td>
                 <td style="padding: 8px;">
                     <div><b style="color:#1e293b;">${item.partyCode}</b> · ${item.customer}</div>
-                    <div style="color:#64748b; font-size:10px;">${item.quality} · ${item.gsm} GSM</div>
+                    <div style="color:#64748b; font-size:10px;">${item.quality} · ${item.gsm} GSM · ${item.unit || 'Unassigned'}</div>
                 </td>
                 <td style="padding: 8px; text-align:right;">
                     <b>${item.qty} Kg</b>
@@ -2601,9 +2628,50 @@ function openPushColorDialog(color) {
         const c = Array.from(document.querySelectorAll('.push-chk')).filter(chk => chk.checked).map(chk => chk.value);
         d.calc_selected_items = c;
     };
+
+    async function loadCapacityPreview(dialog) {
+        const date = dialog.get_value("target_date");
+        const unit = dialog.get_value("target_unit");
+        if (!date || !unit) return;
+        
+        const limits = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5 };
+        const limit = limits[unit] || 999;
+        
+        try {
+            const r = await frappe.call({
+                method: "production_scheduler.api.get_color_chart_data",
+                args: { date: date }
+            });
+            const allItems = r.message || [];
+            const unitItems = allItems.filter(i => i.unit === unit);
+            const currentLoad = unitItems.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
+            const pushWeight = items.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
+            const afterPush = currentLoad + pushWeight;
+            const isOver = afterPush > limit;
+            
+            let capHtml = `
+                <div style="padding: 12px; border-radius: 8px; border: 1px solid ${isOver ? '#fda4af' : '#bbf7d0'}; background: ${isOver ? '#fff1f2' : '#f0fdf4'}; margin-bottom: 8px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <div>
+                            <div style="font-weight:700; font-size:14px; color:${isOver ? '#dc2626' : '#16a34a'};">${unit}: ${currentLoad.toFixed(2)} / ${limit}T</div>
+                            <div style="font-size:11px; color:#475569; margin-top:2px;">After push: <b>${afterPush.toFixed(2)}T</b></div>
+                        </div>
+                        ${isOver ? '<span style="font-size:20px;">⚠️</span>' : '<span style="font-size:20px;">✅</span>'}
+                    </div>
+                    <div style="font-size:11px; color:#64748b; margin-top:6px;">${unitItems.length} existing orders on ${date}</div>
+                </div>`;
+            
+            dialog.set_value("capacity_info", capHtml);
+        } catch(e) {
+            console.error("Capacity preview error", e);
+        }
+    }
     
-    // Initial tracking
-    setTimeout(() => window.updatePushSelection(), 100);
+    // Initial load
+    setTimeout(() => {
+        window.updatePushSelection();
+        loadCapacityPreview(d);
+    }, 100);
 
     d.show();
 }
