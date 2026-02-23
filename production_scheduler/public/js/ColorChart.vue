@@ -418,6 +418,39 @@
             </table>
         </div>
     </div>
+    
+    <!-- MIX ROLL Manual Entry Section -->
+    <div v-if="viewMode === 'matrix' && mixRolls && mixRolls.length > 0" class="mt-8 bg-white p-4 rounded-lg shadow border border-gray-200" style="margin-bottom: 30px;">
+        <h3 class="text-sm font-bold mb-4 text-gray-800 flex items-center">
+            <span class="mr-2">♻️</span> MIX ROLL AREA (Manual Entry)
+        </h3>
+        <table class="w-full text-xs text-left border-collapse border border-gray-200">
+            <thead class="bg-gray-100 text-gray-700">
+                <tr>
+                    <th class="p-2 border">UNIT</th>
+                    <th class="p-2 border">COLOR 1</th>
+                    <th class="p-2 border">COLOR 2</th>
+                    <th class="p-2 border">MIX NAME</th>
+                    <th class="p-2 border">GSM</th>
+                    <th class="p-2 border">WIDTH</th>
+                    <th class="p-2 border w-32">WEIGHT (Kg)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr v-for="(mix, idx) in mixRolls" :key="idx" class="border-b hover:bg-gray-50">
+                    <td class="p-2 border font-semibold text-gray-600">{{ mix.unit }}</td>
+                    <td class="p-2 border font-bold" :style="{ color: getHexColor(mix.color1) !== '#FFFFFF' ? getHexColor(mix.color1) : '#000' }">{{ mix.color1 }}</td>
+                    <td class="p-2 border font-bold" :style="{ color: getHexColor(mix.color2) !== '#FFFFFF' ? getHexColor(mix.color2) : '#000' }">{{ mix.color2 }}</td>
+                    <td class="p-2 border text-gray-800 font-bold uppercase">{{ mix.mixName }}</td>
+                    <td class="p-2 border text-center font-semibold text-gray-600">{{ mix.gsm ? mix.gsm + ' GSM' : '-' }}</td>
+                    <td class="p-2 border">{{ mix.width }}</td>
+                    <td class="p-2 border text-center">
+                         <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-right font-mono" placeholder="0.0" v-model="mix.kg" />
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
   </div>
 </template>
 
@@ -810,10 +843,70 @@ const filteredData = computed(() => {
       (d.customer || "").toLowerCase().includes(search)
     );
   }
+  if (filterUnit.value) {
+    data = data.filter((d) => d.unit === filterUnit.value);
+  }
   if (filterStatus.value) {
     data = data.filter((d) => d.planningStatus === filterStatus.value);
   }
+  
+  if (selectedPlan.value && selectedPlan.value !== "Default") {
+      data = data.filter((d) => d.plan_name === selectedPlan.value);
+  }
+
   return data;
+});
+
+// Calculate Mix Rolls Based on Current Filters
+const mixRolls = computed(() => {
+    let data = filteredData.value || [];
+    const results = [];
+    
+    // Use the actual visible units
+    const unitsList = visibleUnits.value;
+    
+    // Simple unit sort helper
+    function sortUnitItems(items) {
+        return items.sort((a, b) => {
+            const pA = a.color ? getColorPriority(a.color) : 999;
+            const pB = b.color ? getColorPriority(b.color) : 999;
+            if (pA !== pB) return pA - pB;
+            const gsmA = parseFloat(a.gsm) || 0;
+            const gsmB = parseFloat(b.gsm) || 0;
+            if (gsmA !== gsmB) return gsmB - gsmA;
+            return (a.idx || 0) - (b.idx || 0);
+        });
+    }
+
+    unitsList.forEach(unit => {
+        let uItems = data.filter(d => (d.unit || "Mixed") === unit);
+        if (uItems.length === 0) return;
+        uItems = sortUnitItems(uItems);
+
+        for (let i = 0; i < uItems.length - 1; i++) {
+            const cur = uItems[i];
+            const next = uItems[i+1];
+            if ((cur.color || "").toUpperCase() !== (next.color || "").toUpperCase()) {
+                let mixName = "RECYCLE"; // Default
+                const q = (cur.quality || "").toUpperCase();
+                if (q && q !== "RECYCLE") mixName = `GPKL - ${q} MIX`;
+                else if (!q) mixName = "COLOURMIX";
+                
+                // Just as a UI feature, provide empty kg ref
+                results.push(reactive({
+                    unit: unit,
+                    color1: (cur.color || "").toUpperCase(),
+                    color2: (next.color || "").toUpperCase(),
+                    mixName: mixName,
+                    gsm: cur.gsm || next.gsm || "",
+                    width: cur.width || next.width || "",
+                    kg: ""
+                }));
+            }
+        }
+    });
+    
+    return results;
 });
 
 function clearFilters() {

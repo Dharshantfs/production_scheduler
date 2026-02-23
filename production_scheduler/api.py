@@ -315,27 +315,30 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 			frappe.delete_doc("Planning sheet", source_parent.name, ignore_permissions=True)
 
 	# 2. Handle IDX Shifting if inserting at specific position
+	# Update Item unit and parent first
+	item_doc.unit = unit
+	item_doc.save(ignore_permissions=True)
+
 	if new_idx is not None:
 		try:
 			eff = _effective_date_expr("sheet")
-			frappe.db.sql(f"""
-				UPDATE `tabPlanning Sheet Item` item
+			sql_fetch = f"""
+				SELECT item.name 
+				FROM `tabPlanning Sheet Item` item
 				JOIN `tabPlanning sheet` sheet ON item.parent = sheet.name
-				SET item.idx = item.idx + 1
-				WHERE {eff} = %s 
-				  AND item.unit = %s 
-				  AND item.idx >= %s
-				  AND item.name != %s
-			""", (target_date, unit, new_idx, item_doc.name))
+				WHERE {eff} = %s AND item.unit = %s AND item.name != %s
+				ORDER BY item.idx ASC, item.creation ASC
+			"""
+			other_items = frappe.db.sql(sql_fetch, (target_date, unit, item_doc.name))
+			others = [r[0] for r in other_items]
+			
+			insert_pos = max(0, new_idx - 1)
+			others.insert(insert_pos, item_doc.name)
+			
+			for i, name in enumerate(others):
+				frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET idx = %s WHERE name = %s", (i + 1, name))
 		except Exception as e:
-			frappe.log_error(f"Shift Error: {str(e)}")
-
-	# Update Item unit and idx
-	item_doc.unit = unit
-	if new_idx is not None:
-		item_doc.idx = new_idx
-	
-	item_doc.save(ignore_permissions=True)
+			frappe.log_error(f"Global Sequence Fix Error: {str(e)}")
 
 
 @frappe.whitelist()
@@ -1110,7 +1113,12 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
             parent_doc.reload()
             if not parent_doc.get("items"):
                 # Source is empty -> DELETE
-                frappe.delete_doc("Planning sheet", parent_doc.name, force=1)
+                try:
+                    frappe.delete_doc("Planning sheet", parent_doc.name, force=1)
+                except Exception as e:
+                    # If it's linked to a Production Plan, Frappe prevents deletion. 
+                    # We catch it so the move doesn't crash since the items were already moved via SQL.
+                    frappe.logger().error(f"Could not delete empty planning sheet {parent_doc.name}: {e}")
             elif int(parent_doc.docstatus or 0) == 0:
                 parent_doc.save()
         
