@@ -374,7 +374,7 @@ def get_kanban_board(start_date, end_date):
 
 @frappe.whitelist()
 def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=None, mode=None):
-	# PULL MODE: Return raw items by ordered_date (no filters, no PP/WO checks)
+	# PULL MODE: Return raw items by ordered_date, exclude items with Work Orders
 	if mode == "pull" and date:
 		target_date = getdate(date)
 		items = frappe.db.sql("""
@@ -382,12 +382,47 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
 				i.color, i.custom_quality as quality, i.gsm, i.width, i.idx,
 				p.name as planningSheet, p.party_code as partyCode, p.customer,
-				p.ordered_date, p.dod
+				p.ordered_date, p.dod, p.sales_order as salesOrder
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
 			WHERE p.ordered_date = %s AND p.docstatus < 2
 			ORDER BY i.unit, i.idx
 		""", (target_date,), as_dict=True)
+		
+		# Check which planning sheets have Work Orders (those can't be moved)
+		if items:
+			sheet_names = list(set(it.planningSheet for it in items))
+			so_names = list(set(it.salesOrder for it in items if it.salesOrder))
+			
+			wo_sheets = set()
+			# Check WO via Sales Order
+			if so_names:
+				fmt = ','.join(['%s'] * len(so_names))
+				wo_data = frappe.db.sql(f"""
+					SELECT DISTINCT sales_order FROM `tabWork Order`
+					WHERE sales_order IN ({fmt}) AND docstatus < 2
+				""", tuple(so_names))
+				wo_sos = set(r[0] for r in wo_data)
+				for it in items:
+					if it.salesOrder and it.salesOrder in wo_sos:
+						wo_sheets.add(it.planningSheet)
+			
+			# Check WO via Planning Sheet custom field
+			if sheet_names:
+				fmt2 = ','.join(['%s'] * len(sheet_names))
+				try:
+					wo_ps = frappe.db.sql(f"""
+						SELECT DISTINCT custom_planning_sheet FROM `tabWork Order`
+						WHERE custom_planning_sheet IN ({fmt2}) AND docstatus < 2
+					""", tuple(sheet_names))
+					for r in wo_ps:
+						wo_sheets.add(r[0])
+				except Exception:
+					pass
+			
+			# Filter out items that have WO
+			items = [it for it in items if it.planningSheet not in wo_sheets]
+		
 		return items
 	
 	# Support both single date and range
