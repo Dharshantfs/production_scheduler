@@ -1081,8 +1081,7 @@ def delete_plan(plan_name, date=None, start_date=None, end_date=None):
 def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_date=None):
 	"""
 	Moves specific Planning Sheet Items to a target Color Chart plan.
-	Enforces quality + capacity rules.
-	Re-parents items to an existing or new Planning Sheet in the target plan.
+	Checks capacity per unit. Re-parents items to an existing or new Planning Sheet in target plan.
 	"""
 	import json
 	if isinstance(item_names, str):
@@ -1093,6 +1092,10 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
 
 	moved = 0
 	errors = []
+	# Cache newly created sheets to avoid duplication within the same call
+	new_sheet_cache = {}  # (party_code, effective_date) -> sheet_name
+
+	UNIT_LIMITS = {"Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5}
 
 	for name in item_names:
 		try:
@@ -1100,64 +1103,66 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
 			parent_sheet = frappe.get_doc("Planning sheet", item_doc.parent)
 
 			target_unit = item_doc.unit or "Mixed"
-			target_quality = item_doc.get("custom_quality") or ""
-
-			# Quality enforcement
-			if not is_quality_allowed(target_unit, target_quality):
-				errors.append(f"{item_doc.item_name}: Quality {target_quality} not allowed in {target_unit}")
-				continue
-
-			# Find or create a sheet in the target plan on the same date
 			effective_date = parent_sheet.get("custom_planned_date") or parent_sheet.ordered_date
+			party_code = parent_sheet.party_code or ""
 
-			existing = frappe.get_all("Planning sheet", filters={
-				"custom_plan_name": target_plan,
-				"ordered_date": effective_date,
-				"party_code": parent_sheet.party_code or "",
-				"docstatus": ["<", 1]
-			}, fields=["name"], limit=1)
-
-			if existing:
-				target_sheet_name = existing[0].name
+			# --- Find or create a Planning Sheet in the target plan ---
+			cache_key = (party_code, str(effective_date))
+			if cache_key in new_sheet_cache:
+				target_sheet_name = new_sheet_cache[cache_key]
 			else:
-				# Create a new Planning Sheet for the target plan
-				new_sheet = frappe.copy_doc(parent_sheet)
-				new_sheet.custom_plan_name = target_plan
-				new_sheet.ordered_date = effective_date
-				new_sheet.items = []
-				new_sheet.insert(ignore_permissions=True)
-				target_sheet_name = new_sheet.name
+				filters = {
+					"custom_plan_name": target_plan,
+					"ordered_date": effective_date,
+					"docstatus": ["<", 1]
+				}
+				if party_code:
+					filters["party_code"] = party_code
 
-			# Capacity check on target sheet
-			target_items = frappe.get_all("Planning Sheet Item",
+				existing = frappe.get_all("Planning sheet", filters=filters, fields=["name"], limit=1)
+
+				if existing:
+					target_sheet_name = existing[0].name
+				else:
+					# Create a minimal new Planning Sheet for the target plan
+					new_sheet = frappe.new_doc("Planning sheet")
+					new_sheet.custom_plan_name = target_plan
+					new_sheet.ordered_date = effective_date
+					new_sheet.party_code = party_code
+					new_sheet.customer = parent_sheet.customer or ""
+					new_sheet.sales_order = parent_sheet.sales_order or ""
+					new_sheet.insert(ignore_permissions=True)
+					target_sheet_name = new_sheet.name
+
+				new_sheet_cache[cache_key] = target_sheet_name
+
+			# --- Capacity check ---
+			limit = UNIT_LIMITS.get(target_unit, 9999)
+			target_items = frappe.get_all(
+				"Planning Sheet Item",
 				filters={"parent": target_sheet_name, "unit": target_unit},
-				fields=["weight_per_roll"]
+				fields=["qty"]
 			)
-			current_weight_kg = sum(float(i.weight_per_roll or 0) for i in target_items)
-			current_tons = current_weight_kg / 1000
-			item_tons = float(item_doc.weight_per_roll or 0) / 1000
-
-			UNIT_LIMITS = {"Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5}
-			limit = UNIT_LIMITS.get(target_unit, 999)
-
-			if (current_tons + item_tons) > limit:
-				errors.append(f"{item_doc.item_name}: Would exceed {target_unit} capacity ({current_tons:.2f}+{item_tons:.2f} > {limit}T)")
+			current_kg = sum(float(i.qty or 0) for i in target_items)
+			item_kg = float(item_doc.qty or 0)
+			if (current_kg + item_kg) / 1000 > limit:
+				errors.append(
+					f"{item_doc.item_name}: Would exceed {target_unit} capacity "
+					f"({(current_kg/1000):.2f}+{(item_kg/1000):.2f} > {limit}T)"
+				)
 				continue
 
-			# Re-parent the item to the target sheet
-			frappe.db.set_value("Planning Sheet Item", name, {
-				"parent": target_sheet_name,
-				"parenttype": "Planning sheet",
-				"parentfield": "items"
-			})
+			# --- Re-parent the item ---
+			frappe.db.set_value("Planning Sheet Item", name, "parent", target_sheet_name)
+			frappe.db.set_value("Planning Sheet Item", name, "parenttype", "Planning sheet")
+			frappe.db.set_value("Planning Sheet Item", name, "parentfield", "items")
 			moved += 1
 
 		except Exception as e:
-			errors.append(f"Item {name}: {str(e)}")
+			import traceback
+			errors.append(f"{name}: {str(e)}")
 
-	# Clean up empty source sheets
 	frappe.db.commit()
-
 	result = {"status": "success", "moved": moved}
 	if errors:
 		result["errors"] = errors
@@ -1962,71 +1967,49 @@ def push_to_pb(item_names, pb_plan_name):
 @frappe.whitelist()
 def push_items_to_pb(items_data, pb_plan_name):
 	"""
-	Pushes specific items to the Production Board plan.
+	Pushes Planning Sheet Items to a Production Board plan.
+	Sets custom_pb_plan_name on the parent Planning Sheet for each item.
 	items_data: list of dicts [{"name": "...", "target_date": "...", "target_unit": "..."}]
-	Strictly re-parents items to ensure only selected colors move to the PB plan.
 	"""
 	import json
 	if isinstance(items_data, str):
 		items_data = json.loads(items_data)
-		
+
 	if not items_data or not pb_plan_name:
 		return {"status": "error", "message": "Missing item data or plan name"}
 
-	# 1. Collect docs and validate Quality
-	moves = []
-	for item in items_data:
-		name = item.get("name")
-		target_date = item.get("target_date")
-		target_unit = item.get("target_unit")
-		try:
-			doc = frappe.get_doc("Planning Sheet Item", name)
-			
-			# Quality Enforcement
-			if not is_quality_allowed(target_unit, doc.custom_quality):
-				frappe.throw(_("Quality <b>{}</b> is not allowed in <b>{}</b> (Item: {}).").format(
-					doc.custom_quality or "Generic", target_unit, doc.item_name
-				))
-				
-			moves.append({
-				"doc": doc,
-				"target_date": frappe.utils.getdate(target_date),
-				"target_unit": target_unit
-			})
-		except Exception as e:
-			if "Generic" in str(e) or "allowed" in str(e): raise e
-			pass
-
-	if not moves:
-		return {"status": "error", "message": "No valid items found"}
-
-	# 2. Strict Push Logic: Reparent EACH item using move_orders_to_date logic
-	# This ensures if Golden Yellow and Orange are in same sheet, Golden Yellow moves to PB plan
-	# and Orange stays in Color Chart plan.
-	
 	count = 0
-	for m in moves:
-		item_doc = m["doc"]
-		target_date = m["target_date"]
-		target_unit = m["target_unit"]
-		
-		# We call move_orders_to_date internally for this specific item
-		# or use its reparenting helper
-		try:
-			# Use move_orders_to_date for single item to ensure new sheet creation on target plan
-			from production_scheduler.api import move_orders_to_date
-			res = move_orders_to_date(
-				item_names=[item_doc.name],
-				target_date=target_date,
-				target_unit=target_unit,
-				pb_plan_name=pb_plan_name # Explicitly move to PB plan
-			)
-			if res.get("status") == "success":
-				count += 1
-		except Exception as e:
-			frappe.msgprint(_("Failed to move {}: {}").format(item_doc.item_name, str(e)))
+	updated_sheets = set()
 
-	return {"status": "success", "moved_items": count, "plan_name": pb_plan_name}
+	for item in items_data:
+		name = item.get("name") if isinstance(item, dict) else item
+		try:
+			# Get the parent Planning Sheet
+			parent = frappe.db.get_value("Planning Sheet Item", name, "parent")
+			if not parent:
+				continue
+
+			if parent not in updated_sheets:
+				frappe.db.set_value("Planning sheet", parent, "custom_pb_plan_name", pb_plan_name)
+				updated_sheets.add(parent)
+			count += 1
+
+		except Exception as e:
+			frappe.log_error(f"push_items_to_pb error for {name}: {e}", "Push to PB")
+
+	# Persist this PB plan name
+	persisted = get_persisted_plans("production_board")
+	if not any(p["name"] == pb_plan_name for p in persisted):
+		persisted.append({"name": pb_plan_name, "locked": 0})
+		import json as _json
+		frappe.defaults.set_global_default(
+			"production_scheduler_production_board_plans",
+			_json.dumps(persisted)
+		)
+
+	frappe.db.commit()
+	return {"status": "success", "moved_items": count, "updated_sheets": len(updated_sheets), "plan_name": pb_plan_name}
+
 
 @frappe.whitelist()
 def delete_pb_plan(pb_plan_name, date=None, start_date=None, end_date=None):
