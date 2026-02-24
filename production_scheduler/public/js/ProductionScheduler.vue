@@ -1249,7 +1249,7 @@ function openMovePlanDialog() {
             
             d.get_primary_btn().prop('disabled', true);
             
-            const targetDate = viewScope.value === 'daily' ? filterOrderDate.value : items[0].date;
+            const targetDate = viewScope.value === 'daily' ? filterOrderDate.value : (items[0].orderDate || items[0].date);
             
             try {
                 const r = await frappe.call({
@@ -1258,7 +1258,7 @@ function openMovePlanDialog() {
                         item_names: selectedItems,
                         target_date: targetDate,
                         target_unit: values.target_unit || null,
-                        plan_name: values.target_plan
+                        pb_plan_name: values.target_plan
                     }
                 });
                 

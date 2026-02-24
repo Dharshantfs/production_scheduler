@@ -807,12 +807,13 @@ def get_persisted_plans(plan_type):
 	if val:
 		import json
 		try:
-			return json.loads(val)
+			plans = json.loads(val)
+			if not any(p.get("name") == "Default" for p in plans):
+				plans.insert(0, {"name": "Default", "locked": 0})
+			return plans
 		except:
 			pass
-	if plan_type == "color_chart":
-		return [{"name": "Default", "locked": 0}]
-	return []
+	return [{"name": "Default", "locked": 0}]
 
 @frappe.whitelist()
 def add_persistent_plan(plan_type, name):
@@ -1031,7 +1032,7 @@ def get_orders_for_date(date):
     return data
 
 @frappe.whitelist()
-def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=None):
+def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=None, pb_plan_name=None):
     """
     Moves list of Planning Sheet Items to a new Date.
     Supports item-level granularity by re-parenting items if necessary.
@@ -1105,11 +1106,25 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         else:
             target_plan = parent_doc.get("custom_plan_name")
             if target_plan == "Default": target_plan = None
+            
+        # Determine target PB plan
+        if pb_plan_name and pb_plan_name != "Default":
+            target_pb_plan = pb_plan_name
+        elif pb_plan_name == "Default":
+            target_pb_plan = None
+        else:
+            target_pb_plan = parent_doc.get("custom_pb_plan_name")
+            if target_pb_plan == "Default": target_pb_plan = None
         
         if target_plan:
              find_filters["custom_plan_name"] = target_plan
         else:
              find_filters["custom_plan_name"] = ["in", ["", None, "Default"]]
+             
+        if target_pb_plan:
+             find_filters["custom_pb_plan_name"] = target_pb_plan
+        else:
+             find_filters["custom_pb_plan_name"] = ["in", ["", None, "Default"]]
              
         target_sheet_name = frappe.db.get_value("Planning sheet", find_filters, "name")
         
@@ -1126,6 +1141,8 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
             target_sheet.sales_order = parent_doc.sales_order
             if target_plan:
                 target_sheet.custom_plan_name = target_plan
+            if target_pb_plan:
+                target_sheet.custom_pb_plan_name = target_pb_plan
             target_sheet.save()
         
         # Get starting idx for target
