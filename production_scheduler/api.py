@@ -1014,15 +1014,59 @@ def duplicate_unprocessed_orders_to_plan(old_plan, new_plan, date=None, start_da
 	if start_date and end_date:
 		query_start = getdate(start_date)
 		query_end = getdate(end_date)
-		date_filter = ["between", [query_start, query_end]]
+		sheets = frappe.get_all("Planning sheet", filters={
+			"custom_plan_name": old_plan,
+			"ordered_date": ["between", [query_start, query_end]],
+			"docstatus": ["<", 1] # Only move drafts
+		})
 	elif date:
-		date_filter = getdate(date)
+		target_date = getdate(date)
+		sheets = frappe.get_all("Planning sheet", filters={
+			"custom_plan_name": old_plan,
+			"ordered_date": target_date,
+			"docstatus": ["<", 1]
+		})
 	else:
 		return {"status": "error", "message": "Date filter required"}
-	deleted_count = 0
+	
+	count = 0
+	for sheet in sheets:
+		frappe.db.set_value("Planning sheet", sheet.name, "custom_plan_name", new_plan)
+		count += 1
+
+	frappe.db.commit()
+	return {"status": "success", "moved_count": count}
+
+@frappe.whitelist()
+def delete_plan(plan_name, date=None, start_date=None, end_date=None):
+	"""
+	Deletes a plan by moving all its sheets to 'Default'.
+	"""
+	if not plan_name or plan_name == "Default":
+		return {"status": "error", "message": "Cannot delete Default plan"}
+
+	if start_date and end_date:
+		query_start = getdate(start_date)
+		query_end = getdate(end_date)
+		sheets = frappe.get_all("Planning sheet", filters={
+			"custom_plan_name": plan_name,
+			"ordered_date": ["between", [query_start, query_end]],
+			"docstatus": ["<", 2]
+		})
+	elif date:
+		target_date = getdate(date)
+		sheets = frappe.get_all("Planning sheet", filters={
+			"custom_plan_name": plan_name,
+			"ordered_date": target_date,
+			"docstatus": ["<", 2]
+		})
+	else:
+		return {"status": "error", "message": "Date filter required"}
+
+	count = 0
 	for sheet in sheets:
 		frappe.db.set_value("Planning sheet", sheet.name, "custom_plan_name", "Default")
-		deleted_count += 1
+		count += 1
 
 	# Remove from persistent plans
 	persisted = get_persisted_plans("color_chart")
@@ -1031,8 +1075,7 @@ def duplicate_unprocessed_orders_to_plan(old_plan, new_plan, date=None, start_da
 	frappe.defaults.set_global_default("production_scheduler_color_chart_plans", json.dumps(persisted))
 
 	frappe.db.commit()
-
-	return {"status": "success", "deleted_count": deleted_count}
+	return {"status": "success", "deleted_count": count}
 
 def get_orders_for_date(date):
     """

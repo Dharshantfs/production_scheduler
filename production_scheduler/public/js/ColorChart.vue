@@ -739,13 +739,19 @@ const matrixData = computed(() => {
     });
 
     // 2. Prepare Rows (Unique Colors and Whites)
+    // ✅ IMPROVEMENT: Use rawData (All Plans) to seed the vertical legend
+    // This ensures that when you create a new plan, the color names from the Default plan 
+    // are still visible in the legend/rows.
     const allColors = new Set();
     const allWhites = new Set();
     
-    baseData.forEach(d => {
+    rawData.value.forEach(d => {
         if (!d.color) return;
         const colorUpper = d.color.toUpperCase();
         
+        // Skip NO COLOR for legend
+        if (colorUpper === "NO COLOR") return;
+
         let isWhite = false;
         if (!colorUpper.includes("IVORY") && !colorUpper.includes("CREAM") && !colorUpper.includes("OFF WHITE")) {
             if (EXCLUDED_WHITES.some(ex => colorUpper.includes(ex))) {
@@ -1253,10 +1259,12 @@ async function initSortable() {
           if (bodyEl) {
               const rowSortable = new Sortable(bodyEl, {
                   group: 'matrix-rows',
-                  animation: 150,
+                  animation: 250,
                   handle: '.matrix-row-header',
                   draggable: '.matrix-row',
                   ghostClass: 'cc-ghost',
+                  dragClass: 'cc-drag',
+                  chosenClass: 'cc-chosen',
                   onEnd: (evt) => {
                       const { oldIndex, newIndex } = evt;
                       if (oldIndex === newIndex) return;
@@ -1283,10 +1291,12 @@ async function initSortable() {
          if (!cellEl) return;
          const monthlySortable = new Sortable(cellEl, {
              group: "monthly-kanban",
-             animation: 150,
-             forceFallback: true, /* Prevents flickering with native HTML5 drag */
+             animation: 250,
+             forceFallback: false, /* Native is smoother if optimized */
              fallbackClass: "cc-ghost",
              ghostClass: "cc-ghost",
+             dragClass: "cc-drag",
+             chosenClass: "cc-chosen",
              onEnd: async (evt) => {
                 const { item, to, newIndex } = evt;
                 const itemName = item.dataset.itemName;
@@ -1328,8 +1338,12 @@ async function initSortable() {
         if (!colEl) return;
         const kanbanSortable = new Sortable(colEl, {
         group: "kanban",
-        animation: 150,
+        animation: 250, // Smoother transition
         ghostClass: "cc-ghost",
+        dragClass: "cc-drag",
+        chosenClass: "cc-chosen",
+        forceFallback: false,
+        fallbackTolerance: 3, 
         onEnd: async (evt) => {
             const { item, to, from, newIndex, oldIndex } = evt;
             const itemName = item.dataset.itemName;
@@ -2247,8 +2261,11 @@ async function fetchData() {
       args = { date: filterOrderDate.value };
   }
   
-  await fetchPlans(args);
-  args.plan_name = selectedPlan.value;
+  // ✅ IMPROVEMENT: Fetch ALL plans for the date range
+  // This allows the Matrix View to maintain a consistent color legend 
+  // even if the currently selected plan is empty.
+  await fetchPlans(args); // Load plan names for the dropdown
+  args.plan_name = "__all__"; 
 
   try {
     const r = await frappe.call({
@@ -3816,9 +3833,18 @@ function updateRescueSelection(d) {
 
 /* Drag & Drop Visuals */
 .cc-ghost {
-    opacity: 0.5;
-    background: #e2e8f0;
-    border: 2px dashed #94a3b8;
+  opacity: 0.4;
+  background: #c7d2fe !important;
+  border: 2px dashed #6366f1 !important;
+}
+
+.cc-drag {
+  opacity: 0;
+}
+
+.cc-chosen {
+  background-color: #e0e7ff !important;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1) !important;
 }
 
 .draggable-handle {
