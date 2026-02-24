@@ -664,7 +664,16 @@ const matrixData = computed(() => {
     if (viewMode.value !== 'matrix') return emptyResult;
     
     // We need Whites in the matrix view, but separated.
+    // baseData = only the selected plan's items (for columns)
     const baseData = rawData.value.filter(d => {
+        // ---- PLAN FILTER (columns show only selected plan) ----
+        if (selectedPlan.value && selectedPlan.value !== 'Default') {
+            if (d.planName !== selectedPlan.value) return false;
+        } else {
+            // Default plan: include items with no plan or explicit Default
+            if (d.planName && d.planName !== '' && d.planName !== 'Default') return false;
+        }
+
         // UNIT FILTER
         if (filterUnit.value && (d.unit || "Mixed") !== filterUnit.value) return false;
         
