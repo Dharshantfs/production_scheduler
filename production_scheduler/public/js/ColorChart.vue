@@ -2672,9 +2672,14 @@ async function openPushColorDialog(color) {
     let pbPlans = [];
     try {
         const d_date = filterOrderDate.value || frappe.datetime.get_today();
+        const [year, month] = d_date.split("-");
+        const lastDay = new Date(year, month, 0).getDate();
+        const start_date = `${year}-${month}-01`;
+        const end_date = `${year}-${month}-${lastDay}`;
+        
         const r = await frappe.call({
             method: "production_scheduler.api.get_monthly_plans",
-            args: { date: d_date }
+            args: { start_date: start_date, end_date: end_date }
         });
         pbPlans = r.message || ["Default"];
     } catch(e) { console.error("Error fetching PB plans", e); }
