@@ -2671,8 +2671,12 @@ async function openPushColorDialog(color) {
     // Fetch PB Plans
     let pbPlans = [];
     try {
-        const r = await frappe.call("production_scheduler.api.get_pb_plans");
-        pbPlans = r.message || [];
+        const d_date = filterOrderDate.value || frappe.datetime.get_today();
+        const r = await frappe.call({
+            method: "production_scheduler.api.get_monthly_plans",
+            args: { date: d_date }
+        });
+        pbPlans = r.message || ["Default"];
     } catch(e) { console.error("Error fetching PB plans", e); }
 
     const d = new frappe.ui.Dialog({
@@ -2827,8 +2831,10 @@ async function openPushColorDialog(color) {
                 const pushWeight = pushLoads[u] || 0;
                 if (pushWeight > 0) {
                     unitsPrinted++;
-                    // Calculate existing order loads
-                    const existingU = allItems.filter(i => i.unit === u && i.pbPlanName !== ""); 
+                    // Calculate existing order loads on this unit on this date
+                    // EXCLUDE items that we are currently pushing so we don't double count!
+                    const pushingNames = selected.map(s => s.name);
+                    const existingU = allItems.filter(i => i.unit === u && i.pbPlanName !== "" && !pushingNames.includes(i.itemName)); 
                     const currentLoad = existingU.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
                     
                     const afterPush = currentLoad + pushWeight;
