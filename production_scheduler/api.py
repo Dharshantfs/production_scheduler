@@ -1948,33 +1948,68 @@ def get_pb_plans(date=None, start_date=None, end_date=None):
 @frappe.whitelist()
 def push_to_pb(item_names, pb_plan_name):
 	"""
-	Pushes Planning Sheet items to a Production Board plan.
-	Strictly moves selected items instead of tagging the whole sheet.
+	Pushes ONLY the selected Planning Sheet items to a Production Board plan.
+	Each item is re-parented to a new (or existing) Planning Sheet that has
+	custom_pb_plan_name set. The original sheet keeps any un-pushed items
+	(e.g., if Golden Yellow and Orange share a sheet, only Golden Yellow moves).
 	"""
 	import json
 	if isinstance(item_names, str):
 		item_names = json.loads(item_names)
-	
+
 	if not item_names or not pb_plan_name:
 		return {"status": "error", "message": "Missing item names or plan name"}
-	
-	items_data = []
+
+	updated_count = 0
+	pb_sheet_cache = {}  # (party_code, effective_date) -> pb sheet name
+
 	for name in item_names:
 		try:
 			item = frappe.get_doc("Planning Sheet Item", name)
 			parent = frappe.get_doc("Planning sheet", item.parent)
-			items_data.append({
-				"name": name,
-				"target_date": str(parent.get("custom_planned_date") or parent.ordered_date),
-				"target_unit": item.unit
-			})
-		except Exception:
-			pass
-			
-	if not items_data:
-		return {"status": "error", "message": "No valid items found"}
-		
-	return push_items_to_pb(items_data, pb_plan_name)
+
+			effective_date = str(parent.get("custom_planned_date") or parent.ordered_date)
+			party_code = parent.party_code or ""
+
+			# Find or create a dedicated PB Planning Sheet for this date+party
+			cache_key = (party_code, effective_date, pb_plan_name)
+			if cache_key in pb_sheet_cache:
+				pb_sheet_name = pb_sheet_cache[cache_key]
+			else:
+				existing = frappe.get_all("Planning sheet", filters={
+					"custom_pb_plan_name": pb_plan_name,
+					"ordered_date": effective_date,
+					"party_code": party_code,
+					"docstatus": ["<", 1]
+				}, fields=["name"], limit=1)
+
+				if existing:
+					pb_sheet_name = existing[0].name
+				else:
+					pb_sheet = frappe.new_doc("Planning sheet")
+					pb_sheet.custom_plan_name = parent.get("custom_plan_name") or "Default"
+					pb_sheet.custom_pb_plan_name = pb_plan_name
+					pb_sheet.ordered_date = effective_date
+					pb_sheet.party_code = party_code
+					pb_sheet.customer = parent.customer or ""
+					pb_sheet.sales_order = parent.sales_order or ""
+					pb_sheet.insert(ignore_permissions=True)
+					pb_sheet_name = pb_sheet.name
+
+				pb_sheet_cache[cache_key] = pb_sheet_name
+
+			# Move item to the PB sheet
+			frappe.db.set_value("Planning Sheet Item", name, "parent", pb_sheet_name)
+			frappe.db.set_value("Planning Sheet Item", name, "parenttype", "Planning sheet")
+			frappe.db.set_value("Planning Sheet Item", name, "parentfield", "items")
+			updated_count += 1
+
+		except Exception as e:
+			frappe.log_error(f"push_to_pb error for item {name}: {e}", "Push to PB")
+
+	frappe.db.commit()
+	return {"status": "success", "updated_count": updated_count, "plan_name": pb_plan_name}
+
 
 @frappe.whitelist()
 def push_items_to_pb(items_data, pb_plan_name):
@@ -2064,3 +2099,65 @@ def delete_pb_plan(pb_plan_name, date=None, start_date=None, end_date=None):
 
 	frappe.db.commit()
 	return {"status": "success", "cleared_count": affected}
+
+
+@frappe.whitelist()
+def revert_pb_push(pb_plan_name, date=None):
+	"""
+	Reverts a Production Board push for a specific date.
+	Moves all items from PB Planning Sheets back to their original Color Chart sheets,
+	then deletes the (now empty) PB sheets.
+	"""
+	if not pb_plan_name:
+		return {"status": "error", "message": "Plan name required"}
+
+	target_date = frappe.utils.getdate(date) if date else None
+
+	filters = {
+		"custom_pb_plan_name": pb_plan_name,
+		"docstatus": ["<", 2]
+	}
+	if target_date:
+		filters["ordered_date"] = target_date
+
+	pb_sheets = frappe.get_all("Planning sheet", filters=filters, fields=["name", "ordered_date", "party_code", "custom_plan_name"])
+
+	reverted = 0
+	for pb_sheet in pb_sheets:
+		# Find the original Color Chart sheet for same date + party_code (no pb_plan_name)
+		original_filters = {
+			"ordered_date": pb_sheet.ordered_date,
+			"custom_pb_plan_name": ["in", ["", None]],
+			"docstatus": ["<", 2]
+		}
+		if pb_sheet.party_code:
+			original_filters["party_code"] = pb_sheet.party_code
+		if pb_sheet.custom_plan_name:
+			original_filters["custom_plan_name"] = pb_sheet.custom_plan_name
+
+		originals = frappe.get_all("Planning sheet", filters=original_filters, fields=["name"], limit=1)
+
+		if originals:
+			original_sheet_name = originals[0].name
+		else:
+			# Create a blank original sheet if none found
+			orig_sheet = frappe.new_doc("Planning sheet")
+			orig_sheet.custom_plan_name = pb_sheet.custom_plan_name or "Default"
+			orig_sheet.ordered_date = pb_sheet.ordered_date
+			orig_sheet.party_code = pb_sheet.party_code or ""
+			orig_sheet.insert(ignore_permissions=True)
+			original_sheet_name = orig_sheet.name
+
+		# Move all items from PB sheet back to original sheet
+		items = frappe.get_all("Planning Sheet Item", filters={"parent": pb_sheet.name}, fields=["name"])
+		for item in items:
+			frappe.db.set_value("Planning Sheet Item", item.name, "parent", original_sheet_name)
+			frappe.db.set_value("Planning Sheet Item", item.name, "parenttype", "Planning sheet")
+			frappe.db.set_value("Planning Sheet Item", item.name, "parentfield", "items")
+			reverted += 1
+
+		# Delete the now-empty PB sheet
+		frappe.delete_doc("Planning sheet", pb_sheet.name, ignore_permissions=True, force=True)
+
+	frappe.db.commit()
+	return {"status": "success", "reverted": reverted, "sheets_removed": len(pb_sheets)}
