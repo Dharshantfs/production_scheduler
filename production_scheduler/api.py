@@ -796,6 +796,51 @@ def get_active_plans():
 	active_pb = next((p["name"] for p in pb_plans if not p.get("locked")), "")
 	return {"color_chart": active_cc, "production_board": active_pb}
 
+# --------------------------------------------------------------------------------
+# Persistent Plans System
+# --------------------------------------------------------------------------------
+
+def get_persisted_plans(plan_type):
+	"""Returns list of dicts: [{'name': '...', 'locked': 0}] from frappe.defaults"""
+	key = f"production_scheduler_{plan_type}_plans"
+	val = frappe.defaults.get_global_default(key)
+	if val:
+		import json
+		try:
+			return json.loads(val)
+		except:
+			pass
+	if plan_type == "color_chart":
+		return [{"name": "Default", "locked": 0}]
+	return []
+
+@frappe.whitelist()
+def add_persistent_plan(plan_type, name):
+	plans = get_persisted_plans(plan_type)
+	if not any(p.get("name") == name for p in plans):
+		plans.append({"name": name, "locked": 0})
+		import json
+		frappe.defaults.set_global_default(f"production_scheduler_{plan_type}_plans", json.dumps(plans))
+	return plans
+
+@frappe.whitelist()
+def toggle_plan_lock(plan_type, name, locked):
+	plans = get_persisted_plans(plan_type)
+	for p in plans:
+		if p.get("name") == name:
+			p["locked"] = int(locked)
+	import json
+	frappe.defaults.set_global_default(f"production_scheduler_{plan_type}_plans", json.dumps(plans))
+	return plans
+
+@frappe.whitelist()
+def get_active_plans():
+	cc_plans = get_persisted_plans("color_chart")
+	pb_plans = get_persisted_plans("production_board")
+	active_cc = next((p["name"] for p in cc_plans if not p.get("locked")), "Default")
+	active_pb = next((p["name"] for p in pb_plans if not p.get("locked")), "")
+	return {"color_chart": active_cc, "production_board": active_pb}
+
 
 @frappe.whitelist()
 def get_monthly_plans(start_date, end_date):
