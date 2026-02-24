@@ -59,10 +59,13 @@
       </div>
       <div class="cc-filter-item">
         <label>Plan</label>
-        <div style="display:flex; gap:4px;">
+        <div style="display:flex; gap:4px; align-items:center;">
             <select v-model="selectedPlan" @change="fetchData" style="font-weight: bold;">
-                <option v-for="p in plans" :key="p" :value="p">{{ p }}</option>
+                <option v-for="p in plans" :key="p.name" :value="p.name">{{ p.locked ? '🔒 ' : '' }}{{ p.name }}</option>
             </select>
+            <button v-if="selectedPlan" class="cc-mini-btn" @click="togglePlanLock" :title="isCurrentPlanLocked ? 'Unlock Plan' : 'Lock Plan'" style="margin-right:2px; padding: 2px 4px;font-size: 14px;">
+                {{ isCurrentPlanLocked ? '🔒' : '🔓' }}
+            </button>
             <button class="cc-mini-btn" @click="createNewPlan" title="Create New Plan" style="color:#2563eb; font-weight:bold; font-size:14px;">
                 ➕ New
             </button>
@@ -376,6 +379,27 @@ function clearFilters() {
   fetchData();
 }
 
+const isCurrentPlanLocked = computed(() => {
+    const p = plans.value.find(p => p.name === selectedPlan.value);
+    return p ? p.locked : 0;
+});
+
+async function togglePlanLock() {
+    if (!selectedPlan.value) return;
+    const p = plans.value.find(p => p.name === selectedPlan.value);
+    if (!p) return;
+    
+    const newLock = p.locked ? 0 : 1;
+    try {
+        await frappe.call({
+            method: "production_scheduler.api.toggle_plan_lock",
+            args: { plan_type: "production_board", name: selectedPlan.value, locked: newLock }
+        });
+        p.locked = newLock;
+        frappe.show_alert({ message: newLock ? `Plan '${selectedPlan.value}' Locked` : `Plan '${selectedPlan.value}' Unlocked`, indicator: 'green' });
+    } catch(e) { console.error("Error toggling lock", e); }
+}
+
 // Track plans created locally via +New (before items are pushed)
 const localPlans = ref([]);
 
@@ -392,9 +416,13 @@ function createNewPlan() {
         // Track locally so fetchPlans doesn't wipe it
         if (!localPlans.value.includes(name)) {
             localPlans.value.push(name);
+            frappe.call({
+                method: "production_scheduler.api.add_persistent_plan",
+                args: { plan_type: "production_board", name: name }
+            });
         }
-        if (!plans.value.includes(name)) {
-            plans.value.push(name);
+        if (!plans.value.find(p => p.name === name)) {
+            plans.value.push({name: name, locked: 0});
         }
         selectedPlan.value = name;
         // No server copy — plan starts empty, items come via Push from Color Chart
@@ -428,7 +456,7 @@ function deletePlan() {
                     method: "production_scheduler.api.delete_pb_plan",
                     args: deleteArgs
                 });
-                plans.value = plans.value.filter(p => p !== planName);
+                plans.value = plans.value.filter(p => p.name !== planName);
                 selectedPlan.value = "Default";
                 frappe.show_alert({ message: `Plan "${planName}" removed.`, indicator: 'green' });
                 fetchData();
@@ -1193,12 +1221,23 @@ async function fetchPlans(args) {
             args: planArgs
         });
         const serverPlans = r.message || [];
-        // Merge server plans with locally-created plans (that haven't been pushed yet)
-        const allPlans = new Set([...serverPlans, ...localPlans.value]);
-        plans.value = ["Default", ...Array.from(allPlans).sort()];
+        // Merge server plans with locally-created plans
+        const allNames = new Set([...serverPlans.map(p=>p.name), ...localPlans.value]);
+        
+        plans.value = [];
+        allNames.forEach(n => {
+            const sp = serverPlans.find(p => p.name === n);
+            if (sp) plans.value.push(sp);
+            else plans.value.push({name: n, locked: 0});
+        });
+        
+        plans.value.sort((a,b) => a.name === "Default" ? -1 : a.name.localeCompare(b.name));
+        if (!plans.value.find(p => p.name === "Default")) plans.value.unshift({name: "Default", locked: 0});
+
         // Clean up local plans that now exist on server
-        localPlans.value = localPlans.value.filter(p => !serverPlans.includes(p));
-        if (selectedPlan.value !== 'Default' && !plans.value.includes(selectedPlan.value)) {
+        localPlans.value = localPlans.value.filter(p => !serverPlans.find(sp => sp.name === p));
+        
+        if (selectedPlan.value !== 'Default' && !plans.value.find(p => p.name === selectedPlan.value)) {
             selectedPlan.value = "Default";
         }
     } catch(e) { console.error("Error fetching PB plans", e); }
