@@ -30,6 +30,42 @@ UNIT_QUALITY_MAP = {
 	"Unit 4": UNIT_4
 }
 
+def is_quality_allowed(unit, quality):
+	"""Checks if a quality is allowed for a unit."""
+	if not quality or not unit: return True
+	if unit not in UNIT_QUALITY_MAP: return True
+	# Match with stripping and upper
+	q_match = quality.upper().strip()
+	allowed = [q.upper().strip() for q in UNIT_QUALITY_MAP[unit]]
+	return q_match in allowed
+
+def is_sheet_locked(sheet_name):
+	"""Checks if a sheet is locked (either submitted or belongs to a locked plan)."""
+	try:
+		sheet = frappe.get_doc("Planning sheet", sheet_name)
+		if sheet.docstatus != 0:
+			return True
+		
+		# Check if its plans are locked
+		cc_plan = sheet.get("custom_plan_name") or "Default"
+		pb_plan = sheet.get("custom_pb_plan_name")
+		
+		# We need to fetch persisted plans to check lock status
+		from production_scheduler.api import get_persisted_plans
+		
+		cc_plans = get_persisted_plans("color_chart")
+		if any(p["name"] == cc_plan and p.get("locked") for p in cc_plans):
+			return True
+			
+		if pb_plan:
+			pb_plans = get_persisted_plans("production_board")
+			if any(p["name"] == pb_plan and p.get("locked") for p in pb_plans):
+				return True
+				
+		return False
+	except Exception:
+		return False
+
 # Cache for column existence check
 _planned_date_col_exists = None
 def _has_planned_date_column():
@@ -158,6 +194,10 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 	item_wt_tons = flt(item.qty) / 1000.0
 	quality = item.custom_quality or ""
 	
+	# QUALITY ENFORCEMENT
+	if not is_quality_allowed(unit, quality):
+		frappe.throw(_("Quality <b>{}</b> is not allowed in <b>{}</b>.").format(quality, unit))
+
 	# 3. Check Capacity of Target Slot
 	current_load = get_unit_load(target_date, unit)
 	limit = HARD_LIMITS.get(unit, 999.0)
@@ -1156,6 +1196,12 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
             new_idx = int(current_max_idx) + int(i) + 1
             new_unit = target_unit if target_unit else item_doc.unit
 
+            # QUALITY ENFORCEMENT
+            if new_unit and not is_quality_allowed(new_unit, item_doc.custom_quality):
+                frappe.throw(_("Quality <b>{}</b> is not allowed in <b>{}</b> (Item: {}).").format(
+                    item_doc.custom_quality or "Generic", new_unit, item_doc.item_name
+                ))
+
             # HEAL UNASSIGNED: If unit is missing OR "Unassigned"/"Mixed", auto-assign based on Quality
             if not new_unit or new_unit in ["Unassigned", "Mixed"]:
                 # Use item quality to find best unit
@@ -1314,155 +1360,175 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
 
 def create_planning_sheet_from_so(doc):
     """
-    AUTO-CREATE PLANNING SHEET (User Provided Logic)
+    AUTO-CREATE PLANNING SHEET (QUALITY + GSM LOGIC)
     """
     try:
-        # 1. Check if Planning Sheet already exists
-        if frappe.db.exists("Planning sheet", {"sales_order": doc.name}):
-            frappe.msgprint("â„¹ï¸ Planning Sheet already exists.")
-        else:
-            # --- DEFINITIONS ---
-            # NOTE: Units lists are now global UNIT_QUALITY_MAP
-
-            QUAL_LIST = ["SUPER PLATINUM", "SUPER CLASSIC", "SUPER ECO", "ECO SPECIAL", "ECO GREEN", "ECO SPL", "LIFE STYLE", "LIFESTYLE", "PREMIUM", "PLATINUM", "CLASSIC", "DELUXE", "BRONZE", "SILVER", "ULTRA", "GOLD", "UV"]
-            QUAL_LIST.sort(key=len, reverse=True)
-
-            COL_LIST = ["GOLDEN YELLOW", "BRIGHT WHITE", "SUPER WHITE", "BLACK", "RED", "BLUE", "GREEN", "MILKY WHITE", "SUNSHINE WHITE", "BLEACH WHITE", "LEMON YELLOW", "BRIGHT ORANGE", "DARK ORANGE", "BABY PINK", "DARK PINK", "CRIMSON RED", "LIGHT MAROON", "DARK MAROON", "MEDICAL BLUE", "PEACOCK BLUE", "RELIANCE GREEN", "PARROT GREEN", "ROYAL BLUE", "NAVY BLUE", "LIGHT GREY", "DARK GREY", "CHOCOLATE BROWN", "LIGHT BEIGE", "DARK BEIGE", "WHITE MIX", "BLACK MIX", "COLOR MIX", "BEIGE MIX", "WHITE"]
-            COL_LIST.sort(key=len, reverse=True)
-
-            # --- PREPARE DOC ---
-            ps = frappe.new_doc("Planning sheet")
-            ps.sales_order = doc.name
-            ps.customer = doc.customer
+        # Check if an UNLOCKED Planning Sheet already exists
+        existing_sheets = frappe.get_all("Planning sheet", filters={"sales_order": doc.name, "docstatus": ["<", 2]}, fields=["name"])
+        unlocked_sheet = None
+        for s in existing_sheets:
+            if not is_sheet_locked(s.name):
+                unlocked_sheet = s.name
+                break
+        
+        if unlocked_sheet:
+            # frappe.msgprint(f"ℹ️ Planning Sheet already exists (unlocked): {unlocked_sheet}")
+            return
             
-            # Start Date Preference: Delivery Date or Today?
-            preferred_date = doc.delivery_date or frappe.utils.nowdate()
-            ps.dod = doc.delivery_date
-            
-            # Assign Party Code (Use doc.party_code if available, else Customer)
-            # User wants "need partycode kgs quality" - ensuring party_code
-            if hasattr(doc, 'party_code') and doc.party_code:
-                ps.party_code = doc.party_code
-            else:
-                ps.party_code = doc.customer
-                ps.party_code = doc.customer
-            ps.planning_status = "Draft"
+        # --- GET ACTIVE UNLOCKED PLANS ---
+        try:
+            active_plans = get_active_plans()
+            cc_plan = active_plans.get("color_chart", "Default")
+            pb_plan = active_plans.get("production_board", "")
+        except Exception:
+            cc_plan = "Default"
+            pb_plan = ""
 
-            # --- PROCESS ITEMS ---
-            total_tons = 0.0
-            major_quality = ""
-            processed_items_data = []
+        # --- QUALITIES PER UNIT ---
+        UNIT_1_MAP = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER"]
+        UNIT_2_MAP = ["GOLD", "SILVER", "BRONZE", "CLASSIC", "SUPER CLASSIC", "LIFE STYLE",
+                      "ECO SPECIAL", "ECO GREEN", "SUPER ECO", "ULTRA", "DELUXE"]
+        UNIT_3_MAP = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER", "BRONZE"]
+        UNIT_4_MAP = ["PREMIUM", "GOLD", "SILVER", "BRONZE"]
 
-            for it in doc.items:
-                 # Extraction Logic
-                raw_txt = (it.item_code or "") + " " + (it.item_name or "")
-                clean_txt = raw_txt.upper().replace("-", " ").replace("_", " ").replace("(", " ").replace(")", " ")
-                clean_txt = clean_txt.replace("''", " INCH ").replace('"', " INCH ")
-                words = clean_txt.split()
-                
-                gsm = 0
+        # Longest first to avoid partial matches
+        QUAL_LIST = ["SUPER PLATINUM", "SUPER CLASSIC", "SUPER ECO", "ECO SPECIAL", "ECO GREEN",
+                     "ECO SPL", "LIFE STYLE", "LIFESTYLE", "PREMIUM", "PLATINUM", "CLASSIC",
+                     "DELUXE", "BRONZE", "SILVER", "ULTRA", "GOLD", "UV"]
+        QUAL_LIST.sort(key=len, reverse=True)
+
+        COL_LIST = [
+            "BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE",
+            "BLEACH WHITE", "WHITE MIX", "WHITE",
+            "CREAM 2.0", "CREAM 3.0", "CREAM 4.0", "CREAM 5.0",
+            "GOLDEN YELLOW 4.0 SPL", "GOLDEN YELLOW 1.0", "GOLDEN YELLOW 2.0",
+            "GOLDEN YELLOW 3.0", "GOLDEN YELLOW",
+            "LEMON YELLOW 1.0", "LEMON YELLOW 3.0", "LEMON YELLOW",
+            "BRIGHT ORANGE", "DARK ORANGE", "ORANGE 2.0",
+            "PINK 7.0 DARK", "PINK 6.0 DARK", "DARK PINK",
+            "BABY PINK", "PINK 1.0", "PINK 2.0", "PINK 3.0", "PINK 5.0",
+            "CRIMSON RED", "RED",
+            "LIGHT MAROON", "DARK MAROON", "MAROON 1.0", "MAROON 2.0",
+            "BLUE 13.0 INK BLUE", "BLUE 12.0 SPL NAVY BLUE", "BLUE 11.0 NAVY BLUE",
+            "BLUE 8.0 DARK ROYAL BLUE", "BLUE 7.0 DARK BLUE", "BLUE 6.0 ROYAL BLUE",
+            "LIGHT PEACOCK BLUE", "PEACOCK BLUE", "LIGHT MEDICAL BLUE", "MEDICAL BLUE",
+            "ROYAL BLUE", "NAVY BLUE", "SKY BLUE", "LIGHT BLUE",
+            "BLUE 9.0", "BLUE 4.0", "BLUE 2.0", "BLUE 1.0", "BLUE",
+            "PURPLE 4.0 BLACKBERRY", "PURPLE 1.0", "PURPLE 2.0", "PURPLE 3.0", "VOILET",
+            "GREEN 13.0 ARMY GREEN", "GREEN 12.0 OLIVE GREEN", "GREEN 11.0 DARK GREEN",
+            "GREEN 10.0", "GREEN 9.0 BOTTLE GREEN", "GREEN 8.0 APPLE GREEN",
+            "GREEN 7.0", "GREEN 6.0", "GREEN 5.0 GRASS GREEN", "GREEN 4.0",
+            "GREEN 3.0 RELIANCE GREEN", "GREEN 2.0 TORQUISE GREEN", "GREEN 1.0 MINT",
+            "MEDICAL GREEN", "RELIANCE GREEN", "PARROT GREEN", "GREEN",
+            "SILVER 1.0", "SILVER 2.0", "LIGHT GREY", "DARK GREY", "GREY 1.0",
+            "CHOCOLATE BROWN 2.0", "CHOCOLATE BROWN", "CHOCOLATE BLACK",
+            "BROWN 3.0 DARK COFFEE", "BROWN 2.0 DARK", "BROWN 1.0",
+            "CHIKOO 1.0", "CHIKOO 2.0",
+            "BEIGE 1.0", "BEIGE 2.0", "BEIGE 3.0", "BEIGE 4.0", "BEIGE 5.0",
+            "LIGHT BEIGE", "DARK BEIGE", "BEIGE MIX",
+            "BLACK MIX", "COLOR MIX", "BLACK",
+        ]
+        COL_LIST.sort(key=len, reverse=True)
+
+        ps = frappe.new_doc("Planning sheet")
+        ps.sales_order = doc.name
+        ps.customer = doc.customer
+        ps.party_code = doc.get("party_code") or doc.customer
+        ps.ordered_date = doc.transaction_date 
+        ps.custom_planned_date = doc.delivery_date
+        ps.dod = doc.delivery_date
+        ps.planning_status = "Draft"
+        ps.custom_plan_name = cc_plan
+        ps.custom_pb_plan_name = pb_plan
+
+        for it in doc.items:
+            raw_txt = (it.item_code or "") + " " + (it.item_name or "")
+            clean_txt = raw_txt.upper().replace("-", " ").replace("_", " ").replace("(", " ").replace(")", " ")
+            clean_txt = clean_txt.replace("''", " INCH ").replace('"', " INCH ")
+            words = clean_txt.split()
+
+            # GSM
+            gsm = 0
+            for i in range(1, len(words)):
+                if words[i] == "GSM":
+                    if words[i-1].isdigit():
+                        gsm = int(words[i-1])
+                        break
+
+            # WIDTH
+            width = 0.0
+            for i in range(len(words) - 1):
+                if words[i] == "W":
+                    next_word = words[i+1]
+                    if next_word.replace('.', '', 1).isdigit():
+                        width = float(next_word)
+                        break
+            if width == 0.0:
                 for i in range(1, len(words)):
-                    if words[i] == "GSM":
+                    if words[i] == "INCH":
                         prev = words[i-1]
-                        if prev.isdigit():
-                            gsm = int(prev)
+                        if prev.replace('.', '', 1).isdigit():
+                            width = float(prev)
                             break
-                            
-                width = 0.0
-                for i in range(len(words) - 1):
-                    if words[i] == "W":
-                        next_word = words[i+1]
-                        if next_word.replace('.', '', 1).isdigit():
-                            width = float(next_word)
-                            break
-                if width == 0.0:
-                    for i in range(1, len(words)):
-                        if words[i] == "INCH":
-                            prev = words[i-1]
-                            if prev.replace('.', '', 1).isdigit():
-                                width = float(prev)
-                                break
-                                
-                search_text = " " + " ".join(words) + " "
-                qual = ""
-                for q in QUAL_LIST:
-                    if (" " + q + " ") in search_text:
-                        qual = q
-                        break
-                col = ""
-                for c in COL_LIST:
-                    if (" " + c + " ") in search_text:
-                        col = c
-                        break
-                        
-                m_roll = float(it.custom_meter_per_roll or 0)
-                wt = 0.0
-                if gsm > 0 and width > 0 and m_roll > 0:
-                    wt = (gsm * width * m_roll * 0.0254) / 1000
-                elif it.weight_per_unit: 
-                     wt = float(it.weight_per_unit)
-                
-                total_tons += (flt(it.qty) / 1000.0)
-                if not major_quality and qual: major_quality = qual
-                
-                processed_items_data.append({
-                    "data": it,
-                    "gsm": gsm,
-                    "width": width,
-                    "qual": qual,
-                    "col": col,
-                    "wt": wt
-                })
 
-            # 2. Determine Preferred Unit based on Quality
-            preferred_unit = ""
-            if major_quality in UNIT_QUALITY_MAP["Unit 1"]: preferred_unit = "Unit 1"
-            elif major_quality in UNIT_QUALITY_MAP["Unit 2"]: preferred_unit = "Unit 2"
-            elif major_quality in UNIT_QUALITY_MAP["Unit 3"]: preferred_unit = "Unit 3"
-            elif major_quality in UNIT_QUALITY_MAP["Unit 4"]: preferred_unit = "Unit 4"
-            else: preferred_unit = "Unit 1" # Default
+            # QUALITY & COLOR
+            search_text = " " + " ".join(words) + " "
+            qual = ""
+            for q in QUAL_LIST:
+                if (" " + q + " ") in search_text:
+                    qual = q
+                    break
+            col = ""
+            for c in COL_LIST:
+                if (" " + c + " ") in search_text:
+                    col = c
+                    break
 
-            # 3. Find Best Slot for TOTAL Weight
-            best_slot = find_best_slot(total_tons, major_quality, preferred_unit, preferred_date)
-            
-            if not best_slot:
-                frappe.msgprint("âš ï¸ Could not find capacity for this order (30 day limit). Created as Draft without date.")
-                ps.ordered_date = None
-                final_unit = preferred_unit 
-            else:
-                ps.ordered_date = best_slot["date"]
-                final_unit = best_slot["unit"]
-                if str(best_slot["date"]) != str(preferred_date):
-                     frappe.msgprint(f"âš ï¸ Capacity Full. Scheduled for {best_slot['date']} in {final_unit}.")
+            # WEIGHT
+            m_roll = float(it.custom_meter_per_roll or 0)
+            wt = 0.0
+            if gsm > 0 and width > 0 and m_roll > 0:
+                wt = (gsm * width * m_roll * 0.0254) / 1000
 
-            # 4. Insert Items
-            for p_item in processed_items_data:
-                it = p_item["data"]
-                ps.append("items", {
-                    "sales_order_item": it.name,
-                    "item_code": it.item_code,
-                    "item_name": it.item_name,
-                    "qty": it.qty,
-                    "uom": it.uom,
-                    "meter": float(it.custom_meter or 0),
-                    "meter_per_roll": float(it.custom_meter_per_roll or 0),
-                    "no_of_rolls": float(it.custom_no_of_rolls or 0),
-                    "gsm": p_item["gsm"],
-                    "width_inch": p_item["width"],
-                    "custom_quality": p_item["qual"],
-                    "color": p_item["col"],
-                    "weight_per_roll": p_item["wt"],
-                    "unit": final_unit,
-                    "party_code": doc.party_code if (hasattr(doc, 'party_code') and doc.party_code) else doc.customer
-                })
+            # UNIT
+            unit = "Unit 1"
+            if qual:
+                q_up = qual.upper()
+                if gsm > 50 and q_up in UNIT_1_MAP:
+                    unit = "Unit 1"
+                elif gsm > 20 and q_up in UNIT_2_MAP:
+                    unit = "Unit 2"
+                elif gsm > 10 and q_up in UNIT_3_MAP:
+                    unit = "Unit 3"
+                elif q_up in UNIT_4_MAP:
+                    unit = "Unit 4"
 
-            ps.flags.ignore_permissions = True
-            ps.insert()
-            # frappe.msgprint(f"âœ… Planning Sheet <b>{ps.name}</b> Created!") 
-            # Commented out msgprint to avoid API clutter if called from hook
+            ps.append("items", {
+                "sales_order_item": it.name,
+                "item_code": it.item_code,
+                "item_name": it.item_name,
+                "qty": it.qty,
+                "uom": it.uom,
+                "meter": float(it.custom_meter or 0),
+                "meter_per_roll": m_roll,
+                "no_of_rolls": float(it.custom_no_of_rolls or 0),
+                "gsm": gsm,
+                "width_inch": width,
+                "custom_quality": qual,
+                "color": col,
+                "weight_per_roll": wt,
+                "unit": unit,
+                "party_code": ps.party_code
+            })
+
+        ps.flags.ignore_permissions = True
+        ps.insert()
+        frappe.db.commit()
+        frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> Created!")
 
     except Exception as e:
         frappe.log_error("Planning Sheet Creation Failed: " + str(e))
+        frappe.msgprint("⚠️ Planning Sheet failed. Check 'Error Log' for details.")
 
 @frappe.whitelist()
 def create_production_plan_from_sheet(sheet_name):
@@ -1736,8 +1802,7 @@ def get_pb_plans(date=None, start_date=None, end_date=None):
 def push_to_pb(item_names, pb_plan_name):
 	"""
 	Pushes Planning Sheet items to a Production Board plan.
-	Sets custom_pb_plan_name on the parent Planning Sheets.
-	Called from Color Chart's Push to Board action.
+	Strictly moves selected items instead of tagging the whole sheet.
 	"""
 	import json
 	if isinstance(item_names, str):
@@ -1746,27 +1811,30 @@ def push_to_pb(item_names, pb_plan_name):
 	if not item_names or not pb_plan_name:
 		return {"status": "error", "message": "Missing item names or plan name"}
 	
-	# Get unique parent sheets for these items
-	sheet_names = set()
-	for item_name in item_names:
-		parent = frappe.db.get_value("Planning Sheet Item", item_name, "parent")
-		if parent:
-			sheet_names.add(parent)
-	
-	updated_count = 0
-	for sheet_name in sheet_names:
-		frappe.db.set_value("Planning sheet", sheet_name, "custom_pb_plan_name", pb_plan_name)
-		updated_count += 1
-	
-	frappe.db.commit()
-	return {"status": "success", "updated_count": updated_count, "plan_name": pb_plan_name}
+	items_data = []
+	for name in item_names:
+		try:
+			item = frappe.get_doc("Planning Sheet Item", name)
+			parent = frappe.get_doc("Planning sheet", item.parent)
+			items_data.append({
+				"name": name,
+				"target_date": str(parent.get("custom_planned_date") or parent.ordered_date),
+				"target_unit": item.unit
+			})
+		except Exception:
+			pass
+			
+	if not items_data:
+		return {"status": "error", "message": "No valid items found"}
+		
+	return push_items_to_pb(items_data, pb_plan_name)
 
 @frappe.whitelist()
 def push_items_to_pb(items_data, pb_plan_name):
 	"""
 	Pushes specific items to the Production Board plan.
 	items_data: list of dicts [{"name": "...", "target_date": "...", "target_unit": "..."}]
-	Handles item-level re-parenting and unit updates, then applies the PB plan name.
+	Strictly re-parents items to ensure only selected colors move to the PB plan.
 	"""
 	import json
 	if isinstance(items_data, str):
@@ -1775,7 +1843,7 @@ def push_items_to_pb(items_data, pb_plan_name):
 	if not items_data or not pb_plan_name:
 		return {"status": "error", "message": "Missing item data or plan name"}
 
-	# 1. Collect docs and changes
+	# 1. Collect docs and validate Quality
 	moves = []
 	for item in items_data:
 		name = item.get("name")
@@ -1783,61 +1851,52 @@ def push_items_to_pb(items_data, pb_plan_name):
 		target_unit = item.get("target_unit")
 		try:
 			doc = frappe.get_doc("Planning Sheet Item", name)
+			
+			# Quality Enforcement
+			if not is_quality_allowed(target_unit, doc.custom_quality):
+				frappe.throw(_("Quality <b>{}</b> is not allowed in <b>{}</b> (Item: {}).").format(
+					doc.custom_quality or "Generic", target_unit, doc.item_name
+				))
+				
 			moves.append({
 				"doc": doc,
 				"target_date": frappe.utils.getdate(target_date),
 				"target_unit": target_unit
 			})
-		except Exception:
+		except Exception as e:
+			if "Generic" in str(e) or "allowed" in str(e): raise e
 			pass
 
 	if not moves:
 		return {"status": "error", "message": "No valid items found"}
 
+	# 2. Strict Push Logic: Reparent EACH item using move_orders_to_date logic
+	# This ensures if Golden Yellow and Orange are in same sheet, Golden Yellow moves to PB plan
+	# and Orange stays in Color Chart plan.
+	
 	count = 0
-	# 2. Group by (Parent, Target Date) because sheets are per date/party/etc.
-	# Actually, to be safe, move_orders_to_date groups by parent.
-	groups = {}
 	for m in moves:
-		doc = m["doc"]
-		p_name = str(doc.parent)
-		t_date = str(m["target_date"])
-		key = f"{p_name}|{t_date}"
-		if key not in groups:
-			groups[key] = []
-		groups[key].append(m)
-
-	updated_sheets = set()
-
-	for key, items in groups.items():
-		parent_name, target_date_str = key.split("|")
-		target_date = frappe.utils.getdate(target_date_str)
+		item_doc = m["doc"]
+		target_date = m["target_date"]
+		target_unit = m["target_unit"]
 		
-		# Set the planned date and PB plan on the parent Planning Sheet
-		frappe.db.set_value("Planning sheet", parent_name, {
-			"custom_planned_date": target_date,
-			"custom_pb_plan_name": pb_plan_name
-		})
-		updated_sheets.add(parent_name)
+		# We call move_orders_to_date internally for this specific item
+		# or use its reparenting helper
+		try:
+			# Use move_orders_to_date for single item to ensure new sheet creation on target plan
+			from production_scheduler.api import move_orders_to_date
+			res = move_orders_to_date(
+				item_names=[item_doc.name],
+				target_date=target_date,
+				target_unit=target_unit,
+				pb_plan_name=pb_plan_name # Explicitly move to PB plan
+			)
+			if res.get("status") == "success":
+				count += 1
+		except Exception as e:
+			frappe.msgprint(_("Failed to move {}: {}").format(item_doc.item_name, str(e)))
 
-		# Move items (Update unit only)
-		for m in items:
-			item_doc = m["doc"]
-			new_unit = m["target_unit"]
-			
-			if not new_unit or new_unit in ["Unassigned", "Mixed"]:
-				qual = item_doc.custom_quality or ""
-				new_unit = get_preferred_unit(qual)
-				
-			frappe.db.sql("""
-				UPDATE `tabPlanning Sheet Item`
-				SET unit = %s
-				WHERE name = %s
-			""", (new_unit, item_doc.name))
-			count += 1
-					
-	frappe.db.commit()
-	return {"status": "success", "updated_count": len(updated_sheets), "moved_items": count, "plan_name": pb_plan_name}
+	return {"status": "success", "moved_items": count, "plan_name": pb_plan_name}
 
 @frappe.whitelist()
 def delete_pb_plan(pb_plan_name, date=None, start_date=None, end_date=None):
