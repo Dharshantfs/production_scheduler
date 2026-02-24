@@ -1228,7 +1228,7 @@ function openMovePlanDialog() {
                 label: 'Target Unit (Optional)',
                 fieldname: 'target_unit',
                 fieldtype: 'Select',
-                options: ['', ...units.value],
+                options: ['', ...units],
                 description: 'Leave empty to keep current units.'
             },
             {
