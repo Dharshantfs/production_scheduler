@@ -89,6 +89,9 @@
       <button class="cc-clear-btn" style="color: #059669; border-color: #059669; margin-left: 8px;" @click="openPullOrdersDialog" title="Pull orders from a future date">
         📥 Pull Orders
       </button>
+      <button class="cc-clear-btn" style="color: #7c3aed; border-color: #7c3aed; margin-left: 8px; font-weight:600;" @click="pushToProductionBoard" title="Push visible orders to Production Board plan">
+        📤 Push to Board
+      </button>
       <button v-if="isAdmin" class="cc-clear-btn" style="color: #dc2626; border-color: #dc2626; margin-left: 8px;" @click="openRescueDialog" title="Rescue lost or stuck orders">
         🚑 Rescue Orders
       </button>
@@ -461,9 +464,15 @@
                     <td class="p-2 border font-semibold text-gray-600">{{ mix.unit }}</td>
                     <td class="p-2 border font-bold" :style="{ color: getHexColor(mix.color1) !== '#FFFFFF' ? getHexColor(mix.color1) : '#000' }">{{ mix.color1 }}</td>
                     <td class="p-2 border font-bold" :style="{ color: getHexColor(mix.color2) !== '#FFFFFF' ? getHexColor(mix.color2) : '#000' }">{{ mix.color2 }}</td>
-                    <td class="p-2 border text-gray-800 font-bold uppercase">{{ mix.mixName }}</td>
-                    <td class="p-2 border text-center font-semibold text-gray-600">{{ mix.gsm ? mix.gsm + ' GSM' : '-' }}</td>
-                    <td class="p-2 border">{{ mix.width }}</td>
+                    <td class="p-2 border">
+                        <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 font-bold uppercase text-gray-800" v-model="mix.mixName" />
+                    </td>
+                    <td class="p-2 border">
+                        <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-semibold text-gray-600" v-model="mix.gsm" />
+                    </td>
+                    <td class="p-2 border">
+                        <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center" v-model="mix.width" />
+                    </td>
                     <td class="p-2 border text-center">
                          <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-right font-mono" placeholder="0.0" v-model="mix.kg" />
                     </td>
@@ -2123,6 +2132,61 @@ function deletePlan() {
             }
         }
     );
+}
+
+// ---- PUSH TO PRODUCTION BOARD ----
+function pushToProductionBoard() {
+    const items = filteredData.value || [];
+    if (items.length === 0) {
+        frappe.msgprint('No orders visible to push. Apply filters first.');
+        return;
+    }
+    
+    frappe.prompt([
+        {
+            label: 'Production Board Plan Name',
+            fieldname: 'pb_plan_name',
+            fieldtype: 'Data',
+            reqd: 1,
+            description: 'Enter the plan name for Production Board (separate from Color Chart plans)'
+        }
+    ], async (values) => {
+        const pbPlanName = values.pb_plan_name.trim();
+        if (!pbPlanName) return;
+        
+        // Collect unique item names
+        const itemNames = [...new Set(items.map(d => d.itemName).filter(Boolean))];
+        
+        if (itemNames.length === 0) {
+            frappe.msgprint('No valid items to push.');
+            return;
+        }
+        
+        frappe.show_alert({ message: `Pushing ${itemNames.length} items to Production Board plan "${pbPlanName}"...`, indicator: 'blue' });
+        
+        try {
+            const r = await frappe.call({
+                method: "production_scheduler.api.push_to_pb",
+                args: {
+                    item_names: JSON.stringify(itemNames),
+                    pb_plan_name: pbPlanName
+                }
+            });
+            
+            if (r.message && r.message.status === 'success') {
+                frappe.show_alert({ 
+                    message: `✅ Pushed ${r.message.updated_count} sheet(s) to Production Board plan "${pbPlanName}"`, 
+                    indicator: 'green' 
+                });
+                fetchData(); // Refresh
+            } else {
+                frappe.msgprint(r.message?.message || 'Push failed.');
+            }
+        } catch (e) {
+            console.error('Push to PB failed', e);
+            frappe.msgprint('Error pushing to Production Board.');
+        }
+    }, 'Push to Production Board', 'Push');
 }
 
 async function fetchData() {

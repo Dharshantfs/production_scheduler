@@ -523,7 +523,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	
 	planning_sheets = frappe.db.sql(f"""
 		SELECT p.name, p.customer, p.party_code, p.dod, p.ordered_date, 
-			p.planning_status, p.docstatus, p.sales_order, p.custom_plan_name
+			p.planning_status, p.docstatus, p.sales_order, p.custom_plan_name, p.custom_pb_plan_name
 			{extra_fields},
 			{eff} as effective_date
 		FROM `tabPlanning sheet` p
@@ -648,6 +648,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				"width": flt(item.get("width") or item.get("custom_width") or item.get("width_inches") or item.get("width_inch") or item.get("width_in") or 0),
 				"unit": unit,
 				"planName": sheet.get("custom_plan_name") or "Default",
+				"pbPlanName": sheet.get("custom_pb_plan_name") or "",
 				"ordered_date": str(sheet.ordered_date) if sheet.ordered_date else "",
 				"planned_date": str(sheet.custom_planned_date) if sheet.get("custom_planned_date") else "",
 				"dod": str(sheet.dod) if sheet.dod else "",
@@ -798,6 +799,19 @@ def create_plan_name_field():
 			"description": "Actual planned production date. If empty, ordered_date is used."
 		})
 		custom_field2.insert(ignore_permissions=True)
+	
+	# Create Production Board Plan Name custom field (SEPARATE from Color Chart plan)
+	if not frappe.db.exists('Custom Field', 'Planning sheet-custom_pb_plan_name'):
+		custom_field3 = frappe.get_doc({
+			"doctype": "Custom Field",
+			"dt": "Planning sheet",
+			"fieldname": "custom_pb_plan_name",
+			"label": "Production Board Plan",
+			"fieldtype": "Data",
+			"insert_after": "custom_plan_name",
+			"description": "Production Board plan name. Separate from Color Chart plan."
+		})
+		custom_field3.insert(ignore_permissions=True)
 	
 	return {"status": "success"}
 
@@ -1666,3 +1680,100 @@ def update_sequence(items):
         
     frappe.db.commit() # Ensure committed immediately 
     return "ok"
+
+
+# --------------------------------------------------------------------------------
+# Production Board Plan System (Separate from Color Chart)
+# --------------------------------------------------------------------------------
+
+@frappe.whitelist()
+def get_pb_plans(date=None, start_date=None, end_date=None):
+	"""Get unique Production Board plan names for a date or range."""
+	eff = _effective_date_expr("p")
+	
+	if start_date and end_date:
+		query_start = frappe.utils.getdate(start_date)
+		query_end = frappe.utils.getdate(end_date)
+		date_condition = f"{eff} BETWEEN %s AND %s"
+		params = [query_start, query_end]
+	elif date:
+		target_date = frappe.utils.getdate(date)
+		date_condition = f"{eff} = %s"
+		params = [target_date]
+	else:
+		return []
+	
+	plans = frappe.db.sql(f"""
+		SELECT DISTINCT IFNULL(p.custom_pb_plan_name, '') as pb_plan_name
+		FROM `tabPlanning sheet` p
+		WHERE {date_condition} AND p.docstatus < 2
+			AND p.custom_pb_plan_name IS NOT NULL 
+			AND p.custom_pb_plan_name != ''
+		ORDER BY pb_plan_name ASC
+	""", tuple(params), as_dict=True)
+	
+	return [p.pb_plan_name for p in plans if p.pb_plan_name]
+
+@frappe.whitelist()
+def push_to_pb(item_names, pb_plan_name):
+	"""
+	Pushes Planning Sheet items to a Production Board plan.
+	Sets custom_pb_plan_name on the parent Planning Sheets.
+	Called from Color Chart's Push to Board action.
+	"""
+	import json
+	if isinstance(item_names, str):
+		item_names = json.loads(item_names)
+	
+	if not item_names or not pb_plan_name:
+		return {"status": "error", "message": "Missing item names or plan name"}
+	
+	# Get unique parent sheets for these items
+	sheet_names = set()
+	for item_name in item_names:
+		parent = frappe.db.get_value("Planning Sheet Item", item_name, "parent")
+		if parent:
+			sheet_names.add(parent)
+	
+	updated_count = 0
+	for sheet_name in sheet_names:
+		frappe.db.set_value("Planning sheet", sheet_name, "custom_pb_plan_name", pb_plan_name)
+		updated_count += 1
+	
+	frappe.db.commit()
+	return {"status": "success", "updated_count": updated_count, "plan_name": pb_plan_name}
+
+@frappe.whitelist()
+def delete_pb_plan(pb_plan_name, date=None, start_date=None, end_date=None):
+	"""
+	Removes Production Board plan assignment from Planning Sheets.
+	Does NOT delete the sheets — just clears custom_pb_plan_name.
+	"""
+	if not pb_plan_name:
+		return {"status": "error", "message": "Plan name required"}
+	
+	eff = _effective_date_expr("p")
+	
+	if start_date and end_date:
+		query_start = frappe.utils.getdate(start_date)
+		query_end = frappe.utils.getdate(end_date)
+		date_condition = f"{eff} BETWEEN %s AND %s"
+		params = [query_start, query_end]
+	elif date:
+		target_date = frappe.utils.getdate(date)
+		date_condition = f"{eff} = %s"
+		params = [target_date]
+	else:
+		return {"status": "error", "message": "Date filter required"}
+	
+	params.append(pb_plan_name)
+	
+	result = frappe.db.sql(f"""
+		UPDATE `tabPlanning sheet` p
+		SET p.custom_pb_plan_name = ''
+		WHERE {date_condition} AND p.docstatus < 2 AND p.custom_pb_plan_name = %s
+	""", tuple(params))
+	
+	affected = frappe.db.sql("SELECT ROW_COUNT() as cnt")[0][0]
+	frappe.db.commit()
+	return {"status": "success", "cleared_count": affected}

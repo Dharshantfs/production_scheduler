@@ -325,11 +325,13 @@ const filteredData = computed(() => {
       unit: d.unit || "Mixed"
   }));
 
-  // PLAN FILTERING (Production Board specific)
+  // PLAN FILTERING — Production Board uses pbPlanName (separate from Color Chart)
   if (selectedPlan.value === 'Default') {
-    // Default plan: Show ONLY white colors (all whites, NO 800kg rule)
-    // These are items that bypass Color Chart processing
+    // Default plan: Show items that have NO pbPlanName set (not pushed to any PB plan)
+    // AND are white colors (production board default view)
     data = data.filter(d => {
+      // Only show items NOT assigned to any PB plan
+      if (d.pbPlanName) return false;
       const color = (d.color || "").toUpperCase().trim();
       // Include if it's any white variant
       if (EXCLUDED_WHITES.some(ex => color.includes(ex))) return true;
@@ -338,8 +340,8 @@ const filteredData = computed(() => {
       return false;
     });
   } else {
-    // Non-Default plans: Show only items that were pushed to this plan
-    data = data.filter(d => d.planName === selectedPlan.value);
+    // Non-Default plans: Show only items pushed to this Production Board plan
+    data = data.filter(d => d.pbPlanName === selectedPlan.value);
   }
 
   if (filterPartyCode.value) {
@@ -400,11 +402,33 @@ function deletePlan() {
         return;
     }
     frappe.confirm(
-        `Remove plan "<b>${planName}</b>" from Production Board?`,
-        () => {
-            plans.value = plans.value.filter(p => p !== planName);
-            selectedPlan.value = "Default";
-            frappe.show_alert({ message: `Plan "${planName}" removed.`, indicator: 'green' });
+        `Remove plan "<b>${planName}</b>" from Production Board? This will unlink orders from this plan.`,
+        async () => {
+            let deleteArgs = { pb_plan_name: planName };
+            if (viewScope.value === 'monthly') {
+                const [year, month] = filterMonth.value.split("-");
+                const lastDay = new Date(year, month, 0).getDate();
+                deleteArgs.start_date = `${year}-${month}-01`;
+                deleteArgs.end_date = `${year}-${month}-${lastDay}`;
+            } else if (viewScope.value === 'weekly') {
+                // Use same week calc logic
+                deleteArgs.date = filterOrderDate.value;
+            } else {
+                deleteArgs.date = filterOrderDate.value;
+            }
+            try {
+                await frappe.call({
+                    method: "production_scheduler.api.delete_pb_plan",
+                    args: deleteArgs
+                });
+                plans.value = plans.value.filter(p => p !== planName);
+                selectedPlan.value = "Default";
+                frappe.show_alert({ message: `Plan "${planName}" removed.`, indicator: 'green' });
+                fetchData();
+            } catch (e) {
+                console.error('Failed to delete PB plan', e);
+                frappe.msgprint('Error deleting plan.');
+            }
         }
     );
 }
@@ -490,10 +514,11 @@ function compareGsm(a, b, direction) {
 }
 
 // ── Cached unit statistics (computed once per data change, not per render) ──
+// Uses filteredData so stats match visible cards (not all raw data)
 const unitStatsCache = computed(() => {
   const stats = {};
   for (const unit of units) {
-    const allUnitData = rawData.value.filter(d => (d.unit || "Mixed") === unit);
+    const allUnitData = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
     const total = allUnitData.reduce((sum, d) => sum + d.qty, 0) / 1000;
     const hiddenWhite = allUnitData
       .filter(d => {
@@ -1125,7 +1150,7 @@ function updateRescueSelection(d) {
 
 const isAdmin = computed(() => frappe.user.has_role("System Manager"));
 
-// ---- PLAN LOADING (from server) ----
+// ---- PLAN LOADING (from server — Production Board plans only) ----
 async function fetchPlans(args) {
     try {
         const planArgs = {};
@@ -1140,14 +1165,16 @@ async function fetchPlans(args) {
             planArgs.end_date = `${year}-${month}-${lastDay}`;
         }
         const r = await frappe.call({
-            method: "production_scheduler.api.get_monthly_plans",
+            method: "production_scheduler.api.get_pb_plans",
             args: planArgs
         });
-        plans.value = r.message || ["Default"];
-        if (!plans.value.includes(selectedPlan.value)) {
+        const serverPlans = r.message || [];
+        // Always include "Default" first, then server plans
+        plans.value = ["Default", ...serverPlans];
+        if (selectedPlan.value !== 'Default' && !plans.value.includes(selectedPlan.value)) {
             selectedPlan.value = "Default";
         }
-    } catch(e) { console.error("Error fetching plans", e); }
+    } catch(e) { console.error("Error fetching PB plans", e); }
 }
 
 let fetchTimeout = null;
