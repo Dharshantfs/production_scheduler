@@ -2105,8 +2105,11 @@ async function fetchPlans(args) {
             args: planArgs
         });
         plans.value = r.message || [{name: "Default", locked: 0}];
-        if (!plans.value.find(p => p.name === selectedPlan.value)) {
-            selectedPlan.value = "Default"; // Fallback if plan doesn't exist in this month
+        // If the currently selected plan is not returned (e.g. new plan with no sheets yet),
+        // keep it in the dropdown instead of silently falling back to Default.
+        if (selectedPlan.value && !plans.value.find(p => p.name === selectedPlan.value)) {
+            // Insert as an unlocked empty plan so user stays on it
+            plans.value.push({ name: selectedPlan.value, locked: 0 });
         }
     } catch(e) { console.error("Error fetching plans", e); }
 }
