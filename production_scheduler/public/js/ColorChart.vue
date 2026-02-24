@@ -376,7 +376,13 @@
                             <div class="flex items-center">
                                 <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
                                 {{ row.color }}
-                                <button v-if="row.total >= 800 || isWhiteExempt(row.color)" 
+                                <button v-if="row.isPushed" 
+                                    style="margin-left:8px; background: #16a34a; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:default; box-shadow: 0 2px 4px rgba(22,163,74,0.3);"
+                                    title="All orders for this color are pushed"
+                                >
+                                    ✅ {{ row.pushedPlanName || 'Pushed' }}
+                                </button>
+                                <button v-else-if="row.total >= 800" 
                                     @click.stop="openPushColorDialog(row.color)"
                                     style="margin-left:8px; background: linear-gradient(135deg, #3b82f6, #2563eb); color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(37,99,235,0.3); transition: all 0.2s;"
                                     onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(37,99,235,0.4)'"
@@ -416,13 +422,11 @@
                             <div class="flex items-center">
                                 <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
                                 {{ row.color }}
-                                <button v-if="isWhiteExempt(row.color)" 
-                                    @click.stop="openPushColorDialog(row.color)"
-                                    style="margin-left:8px; background: linear-gradient(135deg, #3b82f6, #2563eb); color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(37,99,235,0.3); transition: all 0.2s;"
-                                    onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(37,99,235,0.4)'"
-                                    onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 4px rgba(37,99,235,0.3)'"
+                                <button v-if="row.isPushed" 
+                                    style="margin-left:8px; background: #16a34a; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:default; box-shadow: 0 2px 4px rgba(22,163,74,0.3);"
+                                    title="White orders auto-pushed"
                                 >
-                                    📤 Push
+                                    ✅ {{ row.pushedPlanName || 'Default' }}
                                 </button>
                             </div>
                         </td>
@@ -750,14 +754,31 @@ const matrixData = computed(() => {
     // 3. Fill Cells
     const processRows = (rowArray) => {
         rowArray.forEach(row => {
+            let pushedPlanNames = new Set();
+            let allPushed = true;
+            let hasItems = false;
+            
             sortedGroups.forEach(group => {
                 const matchs = group.items.filter(i => i.color === row.color);
+                matchs.forEach(m => {
+                    hasItems = true;
+                    if (m.pbPlanName) pushedPlanNames.add(m.pbPlanName);
+                    else allPushed = false;
+                });
+                
                 const sumQty = matchs.reduce((sum, item) => sum + (item.qty || 0), 0);
                 if (sumQty > 0) {
                     row.cells[group.id] = sumQty;
                     row.total += sumQty;
                 }
             });
+            
+            if (hasItems && allPushed) {
+                row.isPushed = true;
+                row.pushedPlanName = Array.from(pushedPlanNames).join(', ') || 'Pushed';
+            } else {
+                row.isPushed = false;
+            }
         });
     };
     
