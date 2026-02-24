@@ -1152,11 +1152,23 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
 				)
 				continue
 
-			# --- Re-parent the item ---
-			frappe.db.set_value("Planning Sheet Item", name, "parent", target_sheet_name)
-			frappe.db.set_value("Planning Sheet Item", name, "parenttype", "Planning sheet")
-			frappe.db.set_value("Planning Sheet Item", name, "parentfield", "items")
+			# --- COPY the item to target sheet (source stays unchanged) ---
+			new_item = frappe.new_doc("Planning Sheet Item")
+			# Copy all field values from the original item
+			for field in item_doc.meta.fields:
+				fname = field.fieldname
+				if fname in ("name", "parent", "parenttype", "parentfield", "idx", "creation", "modified", "owner"):
+					continue
+				try:
+					setattr(new_item, fname, item_doc.get(fname))
+				except Exception:
+					pass
+			new_item.parent = target_sheet_name
+			new_item.parenttype = "Planning sheet"
+			new_item.parentfield = "items"
+			new_item.insert(ignore_permissions=True)
 			moved += 1
+
 
 		except Exception as e:
 			import traceback
