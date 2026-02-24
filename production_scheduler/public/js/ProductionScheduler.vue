@@ -1125,6 +1125,31 @@ function updateRescueSelection(d) {
 
 const isAdmin = computed(() => frappe.user.has_role("System Manager"));
 
+// ---- PLAN LOADING (from server) ----
+async function fetchPlans(args) {
+    try {
+        const planArgs = {};
+        if (args.start_date && args.end_date) {
+            planArgs.start_date = args.start_date;
+            planArgs.end_date = args.end_date;
+        } else if (args.date) {
+            // Expand single date to month range for plan discovery
+            const [year, month] = args.date.split("-");
+            const lastDay = new Date(year, month, 0).getDate();
+            planArgs.start_date = `${year}-${month}-01`;
+            planArgs.end_date = `${year}-${month}-${lastDay}`;
+        }
+        const r = await frappe.call({
+            method: "production_scheduler.api.get_monthly_plans",
+            args: planArgs
+        });
+        plans.value = r.message || ["Default"];
+        if (!plans.value.includes(selectedPlan.value)) {
+            selectedPlan.value = "Default";
+        }
+    } catch(e) { console.error("Error fetching plans", e); }
+}
+
 let fetchTimeout = null;
 
 async function fetchData() {
@@ -1164,6 +1189,9 @@ async function fetchData() {
             args.date = filterOrderDate.value;
         }
 
+        // Load plans from server before fetching data
+        await fetchPlans(args);
+
         // Production Board: fetch ALL data across all plans
         // Plan filtering happens on frontend in filteredData
         args.plan_name = "__all__";
@@ -1195,8 +1223,64 @@ async function fetchData() {
   });
 }
 
-onMounted(() => {
-  fetchData();
+// ---- STATE PERSISTENCE (URL SYNC) ----
+function updateUrlParams() {
+  const url = new URL(window.location);
+  if (filterOrderDate.value) url.searchParams.set('date', filterOrderDate.value);
+  
+  if (filterUnit.value) url.searchParams.set('unit', filterUnit.value);
+  else url.searchParams.delete('unit');
+  
+  if (filterStatus.value) url.searchParams.set('status', filterStatus.value);
+  else url.searchParams.delete('status');
+  
+  if (selectedPlan.value && selectedPlan.value !== "Default") url.searchParams.set('plan', selectedPlan.value);
+  else url.searchParams.delete('plan');
+  
+  url.searchParams.set('scope', viewScope.value);
+  if (viewScope.value === 'weekly' && filterWeek.value) url.searchParams.set('week', filterWeek.value);
+  else url.searchParams.delete('week');
+  if (viewScope.value === 'monthly' && filterMonth.value) url.searchParams.set('month', filterMonth.value);
+  else url.searchParams.delete('month');
+  
+  window.history.replaceState({}, '', url);
+}
+
+// Watchers to sync state to URL
+watch(filterOrderDate, updateUrlParams);
+watch(filterUnit, updateUrlParams);
+watch(filterStatus, updateUrlParams);
+watch(selectedPlan, updateUrlParams);
+watch(viewScope, updateUrlParams);
+
+onMounted(async () => {
+  // 1. Read URL Params and restore state
+  const params = new URLSearchParams(window.location.search);
+  const dateParam = params.get('date');
+  const unitParam = params.get('unit');
+  const statusParam = params.get('status');
+  const scopeParam = params.get('scope');
+  const weekParam = params.get('week');
+  const monthParam = params.get('month');
+  const planParam = params.get('plan');
+  
+  // Restore view scope FIRST
+  if (scopeParam && ['daily', 'weekly', 'monthly'].includes(scopeParam)) viewScope.value = scopeParam;
+  if (weekParam) filterWeek.value = weekParam;
+  if (monthParam) filterMonth.value = monthParam;
+  
+  if (dateParam) {
+      filterOrderDate.value = dateParam;
+  } else {
+      if (!filterOrderDate.value) filterOrderDate.value = frappe.datetime.get_today();
+  }
+  
+  if (unitParam) filterUnit.value = unitParam;
+  if (statusParam && ["Draft", "Finalized"].includes(statusParam)) filterStatus.value = statusParam;
+  if (planParam) selectedPlan.value = planParam;
+  
+  // 2. Fetch Data (this will also load plans from server)
+  await fetchData();
 });
 </script>
 
