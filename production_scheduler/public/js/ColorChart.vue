@@ -2632,13 +2632,18 @@ async function openPushColorDialog(color) {
     const items = rawData.value.filter(d => {
         if (d.pbPlanName) return false; 
         if ((d.color || "").toUpperCase().trim() !== color.toUpperCase().trim()) return false;
+        
+        // Exclude White colors from being pushed manually
+        const colorUpper = (d.color || "").toUpperCase().trim();
+        if (colorUpper === "WHITE" || colorUpper === "BRIGHT WHITE") return false;
+        
         if (filterUnit.value && (d.unit || "Mixed") !== filterUnit.value) return false;
         if (filterStatus.value && d.planningStatus !== filterStatus.value) return false;
         return true;
     });
 
     if (!items.length) {
-        frappe.msgprint("All items for this color are already pushed to a Production Board plan or don't match your filters.");
+        frappe.msgprint("No eligible items found. (Note: White orders are auto-allocated and do not need to be pushed manually, and already-pushed items are hidden.)");
         return;
     }
 
