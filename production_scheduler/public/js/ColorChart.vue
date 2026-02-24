@@ -2160,20 +2160,35 @@ function deletePlan() {
 }
 
 // ---- PUSH TO PRODUCTION BOARD ----
-function pushToProductionBoard() {
+async function pushToProductionBoard() {
     const items = filteredData.value || [];
     if (items.length === 0) {
         frappe.msgprint('No orders visible to push. Apply filters first.');
         return;
     }
     
+    // Fetch PB Plans for Dropdown
+    let pbPlans = [];
+    try {
+        const d_date = filterOrderDate.value || frappe.datetime.get_today();
+        const [year, month] = d_date.split("-");
+        const lastDay = new Date(year, month, 0).getDate();
+        
+        const r = await frappe.call({
+            method: "production_scheduler.api.get_pb_plans",
+            args: { start_date: `${year}-${month}-01`, end_date: `${year}-${month}-${lastDay}` }
+        });
+        pbPlans = r.message ? r.message.filter(p => !p.locked).map(p => p.name) : ["Default"];
+    } catch(e) { console.error("Error fetching PB plans", e); }
+    
     frappe.prompt([
         {
             label: 'Production Board Plan Name',
             fieldname: 'pb_plan_name',
-            fieldtype: 'Data',
+            fieldtype: 'Select',
+            options: ["", ...pbPlans],
             reqd: 1,
-            description: 'Enter the plan name for Production Board (separate from Color Chart plans)'
+            description: 'Select the plan name for Production Board'
         }
     ], async (values) => {
         const pbPlanName = values.pb_plan_name.trim();
@@ -2843,10 +2858,10 @@ async function openPushColorDialog(color) {
         const end_date = `${year}-${month}-${lastDay}`;
         
         const r = await frappe.call({
-            method: "production_scheduler.api.get_monthly_plans",
+            method: "production_scheduler.api.get_pb_plans",
             args: { start_date: start_date, end_date: end_date }
         });
-        pbPlans = r.message || ["Default"];
+        pbPlans = r.message ? r.message.filter(p => !p.locked).map(p => p.name) : ["Default"];
     } catch(e) { console.error("Error fetching PB plans", e); }
 
     const d = new frappe.ui.Dialog({
