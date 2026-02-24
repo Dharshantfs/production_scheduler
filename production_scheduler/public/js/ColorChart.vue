@@ -33,10 +33,13 @@
       </div>
       <div class="cc-filter-item">
         <label>Plan</label>
-        <div style="display:flex; gap:4px;">
+        <div style="display:flex; gap:4px; align-items:center;">
             <select v-model="selectedPlan" @change="fetchData">
-                <option v-for="p in plans" :key="p" :value="p">{{ p }}</option>
+                <option v-for="p in plans" :key="p.name" :value="p.name">{{ p.locked ? '🔒 ' : '' }}{{ p.name }}</option>
             </select>
+            <button v-if="selectedPlan" class="cc-mini-btn" @click="togglePlanLock" :title="isCurrentPlanLocked ? 'Unlock Plan' : 'Lock Plan'" style="margin-right:2px; padding: 2px 4px;font-size: 14px;">
+                {{ isCurrentPlanLocked ? '🔒' : '🔓' }}
+            </button>
             <button class="cc-mini-btn" @click="createNewPlan" title="Create New Plan Tab" style="color:#2563eb; font-weight:bold;">
                 ➕ New
             </button>
@@ -91,6 +94,9 @@
       </button>
       <button class="cc-clear-btn" style="color: #7c3aed; border-color: #7c3aed; margin-left: 8px; font-weight:600;" @click="pushToProductionBoard" title="Push visible orders to Production Board plan">
         📤 Push to Board
+      </button>
+      <button class="cc-clear-btn" style="color: #ca8a04; border-color: #ca8a04; margin-left: 8px; font-weight:600;" @click="openMovePlanDialog" title="Move visible orders to another Color Chart plan">
+        📥 Move to Plan
       </button>
       <button v-if="isAdmin" class="cc-clear-btn" style="color: #dc2626; border-color: #dc2626; margin-left: 8px;" @click="openRescueDialog" title="Rescue lost or stuck orders">
         🚑 Rescue Orders
@@ -613,6 +619,27 @@ const filterCustomer = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
 const selectedPlan = ref("Default");
+
+const isCurrentPlanLocked = computed(() => {
+    const p = plans.value.find(p => p.name === selectedPlan.value);
+    return p ? p.locked : 0;
+});
+
+async function togglePlanLock() {
+    if (!selectedPlan.value) return;
+    const p = plans.value.find(p => p.name === selectedPlan.value);
+    if (!p) return;
+    
+    const newLock = p.locked ? 0 : 1;
+    try {
+        await frappe.call({
+            method: "production_scheduler.api.toggle_plan_lock",
+            args: { plan_type: "color_chart", name: selectedPlan.value, locked: newLock }
+        });
+        p.locked = newLock;
+        frappe.show_alert({ message: newLock ? `Plan '${selectedPlan.value}' Locked` : `Plan '${selectedPlan.value}' Unlocked`, indicator: 'green' });
+    } catch(e) { console.error("Error toggling lock", e); }
+}
 const plans = ref(["Default"]);
 // Per-unit sort configuration
 const unitSortConfig = reactive({});
@@ -2063,8 +2090,8 @@ async function fetchPlans(args) {
             method: "production_scheduler.api.get_monthly_plans",
             args: planArgs
         });
-        plans.value = r.message || ["Default"];
-        if (!plans.value.includes(selectedPlan.value)) {
+        plans.value = r.message || [{name: "Default", locked: 0}];
+        if (!plans.value.find(p => p.name === selectedPlan.value)) {
             selectedPlan.value = "Default"; // Fallback if plan doesn't exist in this month
         }
     } catch(e) { console.error("Error fetching plans", e); }
@@ -2077,41 +2104,18 @@ function createNewPlan() {
         fieldtype: 'Data',
         reqd: 1
     }, async (values) => {
-        if (!plans.value.includes(values.plan_name)) {
-            plans.value.push(values.plan_name);
+        if (!plans.value.find(p => p.name === values.plan_name)) {
+            plans.value.push({name: values.plan_name, locked: 0});
+            // Persist the new plan so it survives refresh
+            frappe.call({
+                method: "production_scheduler.api.add_persistent_plan",
+                args: { plan_type: "color_chart", name: values.plan_name }
+            });
         }
         
-        const oldPlan = selectedPlan.value;
         const newPlan = values.plan_name;
         
-        let copyArgs = { old_plan: oldPlan, new_plan: newPlan };
-        if (viewScope.value === 'daily') {
-            copyArgs.date = filterOrderDate.value;
-        } else {
-            const [year, month] = filterMonth.value.split("-");
-            const lastDay = new Date(year, month, 0).getDate();
-            copyArgs.start_date = `${year}-${month}-01`;
-            copyArgs.end_date = `${year}-${month}-${lastDay}`;
-        }
-        
-        // Wait for copy operation
-        frappe.show_alert({ message: `Creating Plan '${newPlan}' and checking for unset orders...`, indicator: 'blue' });
-        
-        try {
-            const r = await frappe.call({
-                method: "production_scheduler.api.duplicate_unprocessed_orders_to_plan",
-                args: copyArgs
-            });
-            
-            if (r.message && r.message.copied_count > 0) {
-                 frappe.show_alert({ message: `Copied ${r.message.copied_count} unprocessed items to '${newPlan}'`, indicator: 'green' });
-            } else {
-                 frappe.show_alert({ message: `Created '${newPlan}' (No draft orders to copy)`, indicator: 'green' });
-            }
-        } catch (e) {
-            console.error("Failed to copy orders", e);
-            frappe.msgprint("Error while duplicating previous plan orders.");
-        }
+        frappe.show_alert({ message: `Created new empty Plan '${newPlan}'`, indicator: 'green' });
         
         selectedPlan.value = newPlan;
         fetchData();
@@ -2144,7 +2148,7 @@ function deletePlan() {
                 const count = (r.message && r.message.deleted_count) || 0;
                 frappe.show_alert({ message: `Deleted plan "${planName}" (${count} sheet${count !== 1 ? 's' : ''} removed)`, indicator: 'green' });
                 // Remove from dropdown and switch to Default
-                plans.value = plans.value.filter(p => p !== planName);
+                plans.value = plans.value.filter(p => p.name !== planName);
                 selectedPlan.value = 'Default';
                 fetchData();
             } catch (e) {
@@ -2642,10 +2646,171 @@ async function handleMoveOrders(items, date, unit, plan, dialog) {
                      renderKey.value++;
                  }
              );
-        } else {
-             frappe.msgprint(msg || "An error occurred while moving orders.");
-        }
+         }
     }
+}
+
+// ---- MOVE TO PLAN (COLOR CHART INTERNAL) ----
+function openMovePlanDialog() {
+    const items = filteredData.value || [];
+    if (items.length === 0) {
+        frappe.msgprint("No orders visible to move!");
+        return;
+    }
+
+    const availablePlans = plans.value.filter(p => !p.locked).map(p => p.name);
+    
+    const d = new frappe.ui.Dialog({
+        title: 'Move Orders to Plan',
+        fields: [
+            {
+                label: 'Move orders to Color Chart Plan',
+                fieldname: 'target_plan',
+                fieldtype: 'Select',
+                options: availablePlans,
+                reqd: 1,
+                description: "Select which unlocked Color Chart Plan to move these items to."
+            },
+            {
+                label: 'Target Unit (Optional)',
+                fieldname: 'target_unit',
+                fieldtype: 'Select',
+                options: ['', ...units.value],
+                description: 'Leave empty to keep current units.'
+            },
+            {
+                fieldname: 'items_html',
+                fieldtype: 'HTML',
+                label: 'Orders to Move'
+            }
+        ],
+        primary_action_label: 'Move Orders',
+        primary_action: async (values) => {
+            const selectedItems = Array.from(document.querySelectorAll('.cc-move-checkbox:checked'))
+                                       .map(cb => cb.value);
+            
+            if (selectedItems.length === 0) {
+                frappe.msgprint("Please select at least one order to move.");
+                return;
+            }
+            
+            d.get_primary_btn().prop('disabled', true);
+            
+            const targetDate = viewScope.value === 'daily' ? filterOrderDate.value : items[0].date;
+            
+            try {
+                const r = await frappe.call({
+                    method: "production_scheduler.api.move_orders_to_date",
+                    args: {
+                        item_names: selectedItems,
+                        target_date: targetDate,
+                        target_unit: values.target_unit || null,
+                        plan_name: values.target_plan
+                    }
+                });
+                
+                if (r.message && r.message.status === 'success') {
+                    frappe.show_alert({ message: `Successfully moved ${r.message.moved_items} items to ${values.target_plan}`, indicator: 'green' });
+                    d.hide();
+                    fetchData();
+                } else {
+                    frappe.msgprint(r.message.message || "Failed to move orders");
+                }
+            } catch (e) {
+                console.error("Error moving orders to plan", e);
+                frappe.msgprint("An error occurred while moving orders.");
+            } finally {
+                d.get_primary_btn().prop('disabled', false);
+            }
+        }
+    });
+
+    // Render items list mimicking the Push dialog
+    let html = `
+        <div style="max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 4px; padding: 8px;">
+            <table class="table table-bordered table-hover" style="margin-bottom: 0; font-size: 12px;">
+                <thead>
+                    <tr style="background: #f3f4f6;">
+                        <th style="width: 40px; text-align: center;"><input type="checkbox" id="move-select-all" checked></th>
+                        <th>Item</th>
+                        <th>Color</th>
+                        <th>Quality</th>
+                        <th>Qty (Kg)</th>
+                        <th>Unit</th>
+                    </tr>
+                </thead>
+                <tbody>
+    `;
+    
+    let totalWeight = 0;
+    
+    // Group items by Unit
+    const groupedItems = {};
+    items.forEach(i => {
+        if (!groupedItems[i.unit]) groupedItems[i.unit] = [];
+        groupedItems[i.unit].push(i);
+    });
+
+    Object.keys(groupedItems).sort().forEach(u => {
+        html += `<tr style="background: #f8fafc;"><td colspan="6" style="font-weight: bold; font-size: 11px;">${u === 'Mixed' ? 'Unassigned' : u}</td></tr>`;
+        groupedItems[u].forEach(i => {
+            totalWeight += (i.qty || 0);
+            html += `
+                <tr>
+                    <td style="text-align: center;">
+                        <input type="checkbox" class="cc-move-checkbox" value="${i.itemName}" checked data-qty="${i.qty || 0}" data-unit="${i.unit}">
+                    </td>
+                    <td>${i.customer} <br><span style="color:#64748b; font-size:10px;">${i.code}</span></td>
+                    <td>${i.color}</td>
+                    <td>${i.quality} <span style="color:#64748b; font-size:10px;">${i.gsm} GSM</span></td>
+                    <td style="text-align: right; font-weight: bold;">${i.qty}</td>
+                    <td>${i.unit === 'Mixed' ? 'Unassigned' : i.unit}</td>
+                </tr>
+            `;
+        });
+    });
+
+    html += `
+                </tbody>
+            </table>
+        </div>
+        <div style="margin-top: 10px; font-weight: bold; text-align: right; font-size: 14px; padding-right: 10px;">
+            Total Weight: <span id="move-total-weight" style="color: #2563eb;">${(totalWeight / 1000).toFixed(3)}</span> Tons
+        </div>
+    `;
+
+    d.fields_dict.items_html.$wrapper.html(html);
+
+    // Add event listeners for checkboxes
+    setTimeout(() => {
+        const selectAll = d.fields_dict.items_html.$wrapper.find('#move-select-all');
+        const itemCheckboxes = d.fields_dict.items_html.$wrapper.find('.cc-move-checkbox');
+        const weightSpan = d.fields_dict.items_html.$wrapper.find('#move-total-weight');
+
+        function updateTotal() {
+            let total = 0;
+            itemCheckboxes.each(function() {
+                if ($(this).is(':checked')) {
+                    total += parseFloat($(this).attr('data-qty') || 0);
+                }
+            });
+            weightSpan.text((total / 1000).toFixed(3));
+        }
+
+        selectAll.on('change', function() {
+            const isChecked = $(this).is(':checked');
+            itemCheckboxes.prop('checked', isChecked);
+            updateTotal();
+        });
+
+        itemCheckboxes.on('change', function() {
+            const allChecked = itemCheckboxes.length === itemCheckboxes.filter(':checked').length;
+            selectAll.prop('checked', allChecked);
+            updateTotal();
+        });
+    }, 100);
+
+    d.show();
 }
 
 async function openPushColorDialog(color) {

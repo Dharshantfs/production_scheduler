@@ -751,6 +751,52 @@ def get_plans(date=None, start_date=None, end_date=None, **kwargs):
 	
 	return unique_plans
 
+# --------------------------------------------------------------------------------
+# Persistent Plans System
+# --------------------------------------------------------------------------------
+
+def get_persisted_plans(plan_type):
+	"""Returns list of dicts: [{'name': '...', 'locked': 0}] from frappe.defaults"""
+	key = f"production_scheduler_{plan_type}_plans"
+	val = frappe.defaults.get_global_default(key)
+	if val:
+		import json
+		try:
+			return json.loads(val)
+		except:
+			pass
+	if plan_type == "color_chart":
+		return [{"name": "Default", "locked": 0}]
+	return []
+
+@frappe.whitelist()
+def add_persistent_plan(plan_type, name):
+	plans = get_persisted_plans(plan_type)
+	if not any(p.get("name") == name for p in plans):
+		plans.append({"name": name, "locked": 0})
+		import json
+		frappe.defaults.set_global_default(f"production_scheduler_{plan_type}_plans", json.dumps(plans))
+	return plans
+
+@frappe.whitelist()
+def toggle_plan_lock(plan_type, name, locked):
+	plans = get_persisted_plans(plan_type)
+	for p in plans:
+		if p.get("name") == name:
+			p["locked"] = int(locked)
+	import json
+	frappe.defaults.set_global_default(f"production_scheduler_{plan_type}_plans", json.dumps(plans))
+	return plans
+
+@frappe.whitelist()
+def get_active_plans():
+	cc_plans = get_persisted_plans("color_chart")
+	pb_plans = get_persisted_plans("production_board")
+	active_cc = next((p["name"] for p in cc_plans if not p.get("locked")), "Default")
+	active_pb = next((p["name"] for p in pb_plans if not p.get("locked")), "")
+	return {"color_chart": active_cc, "production_board": active_pb}
+
+
 @frappe.whitelist()
 def get_monthly_plans(start_date, end_date):
 	query_start = getdate(start_date)
@@ -762,17 +808,20 @@ def get_monthly_plans(start_date, end_date):
 			"ordered_date": ["between", [query_start, query_end]],
 			"docstatus": ["<", 2]
 		}, 
-		fields=["custom_plan_name"], 
-		order_by="custom_plan_name asc"
+		fields=["custom_plan_name"]
 	)
 	
-	unique_plans = set([p.custom_plan_name or "Default" for p in plans])
-	sorted_plans = sorted(list(unique_plans))
+	db_plans = set([p.custom_plan_name or "Default" for p in plans])
+	persisted = {p["name"]: p.get("locked", 0) for p in get_persisted_plans("color_chart")}
+	
+	all_names = db_plans.union(set(persisted.keys()))
+	sorted_plans = sorted(list(all_names))
+	
 	if "Default" in sorted_plans:
 		sorted_plans.remove("Default")
 		sorted_plans.insert(0, "Default")
 		
-	return sorted_plans
+	return [{"name": n, "locked": persisted.get(n, 0)} for n in sorted_plans]
 
 @frappe.whitelist()
 def create_plan_name_field():
@@ -884,114 +933,16 @@ def duplicate_unprocessed_orders_to_plan(old_plan, new_plan, date=None, start_da
 		date_filter = getdate(date)
 	else:
 		return {"status": "error", "message": "Date filter required"}
-	
-	# Handle "Default" naming convention
-	old_plan_val = None if old_plan == "Default" else old_plan
-	new_plan_val = None if new_plan == "Default" else new_plan
-	
-	# Find all Planning Sheets on this date for the old plan
-	filters = {
-		"ordered_date": date_filter,
-		"docstatus": ["<", 2]
-	}
-	if old_plan_val:
-		filters["custom_plan_name"] = old_plan_val
-	else:
-		filters["custom_plan_name"] = ["in", ["", None, "Default"]]
-		
-	old_sheets = frappe.get_all("Planning sheet", filters=filters, fields=["name", "sales_order"])
-	
-	copied_count = 0
-	
-	for sheet in old_sheets:
-		has_pp = False
-		has_wo = False
-		pp_name = None
-
-		# 1. Find PP via sales_order OR planning_sheet custom field
-		if sheet.sales_order:
-			pp_exists_so = frappe.db.sql("""
-				SELECT parent FROM `tabProduction Plan Sales Order`
-				WHERE sales_order = %s AND docstatus < 2
-				LIMIT 1
-			""", (sheet.sales_order,))
-			if pp_exists_so:
-				pp_name = pp_exists_so[0][0]
-				
-		if not pp_name:
-			try:
-				pp_exists_sheet = frappe.db.sql("""
-					SELECT name FROM `tabProduction Plan`
-					WHERE custom_planning_sheet = %s AND docstatus < 2
-					LIMIT 1
-				""", (sheet.name,))
-				if pp_exists_sheet:
-					pp_name = pp_exists_sheet[0][0]
-			except Exception:
-				pass
-				
-		if pp_name:
-			has_pp = True
-			# 2. Check WO via PP
-			wo_exists_pp = frappe.db.sql("""
-				SELECT name FROM `tabWork Order`
-				WHERE production_plan = %s AND docstatus < 2
-				LIMIT 1
-			""", (pp_name,))
-			if wo_exists_pp:
-				has_wo = True
-				
-		# 3. Also check WO via SO if not found
-		if not has_wo and sheet.sales_order:
-			wo_exists_so = frappe.db.sql("""
-				SELECT name FROM `tabWork Order`
-				WHERE sales_order = %s AND docstatus < 2
-				LIMIT 1
-			""", (sheet.sales_order,))
-			if wo_exists_so:
-				has_wo = True
-				
-		# ONLY skip if it has BOTH a Production Plan AND a Work Order
-		if has_pp and has_wo:
-			continue
-			
-		# Just update the plan name on the existing sheet — no duplication
-		frappe.db.set_value("Planning sheet", sheet.name, "custom_plan_name", new_plan_val or "")
-		copied_count += 1
-		
-	frappe.db.commit()
-	return {"status": "success", "copied_count": copied_count}
-
-@frappe.whitelist()
-def delete_plan(plan_name, date=None, start_date=None, end_date=None):
-	"""
-	Deletes all Planning Sheets belonging to a specific plan on a given date or date range.
-	The 'Default' plan cannot be deleted.
-	"""
-	if not plan_name or plan_name == "Default":
-		frappe.throw(_("Cannot delete the Default plan"))
-
-	if start_date and end_date:
-		query_start = getdate(start_date)
-		query_end = getdate(end_date)
-		date_filter = ["between", [query_start, query_end]]
-	elif date:
-		date_filter = getdate(date)
-	else:
-		return {"status": "error", "message": "Date filter required"}
-
-	filters = {
-		"ordered_date": date_filter,
-		"docstatus": ["<", 2],
-		"custom_plan_name": plan_name
-	}
-
-	sheets = frappe.get_all("Planning sheet", filters=filters, fields=["name"])
-
 	deleted_count = 0
 	for sheet in sheets:
-		frappe.delete_doc("Planning sheet", sheet.name, force=1)
+		frappe.db.set_value("Planning sheet", sheet.name, "custom_plan_name", "Default")
 		deleted_count += 1
+
+	# Remove from persistent plans
+	persisted = get_persisted_plans("color_chart")
+	persisted = [p for p in persisted if p["name"] != plan_name]
+	import json
+	frappe.defaults.set_global_default("production_scheduler_color_chart_plans", json.dumps(persisted))
 
 	frappe.db.commit()
 
@@ -1709,10 +1660,15 @@ def get_pb_plans(date=None, start_date=None, end_date=None):
 		WHERE {date_condition} AND p.docstatus < 2
 			AND p.custom_pb_plan_name IS NOT NULL 
 			AND p.custom_pb_plan_name != ''
-		ORDER BY pb_plan_name ASC
 	""", tuple(params), as_dict=True)
 	
-	return [p.pb_plan_name for p in plans if p.pb_plan_name]
+	db_plans = set([p.pb_plan_name for p in plans if p.pb_plan_name])
+	persisted = {p["name"]: p.get("locked", 0) for p in get_persisted_plans("production_board")}
+	
+	all_names = db_plans.union(set(persisted.keys()))
+	sorted_plans = sorted(list(all_names))
+	
+	return [{"name": n, "locked": persisted.get(n, 0)} for n in sorted_plans]
 
 @frappe.whitelist()
 def push_to_pb(item_names, pb_plan_name):
@@ -1853,5 +1809,12 @@ def delete_pb_plan(pb_plan_name, date=None, start_date=None, end_date=None):
 	""", tuple(params))
 	
 	affected = frappe.db.sql("SELECT ROW_COUNT() as cnt")[0][0]
+
+	# Remove from persistent plans
+	persisted = get_persisted_plans("production_board")
+	persisted = [p for p in persisted if p["name"] != pb_plan_name]
+	import json
+	frappe.defaults.set_global_default("production_scheduler_production_board_plans", json.dumps(persisted))
+
 	frappe.db.commit()
 	return {"status": "success", "cleared_count": affected}
