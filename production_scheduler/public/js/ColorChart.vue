@@ -2245,14 +2245,20 @@ async function pushToProductionBoard() {
 
 // ---- MOVE TO PLAN ----
 async function openMovePlanDialog() {
-    // 1. Get visible items
-    const items = filteredData.value || [];
-    if (items.length === 0) {
-        frappe.msgprint('No orders visible to move. Select a date or plan first.');
+    // 1. Get ALL items from the current plan (rawData filtered by plan)
+    const allItems = rawData.value.filter(d => {
+        const planOk = selectedPlan.value === 'Default'
+            ? (!d.planName || d.planName === '' || d.planName === 'Default')
+            : d.planName === selectedPlan.value;
+        return planOk;
+    });
+
+    if (allItems.length === 0) {
+        frappe.msgprint('No orders in this plan to move.');
         return;
     }
 
-    // 2. Get available target plans (excluding current)
+    // 2. Get available target plans (excluding current, non-locked)
     const targetPlans = plans.value
         .filter(p => p.name !== selectedPlan.value && !p.locked)
         .map(p => p.name);
@@ -2262,112 +2268,137 @@ async function openMovePlanDialog() {
         return;
     }
 
-    // 3. Sort items by Color (Light→Dark), then Unit, then GSM
-    const sortedItems = [...items].sort((a, b) => {
-        const pA = getGroupPriority(a.color);
-        const pB = getGroupPriority(b.color);
+    // 3. Separate items: moveable (no WO) vs locked (has WO)
+    const moveableItems = allItems.filter(i => !i.has_wo);
+    const lockedItems   = allItems.filter(i => i.has_wo);
+
+    // 4. Sort moveable items: Color (Light→Dark), then Unit, then GSM
+    const sorted = [...moveableItems].sort((a, b) => {
+        const pA = getGroupPriority(a.color), pB = getGroupPriority(b.color);
         if (pA !== pB) return pA - pB;
-        const unitOrder = ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"];
-        const uA = unitOrder.indexOf(a.unit || "Mixed");
-        const uB = unitOrder.indexOf(b.unit || "Mixed");
+        const uOrder = ['Unit 1','Unit 2','Unit 3','Unit 4','Mixed'];
+        const uA = uOrder.indexOf(a.unit||'Mixed'), uB = uOrder.indexOf(b.unit||'Mixed');
         if (uA !== uB) return uA - uB;
-        return (parseFloat(a.gsm) || 0) - (parseFloat(b.gsm) || 0);
+        return (parseFloat(a.gsm)||0) - (parseFloat(b.gsm)||0);
     });
 
-    // 4. Group by color for a cleaner table
-    let selectedItems = new Set(sortedItems.map(i => i.itemName || i.name));
+    // 5. Build HTML table
+    const buildTable = () => {
+        const unitBadge = u => {
+            const c = u==='Unit 1'?'#3b82f6':u==='Unit 2'?'#10b981':u==='Unit 3'?'#f59e0b':u==='Unit 4'?'#8b5cf6':'#64748b';
+            return `<span style="background:${c};color:#fff;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:600;">${u||'Mixed'}</span>`;
+        };
 
-    // 5. Build the HTML for the dialog table
-    const buildTable = (items, targetPlan) => {
-        const UNIT_LIMITS = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5 };
-        const rowsHtml = items.map(item => {
+        // Moveable rows
+        const moveRows = sorted.map(item => {
             const hex = getHexColor(item.color);
-            const textColor = hex && parseInt(hex.replace('#',''), 16) < 0x808080 * 2 ? '#fff' : '#222';
-            const weightT = ((item.qty || 0) / 1000).toFixed(3);
-            const isChecked = selectedItems.has(item.itemName || item.name) ? 'checked' : '';
-            const unitLimit = UNIT_LIMITS[item.unit] || 999;
-            const badgeColor = item.unit === 'Unit 1' ? '#3b82f6' : item.unit === 'Unit 2' ? '#10b981' : item.unit === 'Unit 3' ? '#f59e0b' : item.unit === 'Unit 4' ? '#8b5cf6' : '#64748b';
-            return `<tr class="mtp-row" data-name="${item.itemName || item.name}">
-                <td style="padding:4px 6px; text-align:center;">
-                    <input type="checkbox" class="mtp-check" data-name="${item.itemName || item.name}" ${isChecked} style="cursor:pointer; width:14px; height:14px;">
+            const wt = ((item.qty||0)/1000).toFixed(3);
+            return `<tr style="border-bottom:1px solid #f1f5f9;">
+                <td style="padding:5px 6px;text-align:center;">
+                    <input type="checkbox" class="mtp-check" data-name="${item.itemName}" checked style="cursor:pointer;width:14px;height:14px;">
                 </td>
-                <td style="padding:4px 6px;">
-                    <div style="display:flex; align-items:center; gap:6px;">
-                        <span style="display:inline-block; width:12px; height:12px; background:${hex}; border-radius:2px; border:1px solid #ccc; flex-shrink:0;"></span>
-                        <span style="font-size:11px; font-weight:600;">${item.color || 'N/A'}</span>
+                <td style="padding:5px 6px;">
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <span style="width:12px;height:12px;background:${hex};border-radius:2px;border:1px solid #ccc;flex-shrink:0;display:inline-block;"></span>
+                        <b style="font-size:11px;">${item.color||'N/A'}</b>
                     </div>
                 </td>
-                <td style="padding:4px 6px; font-size:11px;">
-                    <span style="background:${badgeColor}; color:#fff; padding:2px 6px; border-radius:10px; font-size:10px; font-weight:600;">${item.unit || 'Mixed'}</span>
-                </td>
-                <td style="padding:4px 6px; font-size:11px; color:#555;">${item.quality || '-'}</td>
-                <td style="padding:4px 6px; font-size:11px; text-align:center;">${item.gsm || '-'}</td>
-                <td style="padding:4px 6px; font-size:11px; text-align:right; font-weight:600;">${weightT} T</td>
-                <td style="padding:4px 6px; font-size:11px; color:#888;">${item.partyCode || item.customer || '-'}</td>
+                <td style="padding:5px 6px;">${unitBadge(item.unit)}</td>
+                <td style="padding:5px 6px;font-size:11px;color:#555;">${item.quality||'-'}</td>
+                <td style="padding:5px 6px;font-size:11px;text-align:center;">${item.gsm||'-'}</td>
+                <td style="padding:5px 6px;font-size:11px;text-align:right;font-weight:600;">${wt} T</td>
+                <td style="padding:5px 6px;font-size:11px;color:#888;">${item.partyCode||item.customer||'-'}</td>
+                <td style="padding:5px 6px;text-align:center;"><span style="color:#16a34a;font-size:10px;font-weight:600;">✓ FREE</span></td>
             </tr>`;
         }).join('');
 
-        return `<div style="font-family: -apple-system, sans-serif;">
-            <div style="display:flex; gap:12px; margin-bottom:10px; align-items:center; background:#f8fafc; padding:8px 12px; border-radius:6px; border:1px solid #e2e8f0;">
+        // Locked rows (WO exists — stays in original plan)
+        const lockRows = lockedItems.map(item => {
+            const hex = getHexColor(item.color);
+            const wt = ((item.qty||0)/1000).toFixed(3);
+            return `<tr style="border-bottom:1px solid #f1f5f9;opacity:0.5;background:#fef9c3;">
+                <td style="padding:5px 6px;text-align:center;">—</td>
+                <td style="padding:5px 6px;">
+                    <div style="display:flex;align-items:center;gap:6px;">
+                        <span style="width:12px;height:12px;background:${hex};border-radius:2px;border:1px solid #ccc;flex-shrink:0;display:inline-block;"></span>
+                        <b style="font-size:11px;">${item.color||'N/A'}</b>
+                    </div>
+                </td>
+                <td style="padding:5px 6px;">${unitBadge(item.unit)}</td>
+                <td style="padding:5px 6px;font-size:11px;color:#555;">${item.quality||'-'}</td>
+                <td style="padding:5px 6px;font-size:11px;text-align:center;">${item.gsm||'-'}</td>
+                <td style="padding:5px 6px;font-size:11px;text-align:right;font-weight:600;">${wt} T</td>
+                <td style="padding:5px 6px;font-size:11px;color:#888;">${item.partyCode||item.customer||'-'}</td>
+                <td style="padding:5px 6px;text-align:center;"><span style="color:#dc2626;font-size:10px;font-weight:600;">🔒 WO</span></td>
+            </tr>`;
+        }).join('');
+
+        const totalMoveT = (sorted.reduce((s,i)=>s+(i.qty||0),0)/1000).toFixed(2);
+        const totalLockT = (lockedItems.reduce((s,i)=>s+(i.qty||0),0)/1000).toFixed(2);
+
+        return `<div style="font-family:-apple-system,sans-serif;">
+            <!-- Source/Target Header -->
+            <div style="display:flex;gap:12px;margin-bottom:10px;align-items:center;background:#f8fafc;padding:10px 14px;border-radius:8px;border:1px solid #e2e8f0;">
                 <div>
-                    <label style="font-size:11px; color:#64748b; display:block; margin-bottom:2px;">Source Plan</label>
-                    <span style="font-weight:700; color:#0f172a; font-size:13px;">📋 ${selectedPlan.value}</span>
+                    <div style="font-size:10px;color:#64748b;margin-bottom:2px;">SOURCE PLAN</div>
+                    <div style="font-weight:700;color:#0f172a;font-size:13px;">📋 ${selectedPlan.value}</div>
                 </div>
-                <div style="font-size:18px; color:#94a3b8;">→</div>
+                <div style="font-size:20px;color:#94a3b8;padding:0 6px;">→</div>
                 <div>
-                    <label style="font-size:11px; color:#64748b; display:block; margin-bottom:2px;">Target Plan</label>
-                    <select id="mtp-target-plan" style="font-weight:700; border:1px solid #e2e8f0; padding:4px 8px; border-radius:4px; font-size:12px; color:#7c3aed;">
-                        ${targetPlans.map(p => `<option value="${p}" ${p===targetPlan?'selected':''}>${p}</option>`).join('')}
+                    <div style="font-size:10px;color:#64748b;margin-bottom:2px;">TARGET PLAN</div>
+                    <select id="mtp-target-plan" style="font-weight:700;border:1px solid #7c3aed;padding:5px 8px;border-radius:6px;font-size:12px;color:#7c3aed;background:#faf5ff;">
+                        ${targetPlans.map(p=>`<option value="${p}">${p}</option>`).join('')}
                     </select>
                 </div>
             </div>
-            <div style="display:flex; gap:6px; margin-bottom:8px; align-items:center;">
-                <button onclick="document.querySelectorAll('.mtp-check').forEach(c=>c.checked=true)" style="font-size:11px; padding:3px 8px; cursor:pointer; border:1px solid #10b981; color:#10b981; background:#f0fdf4; border-radius:4px;">✅ Select All</button>
-                <button onclick="document.querySelectorAll('.mtp-check').forEach(c=>c.checked=false)" style="font-size:11px; padding:3px 8px; cursor:pointer; border:1px solid #ef4444; color:#ef4444; background:#fef2f2; border-radius:4px;">❌ Deselect All</button>
-                <span style="font-size:11px; color:#94a3b8; margin-left:auto;">${items.length} orders | ${(items.reduce((s,i)=>s+(i.qty||0),0)/1000).toFixed(2)} T total</span>
+
+            <!-- Summary badges -->
+            <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap;">
+                <span style="background:#dcfce7;color:#16a34a;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;">✓ ${sorted.length} moveable (${totalMoveT} T)</span>
+                ${lockedItems.length>0?`<span style="background:#fef9c3;color:#b45309;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;">🔒 ${lockedItems.length} WO locked — stays in ${selectedPlan.value} (${totalLockT} T)</span>`:''}
+                <button onclick="document.querySelectorAll('.mtp-check').forEach(c=>c.checked=true)" style="font-size:10px;padding:3px 8px;cursor:pointer;border:1px solid #10b981;color:#10b981;background:#f0fdf4;border-radius:4px;margin-left:auto;">✅ All</button>
+                <button onclick="document.querySelectorAll('.mtp-check').forEach(c=>c.checked=false)" style="font-size:10px;padding:3px 8px;cursor:pointer;border:1px solid #ef4444;color:#ef4444;background:#fef2f2;border-radius:4px;">❌ None</button>
             </div>
-            <div style="max-height:380px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px;">
-                <table style="width:100%; border-collapse:collapse; font-size:12px;">
-                    <thead style="position:sticky; top:0; background:#f1f5f9; z-index:1;">
+
+            <!-- Table -->
+            <div style="max-height:400px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px;">
+                <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                    <thead style="position:sticky;top:0;background:#f1f5f9;z-index:1;">
                         <tr>
-                            <th style="padding:6px; text-align:center; width:30px;"><input type="checkbox" id="mtp-check-all" style="cursor:pointer;" onclick="document.querySelectorAll('.mtp-check').forEach(c=>c.checked=this.checked)"></th>
-                            <th style="padding:6px; text-align:left;">Color</th>
-                            <th style="padding:6px; text-align:left;">Unit</th>
-                            <th style="padding:6px; text-align:left;">Quality</th>
-                            <th style="padding:6px; text-align:center;">GSM</th>
-                            <th style="padding:6px; text-align:right;">Weight</th>
-                            <th style="padding:6px; text-align:left;">Party</th>
+                            <th style="padding:6px;width:30px;text-align:center;"><input type="checkbox" id="mtp-check-all" onclick="document.querySelectorAll('.mtp-check').forEach(c=>c.checked=this.checked)" style="cursor:pointer;"></th>
+                            <th style="padding:6px;text-align:left;">Color</th>
+                            <th style="padding:6px;text-align:left;">Unit</th>
+                            <th style="padding:6px;text-align:left;">Quality</th>
+                            <th style="padding:6px;text-align:center;">GSM</th>
+                            <th style="padding:6px;text-align:right;">Weight</th>
+                            <th style="padding:6px;text-align:left;">Party</th>
+                            <th style="padding:6px;text-align:center;">Status</th>
                         </tr>
                     </thead>
-                    <tbody>${rowsHtml}</tbody>
+                    <tbody>
+                        ${moveRows}
+                        ${lockRows}
+                    </tbody>
                 </table>
             </div>
+            ${lockedItems.length>0?`<p style="font-size:10px;color:#b45309;margin-top:6px;padding:6px 10px;background:#fef9c3;border-radius:4px;">⚠️ Yellow rows have Work Orders — they will <b>remain in "${selectedPlan.value}"</b> on the same date after the move.</p>`:''}
         </div>`;
     };
 
     const d = new frappe.ui.Dialog({
         title: `📥 Move Orders to Another Plan`,
-        fields: [{
-            fieldtype: 'HTML',
-            fieldname: 'move_table',
-            options: buildTable(sortedItems, targetPlans[0])
-        }],
-        primary_action_label: '🚀 Move Selected Orders',
+        fields: [{ fieldtype: 'HTML', fieldname: 'move_table', options: buildTable() }],
+        primary_action_label: '🚀 Move Selected',
         primary_action: async () => {
             const targetPlan = document.getElementById('mtp-target-plan')?.value;
-            if (!targetPlan) {
-                frappe.msgprint('Please select a target plan.');
-                return;
-            }
+            if (!targetPlan) { frappe.msgprint('Select a target plan.'); return; }
 
-            const checkedNames = [...document.querySelectorAll('.mtp-check:checked')].map(c => c.dataset.name).filter(Boolean);
-            if (checkedNames.length === 0) {
-                frappe.msgprint('No items selected.');
-                return;
-            }
+            const checkedNames = [...document.querySelectorAll('.mtp-check:checked')]
+                .map(c => c.dataset.name).filter(Boolean);
+            if (checkedNames.length === 0) { frappe.msgprint('No items selected.'); return; }
 
             d.hide();
-            frappe.show_alert({ message: `Moving ${checkedNames.length} items to plan "${targetPlan}"...`, indicator: 'blue' });
+            frappe.show_alert({ message: `Moving ${checkedNames.length} items to "${targetPlan}"...`, indicator: 'blue' });
 
             try {
                 const dateArgs = {};
@@ -2382,22 +2413,16 @@ async function openMovePlanDialog() {
 
                 const r = await frappe.call({
                     method: 'production_scheduler.api.move_items_to_plan',
-                    args: {
-                        item_names: JSON.stringify(checkedNames),
-                        target_plan: targetPlan,
-                        ...dateArgs
-                    }
+                    args: { item_names: JSON.stringify(checkedNames), target_plan: targetPlan, ...dateArgs }
                 });
 
                 if (r.message) {
                     const { moved, errors } = r.message;
-                    if (moved > 0) {
-                        frappe.show_alert({ message: `✅ Moved ${moved} items to plan "${targetPlan}"`, indicator: 'green' });
-                    }
-                    if (errors && errors.length > 0) {
+                    if (moved > 0) frappe.show_alert({ message: `✅ Moved ${moved} items to "${targetPlan}"`, indicator: 'green' });
+                    if (errors?.length > 0) {
                         frappe.msgprint({
-                            title: '⚠️ Some items could not be moved',
-                            message: `<ul>${errors.map(e => `<li>${e}</li>`).join('')}</ul>`,
+                            title: '⚠️ Some items blocked',
+                            message: `<ul>${errors.map(e=>`<li>${e}</li>`).join('')}</ul>`,
                             indicator: 'orange'
                         });
                     }
@@ -2405,7 +2430,7 @@ async function openMovePlanDialog() {
                 }
             } catch (e) {
                 console.error('Move to plan failed', e);
-                frappe.msgprint('❌ Error moving orders. Check console for details.');
+                frappe.msgprint('❌ Error moving orders.');
             }
         },
         secondary_action_label: 'Cancel',
@@ -2413,11 +2438,12 @@ async function openMovePlanDialog() {
     });
 
     d.show();
-    // Ensure the dialog is wide enough
-    d.$wrapper.find('.modal-dialog').css('max-width', '700px');
+    d.$wrapper.find('.modal-dialog').css('max-width', '720px');
 }
 
+
 async function fetchData() {
+
   let args = {};
   
   if (viewScope.value === 'monthly') {
