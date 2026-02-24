@@ -115,7 +115,7 @@
             </div>
           </div>
             <span class="cc-stat-weight" :class="getUnitCapacityStatus(unit).class">
-              {{ getUnitTotal(unit).toFixed(2) }} / {{ UNIT_TONNAGE_LIMITS[unit] }}T
+              {{ getUnitTotal(unit).toFixed(2) }} / {{ getUnitCapacityLimit(unit) }}T
               <span v-if="getHiddenWhiteTotal(unit) > 0" style="font-size:10px; font-weight:700; color:#475569; display:block;">
                  (Inc. {{ getHiddenWhiteTotal(unit).toFixed(2) }}T White)
               </span>
@@ -520,6 +520,22 @@ function compareGsm(a, b, direction) {
     return direction === 'asc' ? gsmA - gsmB : gsmB - gsmA;
 }
 
+function getDaysInViewScope() {
+    if (viewScope.value === 'weekly') return 7;
+    if (viewScope.value === 'monthly' && filterMonth.value) {
+        const [year, month] = filterMonth.value.split('-');
+        return new Date(year, month, 0).getDate();
+    }
+    return 1; // Default to 1 day for Daily view
+}
+
+function getUnitCapacityLimit(unit) {
+    const dailyLimit = UNIT_TONNAGE_LIMITS[unit] || 999;
+    if (dailyLimit === 999) return 999;
+    
+    return dailyLimit * getDaysInViewScope();
+}
+
 // ── Cached unit statistics (computed once per data change, not per render) ──
 // Uses filteredData so stats match visible cards (not all raw data)
 const unitStatsCache = computed(() => {
@@ -531,10 +547,11 @@ const unitStatsCache = computed(() => {
       .filter(d => {
         const colorUpper = (d.color || "").toUpperCase();
         if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return false;
-        return EXCLUDED_WHITES.some(ex => colorUpper.includes(ex));
+        return !!EXCLUDED_WHITES.find(ex => colorUpper.includes(ex));
       })
       .reduce((sum, d) => sum + d.qty, 0) / 1000;
-    const limit = UNIT_TONNAGE_LIMITS[unit] || 999;
+    
+    const limit = getUnitCapacityLimit(unit);
     let capacityStatus;
     if (total > limit) {
       capacityStatus = { class: 'text-red-600 font-bold', warning: `⚠️ Over Limit (${(total - limit).toFixed(2)}T)!` };
