@@ -924,12 +924,18 @@ async function autoAllocate() {
 // ---- SHARED ACTION ----
 async function handleMoveOrders(items, date, unit, dialog) {
     try {
+        // In monthly/weekly view, the per-day 4.4T cap is not meaningful —
+        // capacity is already shown and managed as an aggregate.
+        // Use force_move=1 to skip overflow blocking and just do the reparent.
+        const isAggregateView = viewScope.value === 'monthly' || viewScope.value === 'weekly';
+
         const r = await frappe.call({
             method: "production_scheduler.api.move_orders_to_date",
             args: {
                 item_names: items,
                 target_date: date,
-                target_unit: unit
+                target_unit: unit,
+                force_move: isAggregateView ? 1 : 0
             },
             freeze: true
         });
@@ -957,6 +963,7 @@ async function handleMoveOrders(items, date, unit, dialog) {
         frappe.msgprint("Error moving orders: " + (e.message || "Unknown Error"));
     }
 }
+
 
 // ---- PULL ORDERS FROM FUTURE ----
 function openPullOrdersDialog() {
