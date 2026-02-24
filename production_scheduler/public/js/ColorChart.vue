@@ -2917,9 +2917,9 @@ async function openPushColorDialog(color) {
              if (d.capacityExceeded) {
                   const nextDay = frappe.datetime.add_days(targetDate, 1);
                   frappe.confirm(
-                      `<b>Capacity Limit Reached!</b><br>One or more selected units will exceed capacity on ${targetDate}.<br><br>Do you want to push these orders to <b>${nextDay}</b> instead?`,
-                      () => { executePush(payload.map(p => ({...p, target_date: nextDay}))); },
-                      () => { executePush(payload); } // Force override
+                      `<b>Capacity Limit Reached!</b><br>One or more selected units will exceed capacity on ${targetDate}.<br><br>Do you want to override and push to <b>${targetDate}</b> anyway?<br><br><i>Click 'Yes' to override limit, or 'No' to cancel.</i>`,
+                      () => { executePush(payload); }, // Yes = Force override
+                      () => { d.get_primary_btn().prop("disabled", false).text("Push to Production Board"); } // No = Cancel
                   );
              } else {
                   executePush(payload);
@@ -2932,7 +2932,7 @@ async function openPushColorDialog(color) {
         <div style="max-height: 320px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;">
             <div style="position: sticky; top: 0; background: #f8fafc; z-index: 10; padding: 10px; border-bottom: 1px solid #e2e8f0; display:flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 12px; color: #64748b;">
                 <div>
-                   <input type="checkbox" checked onchange="document.querySelectorAll('.push-chk').forEach(c => c.checked = this.checked); window.updatePushSelection()" /> Select All
+                   <input type="checkbox" checked class="push-select-all" /> Select All
                 </div>
             </div>
             <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
@@ -2947,14 +2947,14 @@ async function openPushColorDialog(color) {
         html += `
             <tr style="border-bottom: 1px solid #f1f5f9;">
                 <td style="padding: 10px 8px; text-align:center; width:30px;">
-                    <input type="checkbox" class="push-chk" value="${item.itemName}" checked onchange="window.updatePushSelection()" />
+                    <input type="checkbox" class="push-chk" value="${item.itemName}" checked />
                 </td>
                 <td style="padding: 10px 8px;">
                     <div><b style="color:#1e293b;">${item.partyCode}</b></div>
                     <div style="color:#64748b; font-size:10px; margin-top:2px;">${item.quality} · ${item.gsm} GSM</div>
                 </td>
                 <td style="padding: 10px 8px; width: 110px;">
-                    <select class="push-unit-sel" data-item="${item.itemName}" onchange="window.updatePushSelection()" style="width:100%; padding:4px; font-size:11px; border:1px solid #cbd5e1; border-radius:4px; background:#fff; cursor:pointer;">
+                    <select class="push-unit-sel" data-item="${item.itemName}" style="width:100%; padding:4px; font-size:11px; border:1px solid #cbd5e1; border-radius:4px; background:#fff; cursor:pointer;">
                         <option value="Unit 1" ${unit === 'Unit 1' ? 'selected' : ''}>Unit 1</option>
                         <option value="Unit 2" ${unit === 'Unit 2' ? 'selected' : ''}>Unit 2</option>
                         <option value="Unit 3" ${unit === 'Unit 3' ? 'selected' : ''}>Unit 3</option>
@@ -2974,11 +2974,12 @@ async function openPushColorDialog(color) {
     // Track selections and trigger capacity preview
     window.updatePushSelection = () => {
         const selected = [];
-        document.querySelectorAll('.push-chk').forEach(chk => {
-            if (chk.checked) {
-                const itemName = chk.value;
-                const sel = document.querySelector(`.push-unit-sel[data-item="${itemName}"]`);
-                selected.push({ name: itemName, target_unit: sel ? sel.value : "Unit 1" });
+        // Important: Only select checkboxes inside the CURRENT dialog to prevent duplication from old hidden dialogs
+        d.fields_dict.items_info.$wrapper.find('.push-chk').each(function() {
+            if (this.checked) {
+                const itemName = this.value;
+                const sel = d.fields_dict.items_info.$wrapper.find(`.push-unit-sel[data-item="${itemName}"]`);
+                selected.push({ name: itemName, target_unit: sel.length ? sel.val() : "Unit 1" });
             }
         });
         d.calc_selected_items = selected;
@@ -3053,6 +3054,26 @@ async function openPushColorDialog(color) {
     
     // Initial load - wait for DOM to mount elements so Selectors work
     setTimeout(() => {
+        // Bind events strictly to THIS dialog instance
+        const wrapper = d.fields_dict.items_info.$wrapper;
+        const selectAll = wrapper.find('.push-select-all');
+        const checkboxes = wrapper.find('.push-chk');
+        const selects = wrapper.find('.push-unit-sel');
+        
+        selectAll.on('change', function() {
+            checkboxes.prop('checked', this.checked);
+            window.updatePushSelection();
+        });
+        
+        checkboxes.on('change', function() {
+            selectAll.prop('checked', checkboxes.length === checkboxes.filter(':checked').length);
+            window.updatePushSelection();
+        });
+        
+        selects.on('change', function() {
+            window.updatePushSelection();
+        });
+        
         window.updatePushSelection();
     }, 200);
 
