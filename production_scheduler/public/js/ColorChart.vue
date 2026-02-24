@@ -2627,8 +2627,10 @@ async function handleMoveOrders(items, date, unit, plan, dialog) {
     }
 }
 
-function openPushColorDialog(color) {
+async function openPushColorDialog(color) {
+    // Hide items already pushed
     const items = rawData.value.filter(d => {
+        if (d.pbPlanName) return false; 
         if ((d.color || "").toUpperCase().trim() !== color.toUpperCase().trim()) return false;
         if (filterUnit.value && (d.unit || "Mixed") !== filterUnit.value) return false;
         if (filterStatus.value && d.planningStatus !== filterStatus.value) return false;
@@ -2636,21 +2638,22 @@ function openPushColorDialog(color) {
     });
 
     if (!items.length) {
-        frappe.msgprint("No items found for this color in the current view.");
+        frappe.msgprint("All items for this color are already pushed to a Production Board plan or don't match your filters.");
         return;
     }
 
-    // Auto-suggest unit based on first item
-    let suggestedUnit = items[0].unit || "Unit 1";
-    if (suggestedUnit === "Mixed") suggestedUnit = "Unit 1";
+    // Fetch PB Plans
+    let pbPlans = [];
+    try {
+        const r = await frappe.call("production_scheduler.api.get_pb_plans");
+        pbPlans = r.message || [];
+    } catch(e) { console.error("Error fetching PB plans", e); }
 
     const d = new frappe.ui.Dialog({
         title: `📤 Push ${color} to Production Board`,
         fields: [
-            { fieldname: "target_date", label: "Target Date", fieldtype: "Date", reqd: 1, default: frappe.datetime.get_today(),
-              onchange: () => loadCapacityPreview(d)
-            },
-            { fieldname: "target_unit", label: "Target Unit", fieldtype: "Select", options: ["Unit 1", "Unit 2", "Unit 3", "Unit 4"], reqd: 1, default: suggestedUnit,
+            { fieldname: "pb_plan", label: "Production Board Plan", fieldtype: "Select", options: ["", ...pbPlans], reqd: 1, default: pbPlans.length > 0 ? pbPlans[0] : "", description: "Select the Production Board plan explicitly" },
+            { fieldname: "target_date", label: "Target Date", fieldtype: "Date", reqd: 1, default: filterOrderDate.value || frappe.datetime.get_today(),
               onchange: () => loadCapacityPreview(d)
             },
             { fieldname: "capacity_info", label: "", fieldtype: "HTML" },
@@ -2658,36 +2661,92 @@ function openPushColorDialog(color) {
         ],
         primary_action_label: "Push to Production Board",
         primary_action: () => {
-             const selectedNames = d.calc_selected_items || [];
-             if (!selectedNames.length) { frappe.msgprint("Please select at least one order."); return; }
+             const selected = d.calc_selected_items || [];
+             if (!selected.length) { frappe.msgprint("Please select at least one order."); return; }
              
              const targetDate = d.get_value("target_date");
-             const targetUnit = d.get_value("target_unit");
-             handleMoveOrders(selectedNames, targetDate, targetUnit, "Default", d);
+             const pbPlan = d.get_value("pb_plan");
+             
+             if (!pbPlan) { frappe.msgprint("Please select a Production Board Plan."); return; }
+             
+             // Build payload
+             const payload = selected.map(s => ({ name: s.name, target_unit: s.target_unit, target_date: targetDate }));
+             
+             // Define strictly inside primary_action to avoid ReferenceError
+             const executePush = async (finalPayload) => {
+                 d.get_primary_btn().prop("disabled", true).text("Pushing...");
+                 try {
+                     const r = await frappe.call({
+                         method: "production_scheduler.api.push_items_to_pb",
+                         args: {
+                             items_data: JSON.stringify(finalPayload),
+                             pb_plan_name: pbPlan
+                         },
+                         freeze: true
+                     });
+                     if (r.message && r.message.status === 'success') {
+                         frappe.show_alert({ message: `✅ Pushed ${r.message.moved_items} order(s) to Plan "${r.message.plan_name}"`, indicator: 'green' });
+                         d.hide();
+                         fetchData();
+                     } else {
+                         frappe.msgprint(r.message?.message || "Push failed");
+                         d.get_primary_btn().prop("disabled", false).text("Push to Production Board");
+                     }
+                 } catch(e) {
+                     console.error("Push Error", e);
+                     frappe.msgprint("Error pushing to Production Board.");
+                     d.get_primary_btn().prop("disabled", false).text("Push to Production Board");
+                 }
+             };
+
+             if (d.capacityExceeded) {
+                  const nextDay = frappe.datetime.add_days(targetDate, 1);
+                  frappe.confirm(
+                      `<b>Capacity Limit Reached!</b><br>One or more selected units will exceed capacity on ${targetDate}.<br><br>Do you want to push these orders to <b>${nextDay}</b> instead?`,
+                      () => { executePush(payload.map(p => ({...p, target_date: nextDay}))); },
+                      () => { executePush(payload); } // Force override
+                  );
+             } else {
+                  executePush(payload);
+             }
         }
     });
 
-    // Generate HTML for item selection (checkbox list)
+    // Generate HTML for item selection (checkbox list with per-item unit dropdown)
     let html = `
-        <div style="max-height: 300px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;">
-            <div style="position: sticky; top: 0; background: #f8fafc; z-index: 10; padding: 10px; border-bottom: 1px solid #e2e8f0; display:flex; gap: 8px; font-weight: 600; font-size: 12px; color: #64748b;">
-               <input type="checkbox" checked onchange="document.querySelectorAll('.push-chk').forEach(c => c.checked = this.checked); window.updatePushSelection()" /> Select All
+        <div style="max-height: 320px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;">
+            <div style="position: sticky; top: 0; background: #f8fafc; z-index: 10; padding: 10px; border-bottom: 1px solid #e2e8f0; display:flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 12px; color: #64748b;">
+                <div>
+                   <input type="checkbox" checked onchange="document.querySelectorAll('.push-chk').forEach(c => c.checked = this.checked); window.updatePushSelection()" /> Select All
+                </div>
             </div>
             <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
                 <tbody>
     `;
 
     items.forEach(item => {
+        // Auto-suggest unit from items existing unit if available
+        let unit = item.unit || "Unit 1";
+        if (unit === "Mixed" || unit === "Unassigned") unit = "Unit 1";
+        
         html += `
             <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 8px; text-align:center; width:30px;">
+                <td style="padding: 10px 8px; text-align:center; width:30px;">
                     <input type="checkbox" class="push-chk" value="${item.itemName}" checked onchange="window.updatePushSelection()" />
                 </td>
-                <td style="padding: 8px;">
-                    <div><b style="color:#1e293b;">${item.partyCode}</b> · ${item.customer}</div>
-                    <div style="color:#64748b; font-size:10px;">${item.quality} · ${item.gsm} GSM · ${item.unit || 'Unassigned'}</div>
+                <td style="padding: 10px 8px;">
+                    <div><b style="color:#1e293b;">${item.partyCode}</b></div>
+                    <div style="color:#64748b; font-size:10px; margin-top:2px;">${item.quality} · ${item.gsm} GSM</div>
                 </td>
-                <td style="padding: 8px; text-align:right;">
+                <td style="padding: 10px 8px; width: 110px;">
+                    <select class="push-unit-sel" data-item="${item.itemName}" onchange="window.updatePushSelection()" style="width:100%; padding:4px; font-size:11px; border:1px solid #cbd5e1; border-radius:4px; background:#fff; cursor:pointer;">
+                        <option value="Unit 1" ${unit === 'Unit 1' ? 'selected' : ''}>Unit 1</option>
+                        <option value="Unit 2" ${unit === 'Unit 2' ? 'selected' : ''}>Unit 2</option>
+                        <option value="Unit 3" ${unit === 'Unit 3' ? 'selected' : ''}>Unit 3</option>
+                        <option value="Unit 4" ${unit === 'Unit 4' ? 'selected' : ''}>Unit 4</option>
+                    </select>
+                </td>
+                <td style="padding: 10px 8px; text-align:right; width:80px;">
                     <b>${item.qty} Kg</b>
                 </td>
             </tr>
@@ -2697,19 +2756,25 @@ function openPushColorDialog(color) {
     html += `</tbody></table></div>`;
     d.set_value("items_info", html);
 
-    // Track selections
+    // Track selections and trigger capacity preview
     window.updatePushSelection = () => {
-        const c = Array.from(document.querySelectorAll('.push-chk')).filter(chk => chk.checked).map(chk => chk.value);
-        d.calc_selected_items = c;
+        const selected = [];
+        document.querySelectorAll('.push-chk').forEach(chk => {
+            if (chk.checked) {
+                const itemName = chk.value;
+                const sel = document.querySelector(`.push-unit-sel[data-item="${itemName}"]`);
+                selected.push({ name: itemName, target_unit: sel ? sel.value : "Unit 1" });
+            }
+        });
+        d.calc_selected_items = selected;
+        loadCapacityPreview(d);
     };
 
     async function loadCapacityPreview(dialog) {
         const date = dialog.get_value("target_date");
-        const unit = dialog.get_value("target_unit");
-        if (!date || !unit) return;
+        if (!date) return;
         
         const limits = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5 };
-        const limit = limits[unit] || 999;
         
         try {
             const r = await frappe.call({
@@ -2717,35 +2782,62 @@ function openPushColorDialog(color) {
                 args: { date: date }
             });
             const allItems = r.message || [];
-            const unitItems = allItems.filter(i => i.unit === unit);
-            const currentLoad = unitItems.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
-            const pushWeight = items.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
-            const afterPush = currentLoad + pushWeight;
-            const isOver = afterPush > limit;
             
-            let capHtml = `
-                <div style="padding: 12px; border-radius: 8px; border: 1px solid ${isOver ? '#fda4af' : '#bbf7d0'}; background: ${isOver ? '#fff1f2' : '#f0fdf4'}; margin-bottom: 8px;">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <div style="font-weight:700; font-size:14px; color:${isOver ? '#dc2626' : '#16a34a'};">${unit}: ${currentLoad.toFixed(2)} / ${limit}T</div>
-                            <div style="font-size:11px; color:#475569; margin-top:2px;">After push: <b>${afterPush.toFixed(2)}T</b></div>
-                        </div>
-                        ${isOver ? '<span style="font-size:20px;">⚠️</span>' : '<span style="font-size:20px;">✅</span>'}
-                    </div>
-                    <div style="font-size:11px; color:#64748b; margin-top:6px;">${unitItems.length} existing orders on ${date}</div>
-                </div>`;
+            // Calculate pushed weight per unit for checked items
+            const pushLoads = {};
+            const selected = dialog.calc_selected_items || [];
+            selected.forEach(sel => {
+                const i = items.find(it => it.itemName === sel.name);
+                if (i) {
+                    pushLoads[sel.target_unit] = (pushLoads[sel.target_unit] || 0) + (i.qty || 0)/1000;
+                }
+            });
             
+            let capHtml = `<div style="display:flex; flex-direction:column; gap:6px;">`;
+            let capacityExceeded = false;
+            let unitsPrinted = 0;
+            
+            ["Unit 1", "Unit 2", "Unit 3", "Unit 4"].forEach(u => {
+                const pushWeight = pushLoads[u] || 0;
+                if (pushWeight > 0) {
+                    unitsPrinted++;
+                    // Calculate existing order loads
+                    const existingU = allItems.filter(i => i.unit === u && i.pbPlanName !== ""); 
+                    const currentLoad = existingU.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
+                    
+                    const afterPush = currentLoad + pushWeight;
+                    const limit = limits[u];
+                    const isOver = afterPush > limit;
+                    
+                    if (isOver) capacityExceeded = true;
+                    
+                    capHtml += `
+                        <div style="padding: 6px 10px; border-radius: 6px; border: 1px solid ${isOver ? '#fda4af' : '#bbf7d0'}; background: ${isOver ? '#fff1f2' : '#f0fdf4'}; display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <div style="font-weight:700; font-size:12px; color:${isOver ? '#dc2626' : '#16a34a'};">${u}: ${currentLoad.toFixed(2)} / ${limit}T</div>
+                                <div style="font-size:10px; color:#475569; margin-top:2px;">After push: <b>${afterPush.toFixed(2)}T</b> <span style="color:#64748b;">(+${pushWeight.toFixed(2)}T)</span></div>
+                            </div>
+                            ${isOver ? '<span style="font-size:16px;" title="Capacity Exceeded">⚠️</span>' : '<span style="font-size:16px;">✅</span>'}
+                        </div>`;
+                }
+            });
+            
+            if (unitsPrinted === 0) {
+                capHtml += `<div style="font-size:11px; color:#64748b; font-style:italic;">Select items above to see capacity footprint.</div>`;
+            }
+            
+            capHtml += `</div>`;
             dialog.set_value("capacity_info", capHtml);
+            dialog.capacityExceeded = capacityExceeded;
         } catch(e) {
-            console.error("Capacity preview error", e);
+            console.error(e);
         }
     }
     
-    // Initial load
+    // Initial load - wait for DOM to mount elements so Selectors work
     setTimeout(() => {
         window.updatePushSelection();
-        loadCapacityPreview(d);
-    }, 100);
+    }, 200);
 
     d.show();
 }

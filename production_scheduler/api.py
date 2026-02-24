@@ -1744,6 +1744,130 @@ def push_to_pb(item_names, pb_plan_name):
 	return {"status": "success", "updated_count": updated_count, "plan_name": pb_plan_name}
 
 @frappe.whitelist()
+def push_items_to_pb(items_data, pb_plan_name):
+	"""
+	Pushes specific items to the Production Board plan.
+	items_data: list of dicts [{"name": "...", "target_date": "...", "target_unit": "..."}]
+	Handles item-level re-parenting and unit updates, then applies the PB plan name.
+	"""
+	import json
+	if isinstance(items_data, str):
+		items_data = json.loads(items_data)
+		
+	if not items_data or not pb_plan_name:
+		return {"status": "error", "message": "Missing item data or plan name"}
+
+	# 1. Collect docs and changes
+	moves = []
+	for item in items_data:
+		name = item.get("name")
+		target_date = item.get("target_date")
+		target_unit = item.get("target_unit")
+		try:
+			doc = frappe.get_doc("Planning Sheet Item", name)
+			moves.append({
+				"doc": doc,
+				"target_date": frappe.utils.getdate(target_date),
+				"target_unit": target_unit
+			})
+		except Exception:
+			pass
+
+	if not moves:
+		return {"status": "error", "message": "No valid items found"}
+
+	count = 0
+	# 2. Group by (Parent, Target Date) because sheets are per date/party/etc.
+	# Actually, to be safe, move_orders_to_date groups by parent.
+	groups = {}
+	for m in moves:
+		doc = m["doc"]
+		p_name = str(doc.parent)
+		t_date = str(m["target_date"])
+		key = f"{p_name}|{t_date}"
+		if key not in groups:
+			groups[key] = []
+		groups[key].append(m)
+
+	updated_sheets = set()
+
+	for key, items in groups.items():
+		parent_name, target_date_str = key.split("|")
+		parent_doc = frappe.get_doc("Planning sheet", parent_name)
+		target_date = frappe.utils.getdate(target_date_str)
+		
+		# Find or Create Target Sheet
+		find_filters = {
+			"ordered_date": target_date,
+			"party_code": parent_doc.party_code,
+			"docstatus": 0
+		}
+		
+		# For PB pushes, we keep the original custom_plan_name (Color Chart plan) 
+		# AND set the custom_pb_plan_name.
+		target_plan = parent_doc.get("custom_plan_name")
+		if target_plan:
+			find_filters["custom_plan_name"] = target_plan
+		else:
+			find_filters["custom_plan_name"] = ["in", ["", None, "Default"]]
+			
+		target_sheet_name = frappe.db.get_value("Planning sheet", find_filters, "name")
+		
+		if target_sheet_name and target_sheet_name != parent_name:
+			target_sheet = frappe.get_doc("Planning sheet", target_sheet_name)
+		elif target_sheet_name == parent_name:
+			target_sheet = parent_doc
+		else:
+			target_sheet = frappe.new_doc("Planning sheet")
+			target_sheet.ordered_date = target_date
+			target_sheet.party_code = parent_doc.party_code
+			target_sheet.customer = parent_doc.customer
+			target_sheet.sales_order = parent_doc.sales_order
+			if target_plan:
+				target_sheet.custom_plan_name = target_plan
+			target_sheet.save()
+			
+		# Enforce the PB Plan Name on the target sheet
+		frappe.db.set_value("Planning sheet", target_sheet.name, "custom_pb_plan_name", pb_plan_name)
+		updated_sheets.add(target_sheet.name)
+
+		# Move items
+		target_sheet.reload()
+		current_max_idx = 0
+		if target_sheet.get("items"):
+			current_max_idx = int(max([int(d.idx or 0) for d in target_sheet.items] or [0]))
+			
+		for i, m in enumerate(items):
+			item_doc = m["doc"]
+			new_unit = m["target_unit"]
+			new_idx = int(current_max_idx) + int(i) + 1
+			
+			if not new_unit or new_unit in ["Unassigned", "Mixed"]:
+				qual = item_doc.custom_quality or ""
+				new_unit = get_preferred_unit(qual)
+				
+			frappe.db.sql("""
+				UPDATE `tabPlanning Sheet Item`
+				SET parent = %s, idx = %s, unit = %s, parenttype='Planning sheet', parentfield='items'
+				WHERE name = %s
+			""", (target_sheet.name, new_idx, new_unit, item_doc.name))
+			count += 1
+			
+		frappe.db.commit()
+		
+		# Cleanup empty parent
+		if target_sheet.name != parent_doc.name:
+			parent_doc.reload()
+			if not parent_doc.get("items"):
+				try:
+					frappe.delete_doc("Planning sheet", parent_doc.name, force=1)
+				except Exception:
+					pass
+					
+	frappe.db.commit()
+	return {"status": "success", "updated_count": len(updated_sheets), "moved_items": count, "plan_name": pb_plan_name}
+
+@frappe.whitelist()
 def delete_pb_plan(pb_plan_name, date=None, start_date=None, end_date=None):
 	"""
 	Removes Production Board plan assignment from Planning Sheets.
