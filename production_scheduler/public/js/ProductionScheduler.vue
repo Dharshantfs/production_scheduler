@@ -376,6 +376,9 @@ function clearFilters() {
   fetchData();
 }
 
+// Track plans created locally via +New (before items are pushed)
+const localPlans = ref([]);
+
 // Production Board has its own plan management (separate from Color Chart)
 function createNewPlan() {
     frappe.prompt({
@@ -386,6 +389,10 @@ function createNewPlan() {
     }, (values) => {
         const name = values.plan_name.trim();
         if (!name) return;
+        // Track locally so fetchPlans doesn't wipe it
+        if (!localPlans.value.includes(name)) {
+            localPlans.value.push(name);
+        }
         if (!plans.value.includes(name)) {
             plans.value.push(name);
         }
@@ -1169,8 +1176,11 @@ async function fetchPlans(args) {
             args: planArgs
         });
         const serverPlans = r.message || [];
-        // Always include "Default" first, then server plans
-        plans.value = ["Default", ...serverPlans];
+        // Merge server plans with locally-created plans (that haven't been pushed yet)
+        const allPlans = new Set([...serverPlans, ...localPlans.value]);
+        plans.value = ["Default", ...Array.from(allPlans).sort()];
+        // Clean up local plans that now exist on server
+        localPlans.value = localPlans.value.filter(p => !serverPlans.includes(p));
         if (selectedPlan.value !== 'Default' && !plans.value.includes(selectedPlan.value)) {
             selectedPlan.value = "Default";
         }
