@@ -1018,12 +1018,25 @@ async function loadOrders(d) {
             args: { date: date, mode: 'pull' }
         });
         
-        const items = r.message || [];
+        let items = r.message || [];
+        
+        // ─── PRODUCTION BOARD FILTER ───
+        // Only show items that belong to this Production Board plan.
+        // pbPlanName comes from custom_pb_plan_name on the Planning Sheet.
+        if (selectedPlan.value === 'Default') {
+            // Default: items with no PB plan assignment (white board orders)
+            items = items.filter(i => !i.pbPlanName || i.pbPlanName === '');
+        } else {
+            // Named plan: only show items pushed to this exact PB plan
+            items = items.filter(i => i.pbPlanName === selectedPlan.value);
+        }
+        
         if (items.length === 0) {
-            d.set_value('preview_html', '<p class="text-gray-500 italic p-2">No active orders found for this date.</p>');
+            d.set_value('preview_html', '<p class="text-gray-500 italic p-2">No orders found for this date in the selected plan.</p>');
             d.calc_selected_items = [];
             return;
         }
+
         
         let html = `
             <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;">
