@@ -2243,6 +2243,180 @@ async function pushToProductionBoard() {
     }, 'Push to Production Board', 'Push');
 }
 
+// ---- MOVE TO PLAN ----
+async function openMovePlanDialog() {
+    // 1. Get visible items
+    const items = filteredData.value || [];
+    if (items.length === 0) {
+        frappe.msgprint('No orders visible to move. Select a date or plan first.');
+        return;
+    }
+
+    // 2. Get available target plans (excluding current)
+    const targetPlans = plans.value
+        .filter(p => p.name !== selectedPlan.value && !p.locked)
+        .map(p => p.name);
+
+    if (targetPlans.length === 0) {
+        frappe.msgprint('No other unlocked plans available. Create a new plan first using the "+" button.');
+        return;
+    }
+
+    // 3. Sort items by Color (Light→Dark), then Unit, then GSM
+    const sortedItems = [...items].sort((a, b) => {
+        const pA = getGroupPriority(a.color);
+        const pB = getGroupPriority(b.color);
+        if (pA !== pB) return pA - pB;
+        const unitOrder = ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"];
+        const uA = unitOrder.indexOf(a.unit || "Mixed");
+        const uB = unitOrder.indexOf(b.unit || "Mixed");
+        if (uA !== uB) return uA - uB;
+        return (parseFloat(a.gsm) || 0) - (parseFloat(b.gsm) || 0);
+    });
+
+    // 4. Group by color for a cleaner table
+    let selectedItems = new Set(sortedItems.map(i => i.itemName || i.name));
+
+    // 5. Build the HTML for the dialog table
+    const buildTable = (items, targetPlan) => {
+        const UNIT_LIMITS = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5 };
+        const rowsHtml = items.map(item => {
+            const hex = getHexColor(item.color);
+            const textColor = hex && parseInt(hex.replace('#',''), 16) < 0x808080 * 2 ? '#fff' : '#222';
+            const weightT = ((item.qty || 0) / 1000).toFixed(3);
+            const isChecked = selectedItems.has(item.itemName || item.name) ? 'checked' : '';
+            const unitLimit = UNIT_LIMITS[item.unit] || 999;
+            const badgeColor = item.unit === 'Unit 1' ? '#3b82f6' : item.unit === 'Unit 2' ? '#10b981' : item.unit === 'Unit 3' ? '#f59e0b' : item.unit === 'Unit 4' ? '#8b5cf6' : '#64748b';
+            return `<tr class="mtp-row" data-name="${item.itemName || item.name}">
+                <td style="padding:4px 6px; text-align:center;">
+                    <input type="checkbox" class="mtp-check" data-name="${item.itemName || item.name}" ${isChecked} style="cursor:pointer; width:14px; height:14px;">
+                </td>
+                <td style="padding:4px 6px;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span style="display:inline-block; width:12px; height:12px; background:${hex}; border-radius:2px; border:1px solid #ccc; flex-shrink:0;"></span>
+                        <span style="font-size:11px; font-weight:600;">${item.color || 'N/A'}</span>
+                    </div>
+                </td>
+                <td style="padding:4px 6px; font-size:11px;">
+                    <span style="background:${badgeColor}; color:#fff; padding:2px 6px; border-radius:10px; font-size:10px; font-weight:600;">${item.unit || 'Mixed'}</span>
+                </td>
+                <td style="padding:4px 6px; font-size:11px; color:#555;">${item.quality || '-'}</td>
+                <td style="padding:4px 6px; font-size:11px; text-align:center;">${item.gsm || '-'}</td>
+                <td style="padding:4px 6px; font-size:11px; text-align:right; font-weight:600;">${weightT} T</td>
+                <td style="padding:4px 6px; font-size:11px; color:#888;">${item.partyCode || item.customer || '-'}</td>
+            </tr>`;
+        }).join('');
+
+        return `<div style="font-family: -apple-system, sans-serif;">
+            <div style="display:flex; gap:12px; margin-bottom:10px; align-items:center; background:#f8fafc; padding:8px 12px; border-radius:6px; border:1px solid #e2e8f0;">
+                <div>
+                    <label style="font-size:11px; color:#64748b; display:block; margin-bottom:2px;">Source Plan</label>
+                    <span style="font-weight:700; color:#0f172a; font-size:13px;">📋 ${selectedPlan.value}</span>
+                </div>
+                <div style="font-size:18px; color:#94a3b8;">→</div>
+                <div>
+                    <label style="font-size:11px; color:#64748b; display:block; margin-bottom:2px;">Target Plan</label>
+                    <select id="mtp-target-plan" style="font-weight:700; border:1px solid #e2e8f0; padding:4px 8px; border-radius:4px; font-size:12px; color:#7c3aed;">
+                        ${targetPlans.map(p => `<option value="${p}" ${p===targetPlan?'selected':''}>${p}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+            <div style="display:flex; gap:6px; margin-bottom:8px; align-items:center;">
+                <button onclick="document.querySelectorAll('.mtp-check').forEach(c=>c.checked=true)" style="font-size:11px; padding:3px 8px; cursor:pointer; border:1px solid #10b981; color:#10b981; background:#f0fdf4; border-radius:4px;">✅ Select All</button>
+                <button onclick="document.querySelectorAll('.mtp-check').forEach(c=>c.checked=false)" style="font-size:11px; padding:3px 8px; cursor:pointer; border:1px solid #ef4444; color:#ef4444; background:#fef2f2; border-radius:4px;">❌ Deselect All</button>
+                <span style="font-size:11px; color:#94a3b8; margin-left:auto;">${items.length} orders | ${(items.reduce((s,i)=>s+(i.qty||0),0)/1000).toFixed(2)} T total</span>
+            </div>
+            <div style="max-height:380px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px;">
+                <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                    <thead style="position:sticky; top:0; background:#f1f5f9; z-index:1;">
+                        <tr>
+                            <th style="padding:6px; text-align:center; width:30px;"><input type="checkbox" id="mtp-check-all" style="cursor:pointer;" onclick="document.querySelectorAll('.mtp-check').forEach(c=>c.checked=this.checked)"></th>
+                            <th style="padding:6px; text-align:left;">Color</th>
+                            <th style="padding:6px; text-align:left;">Unit</th>
+                            <th style="padding:6px; text-align:left;">Quality</th>
+                            <th style="padding:6px; text-align:center;">GSM</th>
+                            <th style="padding:6px; text-align:right;">Weight</th>
+                            <th style="padding:6px; text-align:left;">Party</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rowsHtml}</tbody>
+                </table>
+            </div>
+        </div>`;
+    };
+
+    const d = new frappe.ui.Dialog({
+        title: `📥 Move Orders to Another Plan`,
+        fields: [{
+            fieldtype: 'HTML',
+            fieldname: 'move_table',
+            options: buildTable(sortedItems, targetPlans[0])
+        }],
+        primary_action_label: '🚀 Move Selected Orders',
+        primary_action: async () => {
+            const targetPlan = document.getElementById('mtp-target-plan')?.value;
+            if (!targetPlan) {
+                frappe.msgprint('Please select a target plan.');
+                return;
+            }
+
+            const checkedNames = [...document.querySelectorAll('.mtp-check:checked')].map(c => c.dataset.name).filter(Boolean);
+            if (checkedNames.length === 0) {
+                frappe.msgprint('No items selected.');
+                return;
+            }
+
+            d.hide();
+            frappe.show_alert({ message: `Moving ${checkedNames.length} items to plan "${targetPlan}"...`, indicator: 'blue' });
+
+            try {
+                const dateArgs = {};
+                if (viewScope.value === 'monthly') {
+                    const [year, month] = filterMonth.value.split('-');
+                    const lastDay = new Date(year, month, 0).getDate();
+                    dateArgs.start_date = `${filterMonth.value}-01`;
+                    dateArgs.end_date = `${filterMonth.value}-${lastDay}`;
+                } else {
+                    dateArgs.date = filterOrderDate.value;
+                }
+
+                const r = await frappe.call({
+                    method: 'production_scheduler.api.move_items_to_plan',
+                    args: {
+                        item_names: JSON.stringify(checkedNames),
+                        target_plan: targetPlan,
+                        ...dateArgs
+                    }
+                });
+
+                if (r.message) {
+                    const { moved, errors } = r.message;
+                    if (moved > 0) {
+                        frappe.show_alert({ message: `✅ Moved ${moved} items to plan "${targetPlan}"`, indicator: 'green' });
+                    }
+                    if (errors && errors.length > 0) {
+                        frappe.msgprint({
+                            title: '⚠️ Some items could not be moved',
+                            message: `<ul>${errors.map(e => `<li>${e}</li>`).join('')}</ul>`,
+                            indicator: 'orange'
+                        });
+                    }
+                    fetchData();
+                }
+            } catch (e) {
+                console.error('Move to plan failed', e);
+                frappe.msgprint('❌ Error moving orders. Check console for details.');
+            }
+        },
+        secondary_action_label: 'Cancel',
+        secondary_action: () => d.hide()
+    });
+
+    d.show();
+    // Ensure the dialog is wide enough
+    d.$wrapper.find('.modal-dialog').css('max-width', '700px');
+}
+
 async function fetchData() {
   let args = {};
   

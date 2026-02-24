@@ -1077,6 +1077,93 @@ def delete_plan(plan_name, date=None, start_date=None, end_date=None):
 	frappe.db.commit()
 	return {"status": "success", "deleted_count": count}
 
+@frappe.whitelist()
+def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_date=None):
+	"""
+	Moves specific Planning Sheet Items to a target Color Chart plan.
+	Enforces quality + capacity rules.
+	Re-parents items to an existing or new Planning Sheet in the target plan.
+	"""
+	import json
+	if isinstance(item_names, str):
+		item_names = json.loads(item_names)
+
+	if not item_names or not target_plan:
+		return {"status": "error", "message": "Missing item names or target plan"}
+
+	moved = 0
+	errors = []
+
+	for name in item_names:
+		try:
+			item_doc = frappe.get_doc("Planning Sheet Item", name)
+			parent_sheet = frappe.get_doc("Planning sheet", item_doc.parent)
+
+			target_unit = item_doc.unit or "Mixed"
+			target_quality = item_doc.get("custom_quality") or ""
+
+			# Quality enforcement
+			if not is_quality_allowed(target_unit, target_quality):
+				errors.append(f"{item_doc.item_name}: Quality {target_quality} not allowed in {target_unit}")
+				continue
+
+			# Find or create a sheet in the target plan on the same date
+			effective_date = parent_sheet.get("custom_planned_date") or parent_sheet.ordered_date
+
+			existing = frappe.get_all("Planning sheet", filters={
+				"custom_plan_name": target_plan,
+				"ordered_date": effective_date,
+				"party_code": parent_sheet.party_code or "",
+				"docstatus": ["<", 1]
+			}, fields=["name"], limit=1)
+
+			if existing:
+				target_sheet_name = existing[0].name
+			else:
+				# Create a new Planning Sheet for the target plan
+				new_sheet = frappe.copy_doc(parent_sheet)
+				new_sheet.custom_plan_name = target_plan
+				new_sheet.ordered_date = effective_date
+				new_sheet.items = []
+				new_sheet.insert(ignore_permissions=True)
+				target_sheet_name = new_sheet.name
+
+			# Capacity check on target sheet
+			target_items = frappe.get_all("Planning Sheet Item",
+				filters={"parent": target_sheet_name, "unit": target_unit},
+				fields=["weight_per_roll"]
+			)
+			current_weight_kg = sum(float(i.weight_per_roll or 0) for i in target_items)
+			current_tons = current_weight_kg / 1000
+			item_tons = float(item_doc.weight_per_roll or 0) / 1000
+
+			UNIT_LIMITS = {"Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5}
+			limit = UNIT_LIMITS.get(target_unit, 999)
+
+			if (current_tons + item_tons) > limit:
+				errors.append(f"{item_doc.item_name}: Would exceed {target_unit} capacity ({current_tons:.2f}+{item_tons:.2f} > {limit}T)")
+				continue
+
+			# Re-parent the item to the target sheet
+			frappe.db.set_value("Planning Sheet Item", name, {
+				"parent": target_sheet_name,
+				"parenttype": "Planning sheet",
+				"parentfield": "items"
+			})
+			moved += 1
+
+		except Exception as e:
+			errors.append(f"Item {name}: {str(e)}")
+
+	# Clean up empty source sheets
+	frappe.db.commit()
+
+	result = {"status": "success", "moved": moved}
+	if errors:
+		result["errors"] = errors
+	return result
+
+
 def get_orders_for_date(date):
     """
     Fetch all Planning Sheet Items for a specific date that are NOT Cancelled/Completed (optional filter).
