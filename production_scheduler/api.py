@@ -1469,16 +1469,17 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         except frappe.DoesNotExistError:
             continue
             
-    # 2. Check Limits
-    for unit, added_weight in weights_to_add.items():
-        if unit in HARD_LIMITS:
-            current_load = get_unit_load(target_date, unit)
-            limit = HARD_LIMITS[unit]
-            
-            if current_load + added_weight > limit:
-                frappe.throw(
-                    f"Capacity Exceeded! Unit {unit} allows max {limit}T. Current: {current_load:.2f}T. Adding: {added_weight:.2f}T. New Total: {current_load + added_weight:.2f}T"
-                )
+    # 2. Check Limits (skip if force_move — e.g. monthly/weekly aggregate view)
+    if not force_move:
+        for unit, added_weight in weights_to_add.items():
+            if unit in HARD_LIMITS:
+                current_load = get_unit_load(target_date, unit)
+                limit = HARD_LIMITS[unit]
+                
+                if current_load + added_weight > limit:
+                    frappe.throw(
+                        f"Capacity Exceeded! Unit {unit} allows max {limit}T. Current: {current_load:.2f}T. Adding: {added_weight:.2f}T. New Total: {current_load + added_weight:.2f}T"
+                    )
 
     count = 0
     
