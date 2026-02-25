@@ -2325,6 +2325,7 @@ def push_to_pb(item_names, pb_plan_name):
 					pb_sheet.custom_plan_name = parent.get("custom_plan_name") or "Default"
 					pb_sheet.custom_pb_plan_name = pb_plan_name
 					pb_sheet.ordered_date = effective_date
+					pb_sheet.custom_planned_date = effective_date
 					pb_sheet.party_code = party_code
 					pb_sheet.customer = parent.customer or ""
 					pb_sheet.sales_order = parent.sales_order or ""
@@ -2365,6 +2366,8 @@ def push_items_to_pb(items_data, pb_plan_name):
 
 	for item in items_data:
 		name = item.get("name") if isinstance(item, dict) else item
+		target_date = item.get("target_date") if isinstance(item, dict) else None
+
 		try:
 			# Get the parent Planning Sheet
 			parent = frappe.db.get_value("Planning Sheet Item", name, "parent")
@@ -2373,6 +2376,8 @@ def push_items_to_pb(items_data, pb_plan_name):
 
 			if parent not in updated_sheets:
 				frappe.db.set_value("Planning sheet", parent, "custom_pb_plan_name", pb_plan_name)
+				if target_date:
+					frappe.db.set_value("Planning sheet", parent, "custom_planned_date", target_date)
 				updated_sheets.add(parent)
 			count += 1
 
@@ -2540,14 +2545,24 @@ def auto_create_planning_sheet(doc, method=None):
             # Sheet already exists for the unlocked plan – nothing to do
             return frappe.get_doc("Planning sheet", s.name)
 
-    # 3. CREATE PLANNING SHEET (no planned date yet)
+    # 3. CREATE PLANNING SHEET (without planned date unless white order)
+    has_white = False
+    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "IVORY", "CREAM", "OFF WHITE"]
+    for it in doc.items:
+        raw_txt = (it.item_code or "") + " " + (it.item_name or "")
+        clean_txt = raw_txt.upper()
+        if any(w in clean_txt for w in whites):
+            has_white = True
+            break
+
     generate_party_code(doc)
     ps = frappe.new_doc("Planning sheet")
     ps.sales_order = doc.name
     ps.customer = doc.customer
-    ps.party_code = doc.get("party_code") or ""
+    ps.party_code = doc.party_code
     ps.ordered_date = doc.transaction_date
-    # custom_planned_date intentionally left empty – will be set later when pushed
+    if has_white:
+        ps.custom_planned_date = doc.transaction_date
     ps.dod = doc.delivery_date
     ps.planning_status = "Draft"
     ps.custom_plan_name = cc_plan
@@ -2682,13 +2697,24 @@ def regenerate_planning_sheet(so_name):
         frappe.msgprint("⚠️ All Color Chart plans are locked – cannot regenerate Planning Sheet.", indicator="orange", alert=True)
         return None
 
-    # 2. CREATE PLANNING SHEET (same as auto_create, without planned date)
+    # 2. CREATE PLANNING SHEET
+    has_white = False
+    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "IVORY", "CREAM", "OFF WHITE"]
+    for it in doc.items:
+        raw_txt = (it.item_code or "") + " " + (it.item_name or "")
+        clean_txt = raw_txt.upper()
+        if any(w in clean_txt for w in whites):
+            has_white = True
+            break
+
     generate_party_code(doc)
     ps = frappe.new_doc("Planning sheet")
     ps.sales_order = doc.name
     ps.customer = doc.customer
     ps.party_code = doc.get("party_code") or ""
     ps.ordered_date = doc.transaction_date
+    if has_white:
+        ps.custom_planned_date = doc.transaction_date
     ps.dod = doc.delivery_date
     ps.planning_status = "Draft"
     ps.custom_plan_name = cc_plan

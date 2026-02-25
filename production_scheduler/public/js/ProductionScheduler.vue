@@ -309,21 +309,10 @@ const filteredData = computed(() => {
       unit: d.unit || "Mixed"
   }));
 
-  // For Production Board ONLY: Show pushed items AND White Orders.
-  // There is only a single board now, no multiple PB plans.
-  data = data.filter(d => {
-      // 1. Is it a White Order? White Orders bypass the Color Chart.
-      const color = (d.color || "").toUpperCase().trim();
-      let isWhite = false;
-      if (EXCLUDED_WHITES.some(ex => color.includes(ex))) isWhite = true;
-      if (NO_RULE_WHITES.includes(color)) isWhite = true;
-      if (color.includes('IVORY') || color.includes('CREAM') || color.includes('OFF WHITE')) isWhite = true;
-      
-      // 2. Was it pushed from Color Chart?
-      const isPushed = !!d.pbPlanName;
-      
-      return isWhite || isPushed;
-  });
+  // For Production Board ONLY: Show pushed items.
+  // Items are considered "pushed" to the board if they have a plannedDate set.
+  // Note: White orders have plannedDate auto-set on creation.
+  data = data.filter(d => !!d.plannedDate);
 
   if (filterPartyCode.value) {
     const search = filterPartyCode.value.toLowerCase();
@@ -915,14 +904,7 @@ async function loadOrders(d) {
         let items = r.message || [];
         
         // ─── PRODUCTION BOARD FILTER MUST APPLY IN PULL AS WELL ───
-        items = items.filter(i => {
-             const color = (i.color || "").toUpperCase().trim();
-             let isWhite = false;
-             if (EXCLUDED_WHITES.some(ex => color.includes(ex))) isWhite = true;
-             if (NO_RULE_WHITES.includes(color)) isWhite = true;
-             if (color.includes('IVORY') || color.includes('CREAM') || color.includes('OFF WHITE')) isWhite = true;
-             return isWhite || !!i.pbPlanName;
-        });
+        items = items.filter(i => !!i.plannedDate);
         
         if (items.length === 0) {
             d.set_value('preview_html', '<p class="text-gray-500 italic p-2">No orders found for this date in the selected plan.</p>');

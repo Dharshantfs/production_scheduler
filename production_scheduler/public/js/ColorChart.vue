@@ -804,7 +804,7 @@ const matrixData = computed(() => {
                 const matchs = group.items.filter(i => i.color === row.color);
                 matchs.forEach(m => {
                     hasItems = true;
-                    if (m.pbPlanName) pushedPlanNames.add(m.pbPlanName);
+                    if (m.plannedDate) pushedPlanNames.add(m.plannedDate);
                     else allPushed = false;
                 });
                 
@@ -3080,7 +3080,7 @@ async function handleMoveOrders(items, date, unit, plan, dialog) {
 async function openPushColorDialog(color) {
     // Hide items already pushed
     const items = rawData.value.filter(d => {
-        if (d.pbPlanName) return false; 
+        if (d.plannedDate) return false; 
         if ((d.color || "").toUpperCase().trim() !== color.toUpperCase().trim()) return false;
         
         // Exclude White colors from being pushed manually
@@ -3250,7 +3250,7 @@ async function openPushColorDialog(color) {
                     // Calculate existing order loads on this unit on this date
                     // EXCLUDE items that we are currently pushing so we don't double count!
                     const pushingNames = selected.map(s => s.name);
-                    const existingU = allItems.filter(i => i.unit === u && i.pbPlanName !== "" && !pushingNames.includes(i.itemName)); 
+                    const existingU = allItems.filter(i => i.unit === u && i.plannedDate && !pushingNames.includes(i.itemName)); 
                     const currentLoad = existingU.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
                     
                     const afterPush = currentLoad + pushWeight;

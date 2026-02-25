@@ -223,7 +223,7 @@ const filteredData = computed(() => {
   let data = rawData.value || [];
   
   // Only show items that have been pushed to Production Board
-  data = data.filter(d => d.pbPlanName && d.pbPlanName !== '' && d.pbPlanName !== 'Default');
+  data = data.filter(d => !!d.plannedDate);
 
   // Exclude missing parameters and NO COLOR
   data = data.filter(d => {
