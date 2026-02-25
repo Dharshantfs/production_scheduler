@@ -1078,24 +1078,28 @@ def delete_plan(plan_name, date=None, start_date=None, end_date=None):
 	return {"status": "success", "deleted_count": count}
 
 @frappe.whitelist()
-def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_date=None):
+def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_date=None, days_in_view=1, force_move=0):
 	"""
-	Moves specific Planning Sheet Items to a target Color Chart plan.
-	Checks capacity per unit. Re-parents items to an existing or new Planning Sheet in target plan.
+	Copies specific Planning Sheet Items to a target Color Chart plan.
+	- days_in_view: scale capacity limit (e.g. 28 for monthly February, 7 for weekly).
+	- force_move=1: skip capacity check entirely (used in monthly/weekly views).
+	- Items linked to cancelled Sales Orders are silently skipped with a warning.
 	"""
 	import json
 	if isinstance(item_names, str):
 		item_names = json.loads(item_names)
+	days_in_view = int(days_in_view) if days_in_view else 1
+	force_move = int(force_move) if force_move else 0
 
 	if not item_names or not target_plan:
 		return {"status": "error", "message": "Missing item names or target plan"}
 
 	moved = 0
+	skipped = []
 	errors = []
-	# Cache newly created sheets to avoid duplication within the same call
 	new_sheet_cache = {}  # (party_code, effective_date) -> sheet_name
 
-	UNIT_LIMITS = {"Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5}
+	UNIT_LIMITS = {"Unit 1": 4.4, "Unit 2": 12.0, "Unit 3": 9.0, "Unit 4": 5.5}
 
 	for name in item_names:
 		try:
@@ -1105,6 +1109,13 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
 			target_unit = item_doc.unit or "Mixed"
 			effective_date = parent_sheet.get("custom_planned_date") or parent_sheet.ordered_date
 			party_code = parent_sheet.party_code or ""
+
+			# --- Guard: skip items on cancelled Sales Orders ---
+			if parent_sheet.sales_order:
+				so_status = frappe.db.get_value("Sales Order", parent_sheet.sales_order, "docstatus")
+				if so_status == 2:  # Cancelled
+					skipped.append(f"{name}: linked Sales Order {parent_sheet.sales_order} is cancelled — skipped")
+					continue
 
 			# --- Find or create a Planning Sheet in the target plan ---
 			cache_key = (party_code, str(effective_date))
@@ -1124,37 +1135,37 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
 				if existing:
 					target_sheet_name = existing[0].name
 				else:
-					# Create a minimal new Planning Sheet for the target plan
 					new_sheet = frappe.new_doc("Planning sheet")
 					new_sheet.custom_plan_name = target_plan
 					new_sheet.ordered_date = effective_date
 					new_sheet.party_code = party_code
 					new_sheet.customer = parent_sheet.customer or ""
-					new_sheet.sales_order = parent_sheet.sales_order or ""
+					# Don't copy sales_order to avoid cancelled SO linkage issues
 					new_sheet.insert(ignore_permissions=True)
 					target_sheet_name = new_sheet.name
 
 				new_sheet_cache[cache_key] = target_sheet_name
 
-			# --- Capacity check ---
-			limit = UNIT_LIMITS.get(target_unit, 9999)
-			target_items = frappe.get_all(
-				"Planning Sheet Item",
-				filters={"parent": target_sheet_name, "unit": target_unit},
-				fields=["qty"]
-			)
-			current_kg = sum(float(i.qty or 0) for i in target_items)
-			item_kg = float(item_doc.qty or 0)
-			if (current_kg + item_kg) / 1000 > limit:
-				errors.append(
-					f"{item_doc.item_name}: Would exceed {target_unit} capacity "
-					f"({(current_kg/1000):.2f}+{(item_kg/1000):.2f} > {limit}T)"
+			# --- Capacity check (scaled by days_in_view, skipped if force_move) ---
+			if not force_move:
+				daily_limit = UNIT_LIMITS.get(target_unit, 9999)
+				scaled_limit = daily_limit * days_in_view
+				target_items = frappe.get_all(
+					"Planning Sheet Item",
+					filters={"parent": target_sheet_name, "unit": target_unit},
+					fields=["qty"]
 				)
-				continue
+				current_kg = sum(float(i.qty or 0) for i in target_items)
+				item_kg = float(item_doc.qty or 0)
+				if (current_kg + item_kg) / 1000 > scaled_limit:
+					errors.append(
+						f"{item_doc.item_name}: Would exceed {target_unit} capacity "
+						f"({(current_kg/1000):.2f}+{(item_kg/1000):.2f} > {scaled_limit:.1f}T)"
+					)
+					continue
 
 			# --- COPY the item to target sheet (source stays unchanged) ---
 			new_item = frappe.new_doc("Planning Sheet Item")
-			# Copy all field values from the original item
 			for field in item_doc.meta.fields:
 				fname = field.fieldname
 				if fname in ("name", "parent", "parenttype", "parentfield", "idx", "creation", "modified", "owner"):
@@ -1169,13 +1180,13 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
 			new_item.insert(ignore_permissions=True)
 			moved += 1
 
-
 		except Exception as e:
-			import traceback
 			errors.append(f"{name}: {str(e)}")
 
 	frappe.db.commit()
 	result = {"status": "success", "moved": moved}
+	if skipped:
+		result["skipped"] = skipped
 	if errors:
 		result["errors"] = errors
 	return result

@@ -2413,24 +2413,33 @@ async function openMovePlanDialog() {
             frappe.show_alert({ message: `Moving ${checkedNames.length} items to "${targetPlan}"...`, indicator: 'blue' });
 
             try {
-                const dateArgs = {};
-                if (viewScope.value === 'monthly') {
-                    const [year, month] = filterMonth.value.split('-');
-                    const lastDay = new Date(year, month, 0).getDate();
-                    dateArgs.start_date = `${filterMonth.value}-01`;
-                    dateArgs.end_date = `${filterMonth.value}-${lastDay}`;
-                } else {
-                    dateArgs.date = filterOrderDate.value;
-                }
+                const daysInView = (() => {
+                    if (viewScope.value === 'weekly') return 7;
+                    if (viewScope.value === 'monthly' && filterMonth.value) {
+                        const [y, m] = filterMonth.value.split('-');
+                        return new Date(y, m, 0).getDate();
+                    }
+                    return 1;
+                })();
+                const isAggregateView = viewScope.value === 'monthly' || viewScope.value === 'weekly';
 
                 const r = await frappe.call({
                     method: 'production_scheduler.api.move_items_to_plan',
-                    args: { item_names: JSON.stringify(checkedNames), target_plan: targetPlan, ...dateArgs }
+                    args: {
+                        item_names: JSON.stringify(checkedNames),
+                        target_plan: targetPlan,
+                        days_in_view: daysInView,
+                        force_move: isAggregateView ? 1 : 0,
+                        ...dateArgs
+                    }
                 });
 
                 if (r.message) {
-                    const { moved, errors } = r.message;
+                    const { moved, errors, skipped } = r.message;
                     if (moved > 0) frappe.show_alert({ message: `✅ Moved ${moved} items to "${targetPlan}"`, indicator: 'green' });
+                    if (skipped?.length > 0) {
+                        console.warn('Skipped (cancelled SO):', skipped);
+                    }
                     if (errors?.length > 0) {
                         frappe.msgprint({
                             title: '⚠️ Some items blocked',
@@ -2440,6 +2449,7 @@ async function openMovePlanDialog() {
                     }
                     fetchData();
                 }
+
             } catch (e) {
                 console.error('Move to plan failed', e);
                 frappe.msgprint('❌ Error moving orders.');
