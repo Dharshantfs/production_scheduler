@@ -2460,7 +2460,7 @@ def revert_pb_push(pb_plan_name, date=None):
 # AUTO-CREATE PLANNING SHEET (BACKGROUND EXECUTION)
 # ------------------------------------------------------------
 
-def auto_create_planning_sheet(doc):
+def auto_create_planning_sheet(doc, method=None):
     """Create a Planning Sheet for a Sales Order.
     - Uses the first unlocked Color Chart plan.
     - If *all* plans are locked, aborts creation (no default fallback).
@@ -2605,6 +2605,7 @@ def auto_create_planning_sheet(doc):
 # REGENERATE PLANNING SHEET (MANUAL RE-CREATION)
 # ------------------------------------------------------------
 
+@frappe.whitelist()
 def regenerate_planning_sheet(so_name):
     """Regenerate a Planning Sheet for a Sales Order.
     - Fails if an active sheet already exists.
