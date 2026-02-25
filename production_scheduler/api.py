@@ -85,18 +85,34 @@ def _effective_date_expr(alias="p"):
 		return f"COALESCE({alias}.custom_planned_date, {alias}.ordered_date)"
 	return f"{alias}.ordered_date"
 
-def get_unit_load(date, unit):
+def get_unit_load(date, unit, plan_name=None):
 	"""Calculates current load (in Tons) for a unit on a given date.
+	Filtered per-plan so each plan has its own independent capacity.
 	Uses custom_planned_date if set, otherwise falls back to ordered_date."""
 	eff = _effective_date_expr("p")
+	# Build plan filter — each plan is treated independently
+	if plan_name and plan_name != "__all__":
+		if plan_name == "Default":
+			plan_cond = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
+			params = (date, unit)
+		else:
+			plan_cond = "AND p.custom_plan_name = %s"
+			params = (date, unit, plan_name)
+	else:
+		# No plan filter — sum all (used internally for global capacity checks)
+		plan_cond = ""
+		params = (date, unit)
 	sql = f"""
 		SELECT SUM(i.qty) as total_qty
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
-		WHERE {eff} = %s 
-		  AND i.unit = %s AND p.docstatus < 2 AND i.docstatus < 2
+		WHERE {eff} = %s
+		  AND i.unit = %s
+		  AND p.docstatus < 2
+		  AND i.docstatus < 2
+		  {plan_cond}
 	"""
-	result = frappe.db.sql(sql, (date, unit))
+	result = frappe.db.sql(sql, params)
 	return flt(result[0][0]) / 1000.0 if result and result[0][0] else 0.0
 
 def find_best_slot(item_qty_tons, quality, preferred_unit, start_date, recursion_depth=0):
@@ -198,13 +214,23 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 	if not is_quality_allowed(unit, quality):
 		frappe.throw(_("Quality <b>{}</b> is not allowed in <b>{}</b>.").format(quality, unit))
 
-	# 3. Check Capacity of Target Slot
-	current_load = get_unit_load(target_date, unit)
+	# 3. Check Capacity of Target Slot (scoped to this item's plan)
+	current_load = get_unit_load(target_date, unit, plan_name=plan_name or parent_sheet.get("custom_plan_name") or "Default")
 	limit = HARD_LIMITS.get(unit, 999.0)
 	
-	# If we are moving within the same unit/date (just reordering), ignore its own weight
-	is_same_slot = (parent_sheet.ordered_date == target_date and item.unit == unit)
-	load_for_check = current_load if is_same_slot else (current_load + item_wt_tons)
+	# Moving within same date (even to different unit): subtract item's own weight
+	# to avoid double-counting it and causing false overflow / duplicate creation
+	is_same_date = (str(parent_sheet.get("custom_planned_date") or parent_sheet.ordered_date) == str(target_date))
+	if is_same_date and item.unit == unit:
+		# Same date + same unit: pure reorder, load stays same
+		load_for_check = current_load
+	elif is_same_date:
+		# Same date, different unit: item moves FROM old unit TO new unit.
+		# Don't count the item's own weight in the old unit's load — only the new unit's load matters
+		load_for_check = current_load + item_wt_tons
+	else:
+		# Different date: full new load
+		load_for_check = current_load + item_wt_tons
 
 	if load_for_check > limit:
 		# Exceeds Capacity

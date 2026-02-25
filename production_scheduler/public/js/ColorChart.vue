@@ -1372,7 +1372,8 @@ async function initSortable() {
                                 date: filterOrderDate.value,
                                 index: newIndex + 1,
                                 force_move: force,
-                                perform_split: split
+                                perform_split: split,
+                                plan_name: selectedPlan.value
                             }
                         });
                     };
@@ -1404,7 +1405,7 @@ async function initSortable() {
                                     d.hide();
                                     const res2 = await frappe.call({
                                         method: "production_scheduler.api.update_schedule",
-                                        args: { item_name: itemName, unit: moveUnit, date: moveDate, index: newIndex + 1, force_move: 1 }
+                                        args: { item_name: itemName, unit: moveUnit, date: moveDate, index: newIndex + 1, force_move: 1, plan_name: selectedPlan.value }
                                     });
                                     if (res2.message && res2.message.status === 'success') {
                                         const dest = res2.message.moved_to;
