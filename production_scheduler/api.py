@@ -1197,12 +1197,10 @@ def delete_plan(plan_name, date=None, start_date=None, end_date=None):
 	frappe.db.commit()
 	return {"status": "success", "deleted_count": count}
 
-# ── White color group ─────────────────────────────────────────────────────────
+# ── White color group (ONLY these 6 true whites — confirmed by user) ──────────
 WHITE_COLORS = {
-	"BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE",
-	"BLEACH WHITE 1.0", "BLEACH WHITE 2.0", "BLEACH WHITE", "WHITE MIX", "WHITE",
-	"BRIGHT IVORY", "IVORY", "CREAM", "CREAM 2.0", "CREAM 3.0", "CREAM 4.0", "CREAM 5.0",
-	"OFF-WHITE", "OFF WHITE",
+	"BRIGHT WHITE", "MILKY WHITE", "SUPER WHITE",
+	"SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0",
 }
 
 # ── Color light→dark order (full list — matches COL_LIST in server script) ────
@@ -1245,7 +1243,35 @@ UNIT_QUALITY_ORDER = {
 }
 
 @frappe.whitelist()
-def get_smart_push_sequence(item_names):
+def get_last_unit_order(unit, date=None):
+	"""
+	Returns the last pushed order on the Production Board for a given unit.
+	Used by Smart Auto-Tick to determine the seed quality/color for chaining.
+	"""
+	target_date = getdate(date) if date else getdate(frappe.utils.today())
+	# Get all planning sheet items on this unit with custom_planned_date set (pushed)
+	rows = frappe.db.sql("""
+		SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, p.name as sheet
+		FROM `tabPlanning Sheet Item` i
+		JOIN `tabPlanning sheet` p ON i.parent = p.name
+		WHERE i.unit = %s
+		  AND p.custom_planned_date = %s
+		  AND p.docstatus < 2
+		ORDER BY i.idx DESC
+		LIMIT 1
+	""", (unit, target_date), as_dict=True)
+	if not rows:
+		return None
+	r = rows[0]
+	return {
+		"color": (r.color or "").upper().strip(),
+		"quality": (r.quality or "").upper().strip(),
+		"gsm": r.gsm,
+		"is_white": (r.color or "").upper().strip() in WHITE_COLORS,
+	}
+
+@frappe.whitelist()
+def get_smart_push_sequence(item_names, seed_quality=None, seed_color=None):
 	"""
 	Returns items in smart push order:
 	  1. White phase (per unit, quality order + GSM)
@@ -1310,12 +1336,16 @@ def get_smart_push_sequence(item_names):
 
 		# ── Phase 1: White ──
 		white_sorted = sorted(white_items, key=lambda i: quality_sort_key(i, unit))
-		seed_quality = None
+		# Use board seed if provided (no white items in push batch, but board has one running)
+		if seed_quality and not white_items:
+			effective_seed = seed_quality.upper().strip()
+		else:
+			effective_seed = None
 		for idx, item in enumerate(white_sorted):
 			seq_no[0] += 1
 			is_last = (idx == len(white_sorted) - 1)
 			if is_last:
-				seed_quality = item["quality"]
+				effective_seed = item["quality"]
 			sequence.append({
 				**item,
 				"sequence_no": seq_no[0],
@@ -1334,9 +1364,9 @@ def get_smart_push_sequence(item_names):
 		while remaining and loops < max_loops:
 			loops += 1
 
-			# Find colors available in current seed quality (light→dark)
-			if seed_quality:
-				seed_pool = [i for i in remaining if i["quality"] == seed_quality]
+			# Find colors available in current effective_seed quality (light→dark)
+			if effective_seed:
+				seed_pool = [i for i in remaining if i["quality"] == effective_seed]
 			else:
 				seed_pool = remaining
 
@@ -1347,18 +1377,18 @@ def get_smart_push_sequence(item_names):
 
 			if not seed_pool_colors:
 				# No more colors in this seed quality → advance to next quality in unit order
-				if seed_quality and seed_quality in quality_order:
-					qi = quality_order.index(seed_quality)
+				if effective_seed and effective_seed in quality_order:
+					qi = quality_order.index(effective_seed)
 					advanced = False
 					for nq in quality_order[qi+1:]:
 						pool = [i for i in remaining if i["quality"] == nq and i["colorKey"] not in done_colors]
 						if pool:
-							seed_quality = nq
+							effective_seed = nq
 							advanced = True
 							break
 					if not advanced:
 						# Just dump all remaining in color/GSM order
-						seed_quality = None
+						effective_seed = None
 						continue
 				else:
 					# No quality order reference — just take lightest remaining color
@@ -1387,7 +1417,7 @@ def get_smart_push_sequence(item_names):
 				seq_no[0] += 1
 				is_last = (idx == len(color_batch) - 1)
 				if is_last:
-					seed_quality = item["quality"]
+					effective_seed = item["quality"]
 				sequence.append({
 					**item,
 					"sequence_no": seq_no[0],

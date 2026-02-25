@@ -2427,9 +2427,28 @@ async function pushToProductionBoard() {
         smartBtn.prop('disabled', true);
         
         try {
+            // Get the last running order on Production Board per unit to use as seed
+            const targetDate = d.get_value ? (d.get_value('target_date') || frappe.datetime.get_today()) : frappe.datetime.get_today();
+            const unitsInBatch = [...new Set(currentSequence.map(s => s.unit || s.unitKey || 'Mixed').filter(u => u && u !== 'Mixed'))];
+            
+            let seedQuality = null, seedColor = null;
+            if (unitsInBatch.length === 1) {
+                // Try to get seed from board for single-unit batches
+                try {
+                    const lastRes = await frappe.call({
+                        method: 'production_scheduler.api.get_last_unit_order',
+                        args: { unit: unitsInBatch[0], date: targetDate }
+                    });
+                    if (lastRes.message) {
+                        seedQuality = lastRes.message.quality;
+                        seedColor = lastRes.message.color;
+                    }
+                } catch(e) { /* silently ignore */ }
+            }
+
             const r = await frappe.call({
                 method: 'production_scheduler.api.get_smart_push_sequence',
-                args: { item_names: JSON.stringify(currentSequence.map(s => s.name)) }
+                args: { item_names: JSON.stringify(currentSequence.map(s => s.name)), seed_quality: seedQuality, seed_color: seedColor }
             });
             const smartSeq = r.message || [];
             if (smartSeq.length > 0) {
@@ -3340,9 +3359,27 @@ async function openPushColorDialog(color) {
         
         try {
             const allNames = items.map(i => i.itemName);
+            const targetDate = d.get_value('target_date') || frappe.datetime.get_today();
+            
+            // Detect unit from items (per-color dialog usually one unit)
+            const unitsInBatch = [...new Set(items.map(i => i.unit || 'Mixed').filter(u => u && u !== 'Mixed'))];
+            let seedQuality = null, seedColor = null;
+            if (unitsInBatch.length === 1) {
+                try {
+                    const lastRes = await frappe.call({
+                        method: 'production_scheduler.api.get_last_unit_order',
+                        args: { unit: unitsInBatch[0], date: targetDate }
+                    });
+                    if (lastRes.message) {
+                        seedQuality = lastRes.message.quality;
+                        seedColor = lastRes.message.color;
+                    }
+                } catch(e) { /* silently ignore */ }
+            }
+
             const r = await frappe.call({
                 method: 'production_scheduler.api.get_smart_push_sequence',
-                args: { item_names: JSON.stringify(allNames) }
+                args: { item_names: JSON.stringify(allNames), seed_quality: seedQuality, seed_color: seedColor }
             });
             const smartSeq = r.message || [];
             if (smartSeq.length > 0) {
