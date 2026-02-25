@@ -2829,3 +2829,71 @@ def regenerate_planning_sheet(so_name):
     frappe.db.commit()
     frappe.msgprint(f"✅ Regenerated Planning Sheet <b>{ps.name}</b> in unlocked plan <b>{cc_plan}</b>")
     return ps
+
+
+# ─── WHITE ORDERS PLANNED DATE MIGRATION ───────────────────────────────────────
+WHITE_COLOR_KEYWORDS = [
+    "WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD",
+    "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE",
+    "SUNSHINE WHITE", "BLEACH WHITE", "OFF WHITE", "IVORY", "CREAM"
+]
+
+def _is_white_color(color):
+    """Return True if color string matches a white-family color."""
+    if not color:
+        return False
+    c = color.upper().strip()
+    return any(kw in c for kw in WHITE_COLOR_KEYWORDS)
+
+@frappe.whitelist()
+def fix_white_orders_planned_date():
+    """
+    One-time migration: For every Planning Sheet that:
+      1. Has custom_planned_date NULL or empty
+      2. Has at least one item — and ALL items are white-family colors
+    Set custom_planned_date = ordered_date.
+
+    Returns a summary of how many sheets were updated.
+    """
+    # Get all sheets without custom_planned_date
+    sheets_without_date = frappe.db.sql("""
+        SELECT name, ordered_date
+        FROM `tabPlanning sheet`
+        WHERE (custom_planned_date IS NULL OR custom_planned_date = '')
+          AND docstatus < 2
+          AND ordered_date IS NOT NULL
+    """, as_dict=True)
+
+    updated = 0
+    skipped = 0
+
+    for sheet in sheets_without_date:
+        items = frappe.get_all(
+            "Planning Sheet Item",
+            filters={"parent": sheet.name},
+            fields=["color"]
+        )
+
+        if not items:
+            skipped += 1
+            continue
+
+        # Check if ALL items are white-family colors
+        if all(_is_white_color(i.color) for i in items):
+            frappe.db.set_value(
+                "Planning sheet",
+                sheet.name,
+                "custom_planned_date",
+                sheet.ordered_date
+            )
+            updated += 1
+        else:
+            skipped += 1
+
+    frappe.db.commit()
+    return {
+        "status": "success",
+        "updated": updated,
+        "skipped": skipped,
+        "message": f"✅ Updated {updated} white Planning Sheet(s). Skipped {skipped} (color or no items)."
+    }
