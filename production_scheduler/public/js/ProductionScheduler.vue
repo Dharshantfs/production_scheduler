@@ -1423,8 +1423,9 @@ async function fetchData() {
             args.date = filterOrderDate.value;
         }
 
-        // Production Board: fetch ALL data
+        // Production Board: fetch ALL plans but ONLY pushed items (custom_planned_date set)
         args.plan_name = "__all__";
+        args.planned_only = 1;
 
         const r = await frappe.call({
           method: "production_scheduler.api.get_color_chart_data",

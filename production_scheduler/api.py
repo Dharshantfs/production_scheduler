@@ -594,7 +594,7 @@ def get_kanban_board(start_date, end_date):
 
 
 @frappe.whitelist()
-def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=None, mode=None):
+def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=None, mode=None, planned_only=0):
 	# PULL MODE: Return raw items by ordered_date, exclude items with Work Orders
 	if mode == "pull" and date:
 		target_date = getdate(date)
@@ -673,6 +673,10 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		params.append(plan_name)
 	else:
 		plan_condition = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
+
+	# Production Board only: require custom_planned_date to be explicitly set
+	if cint(planned_only) and _has_planned_date_column():
+		plan_condition += " AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
 	
 	# Build SELECT fields — include custom_planned_date only if column exists
 	extra_fields = ", p.custom_planned_date" if _has_planned_date_column() else ""
