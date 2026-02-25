@@ -1343,13 +1343,11 @@ def get_smart_push_sequence(item_names, seed_quality=None, seed_color=None):
 
 		# ── Phase 1: White ──
 		white_sorted = sorted(white_items, key=lambda i: quality_sort_key(i, unit))
-		# Use board seed if provided (no white items in push batch, but board has one running)
-		if seed_quality and not white_items:
-			effective_seed = seed_quality.upper().strip()
-			current_seed_color = seed_color.upper().strip() if seed_color else None
-		else:
-			effective_seed = None
-			current_seed_color = None
+
+		# Initialize color phase seeds from board (if provided)
+		effective_seed = seed_quality.upper().strip() if seed_quality else None
+		current_seed_color = seed_color.upper().strip() if seed_color else None
+
 		for idx, item in enumerate(white_sorted):
 			seq_no[0] += 1
 			is_last = (idx == len(white_sorted) - 1)
