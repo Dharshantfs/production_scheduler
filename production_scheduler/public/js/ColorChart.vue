@@ -2347,11 +2347,15 @@ async function pushToProductionBoard() {
                     }
                 });
                 if (r.message && r.message.status === 'success') {
+                    d.get_primary_btn().text('✅ Pushed').css({'background-color': '#10b981', 'color': 'white'});
                     frappe.show_alert({
                         message: `✅ Pushed ${r.message.updated_count} sheet(s) to Production Board`,
                         indicator: 'green'
                     });
-                    fetchData();
+                    setTimeout(() => {
+                        d.hide();
+                        fetchData();
+                    }, 1000);
                 } else {
                     frappe.msgprint(r.message?.message || 'Push failed.');
                 }
@@ -3217,9 +3221,12 @@ async function openPushColorDialog(color) {
                          freeze: true
                      });
                      if (r.message && r.message.status === 'success') {
+                         d.get_primary_btn().text("✅ Pushed").css({"background-color": "#10b981", "color": "white"});
                          frappe.show_alert({ message: `✅ Pushed ${r.message.moved_items} order(s) to Plan "${r.message.plan_name}"`, indicator: 'green' });
-                         d.hide();
-                         fetchData();
+                         setTimeout(() => {
+                             d.hide();
+                             fetchData();
+                         }, 1000);
                      } else {
                          frappe.msgprint(r.message?.message || "Push failed");
                          d.get_primary_btn().prop("disabled", false).text("Push to Production Board");

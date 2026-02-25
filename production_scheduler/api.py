@@ -2468,6 +2468,42 @@ def push_items_to_pb(items_data, pb_plan_name):
 
 
 @frappe.whitelist()
+def revert_items_from_pb(item_names):
+	"""
+	Reverts Planning Sheet Items from the Production Board.
+	Clears custom_pb_plan_name and custom_planned_date on the parent Planning Sheets.
+	 item_names: list of Planning Sheet Item names
+	"""
+	import json
+	if isinstance(item_names, str):
+		item_names = json.loads(item_names)
+	
+	if not item_names:
+		return {"status": "error", "message": "No items provided"}
+
+	count = 0
+	updated_sheets = set()
+
+	for name in item_names:
+		try:
+			parent = frappe.db.get_value("Planning Sheet Item", name, "parent")
+			if not parent:
+				continue
+			
+			if parent not in updated_sheets:
+				frappe.db.set_value("Planning sheet", parent, "custom_pb_plan_name", "")
+				frappe.db.set_value("Planning sheet", parent, "custom_planned_date", None)
+				updated_sheets.add(parent)
+			
+			count += 1
+		except Exception as e:
+			frappe.log_error(f"revert_items_from_pb error for {name}: {e}", "Revert from PB")
+
+	frappe.db.commit()
+	return {"status": "success", "reverted_items": count, "updated_sheets": len(updated_sheets)}
+
+
+@frappe.whitelist()
 def delete_pb_plan(pb_plan_name, date=None, start_date=None, end_date=None):
 	"""
 	Removes Production Board plan assignment from Planning Sheets.

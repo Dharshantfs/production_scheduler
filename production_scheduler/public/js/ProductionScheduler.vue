@@ -155,6 +155,13 @@
               <div class="cc-card-right">
                 <span class="cc-card-qty">{{ (entry.qty / 1000).toFixed(3) }} T</span>
                 <span class="cc-card-qty-kg">{{ entry.qty }} Kg</span>
+                <button 
+                  class="cc-revert-btn" 
+                  @click.stop="revertOrder(entry)" 
+                  title="Revert to Planning Sheet"
+                >
+                  ↩️ Revert
+                </button>
               </div>
             </div>
           </template>
@@ -760,6 +767,34 @@ function getMixRollTotalWeight(unit) {
 
 function openForm(name) {
   frappe.set_route("Form", "Planning sheet", name);
+}
+
+async function revertOrder(entry) {
+    if (!entry.itemName) return;
+    
+    frappe.confirm(
+        `Are you sure you want to revert <b>${entry.color}</b> order back to Planning Sheet? <br><small>This will remove it from the Production Board.</small>`,
+        async () => {
+            try {
+                isLoading.value = true;
+                const r = await frappe.call({
+                    method: "production_scheduler.api.revert_items_from_pb",
+                    args: { item_names: [entry.itemName] }
+                });
+                if (r.message && r.message.status === 'success') {
+                    frappe.show_alert({ message: 'Order reverted successfully', indicator: 'green' });
+                    await fetchData();
+                } else {
+                    frappe.msgprint(r.message ? r.message.message : 'Failed to revert order');
+                }
+            } catch (e) {
+                console.error("Revert error", e);
+                frappe.show_alert({ message: 'Error reverting order', indicator: 'red' });
+            } finally {
+                isLoading.value = false;
+            }
+        }
+    );
 }
 
 // NOTE: analyzePreviousFlow REMOVED or MODIFIED?
