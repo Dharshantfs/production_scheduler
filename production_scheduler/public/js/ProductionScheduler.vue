@@ -1430,7 +1430,14 @@ async function fetchData() {
           method: "production_scheduler.api.get_color_chart_data",
           args: args,
         });
-        rawData.value = r.message || [];
+        rawData.value = (r.message || []).map(d => ({
+          ...d,
+          // Normalize snake_case API fields to camelCase used in filters
+          plannedDate: d.plannedDate || d.planned_date || "",
+          partyCode:   d.partyCode   || d.party_code  || "",
+          itemName:    d.itemName    || d.item_name   || d.name || "",
+          orderDate:   d.orderDate   || d.ordered_date || "",
+        }));
         
         // Load Custom Color Order
         try {
