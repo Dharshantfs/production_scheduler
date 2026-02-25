@@ -222,8 +222,12 @@ const visibleUnits = computed(() => {
 const filteredData = computed(() => {
   let data = rawData.value || [];
   
+  // Only show items that have been pushed to Production Board
+  data = data.filter(d => d.pbPlanName && d.pbPlanName !== '' && d.pbPlanName !== 'Default');
+
   // Exclude missing parameters and NO COLOR
   data = data.filter(d => {
+
       if (!d.quality || !d.color || !d.unit || d.unit === "Mixed" || d.unit === "Unassigned") return false;
       const colorUpper = d.color.toUpperCase().trim();
       if (colorUpper === "NO COLOR") return false;
