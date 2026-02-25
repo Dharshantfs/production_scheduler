@@ -1346,8 +1346,10 @@ def get_smart_push_sequence(item_names, seed_quality=None, seed_color=None):
 		# Use board seed if provided (no white items in push batch, but board has one running)
 		if seed_quality and not white_items:
 			effective_seed = seed_quality.upper().strip()
+			current_seed_color = seed_color.upper().strip() if seed_color else None
 		else:
 			effective_seed = None
+			current_seed_color = None
 		for idx, item in enumerate(white_sorted):
 			seq_no[0] += 1
 			is_last = (idx == len(white_sorted) - 1)
@@ -1409,8 +1411,20 @@ def get_smart_push_sequence(item_names, seed_quality=None, seed_color=None):
 
 				continue
 
-			# Pick the lightest color from seed pool
-			chosen_color = seed_pool_colors[0]
+			# Pick the color from seed pool that is >= current_seed_color
+			if current_seed_color and current_seed_color in COLOR_PRIORITY:
+				seed_idx = COLOR_PRIORITY[current_seed_color]
+				valid_options = [c for c in seed_pool_colors if COLOR_PRIORITY.get(c, -1) >= seed_idx]
+				if valid_options:
+					chosen_color = valid_options[0]
+				else:
+					# If no darker colors exist in this quality, wrap around to lightest
+					chosen_color = seed_pool_colors[0]
+			else:
+				# Pick the lightest color from seed pool
+				chosen_color = seed_pool_colors[0]
+			
+			current_seed_color = chosen_color
 			done_colors.add(chosen_color)
 
 			# Collect ALL items of this color (all qualities) and sort by unit quality order + GSM
