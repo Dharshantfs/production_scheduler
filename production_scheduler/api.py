@@ -2442,6 +2442,35 @@ def delete_pb_plan(pb_plan_name, date=None, start_date=None, end_date=None):
 
 
 @frappe.whitelist()
+def revert_items_to_color_chart(item_names):
+	"""
+	Reverts items back to the Color Chart by clearing their Planning Sheet's custom_planned_date.
+	Note: This affects the entire Planning Sheet containing the item.
+	White orders generally re-evaluate to have a planned date implicitly, 
+	but this clears the explicit field.
+	"""
+	import json
+	if isinstance(item_names, str):
+		item_names = json.loads(item_names)
+
+	if not item_names:
+		return {"status": "error", "message": "No items provided"}
+
+	updated_sheets = set()
+	for name in item_names:
+		try:
+			parent = frappe.db.get_value("Planning Sheet Item", name, "parent")
+			if parent and parent not in updated_sheets:
+				frappe.db.set_value("Planning sheet", parent, "custom_planned_date", None)
+				updated_sheets.add(parent)
+		except Exception as e:
+			frappe.log_error(f"revert error for {name}: {e}", "Revert to Color Chart")
+
+	frappe.db.commit()
+	return {"status": "success", "reverted_sheets": len(updated_sheets)}
+
+
+@frappe.whitelist()
 def revert_pb_push(pb_plan_name, date=None):
 	"""
 	Reverts a Production Board push for a specific date.

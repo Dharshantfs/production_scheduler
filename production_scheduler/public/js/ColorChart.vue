@@ -383,8 +383,11 @@
                                 <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
                                 {{ row.color }}
                                 <button v-if="row.isPushed" 
-                                    style="margin-left:8px; background: #16a34a; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:default; box-shadow: 0 2px 4px rgba(22,163,74,0.3);"
-                                    title="All orders for this color are pushed"
+                                    @click.stop="revertColorGroup(row.color)"
+                                    style="margin-left:8px; background: #16a34a; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(22,163,74,0.3); transition: all 0.2s;"
+                                    title="Click to revert all orders for this color back to Color Chart"
+                                    onmouseover="this.style.opacity='0.8'"
+                                    onmouseout="this.style.opacity='1'"
                                 >
                                     ✅ {{ row.pushedPlanName || 'Pushed' }}
                                 </button>
@@ -429,8 +432,11 @@
                                 <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
                                 {{ row.color }}
                                 <button v-if="row.isPushed" 
-                                    style="margin-left:8px; background: #16a34a; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:default; box-shadow: 0 2px 4px rgba(22,163,74,0.3);"
-                                    title="White orders auto-pushed"
+                                    @click.stop="revertColorGroup(row.color)"
+                                    style="margin-left:8px; background: #16a34a; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(22,163,74,0.3); transition: all 0.2s;"
+                                    title="Click to revert white orders"
+                                    onmouseover="this.style.opacity='0.8'"
+                                    onmouseout="this.style.opacity='1'"
                                 >
                                     ✅ {{ row.pushedPlanName || 'Default' }}
                                 </button>
@@ -2203,7 +2209,7 @@ async function pushToProductionBoard() {
 
     // State for the dialog
     let smartSequenceActive = false;
-    let currentSequence = allItemNames.map((n, i) => {
+    let masterSequence = allItemNames.map((n, i) => {
         const d = items.find(it => it.itemName === n) || {};
         return {
             name: n,
@@ -2215,10 +2221,13 @@ async function pushToProductionBoard() {
             customer: d.customer || d.partyCode || '',
             phase: '',
             is_seed_bridge: false,
-            sequence_no: i + 1,
             checked: true
         };
     });
+    
+    // Sort initial sequence
+    masterSequence.forEach((item, i) => { item.sequence_no = i + 1; });
+    let currentSequence = [...masterSequence];
 
     function getPhaseColor(phase) {
         if (phase === 'white') return '#e8f5e9';
@@ -2272,16 +2281,12 @@ async function pushToProductionBoard() {
 
     function buildDialogHtml(seq) {
         const total = seq.filter(i => i.checked !== false).length;
-        const smartBtnStyle = smartSequenceActive
-            ? 'background:#1b5e20;color:white;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;'
-            : 'background:#e8f5e9;color:#1b5e20;border:1px solid #81c784;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;';
         return `
-        <div style="margin-bottom:10px;display:flex;align-items:center;gap:10px;">
-            <button id="smart_seq_btn" style="${smartBtnStyle}">
-                ${smartSequenceActive ? '🔗 Smart Sequence ON' : '🔗 Smart Sequence'}
-            </button>
-            <span style="font-size:12px;color:#666;">${total} item(s) selected</span>
-            ${smartSequenceActive ? '<span style="font-size:11px;color:#1b5e20;">✅ Sequenced by white → color chain</span>' : ''}
+        <div style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
+            <div>
+                <span style="font-size:13px;color:#333;font-weight:600;"><span id="seq-count-label">${total}</span></span> <span style="font-size:12px;color:#666;">item(s) selected</span>
+            </div>
+            ${smartSequenceActive ? '<span style="font-size:11px;color:#1b5e20;background:#e8f5e9;padding:4px 8px;border-radius:12px;">✅ Sequenced by white → color chain</span>' : ''}
         </div>
         ${renderTable(seq)}`;
     }
@@ -2289,6 +2294,14 @@ async function pushToProductionBoard() {
     const d = new frappe.ui.Dialog({
         title: '🚀 Push to Production Board',
         fields: [
+            { fieldname: 'filter_logic', fieldtype: 'Select', label: 'Match', options: ['AND', 'OR'], default: 'AND' },
+            { fieldtype: 'Column Break' },
+            { fieldname: 'filter_quality', fieldtype: 'Data', label: 'Quality' },
+            { fieldtype: 'Column Break' },
+            { fieldname: 'filter_color', fieldtype: 'Data', label: 'Color' },
+            { fieldtype: 'Column Break' },
+            { fieldname: 'filter_party', fieldtype: 'Data', label: 'Party Code' },
+            { fieldtype: 'Section Break' },
             {
                 fieldname: 'sequence_html',
                 fieldtype: 'HTML',
@@ -2332,99 +2345,130 @@ async function pushToProductionBoard() {
     });
 
     d.show();
+    d.$wrapper.find('.modal-dialog').css('max-width', '800px');
+
+    function applyFilters() {
+        const qualitySearch = (d.get_value('filter_quality') || "").toLowerCase();
+        const colorSearch = (d.get_value('filter_color') || "").toLowerCase();
+        const partySearch = (d.get_value('filter_party') || "").toLowerCase();
+        const matchLogic = d.get_value('filter_logic') || "AND";
+
+        currentSequence = masterSequence.filter(item => {
+            const matchQ = qualitySearch ? item.quality.toLowerCase().includes(qualitySearch) : false;
+            const matchC = colorSearch ? item.color.toLowerCase().includes(colorSearch) : false;
+            const matchP = partySearch ? item.customer.toLowerCase().includes(partySearch) : false;
+
+            const hasAnySearch = qualitySearch || colorSearch || partySearch;
+            if (!hasAnySearch) return true;
+
+            if (matchLogic === "AND") {
+                if (qualitySearch && !matchQ) return false;
+                if (colorSearch && !matchC) return false;
+                if (partySearch && !matchP) return false;
+                return true;
+            } else {
+                return matchQ || matchC || matchP;
+            }
+        });
+
+        // Re-number
+        currentSequence.forEach((item, i) => { item.sequence_no = i + 1; });
+
+        d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
+        wireCheckboxes();
+    }
+
+    // Attach keyup events to inputs for real-time filtering
+    ['filter_quality', 'filter_color', 'filter_party'].forEach(fn => {
+        d.fields_dict[fn].$input.on('input', () => applyFilters());
+    });
+    d.fields_dict.filter_logic.$input.on('change', () => applyFilters());
 
     // Wire up checkbox events
     function wireCheckboxes() {
-        const container = d.wrapper.querySelector('#sequence_html') || d.wrapper;
-        container.querySelectorAll('input[type=checkbox]').forEach(cb => {
+        const container = d.wrapper.querySelector('.frappe-control[data-fieldname="sequence_html"]') || d.wrapper;
+        
+        const mainCheckbox = container.querySelector('thead input[type=checkbox]');
+        if (mainCheckbox) {
+            mainCheckbox.addEventListener('change', function() {
+                const isChecked = this.checked;
+                container.querySelectorAll('tbody input[type=checkbox]').forEach(cb => {
+                    cb.checked = isChecked;
+                    const idx = parseInt(cb.dataset.idx);
+                    if (!isNaN(idx) && currentSequence[idx]) currentSequence[idx].checked = isChecked;
+                });
+                updateCountLabel();
+            });
+        }
+
+        container.querySelectorAll('tbody input[type=checkbox]').forEach(cb => {
             cb.addEventListener('change', function() {
                 const idx = parseInt(this.dataset.idx);
-                currentSequence[idx].checked = this.checked;
-                // Update count label
-                const total = currentSequence.filter(i => i.checked !== false).length;
-                const countEl = d.wrapper.querySelector('span[style*="fontSize"]') ||
-                    d.wrapper.querySelector('span');
-                if (countEl && countEl.textContent.includes('item(s)')) {
-                    countEl.textContent = `${total} item(s) selected`;
-                }
+                if (!isNaN(idx) && currentSequence[idx]) currentSequence[idx].checked = this.checked;
+                updateCountLabel();
             });
         });
     }
 
-    // Wire Smart Sequence button
-    function wireSmartBtn() {
-        const btn = d.wrapper.querySelector('#smart_seq_btn');
-        if (!btn) return;
-        btn.onclick = async () => {
-            if (smartSequenceActive) {
-                // Toggle off — restore original order
-                smartSequenceActive = false;
-                currentSequence = allItemNames.map((n, i) => {
-                    const existing = currentSequence.find(c => c.name === n) || {};
-                    const dItem = items.find(it => it.itemName === n) || {};
-                    return {
-                        ...existing,
-                        name: n,
-                        color: dItem.color || existing.color || '',
-                        quality: dItem.quality || dItem.custom_quality || existing.quality || '',
-                        gsm: dItem.gsm || existing.gsm || '',
-                        unit: dItem.unit || existing.unit || '',
-                        qty: dItem.qty || existing.qty || '',
-                        customer: dItem.customer || dItem.partyCode || existing.customer || '',
-                        phase: '',
-                        is_seed_bridge: false,
-                        sequence_no: i + 1,
-                        checked: existing.checked !== false
-                    };
-                });
-                d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
-                setTimeout(() => { wireCheckboxes(); wireSmartBtn(); }, 100);
-            } else {
-                // Toggle on — fetch smart sequence
-                btn.textContent = '⏳ Sequencing...';
-                btn.disabled = true;
-                try {
-                    const r = await frappe.call({
-                        method: 'production_scheduler.api.get_smart_push_sequence',
-                        args: { item_names: JSON.stringify(allItemNames) }
-                    });
-                    const smartSeq = r.message || [];
-                    if (smartSeq.length > 0) {
-                        smartSequenceActive = true;
-                        currentSequence = smartSeq.map(s => ({
-                            name: s.name,
-                            color: s.color || '',
-                            quality: s.quality || s.custom_quality || '',
-                            gsm: s.gsm || s.gsmVal || '',
-                            unit: s.unit || s.unitKey || '',
-                            qty: s.qty || '',
-                            customer: s.customer || s.partyCode || '',
-                            phase: s.phase || '',
-                            is_seed_bridge: !!s.is_seed_bridge,
-                            sequence_no: s.sequence_no,
-                            checked: (() => {
-                                const existing = currentSequence.find(c => c.name === s.name);
-                                return existing ? existing.checked !== false : true;
-                            })()
-                        }));
-                        d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
-                        setTimeout(() => { wireCheckboxes(); wireSmartBtn(); }, 100);
-                    } else {
-                        frappe.show_alert({ message: 'No sequence data returned', indicator: 'orange' });
-                        d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
-                        setTimeout(() => { wireCheckboxes(); wireSmartBtn(); }, 100);
-                    }
-                } catch (e) {
-                    console.error('Smart sequence error', e);
-                    frappe.show_alert({ message: 'Smart sequence failed', indicator: 'red' });
-                    d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
-                    setTimeout(() => { wireCheckboxes(); wireSmartBtn(); }, 100);
-                }
-            }
-        };
+
+    function updateCountLabel() {
+        const total = currentSequence.filter(i => i.checked !== false).length;
+        const countSpan = d.wrapper.querySelector('#seq-count-label');
+        if (countSpan) countSpan.textContent = total;
     }
 
-    setTimeout(() => { wireCheckboxes(); wireSmartBtn(); }, 300);
+    // Add Smart Push button to Dialog Footer
+    d.add_custom_action('🧠 Smart Auto-Tick', async () => {
+        if (smartSequenceActive) return; // Already active
+        
+        d.get_close_btn().hide();
+        const smartBtn = d.$wrapper.find('.btn-custom').last();
+        smartBtn.text('⏳ Sequencing...');
+        smartBtn.prop('disabled', true);
+        
+        try {
+            const r = await frappe.call({
+                method: 'production_scheduler.api.get_smart_push_sequence',
+                args: { item_names: JSON.stringify(currentSequence.map(s => s.name)) }
+            });
+            const smartSeq = r.message || [];
+            if (smartSeq.length > 0) {
+                smartSequenceActive = true;
+                currentSequence = smartSeq.map(s => ({
+                    name: s.name,
+                    color: s.color || '',
+                    quality: s.quality || s.custom_quality || '',
+                    gsm: s.gsm || s.gsmVal || '',
+                    unit: s.unit || s.unitKey || '',
+                    qty: s.qty || '',
+                    customer: s.customer || s.partyCode || '',
+                    phase: s.phase || '',
+                    is_seed_bridge: !!s.is_seed_bridge,
+                    sequence_no: s.sequence_no,
+                    checked: true // AUTO TICK THEM ALL
+                }));
+                d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
+                setTimeout(() => { wireCheckboxes(); }, 100);
+            } else {
+                frappe.show_alert({ message: 'No sequence data returned', indicator: 'orange' });
+            }
+        } catch (e) {
+            console.error('Smart sequence error', e);
+            frappe.show_alert({ message: 'Smart sequence failed', indicator: 'red' });
+        } finally {
+            smartBtn.text('✅ Smart Sequenced');
+            d.get_close_btn().show();
+        }
+    });
+
+    // Style the custom action button to look distinct
+    setTimeout(() => {
+        const smartBtn = d.$wrapper.find('.btn-custom').last();
+        smartBtn.removeClass('btn-default').addClass('btn-secondary');
+        smartBtn.css({'background-color': '#10b981', 'color': 'white', 'border': 'none', 'font-weight': 'bold'});
+    }, 100);
+
+    setTimeout(() => { wireCheckboxes(); }, 300);
 }
 
 
@@ -3157,54 +3201,52 @@ async function openPushColorDialog(color) {
         }
     });
 
-    // Generate HTML for item selection (checkbox list with per-item unit dropdown)
-    let html = `
-        <div style="max-height: 320px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;">
-            <div style="position: sticky; top: 0; background: #f8fafc; z-index: 10; padding: 10px; border-bottom: 1px solid #e2e8f0; display:flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 12px; color: #64748b;">
-                <div>
-                   <input type="checkbox" checked class="push-select-all" /> Select All
+    let smartActive = false;
+
+    // Render item rows (re-renderable after Smart Sort)
+    function renderItemRows(orderedItems) {
+        let html = `
+            <div style="max-height: 320px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;">
+                <div style="position: sticky; top: 0; background: #f8fafc; z-index: 10; padding: 10px; border-bottom: 1px solid #e2e8f0; display:flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 12px; color: #64748b;">
+                    <div><input type="checkbox" checked class="push-select-all" /> Select All</div>
+                    ${smartActive ? '<span style="font-size:11px;color:#1b5e20;background:#e8f5e9;padding:3px 8px;border-radius:10px;">✅ Smart Sequence Active</span>' : ''}
                 </div>
-            </div>
-            <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
-                <tbody>
-    `;
+                <table style="width: 100%; border-collapse: collapse; font-size: 11px;"><tbody>`;
 
-    items.forEach(item => {
-        // Auto-suggest unit from items existing unit if available
-        let unit = item.unit || "Unit 1";
-        if (unit === "Mixed" || unit === "Unassigned") unit = "Unit 1";
-        
-        html += `
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 10px 8px; text-align:center; width:30px;">
-                    <input type="checkbox" class="push-chk" value="${item.itemName}" checked />
-                </td>
-                <td style="padding: 10px 8px;">
-                    <div><b style="color:#1e293b;">${item.partyCode}</b></div>
-                    <div style="color:#64748b; font-size:10px; margin-top:2px;">${item.quality} · ${item.gsm} GSM</div>
-                </td>
-                <td style="padding: 10px 8px; width: 110px;">
-                    <select class="push-unit-sel" data-item="${item.itemName}" style="width:100%; padding:4px; font-size:11px; border:1px solid #cbd5e1; border-radius:4px; background:#fff; cursor:pointer;">
-                        <option value="Unit 1" ${unit === 'Unit 1' ? 'selected' : ''}>Unit 1</option>
-                        <option value="Unit 2" ${unit === 'Unit 2' ? 'selected' : ''}>Unit 2</option>
-                        <option value="Unit 3" ${unit === 'Unit 3' ? 'selected' : ''}>Unit 3</option>
-                        <option value="Unit 4" ${unit === 'Unit 4' ? 'selected' : ''}>Unit 4</option>
-                    </select>
-                </td>
-                <td style="padding: 10px 8px; text-align:right; width:80px;">
-                    <b>${item.qty} Kg</b>
-                </td>
-            </tr>
-        `;
-    });
+        orderedItems.forEach(item => {
+            let unit = item.unit || "Unit 1";
+            if (unit === "Mixed" || unit === "Unassigned") unit = "Unit 1";
+            const phaseBg = item._phase === 'white' ? '#f0fdf4' : item._phase === 'color' ? '#fffbeb' : '#fff';
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; background:${phaseBg};">
+                    <td style="padding: 8px; text-align:center; width:30px;">
+                        <input type="checkbox" class="push-chk" value="${item.itemName}" checked />
+                    </td>
+                    <td style="padding: 8px;">
+                        <div><b style="color:#1e293b;">${item.partyCode}</b></div>
+                        <div style="color:#64748b; font-size:10px; margin-top:2px;">${item.quality} · ${item.gsm} GSM · ${item.color}</div>
+                    </td>
+                    <td style="padding: 8px; width: 110px;">
+                        <select class="push-unit-sel" data-item="${item.itemName}" style="width:100%; padding:4px; font-size:11px; border:1px solid #cbd5e1; border-radius:4px; background:#fff; cursor:pointer;">
+                            <option value="Unit 1" ${unit === 'Unit 1' ? 'selected' : ''}>Unit 1</option>
+                            <option value="Unit 2" ${unit === 'Unit 2' ? 'selected' : ''}>Unit 2</option>
+                            <option value="Unit 3" ${unit === 'Unit 3' ? 'selected' : ''}>Unit 3</option>
+                            <option value="Unit 4" ${unit === 'Unit 4' ? 'selected' : ''}>Unit 4</option>
+                        </select>
+                    </td>
+                    <td style="padding: 8px; text-align:right; width:80px;"><b>${item.qty} Kg</b></td>
+                </tr>`;
+        });
 
-    html += `</tbody></table></div>`;
-    d.set_value("items_info", html);
+        html += `</tbody></table></div>`;
+        return html;
+    }
+
+    d.set_value("items_info", renderItemRows(items));
 
     // Track selections and trigger capacity preview
     window.updatePushSelection = () => {
         const selected = [];
-        // Important: Only select checkboxes inside the CURRENT dialog to prevent duplication from old hidden dialogs
         d.fields_dict.items_info.$wrapper.find('.push-chk').each(function() {
             if (this.checked) {
                 const itemName = this.value;
@@ -3216,6 +3258,24 @@ async function openPushColorDialog(color) {
         loadCapacityPreview(d);
     };
 
+    function wireItemEvents() {
+        const wrapper = d.fields_dict.items_info.$wrapper;
+        const selectAll = wrapper.find('.push-select-all');
+        const checkboxes = wrapper.find('.push-chk');
+        const selects = wrapper.find('.push-unit-sel');
+        
+        selectAll.on('change', function() {
+            checkboxes.prop('checked', this.checked);
+            window.updatePushSelection();
+        });
+        checkboxes.on('change', function() {
+            selectAll.prop('checked', checkboxes.length === checkboxes.filter(':checked').length);
+            window.updatePushSelection();
+        });
+        selects.on('change', () => window.updatePushSelection());
+        window.updatePushSelection();
+    }
+
     async function loadCapacityPreview(dialog) {
         const date = dialog.get_value("target_date");
         if (!date) return;
@@ -3225,18 +3285,15 @@ async function openPushColorDialog(color) {
         try {
             const r = await frappe.call({
                 method: "production_scheduler.api.get_color_chart_data",
-                args: { date: date }
+                args: { date: date, plan_name: selectedPlan.value }
             });
             const allItems = r.message || [];
             
-            // Calculate pushed weight per unit for checked items
             const pushLoads = {};
             const selected = dialog.calc_selected_items || [];
             selected.forEach(sel => {
                 const i = items.find(it => it.itemName === sel.name);
-                if (i) {
-                    pushLoads[sel.target_unit] = (pushLoads[sel.target_unit] || 0) + (i.qty || 0)/1000;
-                }
+                if (i) pushLoads[sel.target_unit] = (pushLoads[sel.target_unit] || 0) + (i.qty || 0)/1000;
             });
             
             let capHtml = `<div style="display:flex; flex-direction:column; gap:6px;">`;
@@ -3247,67 +3304,107 @@ async function openPushColorDialog(color) {
                 const pushWeight = pushLoads[u] || 0;
                 if (pushWeight > 0) {
                     unitsPrinted++;
-                    // Calculate existing order loads on this unit on this date
-                    // EXCLUDE items that we are currently pushing so we don't double count!
                     const pushingNames = selected.map(s => s.name);
-                    const existingU = allItems.filter(i => i.unit === u && i.plannedDate && !pushingNames.includes(i.itemName)); 
+                    const existingU = allItems.filter(i => i.unit === u && i.plannedDate && !pushingNames.includes(i.itemName));
                     const currentLoad = existingU.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
-                    
                     const afterPush = currentLoad + pushWeight;
                     const limit = limits[u];
                     const isOver = afterPush > limit;
-                    
                     if (isOver) capacityExceeded = true;
-                    
-                    capHtml += `
-                        <div style="padding: 6px 10px; border-radius: 6px; border: 1px solid ${isOver ? '#fda4af' : '#bbf7d0'}; background: ${isOver ? '#fff1f2' : '#f0fdf4'}; display:flex; justify-content:space-between; align-items:center;">
-                            <div>
-                                <div style="font-weight:700; font-size:12px; color:${isOver ? '#dc2626' : '#16a34a'};">${u}: ${currentLoad.toFixed(2)} / ${limit}T</div>
-                                <div style="font-size:10px; color:#475569; margin-top:2px;">After push: <b>${afterPush.toFixed(2)}T</b> <span style="color:#64748b;">(+${pushWeight.toFixed(2)}T)</span></div>
-                            </div>
-                            ${isOver ? '<span style="font-size:16px;" title="Capacity Exceeded">⚠️</span>' : '<span style="font-size:16px;">✅</span>'}
-                        </div>`;
+                    capHtml += `<div style="padding:6px 10px;border-radius:6px;border:1px solid ${isOver ? '#fda4af' : '#bbf7d0'};background:${isOver ? '#fff1f2' : '#f0fdf4'};display:flex;justify-content:space-between;align-items:center;">
+                        <div>
+                            <div style="font-weight:700;font-size:12px;color:${isOver ? '#dc2626' : '#16a34a'};">${u}: ${currentLoad.toFixed(2)} / ${limit}T</div>
+                            <div style="font-size:10px;color:#475569;margin-top:2px;">After push: <b>${afterPush.toFixed(2)}T</b> <span style="color:#64748b;">(+${pushWeight.toFixed(2)}T)</span></div>
+                        </div>
+                        ${isOver ? '<span style="font-size:16px;" title="Capacity Exceeded">⚠️</span>' : '<span style="font-size:16px;">✅</span>'}  
+                    </div>`;
                 }
             });
             
-            if (unitsPrinted === 0) {
-                capHtml += `<div style="font-size:11px; color:#64748b; font-style:italic;">Select items above to see capacity footprint.</div>`;
-            }
-            
+            if (unitsPrinted === 0) capHtml += `<div style="font-size:11px;color:#64748b;font-style:italic;">Select items above to see capacity footprint.</div>`;
             capHtml += `</div>`;
             dialog.set_value("capacity_info", capHtml);
             dialog.capacityExceeded = capacityExceeded;
-        } catch(e) {
-            console.error(e);
-        }
+        } catch(e) { console.error(e); }
     }
     
-    // Initial load - wait for DOM to mount elements so Selectors work
+    // Initial load - wait for DOM
+    setTimeout(() => wireItemEvents(), 200);
+
+    // Add Smart Auto-Tick button
+    d.add_custom_action('🧠 Smart Auto-Tick', async () => {
+        if (smartActive) return;
+        const btn = d.$wrapper.find('.btn-custom').last();
+        btn.text('⏳ Sequencing...');
+        btn.prop('disabled', true);
+        
+        try {
+            const allNames = items.map(i => i.itemName);
+            const r = await frappe.call({
+                method: 'production_scheduler.api.get_smart_push_sequence',
+                args: { item_names: JSON.stringify(allNames) }
+            });
+            const smartSeq = r.message || [];
+            if (smartSeq.length > 0) {
+                smartActive = true;
+                // Re-order items array according to smart sequence
+                const orderedItems = smartSeq.map(s => {
+                    const orig = items.find(i => i.itemName === s.name);
+                    return orig ? { ...orig, _phase: s.phase } : null;
+                }).filter(Boolean);
+                d.set_value("items_info", renderItemRows(orderedItems));
+                setTimeout(() => wireItemEvents(), 100);
+                btn.text('✅ Smart Sequenced');
+                frappe.show_alert({ message: '🧠 Items reordered by Smart Sequence (White → Color chain)', indicator: 'green' });
+            } else {
+                frappe.show_alert({ message: 'No sequence data returned', indicator: 'orange' });
+                btn.text('🧠 Smart Auto-Tick');
+                btn.prop('disabled', false);
+            }
+        } catch(e) {
+            console.error('Smart sequence error', e);
+            frappe.show_alert({ message: 'Smart sequence failed', indicator: 'red' });
+            btn.text('🧠 Smart Auto-Tick');
+            btn.prop('disabled', false);
+        }
+    });
+
     setTimeout(() => {
-        // Bind events strictly to THIS dialog instance
-        const wrapper = d.fields_dict.items_info.$wrapper;
-        const selectAll = wrapper.find('.push-select-all');
-        const checkboxes = wrapper.find('.push-chk');
-        const selects = wrapper.find('.push-unit-sel');
-        
-        selectAll.on('change', function() {
-            checkboxes.prop('checked', this.checked);
-            window.updatePushSelection();
-        });
-        
-        checkboxes.on('change', function() {
-            selectAll.prop('checked', checkboxes.length === checkboxes.filter(':checked').length);
-            window.updatePushSelection();
-        });
-        
-        selects.on('change', function() {
-            window.updatePushSelection();
-        });
-        
-        window.updatePushSelection();
-    }, 200);
+        const smartBtn = d.$wrapper.find('.btn-custom').last();
+        smartBtn.css({'background-color': '#10b981', 'color': 'white', 'border': 'none', 'font-weight': 'bold'});
+    }, 100);
 
     d.show();
+}
+
+async function revertColorGroup(color) {
+    if (!confirm(`Revert pushed items for color "${color}" back to the Color Chart?`)) return;
+    
+    // Find all items of this color that are pushed
+    const itemsToRevert = rawData.value.filter(d => d.color === color && d.plannedDate);
+    
+    if (itemsToRevert.length === 0) {
+        frappe.msgprint(`No pushed orders found for ${color}.`);
+        return;
+    }
+    
+    const itemNames = itemsToRevert.map(d => d.itemName);
+    
+    try {
+        const r = await frappe.call({
+            method: "production_scheduler.api.revert_items_to_color_chart",
+            args: { item_names: JSON.stringify(itemNames) }
+        });
+        if (r.message && r.message.status === 'success') {
+            frappe.show_alert({ message: `✅ Reverted ${r.message.reverted_sheets} planning sheet(s) completely.`, indicator: 'green' });
+            fetchData();
+        } else {
+            frappe.msgprint(r.message?.message || "Revert failed.");
+        }
+    } catch(e) {
+        console.error("Revert Error", e);
+        frappe.msgprint("Error communicating with revert API.");
+    }
 }
 
 // ---- PULL ORDERS FROM FUTURE ----
