@@ -1,6 +1,55 @@
 ﻿import frappe
 from frappe import _
 from frappe.utils import getdate, flt
+import json
+
+def generate_party_code(doc):
+    """One Sales Order = One Party Code.
+    Generates a unique party_code if not present and copies it to child items.
+    """
+    if doc.get('party_code'):
+        return
+    # Try to reuse existing party_code from another Planning Sheet of same SO
+    existing_party_code = None
+    if doc.get('sales_order'):
+        existing_party_code = frappe.db.get_value(
+            "Planning sheet",
+            {"sales_order": doc.sales_order, "party_code": ["!=" , ""]},
+            "party_code",
+        )
+    if existing_party_code:
+        doc.party_code = existing_party_code
+    else:
+        # Generate new code based on year and month
+        row = frappe.db.sql("""
+            SELECT DATE_FORMAT(NOW(), '%y') AS yy,
+                   MONTH(NOW()) AS mm
+        """, as_dict=1)[0]
+        yy = row["yy"]
+        mm = int(row["mm"])
+        month_map = {1: "A", 2: "B", 3: "C", 4: "D", 5: "E", 6: "F", 7: "G", 8: "H", 9: "I", 10: "J", 11: "K", 12: "L"}
+        mcode = month_map.get(mm, "A")
+        prefix = mcode + yy
+        last_code = frappe.db.sql("""
+            SELECT party_code
+            FROM `tabPlanning sheet`
+            WHERE party_code LIKE %(prefix)s
+            ORDER BY CAST(SUBSTRING(party_code, %(offset)s) AS UNSIGNED) DESC
+            LIMIT 1
+        """, {"prefix": prefix + "%", "offset": len(prefix) + 1}, as_dict=1)
+        series = 1
+        if last_code:
+            try:
+                series = int(last_code[0]["party_code"][len(prefix):]) + 1
+            except Exception:
+                series = 1
+        s = str(series).zfill(3)
+        doc.party_code = prefix + s
+    # Copy to child items if any
+    if doc.get("items"):
+        for item_row in doc.items:
+            item_row.party_code = doc.party_code
+
 
 
 # --- DEFINITIONS ---
@@ -2406,3 +2455,276 @@ def revert_pb_push(pb_plan_name, date=None):
 
 	frappe.db.commit()
 	return {"status": "success", "reverted": reverted, "sheets_removed": len(pb_sheets)}
+
+# ------------------------------------------------------------
+# AUTO-CREATE PLANNING SHEET (BACKGROUND EXECUTION)
+# ------------------------------------------------------------
+
+def auto_create_planning_sheet(doc):
+    """Create a Planning Sheet for a Sales Order.
+    - Uses the first unlocked Color Chart plan.
+    - If *all* plans are locked, aborts creation (no default fallback).
+    - Does NOT set `custom_planned_date`; it will be filled when the sheet is pushed to the Production Board.
+    """
+    # 1. FETCH UNLOCKED PLAN
+    cc_plan = None
+    try:
+        raw_string = frappe.db.get_value("DefaultValue", {"defkey": "production_scheduler_color_chart_plans", "parent": "__default"}, "defvalue")
+        if raw_string:
+            parsed = json.loads(raw_string)
+            if isinstance(parsed, str):
+                parsed = json.loads(parsed)
+            if isinstance(parsed, list):
+                for plan in parsed:
+                    if int(plan.get("locked", 0)) == 0:
+                        cc_plan = plan.get("name")
+                        break
+    except Exception as e:
+        frappe.log_error("Plan Lock Fetch Error (auto-create)", str(e))
+
+    if not cc_plan:
+        # All plans are locked – do not create a sheet
+        frappe.msgprint("⚠️ All Color Chart plans are locked – Planning Sheet not created.", indicator="orange", alert=True)
+        return None
+
+    # 2. CHECK IF AN UNLOCKED SHEET ALREADY EXISTS FOR THIS ORDER
+    existing = frappe.get_all("Planning sheet",
+        filters={"sales_order": doc.name, "docstatus": ["<", 2]},
+        fields=["name", "custom_plan_name", "docstatus"]
+    )
+    for s in existing:
+        if s.docstatus != 0:
+            continue
+        if (s.custom_plan_name or "Default") == cc_plan:
+            # Sheet already exists for the unlocked plan – nothing to do
+            return frappe.get_doc("Planning sheet", s.name)
+
+    # 3. CREATE PLANNING SHEET (no planned date yet)
+    generate_party_code(doc)
+    ps = frappe.new_doc("Planning sheet")
+    ps.sales_order = doc.name
+    ps.customer = doc.customer
+    ps.party_code = doc.get("party_code") or ""
+    ps.ordered_date = doc.transaction_date
+    # custom_planned_date intentionally left empty – will be set later when pushed
+    ps.dod = doc.delivery_date
+    ps.planning_status = "Draft"
+    ps.custom_plan_name = cc_plan
+    ps.custom_pb_plan_name = ""
+
+    # Populate items – reuse the same parsing logic from the original script
+    for it in doc.items:
+        raw_txt = (it.item_code or "") + " " + (it.item_name or "")
+        clean_txt = raw_txt.upper().replace("-", " ").replace("_", " ").replace("(", " ").replace(")", " ")
+        clean_txt = clean_txt.replace("''", " INCH ").replace('"', " INCH ")
+        words = clean_txt.split()
+
+        # GSM extraction
+        gsm = 0
+        for i, w in enumerate(words):
+            if w == "GSM" and i > 0 and words[i-1].isdigit():
+                gsm = int(words[i-1])
+                break
+            elif w.endswith("GSM") and w[:-3].isdigit():
+                gsm = int(w[:-3])
+                break
+
+        # WIDTH extraction
+        width = 0.0
+        for i, w in enumerate(words):
+            if w == "W" and i < len(words)-1 and words[i+1].replace('.','',1).isdigit():
+                width = float(words[i+1])
+                break
+            elif w.startswith("W") and len(w) > 1 and w[1:].replace('.','',1).isdigit():
+                width = float(w[1:])
+                break
+            elif w == "INCH" and i > 0 and words[i-1].replace('.','',1).isdigit():
+                width = float(words[i-1])
+                break
+            elif w.endswith("INCH") and w[:-4].replace('.','',1).isdigit():
+                width = float(w[:-4])
+                break
+
+        # QUALITY & COLOR detection
+        search_text = " " + " ".join(words) + " "
+        qual = ""
+        for q in QUAL_LIST:
+            if (" " + q + " ") in search_text:
+                qual = q
+                break
+        col = ""
+        for c in COL_LIST:
+            if (" " + c + " ") in search_text:
+                col = c
+                break
+
+        # WEIGHT calculation
+        m_roll = float(it.custom_meter_per_roll or 0)
+        wt = 0.0
+        if gsm > 0 and width > 0 and m_roll > 0:
+            wt = (gsm * width * m_roll * 0.0254) / 1000
+
+        # UNIT determination
+        unit = "Unit 1"
+        if qual:
+            q_up = qual.upper()
+            if gsm > 50 and q_up in UNIT_1_MAP:
+                unit = "Unit 1"
+            elif gsm > 20 and q_up in UNIT_2_MAP:
+                unit = "Unit 2"
+            elif gsm > 10 and q_up in UNIT_3_MAP:
+                unit = "Unit 3"
+            elif q_up in UNIT_4_MAP:
+                unit = "Unit 4"
+
+        ps.append("items", {
+            "sales_order_item": it.name,
+            "item_code": it.item_code,
+            "item_name": it.item_name,
+            "qty": it.qty,
+            "uom": it.uom,
+            "meter": float(it.custom_meter or 0),
+            "meter_per_roll": m_roll,
+            "no_of_rolls": float(it.custom_no_of_rolls or 0),
+            "gsm": gsm,
+            "width_inch": width,
+            "custom_quality": qual,
+            "color": col,
+            "weight_per_roll": wt,
+            "unit": unit,
+            "party_code": ps.party_code,
+        })
+
+    ps.flags.ignore_permissions = True
+    ps.insert()
+    frappe.db.commit()
+    frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{cc_plan}</b>")
+    return ps
+
+# ------------------------------------------------------------
+# REGENERATE PLANNING SHEET (MANUAL RE-CREATION)
+# ------------------------------------------------------------
+
+def regenerate_planning_sheet(so_name):
+    """Regenerate a Planning Sheet for a Sales Order.
+    - Fails if an active sheet already exists.
+    - Uses the first unlocked Color Chart plan; aborts if all locked.
+    - Does NOT set `custom_planned_date` on creation.
+    """
+    if not so_name:
+        frappe.throw("Sales Order Name is required")
+
+    existing = frappe.db.get_value("Planning sheet", {"sales_order": so_name, "docstatus": ["<", 2]}, "name")
+    if existing:
+        frappe.throw(f"⚠️ An active Planning Sheet <b>{existing}</b> already exists. Cancel it first.")
+
+    doc = frappe.get_doc("Sales Order", so_name)
+
+    # 1. FETCH UNLOCKED PLAN (same logic as auto_create)
+    cc_plan = None
+    try:
+        raw_string = frappe.db.get_value("DefaultValue", {"defkey": "production_scheduler_color_chart_plans", "parent": "__default"}, "defvalue")
+        if raw_string:
+            parsed = json.loads(raw_string)
+            if isinstance(parsed, str):
+                parsed = json.loads(parsed)
+            if isinstance(parsed, list):
+                for plan in parsed:
+                    if int(plan.get("locked", 0)) == 0:
+                        cc_plan = plan.get("name")
+                        break
+    except Exception as e:
+        frappe.log_error("Plan Lock Fetch Error (regen)", str(e))
+
+    if not cc_plan:
+        frappe.msgprint("⚠️ All Color Chart plans are locked – cannot regenerate Planning Sheet.", indicator="orange", alert=True)
+        return None
+
+    # 2. CREATE PLANNING SHEET (same as auto_create, without planned date)
+    generate_party_code(doc)
+    ps = frappe.new_doc("Planning sheet")
+    ps.sales_order = doc.name
+    ps.customer = doc.customer
+    ps.party_code = doc.get("party_code") or ""
+    ps.ordered_date = doc.transaction_date
+    ps.dod = doc.delivery_date
+    ps.planning_status = "Draft"
+    ps.custom_plan_name = cc_plan
+    ps.custom_pb_plan_name = ""
+
+    for it in doc.items:
+        raw_txt = (it.item_code or "") + " " + (it.item_name or "")
+        clean_txt = raw_txt.upper().replace("-", " ").replace("_", " ").replace("(", " ").replace(")", " ")
+        clean_txt = clean_txt.replace("''", " INCH ").replace('"', " INCH ")
+        words = clean_txt.split()
+        gsm = 0
+        for i, w in enumerate(words):
+            if w == "GSM" and i > 0 and words[i-1].isdigit():
+                gsm = int(words[i-1])
+                break
+            elif w.endswith("GSM") and w[:-3].isdigit():
+                gsm = int(w[:-3])
+                break
+        width = 0.0
+        for i, w in enumerate(words):
+            if w == "W" and i < len(words)-1 and words[i+1].replace('.','',1).isdigit():
+                width = float(words[i+1])
+                break
+            elif w.startswith("W") and len(w) > 1 and w[1:].replace('.','',1).isdigit():
+                width = float(w[1:])
+                break
+            elif w == "INCH" and i > 0 and words[i-1].replace('.','',1).isdigit():
+                width = float(words[i-1])
+                break
+            elif w.endswith("INCH") and w[:-4].replace('.','',1).isdigit():
+                width = float(w[:-4])
+                break
+        search_text = " " + " ".join(words) + " "
+        qual = ""
+        for q in QUAL_LIST:
+            if (" " + q + " ") in search_text:
+                qual = q
+                break
+        col = ""
+        for c in COL_LIST:
+            if (" " + c + " ") in search_text:
+                col = c
+                break
+        m_roll = float(it.custom_meter_per_roll or 0)
+        wt = 0.0
+        if gsm > 0 and width > 0 and m_roll > 0:
+            wt = (gsm * width * m_roll * 0.0254) / 1000
+        unit = "Unit 1"
+        if qual:
+            q_up = qual.upper()
+            if gsm > 50 and q_up in UNIT_1_MAP:
+                unit = "Unit 1"
+            elif gsm > 20 and q_up in UNIT_2_MAP:
+                unit = "Unit 2"
+            elif gsm > 10 and q_up in UNIT_3_MAP:
+                unit = "Unit 3"
+            elif q_up in UNIT_4_MAP:
+                unit = "Unit 4"
+        ps.append("items", {
+            "sales_order_item": it.name,
+            "item_code": it.item_code,
+            "item_name": it.item_name,
+            "qty": it.qty,
+            "uom": it.uom,
+            "meter": float(it.custom_meter or 0),
+            "meter_per_roll": m_roll,
+            "no_of_rolls": float(it.custom_no_of_rolls or 0),
+            "gsm": gsm,
+            "width_inch": width,
+            "custom_quality": qual,
+            "color": col,
+            "weight_per_roll": wt,
+            "unit": unit,
+            "party_code": ps.party_code,
+        })
+
+    ps.flags.ignore_permissions = True
+    ps.insert()
+    frappe.db.commit()
+    frappe.msgprint(f"✅ Regenerated Planning Sheet <b>{ps.name}</b> in unlocked plan <b>{cc_plan}</b>")
+    return ps
