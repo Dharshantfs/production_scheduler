@@ -1225,16 +1225,183 @@ function updateRescueSelection(d) {
 
 // ---- MOVE TO PLAN (PRODUCTION BOARD INTERNAL) ----
 function openMovePlanDialog() {
-    const items = filteredData.value || [];
-    if (items.length === 0) {
+    const allItems = filteredData.value || [];
+    if (allItems.length === 0) {
         frappe.msgprint("No orders visible to move!");
         return;
     }
 
     const availablePlans = plans.value.filter(p => !p.locked).map(p => p.name);
-    
+    const isAggregateView = viewScope.value === 'monthly' || viewScope.value === 'weekly';
+
+    // Collect unique filter options from visible items
+    const uniqueUnits   = [...new Set(allItems.map(i => i.unit || 'Mixed'))].sort();
+    const uniqueColors  = [...new Set(allItems.map(i => i.color || '').filter(Boolean))].sort();
+    const uniqueParties = [...new Set(allItems.map(i => i.partyCode || '').filter(Boolean))].sort();
+    const uniqueDates   = [...new Set(allItems.map(i => i.orderDate || i.date || '').filter(Boolean))].sort();
+
+    // State for active filters
+    let activeFilters = { logic: 'AND', date: '', partyCode: '', unit: '', color: '' };
+    let currentItems = [...allItems];
+
+    function applyFilters() {
+        const { logic, date, partyCode, unit, color } = activeFilters;
+        const checks = [
+            date      ? (i => (i.orderDate || i.date || '') === date)          : null,
+            partyCode ? (i => (i.partyCode || '') === partyCode)               : null,
+            unit      ? (i => (i.unit || 'Mixed') === unit)                    : null,
+            color     ? (i => (i.color || '').toLowerCase().includes(color.toLowerCase())) : null
+        ].filter(Boolean);
+
+        if (checks.length === 0) return [...allItems];
+
+        if (logic === 'AND') {
+            return allItems.filter(i => checks.every(fn => fn(i)));
+        } else {
+            return allItems.filter(i => checks.some(fn => fn(i)));
+        }
+    }
+
+    function buildFilterBar() {
+        return `
+        <div id="move-filter-bar" style="background:#f8fafc; border:1px solid #e5e7eb; border-radius:6px; padding:10px 12px; margin-bottom:10px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span style="font-size:11px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:.5px;">Filter</span>
+                <select id="move-filter-logic" style="font-size:11px; padding:2px 6px; border-radius:4px; border:1px solid #cbd5e1; background:#fff; font-weight:700; color:#2563eb;">
+                    <option value="AND">AND</option>
+                    <option value="OR">OR</option>
+                </select>
+                
+                <select id="move-filter-date" style="font-size:11px; padding:2px 6px; border-radius:4px; border:1px solid #cbd5e1; background:#fff;">
+                    <option value="">All Dates</option>
+                    ${uniqueDates.map(d => `<option value="${d}">${d}</option>`).join('')}
+                </select>
+                
+                <select id="move-filter-party" style="font-size:11px; padding:2px 6px; border-radius:4px; border:1px solid #cbd5e1; background:#fff;">
+                    <option value="">All Parties</option>
+                    ${uniqueParties.map(p => `<option value="${p}">${p}</option>`).join('')}
+                </select>
+                
+                <select id="move-filter-unit" style="font-size:11px; padding:2px 6px; border-radius:4px; border:1px solid #cbd5e1; background:#fff;">
+                    <option value="">All Units</option>
+                    ${uniqueUnits.map(u => `<option value="${u}">${u === 'Mixed' ? 'Unassigned' : u}</option>`).join('')}
+                </select>
+                
+                <input id="move-filter-color" type="text" placeholder="Color..." style="font-size:11px; padding:2px 8px; border-radius:4px; border:1px solid #cbd5e1; width:110px;">
+                
+                <button id="move-filter-reset" style="font-size:11px; padding:2px 8px; border-radius:4px; border:1px solid #cbd5e1; background:#fff; color:#dc2626; cursor:pointer;">✕ Reset</button>
+            </div>
+        </div>`;
+    }
+
+    function buildItemTable(items) {
+        if (items.length === 0) {
+            return `<div style="padding:20px; text-align:center; color:#94a3b8; font-style:italic;">No orders match the current filters.</div>`;
+        }
+
+        const groupedItems = {};
+        items.forEach(i => {
+            const key = i.unit || 'Mixed';
+            if (!groupedItems[key]) groupedItems[key] = [];
+            groupedItems[key].push(i);
+        });
+
+        let totalWeight = 0;
+        let html = `
+            <div style="max-height: 320px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius:4px;">
+                <table class="table table-bordered table-hover" style="margin-bottom:0; font-size:12px;">
+                    <thead>
+                        <tr style="background:#f3f4f6; position:sticky; top:0; z-index:1;">
+                            <th style="width:40px; text-align:center;"><input type="checkbox" id="move-select-all" checked></th>
+                            <th>Customer / Party Code</th>
+                            <th>Date</th>
+                            <th>Color</th>
+                            <th>Quality / GSM</th>
+                            <th style="text-align:right;">Qty (Kg)</th>
+                            <th>Unit</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+        Object.keys(groupedItems).sort().forEach(u => {
+            html += `<tr style="background:#f8fafc;"><td colspan="7" style="font-weight:bold; font-size:11px; color:#2563eb; padding:4px 8px;">${u === 'Mixed' ? 'Unassigned' : u}</td></tr>`;
+            groupedItems[u].forEach(i => {
+                totalWeight += (i.qty || 0);
+                const partyCode = i.partyCode || '';
+                const orderDate = i.orderDate || i.date || '';
+                html += `
+                    <tr>
+                        <td style="text-align:center; vertical-align:middle;">
+                            <input type="checkbox" class="cc-move-checkbox"
+                                value="${i.itemName}"
+                                checked
+                                data-qty="${i.qty || 0}"
+                                data-unit="${i.unit || 'Mixed'}">
+                        </td>
+                        <td style="vertical-align:middle;">
+                            <div style="font-weight:600; color:#111827;">${i.customer || '-'}</div>
+                            <div style="font-size:10px; color:#6b7280; margin-top:1px;">${partyCode || '<span style="color:#f87171;">no party code</span>'}</div>
+                        </td>
+                        <td style="vertical-align:middle; font-size:11px; color:#475569;">${orderDate}</td>
+                        <td style="vertical-align:middle;">
+                            <span style="display:inline-flex; align-items:center; gap:4px;">
+                                <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${getHexColor(i.color)}; border:1px solid rgba(0,0,0,.1);"></span>
+                                ${i.color || '-'}
+                            </span>
+                        </td>
+                        <td style="vertical-align:middle;">${i.quality || '-'} <span style="color:#94a3b8; font-size:10px;">${i.gsm ? i.gsm + ' GSM' : ''}</span></td>
+                        <td style="text-align:right; font-weight:700; vertical-align:middle;">${i.qty}</td>
+                        <td style="vertical-align:middle;">${(i.unit || 'Mixed') === 'Mixed' ? 'Unassigned' : i.unit}</td>
+                    </tr>`;
+            });
+        });
+
+        html += `</tbody></table></div>
+            <div style="margin-top:8px; font-weight:bold; text-align:right; font-size:13px; padding-right:4px;">
+                Total: <span id="move-total-weight" style="color:#2563eb;">${(totalWeight / 1000).toFixed(3)}</span> Tons
+                &nbsp;·&nbsp; <span id="move-item-count" style="color:#475569;">${items.length} orders</span>
+            </div>`;
+        return html;
+    }
+
+    function rebuildTable() {
+        currentItems = applyFilters();
+        d.fields_dict.items_html.$wrapper.find('#move-item-table-wrap').html(buildItemTable(currentItems));
+        attachCheckboxListeners();
+    }
+
+    function attachCheckboxListeners() {
+        const wrap = d.fields_dict.items_html.$wrapper;
+        const selectAll = wrap.find('#move-select-all');
+        const cbs = wrap.find('.cc-move-checkbox');
+        const weightSpan = wrap.find('#move-total-weight');
+        const countSpan = wrap.find('#move-item-count');
+
+        function updateTotals() {
+            let total = 0, count = 0;
+            cbs.each(function() {
+                if ($(this).is(':checked')) {
+                    total += parseFloat($(this).attr('data-qty') || 0);
+                    count++;
+                }
+            });
+            weightSpan.text((total / 1000).toFixed(3));
+            countSpan.text(`${count} selected`);
+        }
+
+        selectAll.on('change', function() {
+            cbs.prop('checked', $(this).is(':checked'));
+            updateTotals();
+        });
+        cbs.on('change', function() {
+            selectAll.prop('checked', cbs.length === cbs.filter(':checked').length);
+            updateTotals();
+        });
+    }
+
     const d = new frappe.ui.Dialog({
-        title: 'Move Orders to Plan',
+        title: '📋 Move Orders to Plan',
+        size: 'large',
         fields: [
             {
                 label: 'Move orders to Production Board Plan',
@@ -1242,35 +1409,43 @@ function openMovePlanDialog() {
                 fieldtype: 'Select',
                 options: availablePlans,
                 reqd: 1,
-                description: "Select which unlocked Production Board Plan to move these items to."
+                description: isAggregateView
+                    ? `⚡ ${viewScope.value} view: capacity check is bypassed (aggregate mode).`
+                    : "Select which unlocked Production Board Plan to move these items to."
             },
             {
                 label: 'Target Unit (Optional)',
                 fieldname: 'target_unit',
                 fieldtype: 'Select',
                 options: ['', ...units],
-                description: 'Leave empty to keep current units.'
+                description: 'Leave empty to keep each order\'s current unit.'
             },
             {
                 fieldname: 'items_html',
                 fieldtype: 'HTML',
-                label: 'Orders to Move'
+                label: ''
             }
         ],
         primary_action_label: 'Move Orders',
         primary_action: async (values) => {
-            const selectedItems = Array.from(document.querySelectorAll('.cc-move-checkbox:checked'))
-                                       .map(cb => cb.value);
-            
+            const selectedItems = Array.from(
+                d.fields_dict.items_html.$wrapper.find('.cc-move-checkbox:checked')
+            ).map(cb => cb.value);
+
             if (selectedItems.length === 0) {
                 frappe.msgprint("Please select at least one order to move.");
                 return;
             }
-            
-            d.get_primary_btn().prop('disabled', true);
-            
-            const targetDate = viewScope.value === 'daily' ? filterOrderDate.value : (items[0].orderDate || items[0].date);
-            
+
+            d.get_primary_btn().prop('disabled', true).text('Moving...');
+
+            // In monthly/weekly view, keep each item on its own date; use first available
+            const targetDate = viewScope.value === 'daily'
+                ? filterOrderDate.value
+                : (currentItems.find(i => selectedItems.includes(i.itemName))?.orderDate
+                   || currentItems.find(i => selectedItems.includes(i.itemName))?.date
+                   || filterOrderDate.value);
+
             try {
                 const r = await frappe.call({
                     method: "production_scheduler.api.move_orders_to_date",
@@ -1278,113 +1453,74 @@ function openMovePlanDialog() {
                         item_names: selectedItems,
                         target_date: targetDate,
                         target_unit: values.target_unit || null,
-                        pb_plan_name: values.target_plan
+                        pb_plan_name: values.target_plan,
+                        force_move: isAggregateView ? 1 : 0
                     }
                 });
-                
+
                 if (r.message && r.message.status === 'success') {
-                    frappe.show_alert({ message: `Successfully moved ${r.message.moved_items} items to ${values.target_plan}`, indicator: 'green' });
+                    frappe.show_alert({
+                        message: `✅ Moved ${r.message.moved_items || selectedItems.length} orders to "${values.target_plan}"`,
+                        indicator: 'green'
+                    });
                     d.hide();
                     fetchData();
                 } else {
-                    frappe.msgprint(r.message.message || "Failed to move orders");
+                    frappe.msgprint(r.message?.message || "Failed to move orders");
+                    d.get_primary_btn().prop('disabled', false).text('Move Orders');
                 }
             } catch (e) {
                 console.error("Error moving orders to plan", e);
-                frappe.msgprint("An error occurred while moving orders.");
-            } finally {
-                d.get_primary_btn().prop('disabled', false);
+                frappe.msgprint("An error occurred while moving orders: " + (e.message || e));
+                d.get_primary_btn().prop('disabled', false).text('Move Orders');
             }
         }
     });
 
-    // Render items list mimicking the Push dialog
-    let html = `
-        <div style="max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 4px; padding: 8px;">
-            <table class="table table-bordered table-hover" style="margin-bottom: 0; font-size: 12px;">
-                <thead>
-                    <tr style="background: #f3f4f6;">
-                        <th style="width: 40px; text-align: center;"><input type="checkbox" id="move-select-all" checked></th>
-                        <th>Item</th>
-                        <th>Color</th>
-                        <th>Quality</th>
-                        <th>Qty (Kg)</th>
-                        <th>Unit</th>
-                    </tr>
-                </thead>
-                <tbody>
-    `;
-    
-    let totalWeight = 0;
-    
-    // Group items by Unit
-    const groupedItems = {};
-    items.forEach(i => {
-        if (!groupedItems[i.unit]) groupedItems[i.unit] = [];
-        groupedItems[i.unit].push(i);
-    });
+    // Build HTML with filter bar + table
+    const fullHtml = buildFilterBar() + `<div id="move-item-table-wrap">${buildItemTable(allItems)}</div>`;
+    d.fields_dict.items_html.$wrapper.html(fullHtml);
+    attachCheckboxListeners();
 
-    Object.keys(groupedItems).sort().forEach(u => {
-        html += `<tr style="background: #f8fafc;"><td colspan="6" style="font-weight: bold; font-size: 11px;">${u === 'Mixed' ? 'Unassigned' : u}</td></tr>`;
-        groupedItems[u].forEach(i => {
-            totalWeight += (i.qty || 0);
-            html += `
-                <tr>
-                    <td style="text-align: center;">
-                        <input type="checkbox" class="cc-move-checkbox" value="${i.itemName}" checked data-qty="${i.qty || 0}" data-unit="${i.unit}">
-                    </td>
-                    <td>${i.customer} <br><span style="color:#64748b; font-size:10px;">${i.code}</span></td>
-                    <td>${i.color}</td>
-                    <td>${i.quality} <span style="color:#64748b; font-size:10px;">${i.gsm} GSM</span></td>
-                    <td style="text-align: right; font-weight: bold;">${i.qty}</td>
-                    <td>${i.unit === 'Mixed' ? 'Unassigned' : i.unit}</td>
-                </tr>
-            `;
-        });
-    });
-
-    html += `
-                </tbody>
-            </table>
-        </div>
-        <div style="margin-top: 10px; font-weight: bold; text-align: right; font-size: 14px; padding-right: 10px;">
-            Total Weight: <span id="move-total-weight" style="color: #2563eb;">${(totalWeight / 1000).toFixed(3)}</span> Tons
-        </div>
-    `;
-
-    d.fields_dict.items_html.$wrapper.html(html);
-
-    // Add event listeners for checkboxes
+    // Attach filter listeners after DOM is ready
     setTimeout(() => {
-        const selectAll = d.fields_dict.items_html.$wrapper.find('#move-select-all');
-        const itemCheckboxes = d.fields_dict.items_html.$wrapper.find('.cc-move-checkbox');
-        const weightSpan = d.fields_dict.items_html.$wrapper.find('#move-total-weight');
+        const wrap = d.fields_dict.items_html.$wrapper;
 
-        function updateTotal() {
-            let total = 0;
-            itemCheckboxes.each(function() {
-                if ($(this).is(':checked')) {
-                    total += parseFloat($(this).attr('data-qty') || 0);
-                }
-            });
-            weightSpan.text((total / 1000).toFixed(3));
-        }
-
-        selectAll.on('change', function() {
-            const isChecked = $(this).is(':checked');
-            itemCheckboxes.prop('checked', isChecked);
-            updateTotal();
+        wrap.find('#move-filter-logic').on('change', function() {
+            activeFilters.logic = $(this).val();
+            rebuildTable();
         });
-
-        itemCheckboxes.on('change', function() {
-            const allChecked = itemCheckboxes.length === itemCheckboxes.filter(':checked').length;
-            selectAll.prop('checked', allChecked);
-            updateTotal();
+        wrap.find('#move-filter-date').on('change', function() {
+            activeFilters.date = $(this).val();
+            rebuildTable();
         });
-    }, 100);
+        wrap.find('#move-filter-party').on('change', function() {
+            activeFilters.partyCode = $(this).val();
+            rebuildTable();
+        });
+        wrap.find('#move-filter-unit').on('change', function() {
+            activeFilters.unit = $(this).val();
+            rebuildTable();
+        });
+        wrap.find('#move-filter-color').on('input', function() {
+            activeFilters.color = $(this).val();
+            rebuildTable();
+        });
+        wrap.find('#move-filter-reset').on('click', function() {
+            activeFilters = { logic: 'AND', date: '', partyCode: '', unit: '', color: '' };
+            wrap.find('#move-filter-logic').val('AND');
+            wrap.find('#move-filter-date').val('');
+            wrap.find('#move-filter-party').val('');
+            wrap.find('#move-filter-unit').val('');
+            wrap.find('#move-filter-color').val('');
+            rebuildTable();
+        });
+    }, 150);
 
     d.show();
 }
+
+
 
 const isAdmin = computed(() => frappe.user.has_role("System Manager"));
 
