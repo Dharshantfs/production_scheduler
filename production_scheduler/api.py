@@ -58,6 +58,44 @@ UNIT_2 = ["GOLD", "SILVER", "BRONZE", "CLASSIC", "SUPER CLASSIC", "LIFE STYLE", 
 UNIT_3 = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER", "BRONZE"]
 UNIT_4 = ["PREMIUM", "GOLD", "SILVER", "BRONZE"]
 
+QUAL_LIST = ["SUPER PLATINUM", "SUPER CLASSIC", "SUPER ECO", "ECO SPECIAL", "ECO GREEN",
+             "ECO SPL", "LIFE STYLE", "LIFESTYLE", "PREMIUM", "PLATINUM", "CLASSIC",
+             "DELUXE", "BRONZE", "SILVER", "ULTRA", "GOLD", "UV"]
+QUAL_LIST.sort(key=len, reverse=True)
+
+COL_LIST = [
+    "BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE",
+    "BLEACH WHITE 1.0", "BLEACH WHITE 2.0", "BLEACH WHITE", "WHITE MIX", "WHITE",
+    "CREAM 2.0", "CREAM 3.0", "CREAM 4.0", "CREAM 5.0",
+    "GOLDEN YELLOW 4.0 SPL", "GOLDEN YELLOW 1.0", "GOLDEN YELLOW 2.0",
+    "GOLDEN YELLOW 3.0", "GOLDEN YELLOW",
+    "LEMON YELLOW 1.0", "LEMON YELLOW 3.0", "LEMON YELLOW",
+    "BRIGHT ORANGE", "DARK ORANGE", "ORANGE 2.0",
+    "PINK 7.0 DARK", "PINK 6.0 DARK", "DARK PINK",
+    "BABY PINK", "PINK 1.0", "PINK 2.0", "PINK 3.0", "PINK 5.0",
+    "CRIMSON RED", "RED",
+    "LIGHT MAROON", "DARK MAROON", "MAROON 1.0", "MAROON 2.0",
+    "BLUE 13.0 INK BLUE", "BLUE 12.0 SPL NAVY BLUE", "BLUE 11.0 NAVY BLUE",
+    "BLUE 8.0 DARK ROYAL BLUE", "BLUE 7.0 DARK BLUE", "BLUE 6.0 ROYAL BLUE",
+    "LIGHT PEACOCK BLUE", "PEACOCK BLUE", "LIGHT MEDICAL BLUE", "MEDICAL BLUE",
+    "ROYAL BLUE", "NAVY BLUE", "SKY BLUE", "LIGHT BLUE",
+    "BLUE 9.0", "BLUE 4.0", "BLUE 2.0", "BLUE 1.0", "BLUE",
+    "PURPLE 4.0 BLACKBERRY", "PURPLE 1.0", "PURPLE 2.0", "PURPLE 3.0", "VOILET",
+    "GREEN 13.0 ARMY GREEN", "GREEN 12.0 OLIVE GREEN", "GREEN 11.0 DARK GREEN",
+    "GREEN 10.0", "GREEN 9.0 BOTTLE GREEN", "GREEN 8.0 APPLE GREEN",
+    "GREEN 7.0", "GREEN 6.0", "GREEN 5.0 GRASS GREEN", "GREEN 4.0",
+    "GREEN 3.0 RELIANCE GREEN", "GREEN 2.0 TORQUISE GREEN", "GREEN 1.0 MINT",
+    "MEDICAL GREEN", "RELIANCE GREEN", "PARROT GREEN", "GREEN",
+    "SILVER 1.0", "SILVER 2.0", "LIGHT GREY", "DARK GREY", "GREY 1.0",
+    "CHOCOLATE BROWN 2.0", "CHOCOLATE BROWN", "CHOCOLATE BLACK",
+    "BROWN 3.0 DARK COFFEE", "BROWN 2.0 DARK", "BROWN 1.0",
+    "CHIKOO 1.0", "CHIKOO 2.0",
+    "BEIGE 1.0", "BEIGE 2.0", "BEIGE 3.0", "BEIGE 4.0", "BEIGE 5.0",
+    "LIGHT BEIGE", "DARK BEIGE", "BEIGE MIX",
+    "BLACK MIX", "COLOR MIX", "BLACK",
+]
+COL_LIST.sort(key=len, reverse=True)
+
 # ... Limits ...
 HARD_LIMITS = {
 	"Unit 1": 4.4,
@@ -2571,13 +2609,13 @@ def auto_create_planning_sheet(doc, method=None):
         unit = "Unit 1"
         if qual:
             q_up = qual.upper()
-            if gsm > 50 and q_up in UNIT_1_MAP:
+            if gsm > 50 and q_up in UNIT_1:
                 unit = "Unit 1"
-            elif gsm > 20 and q_up in UNIT_2_MAP:
+            elif gsm > 20 and q_up in UNIT_2:
                 unit = "Unit 2"
-            elif gsm > 10 and q_up in UNIT_3_MAP:
+            elif gsm > 10 and q_up in UNIT_3:
                 unit = "Unit 3"
-            elif q_up in UNIT_4_MAP:
+            elif q_up in UNIT_4:
                 unit = "Unit 4"
 
         ps.append("items", {
@@ -2701,13 +2739,13 @@ def regenerate_planning_sheet(so_name):
         unit = "Unit 1"
         if qual:
             q_up = qual.upper()
-            if gsm > 50 and q_up in UNIT_1_MAP:
+            if gsm > 50 and q_up in UNIT_1:
                 unit = "Unit 1"
-            elif gsm > 20 and q_up in UNIT_2_MAP:
+            elif gsm > 20 and q_up in UNIT_2:
                 unit = "Unit 2"
-            elif gsm > 10 and q_up in UNIT_3_MAP:
+            elif gsm > 10 and q_up in UNIT_3:
                 unit = "Unit 3"
-            elif q_up in UNIT_4_MAP:
+            elif q_up in UNIT_4:
                 unit = "Unit 4"
         ps.append("items", {
             "sales_order_item": it.name,
