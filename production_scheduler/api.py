@@ -607,6 +607,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
 			WHERE p.ordered_date = %s AND p.docstatus < 2
+			  AND i.color IS NOT NULL AND i.color != ''
+			  AND i.custom_quality IS NOT NULL AND i.custom_quality != ''
 			ORDER BY i.unit, i.idx
 		""", (target_date,), as_dict=True)
 		
@@ -784,10 +786,15 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			sheet_has_wo = True
 
 		for item in items:
-			unit = item.get("unit") or ""
-			# Allow items without color (for capacity accuracy)
-			color = item.get("color") or item.get("colour") or "NO COLOR"
+			color = (item.get("color") or item.get("colour") or "").strip()
+			quality = (item.get("custom_quality") or "").strip()
 			
+			# User explicitly requested to hide orders missing color or quality 
+			# because they break smart sequencing and manual planning flows
+			if not color or not quality or color.upper() == "NO COLOR":
+				continue
+
+			unit = item.get("unit") or ""
 			# For Matrix view calculation - use effective_date (planned or ordered)
 			effective_date_str = str(sheet.effective_date) if sheet.get("effective_date") else str(sheet.ordered_date)
 
@@ -2397,11 +2404,13 @@ def push_items_to_pb(items_data, pb_plan_name):
 
 	count = 0
 	updated_sheets = set()
+	max_idx_cache = {}
 
 	for item in items_data:
 		name = item.get("name") if isinstance(item, dict) else item
 		target_date = item.get("target_date") if isinstance(item, dict) else None
 		target_unit = item.get("target_unit") if isinstance(item, dict) else None
+		sequence_no = item.get("sequence_no") if isinstance(item, dict) else None
 
 		try:
 			# Get the parent Planning Sheet
@@ -2412,6 +2421,27 @@ def push_items_to_pb(items_data, pb_plan_name):
 			# ── KEY FIX: Update the item's unit if user selected a different unit ──
 			if target_unit:
 				frappe.db.set_value("Planning Sheet Item", name, "unit", target_unit)
+
+			# ── KEY FIX: Update idx so sequences are globally preserved on the board ──
+			if sequence_no is not None and target_unit and target_date:
+				cache_key = (target_unit, target_date)
+				if cache_key not in max_idx_cache:
+					from frappe.utils import getdate
+					actual_date = getdate(target_date)
+					has_col = _has_planned_date_column()
+					date_cond = "COALESCE(p.custom_planned_date, p.ordered_date) = %s" if has_col else "p.ordered_date = %s"
+					max_idx = frappe.db.sql(f"""
+						SELECT MAX(i.idx)
+						FROM `tabPlanning Sheet Item` i
+						JOIN `tabPlanning sheet` p ON i.parent = p.name
+						WHERE i.unit = %s
+						  AND {date_cond}
+						  AND p.docstatus < 2
+					""", (target_unit, actual_date))
+					max_idx_cache[cache_key] = max_idx[0][0] if max_idx and max_idx[0][0] else 0
+				
+				new_idx = max_idx_cache[cache_key] + int(sequence_no)
+				frappe.db.set_value("Planning Sheet Item", name, "idx", new_idx)
 
 			if parent not in updated_sheets:
 				frappe.db.set_value("Planning sheet", parent, "custom_pb_plan_name", pb_plan_name)

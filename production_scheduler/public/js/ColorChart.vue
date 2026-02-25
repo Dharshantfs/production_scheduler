@@ -2200,10 +2200,25 @@ async function pushToProductionBoard() {
         return;
     }
 
-    // Collect item names from current view
-    const allItemNames = [...new Set(items.map(d => d.itemName).filter(Boolean))];
+    // Calculate global color totals to apply the 800kg rule
+    const globalColorTotals = {};
+    items.forEach(i => {
+        if (!i.color || i.color.trim() === '') return;
+        const c = i.color.trim().toUpperCase();
+        globalColorTotals[c] = (globalColorTotals[c] || 0) + (parseFloat(i.qty) || 0) / 1000.0;
+    });
+
+    // Collect item names from current view, ONLY enforcing 800kg minimum for Auto-selection
+    const allItemNames = [...new Set(items.map(d => {
+        const c = (d.color || '').trim().toUpperCase();
+        if (c && globalColorTotals[c] !== undefined && globalColorTotals[c] < 0.8) {
+            return null; // Skip colors < 800kg
+        }
+        return d.itemName;
+    }).filter(Boolean))];
+
     if (allItemNames.length === 0) {
-        frappe.msgprint('No valid items to push.');
+        frappe.msgprint('No valid items >= 800kg to push.');
         return;
     }
 
@@ -2248,6 +2263,7 @@ async function pushToProductionBoard() {
             const bridge = item.is_seed_bridge ? ' 🔗' : '';
             const rowBg = smartSequenceActive ? getPhaseColor(item.phase) : '#fff';
             const checked = item.checked !== false;
+            const qty_str = item.qty ? parseFloat(item.qty).toFixed(0) + ' Kg' : '—';
             return `${unitDivider}<tr style="background:${rowBg};border-bottom:1px solid #eee;">
                 <td style="padding:4px 6px;text-align:center;">
                     <input type="checkbox" data-idx="${i}" ${checked ? 'checked' : ''} style="cursor:pointer;">
@@ -2258,6 +2274,7 @@ async function pushToProductionBoard() {
                 <td style="padding:4px 6px;font-size:12px;">${item.gsm || '—'}</td>
                 <td style="padding:4px 6px;font-size:12px;">${item.unit || '—'}</td>
                 <td style="padding:4px 6px;font-size:12px;color:#666;">${item.customer || '—'}</td>
+                <td style="padding:4px 6px;font-size:12px;text-align:right;font-weight:bold;">${qty_str}</td>
             </tr>`;
         }).join('');
 
@@ -2272,6 +2289,7 @@ async function pushToProductionBoard() {
                         <th style="padding:6px;">GSM</th>
                         <th style="padding:6px;">Unit</th>
                         <th style="padding:6px;">Party</th>
+                        <th style="padding:6px;text-align:right;">Qty</th>
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>
@@ -3230,7 +3248,16 @@ async function openPushColorDialog(color) {
                     <div><input type="checkbox" checked class="push-select-all" /> Select All</div>
                     ${smartActive ? '<span style="font-size:11px;color:#1b5e20;background:#e8f5e9;padding:3px 8px;border-radius:10px;">✅ Smart Sequence Active</span>' : ''}
                 </div>
-                <table style="width: 100%; border-collapse: collapse; font-size: 11px;"><tbody>`;
+                <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                    <thead style="background:#f1f5f9; color:#475569; border-bottom:1px solid #cbd5e1; text-align:left;">
+                        <tr>
+                            <th style="padding:6px;width:30px;text-align:center;">✓</th>
+                            <th style="padding:6px;">Order Details</th>
+                            <th style="padding:6px;width:110px;">Unit</th>
+                            <th style="padding:6px;text-align:right;width:80px;">Qty</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
 
         orderedItems.forEach(item => {
             let unit = item.unit || "Unit 1";
@@ -3253,7 +3280,7 @@ async function openPushColorDialog(color) {
                             <option value="Unit 4" ${unit === 'Unit 4' ? 'selected' : ''}>Unit 4</option>
                         </select>
                     </td>
-                    <td style="padding: 8px; text-align:right; width:80px;"><b>${item.qty} Kg</b></td>
+                    <td style="padding: 8px; text-align:right; width:80px;"><b>${item.qty ? parseFloat(item.qty).toFixed(0) : 0} Kg</b></td>
                 </tr>`;
         });
 
