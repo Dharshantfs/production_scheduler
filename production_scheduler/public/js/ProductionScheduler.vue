@@ -645,6 +645,7 @@ function toggleUnitColor(unit) {
   } else {
       config.color = config.color === 'asc' ? 'desc' : 'asc';
   }
+  renderKey.value++;
 }
 
 function toggleUnitGsm(unit) {
@@ -656,11 +657,13 @@ function toggleUnitGsm(unit) {
   } else {
       config.gsm = config.gsm === 'asc' ? 'desc' : 'asc';
   }
+  renderKey.value++;
 }
 
 function toggleUnitPriority(unit) {
   const config = getUnitSortConfig(unit);
   config.priority = config.priority === 'color' ? 'gsm' : 'color';
+  renderKey.value++;
 }
 
 function sortItems(unit, items) {
@@ -690,6 +693,13 @@ function sortItems(unit, items) {
 
 // Cached computed: builds entries for ALL units once per data change
 const unitEntriesCache = computed(() => {
+  // Explicitly read renderKey + all sort configs so Vue tracks them as reactive deps
+  void renderKey.value;
+  units.forEach(u => {
+    const cfg = unitSortConfig[u];
+    if (cfg) { void cfg.color; void cfg.gsm; void cfg.priority; void cfg.mode; }
+  });
+
   const cache = {};
   for (const unit of units) {
     let unitItems = filteredData.value.filter((d) => (d.unit || "Mixed") === unit);
