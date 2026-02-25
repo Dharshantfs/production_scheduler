@@ -2303,13 +2303,6 @@ async function pushToProductionBoard() {
         title: '🚀 Push to Production Board',
         fields: [
             {
-                label: 'Production Board Plan',
-                fieldname: 'pb_plan_name',
-                fieldtype: 'Select',
-                options: ['', ...pbPlans].join('\n'),
-                reqd: 1
-            },
-            {
                 fieldname: 'sequence_html',
                 fieldtype: 'HTML',
                 options: buildDialogHtml(currentSequence)
@@ -2317,8 +2310,7 @@ async function pushToProductionBoard() {
         ],
         primary_action_label: 'Push',
         primary_action: async (values) => {
-            const pbPlanName = (values.pb_plan_name || '').trim();
-            if (!pbPlanName) { frappe.msgprint('Please select a Production Board plan.'); return; }
+            const pbPlanName = 'Default';
 
             const checkedItems = currentSequence.filter(i => i.checked !== false);
             if (checkedItems.length === 0) { frappe.msgprint('No items selected.'); return; }
@@ -2326,7 +2318,7 @@ async function pushToProductionBoard() {
             const itemNamesToSend = checkedItems.map(i => i.name);
 
             d.hide();
-            frappe.show_alert({ message: `Pushing ${itemNamesToSend.length} items to "${pbPlanName}"...`, indicator: 'blue' });
+            frappe.show_alert({ message: `Pushing ${itemNamesToSend.length} items...`, indicator: 'blue' });
 
             try {
                 const r = await frappe.call({
@@ -2338,7 +2330,7 @@ async function pushToProductionBoard() {
                 });
                 if (r.message && r.message.status === 'success') {
                     frappe.show_alert({
-                        message: `✅ Pushed ${r.message.updated_count} sheet(s) to "${pbPlanName}"`,
+                        message: `✅ Pushed ${r.message.updated_count} sheet(s) to Production Board`,
                         indicator: 'green'
                     });
                     fetchData();

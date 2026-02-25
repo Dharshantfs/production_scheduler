@@ -57,32 +57,12 @@
           <option value="Finalized">Finalized</option>
         </select>
       </div>
-      <div class="cc-filter-item">
-        <label>Plan</label>
-        <div style="display:flex; gap:4px; align-items:center;">
-            <select v-model="selectedPlan" @change="fetchData" style="font-weight: bold;">
-                <option v-for="p in plans" :key="p.name" :value="p.name">{{ p.locked ? '🔒 ' : '' }}{{ p.name }}</option>
-            </select>
-            <button v-if="selectedPlan" class="cc-mini-btn" @click="togglePlanLock" :title="isCurrentPlanLocked ? 'Unlock Plan' : 'Lock Plan'" style="margin-right:2px; padding: 2px 4px;font-size: 14px;">
-                {{ isCurrentPlanLocked ? '🔒' : '🔓' }}
-            </button>
-            <button class="cc-mini-btn" @click="createNewPlan" title="Create New Plan" style="color:#2563eb; font-weight:bold; font-size:14px;">
-                ➕ New
-            </button>
-            <button v-if="selectedPlan !== 'Default'" class="cc-mini-btn" @click="deletePlan" title="Delete this Plan" style="color:#dc2626; font-weight:bold;">
-                🗑️
-            </button>
-        </div>
-      </div>
       <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
       <button class="cc-clear-btn" style="color: #2563eb; border-color: #2563eb; margin-left: 8px;" @click="autoAllocate" title="Auto-assign orders based on Width & Quality">
         🪄 Auto Alloc
       </button>
       <button class="cc-clear-btn" style="color: #059669; border-color: #059669; margin-left: 8px;" @click="openPullOrdersDialog" title="Pull orders from a future date">
         📥 Pull Orders
-      </button>
-      <button class="cc-clear-btn" style="color: #ca8a04; border-color: #ca8a04; margin-left: 8px; font-weight:600;" @click="openMovePlanDialog" title="Move visible orders to another Production Board plan">
-        📥 Move to Plan
       </button>
       <button v-if="isAdmin" class="cc-clear-btn" style="color: #dc2626; border-color: #dc2626; margin-left: 8px;" @click="openRescueDialog" title="Rescue lost or stuck orders">
         🚑 Rescue Orders
@@ -265,8 +245,6 @@ const filterPartyCode = ref("");
 const filterCustomer = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
-const selectedPlan = ref("Default");
-const plans = ref(["Default"]);
 const unitSortConfig = reactive({});
 // Pre-initialize for all units to prevent reactive loops during render
 units.forEach(u => {
@@ -331,24 +309,21 @@ const filteredData = computed(() => {
       unit: d.unit || "Mixed"
   }));
 
-  // PLAN FILTERING — Production Board uses pbPlanName (separate from Color Chart)
-  if (selectedPlan.value === 'Default') {
-    // Default plan: Show items that have NO pbPlanName set (not pushed to any PB plan)
-    // AND are white colors (production board default view)
-    data = data.filter(d => {
-      // Only show items NOT assigned to any PB plan
-      if (d.pbPlanName) return false;
+  // For Production Board ONLY: Show pushed items AND White Orders.
+  // There is only a single board now, no multiple PB plans.
+  data = data.filter(d => {
+      // 1. Is it a White Order? White Orders bypass the Color Chart.
       const color = (d.color || "").toUpperCase().trim();
-      // Include if it's any white variant
-      if (EXCLUDED_WHITES.some(ex => color.includes(ex))) return true;
-      if (NO_RULE_WHITES.includes(color)) return true;
-      if (color.includes('IVORY') || color.includes('CREAM') || color.includes('OFF WHITE')) return true;
-      return false;
-    });
-  } else {
-    // Non-Default plans: Show only items pushed to this Production Board plan
-    data = data.filter(d => d.pbPlanName === selectedPlan.value);
-  }
+      let isWhite = false;
+      if (EXCLUDED_WHITES.some(ex => color.includes(ex))) isWhite = true;
+      if (NO_RULE_WHITES.includes(color)) isWhite = true;
+      if (color.includes('IVORY') || color.includes('CREAM') || color.includes('OFF WHITE')) isWhite = true;
+      
+      // 2. Was it pushed from Color Chart?
+      const isPushed = !!d.pbPlanName;
+      
+      return isWhite || isPushed;
+  });
 
   if (filterPartyCode.value) {
     const search = filterPartyCode.value.toLowerCase();
@@ -378,98 +353,10 @@ function clearFilters() {
   filterCustomer.value = "";
   filterUnit.value = "";
   filterStatus.value = "";
-  selectedPlan.value = "Default";
   fetchData();
 }
 
-const isCurrentPlanLocked = computed(() => {
-    const p = plans.value.find(p => p.name === selectedPlan.value);
-    return p ? p.locked : 0;
-});
 
-async function togglePlanLock() {
-    if (!selectedPlan.value) return;
-    const p = plans.value.find(p => p.name === selectedPlan.value);
-    if (!p) return;
-    
-    const newLock = p.locked ? 0 : 1;
-    try {
-        await frappe.call({
-            method: "production_scheduler.api.toggle_plan_lock",
-            args: { plan_type: "production_board", name: selectedPlan.value, locked: newLock }
-        });
-        p.locked = newLock;
-        frappe.show_alert({ message: newLock ? `Plan '${selectedPlan.value}' Locked` : `Plan '${selectedPlan.value}' Unlocked`, indicator: 'green' });
-    } catch(e) { console.error("Error toggling lock", e); }
-}
-
-// Track plans created locally via +New (before items are pushed)
-const localPlans = ref([]);
-
-// Production Board has its own plan management (separate from Color Chart)
-function createNewPlan() {
-    frappe.prompt({
-        label: 'New Plan Name',
-        fieldname: 'plan_name',
-        fieldtype: 'Data',
-        reqd: 1
-    }, (values) => {
-        const name = values.plan_name.trim();
-        if (!name) return;
-        // Track locally so fetchPlans doesn't wipe it
-        if (!localPlans.value.includes(name)) {
-            localPlans.value.push(name);
-            frappe.call({
-                method: "production_scheduler.api.add_persistent_plan",
-                args: { plan_type: "production_board", name: name }
-            });
-        }
-        if (!plans.value.find(p => p.name === name)) {
-            plans.value.push({name: name, locked: 0});
-        }
-        selectedPlan.value = name;
-        // No server copy — plan starts empty, items come via Push from Color Chart
-        frappe.show_alert({ message: `Plan "${name}" created. Push orders from Color Chart to populate it.`, indicator: 'green' });
-    }, 'Create New Plan', 'Create');
-}
-
-function deletePlan() {
-    const planName = selectedPlan.value;
-    if (!planName || planName === 'Default') {
-        frappe.msgprint('Cannot delete the Default plan.');
-        return;
-    }
-    frappe.confirm(
-        `Remove plan "<b>${planName}</b>" from Production Board? This will unlink orders from this plan.`,
-        async () => {
-            let deleteArgs = { pb_plan_name: planName };
-            if (viewScope.value === 'monthly') {
-                const [year, month] = filterMonth.value.split("-");
-                const lastDay = new Date(year, month, 0).getDate();
-                deleteArgs.start_date = `${year}-${month}-01`;
-                deleteArgs.end_date = `${year}-${month}-${lastDay}`;
-            } else if (viewScope.value === 'weekly') {
-                // Use same week calc logic
-                deleteArgs.date = filterOrderDate.value;
-            } else {
-                deleteArgs.date = filterOrderDate.value;
-            }
-            try {
-                await frappe.call({
-                    method: "production_scheduler.api.delete_pb_plan",
-                    args: deleteArgs
-                });
-                plans.value = plans.value.filter(p => p.name !== planName);
-                selectedPlan.value = "Default";
-                frappe.show_alert({ message: `Plan "${planName}" removed.`, indicator: 'green' });
-                fetchData();
-            } catch (e) {
-                console.error('Failed to delete PB plan', e);
-                frappe.msgprint('Error deleting plan.');
-            }
-        }
-    );
-}
 
 // Find matching color group by checking if color name contains any keyword
 function findColorGroup(color) {
@@ -1027,16 +914,15 @@ async function loadOrders(d) {
         
         let items = r.message || [];
         
-        // ─── PRODUCTION BOARD FILTER ───
-        // Only show items that belong to this Production Board plan.
-        // pbPlanName comes from custom_pb_plan_name on the Planning Sheet.
-        if (selectedPlan.value === 'Default') {
-            // Default: items with no PB plan assignment (white board orders)
-            items = items.filter(i => !i.pbPlanName || i.pbPlanName === '');
-        } else {
-            // Named plan: only show items pushed to this exact PB plan
-            items = items.filter(i => i.pbPlanName === selectedPlan.value);
-        }
+        // ─── PRODUCTION BOARD FILTER MUST APPLY IN PULL AS WELL ───
+        items = items.filter(i => {
+             const color = (i.color || "").toUpperCase().trim();
+             let isWhite = false;
+             if (EXCLUDED_WHITES.some(ex => color.includes(ex))) isWhite = true;
+             if (NO_RULE_WHITES.includes(color)) isWhite = true;
+             if (color.includes('IVORY') || color.includes('CREAM') || color.includes('OFF WHITE')) isWhite = true;
+             return isWhite || !!i.pbPlanName;
+        });
         
         if (items.length === 0) {
             d.set_value('preview_html', '<p class="text-gray-500 italic p-2">No orders found for this date in the selected plan.</p>');
@@ -1404,16 +1290,6 @@ function openMovePlanDialog() {
         size: 'large',
         fields: [
             {
-                label: 'Move orders to Production Board Plan',
-                fieldname: 'target_plan',
-                fieldtype: 'Select',
-                options: availablePlans,
-                reqd: 1,
-                description: isAggregateView
-                    ? `⚡ ${viewScope.value} view: capacity check is bypassed (aggregate mode).`
-                    : "Select which unlocked Production Board Plan to move these items to."
-            },
-            {
                 label: 'Target Unit (Optional)',
                 fieldname: 'target_unit',
                 fieldtype: 'Select',
@@ -1524,46 +1400,7 @@ function openMovePlanDialog() {
 
 const isAdmin = computed(() => frappe.user.has_role("System Manager"));
 
-// ---- PLAN LOADING (from server — Production Board plans only) ----
-async function fetchPlans(args) {
-    try {
-        const planArgs = {};
-        if (args.start_date && args.end_date) {
-            planArgs.start_date = args.start_date;
-            planArgs.end_date = args.end_date;
-        } else if (args.date) {
-            // Expand single date to month range for plan discovery
-            const [year, month] = args.date.split("-");
-            const lastDay = new Date(year, month, 0).getDate();
-            planArgs.start_date = `${year}-${month}-01`;
-            planArgs.end_date = `${year}-${month}-${lastDay}`;
-        }
-        const r = await frappe.call({
-            method: "production_scheduler.api.get_pb_plans",
-            args: planArgs
-        });
-        const serverPlans = r.message || [];
-        // Merge server plans with locally-created plans
-        const allNames = new Set([...serverPlans.map(p=>p.name), ...localPlans.value]);
-        
-        plans.value = [];
-        allNames.forEach(n => {
-            const sp = serverPlans.find(p => p.name === n);
-            if (sp) plans.value.push(sp);
-            else plans.value.push({name: n, locked: 0});
-        });
-        
-        plans.value.sort((a,b) => a.name === "Default" ? -1 : a.name.localeCompare(b.name));
-        if (!plans.value.find(p => p.name === "Default")) plans.value.unshift({name: "Default", locked: 0});
 
-        // Clean up local plans that now exist on server
-        localPlans.value = localPlans.value.filter(p => !serverPlans.find(sp => sp.name === p));
-        
-        if (selectedPlan.value !== 'Default' && !plans.value.find(p => p.name === selectedPlan.value)) {
-            selectedPlan.value = "Default";
-        }
-    } catch(e) { console.error("Error fetching PB plans", e); }
-}
 
 let fetchTimeout = null;
 
@@ -1604,11 +1441,7 @@ async function fetchData() {
             args.date = filterOrderDate.value;
         }
 
-        // Load plans from server before fetching data
-        await fetchPlans(args);
-
-        // Production Board: fetch ALL data across all plans
-        // Plan filtering happens on frontend in filteredData
+        // Production Board: fetch ALL data
         args.plan_name = "__all__";
 
         const r = await frappe.call({
@@ -1649,9 +1482,6 @@ function updateUrlParams() {
   if (filterStatus.value) url.searchParams.set('status', filterStatus.value);
   else url.searchParams.delete('status');
   
-  if (selectedPlan.value && selectedPlan.value !== "Default") url.searchParams.set('plan', selectedPlan.value);
-  else url.searchParams.delete('plan');
-  
   url.searchParams.set('scope', viewScope.value);
   if (viewScope.value === 'weekly' && filterWeek.value) url.searchParams.set('week', filterWeek.value);
   else url.searchParams.delete('week');
@@ -1665,7 +1495,6 @@ function updateUrlParams() {
 watch(filterOrderDate, updateUrlParams);
 watch(filterUnit, updateUrlParams);
 watch(filterStatus, updateUrlParams);
-watch(selectedPlan, updateUrlParams);
 watch(viewScope, updateUrlParams);
 
 onMounted(async () => {
@@ -1692,7 +1521,6 @@ onMounted(async () => {
   
   if (unitParam) filterUnit.value = unitParam;
   if (statusParam && ["Draft", "Finalized"].includes(statusParam)) filterStatus.value = statusParam;
-  if (planParam) selectedPlan.value = planParam;
   
   // 2. Fetch Data (this will also load plans from server)
   await fetchData();
