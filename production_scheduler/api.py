@@ -1,6 +1,6 @@
 ﻿import frappe
 from frappe import _
-from frappe.utils import getdate, flt
+from frappe.utils import getdate, flt, cint
 import json
 
 def generate_party_code(doc):
