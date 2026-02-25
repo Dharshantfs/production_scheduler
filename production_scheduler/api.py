@@ -1261,7 +1261,7 @@ def get_smart_push_sequence(item_names):
 		"Planning Sheet Item",
 		filters={"name": ["in", item_names]},
 		fields=["name","color","custom_quality","gsm","qty","unit","item_name",
-		        "weight_per_roll","party_code","parent"]
+		        "weight_per_roll","parent"]
 	)
 
 	# Enrich with customer from parent sheet
