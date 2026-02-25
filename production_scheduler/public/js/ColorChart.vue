@@ -2194,19 +2194,6 @@ async function pushToProductionBoard() {
         return;
     }
 
-    // Fetch PB Plans for Dropdown
-    let pbPlans = [];
-    try {
-        const d_date = filterOrderDate.value || frappe.datetime.get_today();
-        const [year, month] = d_date.split("-");
-        const lastDay = new Date(year, month, 0).getDate();
-        const r = await frappe.call({
-            method: "production_scheduler.api.get_pb_plans",
-            args: { start_date: `${year}-${month}-01`, end_date: `${year}-${month}-${lastDay}` }
-        });
-        pbPlans = r.message ? r.message.filter(p => !p.locked).map(p => p.name) : ["Default"];
-    } catch(e) { console.error("Error fetching PB plans", e); }
-
     // Collect item names from current view
     const allItemNames = [...new Set(items.map(d => d.itemName).filter(Boolean))];
     if (allItemNames.length === 0) {
@@ -3110,26 +3097,9 @@ async function openPushColorDialog(color) {
         return;
     }
 
-    // Fetch PB Plans
-    let pbPlans = [];
-    try {
-        const d_date = filterOrderDate.value || frappe.datetime.get_today();
-        const [year, month] = d_date.split("-");
-        const lastDay = new Date(year, month, 0).getDate();
-        const start_date = `${year}-${month}-01`;
-        const end_date = `${year}-${month}-${lastDay}`;
-        
-        const r = await frappe.call({
-            method: "production_scheduler.api.get_pb_plans",
-            args: { start_date: start_date, end_date: end_date }
-        });
-        pbPlans = r.message ? r.message.filter(p => !p.locked).map(p => p.name) : ["Default"];
-    } catch(e) { console.error("Error fetching PB plans", e); }
-
     const d = new frappe.ui.Dialog({
         title: `📤 Push ${color} to Production Board`,
         fields: [
-            { fieldname: "pb_plan", label: "Production Board Plan", fieldtype: "Select", options: ["", ...pbPlans], reqd: 1, default: pbPlans.length > 0 ? pbPlans[0] : "", description: "Select the Production Board plan explicitly" },
             { fieldname: "target_date", label: "Target Date", fieldtype: "Date", reqd: 1, default: filterOrderDate.value || frappe.datetime.get_today(),
               onchange: () => loadCapacityPreview(d)
             },
@@ -3142,9 +3112,7 @@ async function openPushColorDialog(color) {
              if (!selected.length) { frappe.msgprint("Please select at least one order."); return; }
              
              const targetDate = d.get_value("target_date");
-             const pbPlan = d.get_value("pb_plan");
-             
-             if (!pbPlan) { frappe.msgprint("Please select a Production Board Plan."); return; }
+             const pbPlan = "Default";
              
              // Build payload
              const payload = selected.map(s => ({ name: s.name, target_unit: s.target_unit, target_date: targetDate }));
