@@ -2192,68 +2192,261 @@ async function pushToProductionBoard() {
         frappe.msgprint('No orders visible to push. Apply filters first.');
         return;
     }
-    
+
     // Fetch PB Plans for Dropdown
     let pbPlans = [];
     try {
         const d_date = filterOrderDate.value || frappe.datetime.get_today();
         const [year, month] = d_date.split("-");
         const lastDay = new Date(year, month, 0).getDate();
-        
         const r = await frappe.call({
             method: "production_scheduler.api.get_pb_plans",
             args: { start_date: `${year}-${month}-01`, end_date: `${year}-${month}-${lastDay}` }
         });
         pbPlans = r.message ? r.message.filter(p => !p.locked).map(p => p.name) : ["Default"];
     } catch(e) { console.error("Error fetching PB plans", e); }
-    
-    frappe.prompt([
-        {
-            label: 'Production Board Plan Name',
-            fieldname: 'pb_plan_name',
-            fieldtype: 'Select',
-            options: ["", ...pbPlans],
-            reqd: 1,
-            description: 'Select the plan name for Production Board'
+
+    // Collect item names from current view
+    const allItemNames = [...new Set(items.map(d => d.itemName).filter(Boolean))];
+    if (allItemNames.length === 0) {
+        frappe.msgprint('No valid items to push.');
+        return;
+    }
+
+    // State for the dialog
+    let smartSequenceActive = false;
+    let currentSequence = allItemNames.map((n, i) => {
+        const d = items.find(it => it.itemName === n) || {};
+        return {
+            name: n,
+            color: d.color || '',
+            quality: d.quality || d.custom_quality || '',
+            gsm: d.gsm || '',
+            unit: d.unit || '',
+            qty: d.qty || '',
+            customer: d.customer || d.partyCode || '',
+            phase: '',
+            is_seed_bridge: false,
+            sequence_no: i + 1,
+            checked: true
+        };
+    });
+
+    function getPhaseColor(phase) {
+        if (phase === 'white') return '#e8f5e9';
+        if (phase === 'color') return '#fff8e1';
+        return '#f5f5f5';
+    }
+
+    function renderTable(seq) {
+        let lastUnit = null;
+        const rows = seq.map((item, i) => {
+            let unitDivider = '';
+            if (smartSequenceActive && item.unit !== lastUnit) {
+                lastUnit = item.unit;
+                unitDivider = `<tr style="background:#1565c0;color:white;font-size:11px;font-weight:bold;">
+                    <td colspan="7" style="padding:4px 8px;">📦 ${item.unit || 'Mixed'}</td>
+                </tr>`;
+            }
+            const bridge = item.is_seed_bridge ? ' 🔗' : '';
+            const rowBg = smartSequenceActive ? getPhaseColor(item.phase) : '#fff';
+            const checked = item.checked !== false;
+            return `${unitDivider}<tr style="background:${rowBg};border-bottom:1px solid #eee;">
+                <td style="padding:4px 6px;text-align:center;">
+                    <input type="checkbox" data-idx="${i}" ${checked ? 'checked' : ''} style="cursor:pointer;">
+                </td>
+                <td style="padding:4px 6px;font-weight:bold;color:#555;font-size:12px;">${item.sequence_no}${bridge}</td>
+                <td style="padding:4px 6px;font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${item.color}">${item.color || '—'}</td>
+                <td style="padding:4px 6px;font-size:12px;">${item.quality || '—'}</td>
+                <td style="padding:4px 6px;font-size:12px;">${item.gsm || '—'}</td>
+                <td style="padding:4px 6px;font-size:12px;">${item.unit || '—'}</td>
+                <td style="padding:4px 6px;font-size:12px;color:#666;">${item.customer || '—'}</td>
+            </tr>`;
+        }).join('');
+
+        return `<div style="max-height:380px;overflow-y:auto;border:1px solid #ddd;border-radius:4px;">
+            <table style="width:100%;border-collapse:collapse;font-family:sans-serif;">
+                <thead style="background:#2196f3;color:white;position:sticky;top:0;z-index:1;">
+                    <tr>
+                        <th style="padding:6px;width:32px;">✓</th>
+                        <th style="padding:6px;">#</th>
+                        <th style="padding:6px;">Color</th>
+                        <th style="padding:6px;">Quality</th>
+                        <th style="padding:6px;">GSM</th>
+                        <th style="padding:6px;">Unit</th>
+                        <th style="padding:6px;">Party</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+    }
+
+    function buildDialogHtml(seq) {
+        const total = seq.filter(i => i.checked !== false).length;
+        const smartBtnStyle = smartSequenceActive
+            ? 'background:#1b5e20;color:white;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;'
+            : 'background:#e8f5e9;color:#1b5e20;border:1px solid #81c784;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;';
+        return `
+        <div style="margin-bottom:10px;display:flex;align-items:center;gap:10px;">
+            <button id="smart_seq_btn" style="${smartBtnStyle}">
+                ${smartSequenceActive ? '🔗 Smart Sequence ON' : '🔗 Smart Sequence'}
+            </button>
+            <span style="font-size:12px;color:#666;">${total} item(s) selected</span>
+            ${smartSequenceActive ? '<span style="font-size:11px;color:#1b5e20;">✅ Sequenced by white → color chain</span>' : ''}
+        </div>
+        ${renderTable(seq)}`;
+    }
+
+    const d = new frappe.ui.Dialog({
+        title: '🚀 Push to Production Board',
+        fields: [
+            {
+                label: 'Production Board Plan',
+                fieldname: 'pb_plan_name',
+                fieldtype: 'Select',
+                options: ['', ...pbPlans].join('\n'),
+                reqd: 1
+            },
+            {
+                fieldname: 'sequence_html',
+                fieldtype: 'HTML',
+                options: buildDialogHtml(currentSequence)
+            }
+        ],
+        primary_action_label: 'Push',
+        primary_action: async (values) => {
+            const pbPlanName = (values.pb_plan_name || '').trim();
+            if (!pbPlanName) { frappe.msgprint('Please select a Production Board plan.'); return; }
+
+            const checkedItems = currentSequence.filter(i => i.checked !== false);
+            if (checkedItems.length === 0) { frappe.msgprint('No items selected.'); return; }
+
+            const itemNamesToSend = checkedItems.map(i => i.name);
+
+            d.hide();
+            frappe.show_alert({ message: `Pushing ${itemNamesToSend.length} items to "${pbPlanName}"...`, indicator: 'blue' });
+
+            try {
+                const r = await frappe.call({
+                    method: "production_scheduler.api.push_to_pb",
+                    args: {
+                        item_names: JSON.stringify(itemNamesToSend),
+                        pb_plan_name: pbPlanName
+                    }
+                });
+                if (r.message && r.message.status === 'success') {
+                    frappe.show_alert({
+                        message: `✅ Pushed ${r.message.updated_count} sheet(s) to "${pbPlanName}"`,
+                        indicator: 'green'
+                    });
+                    fetchData();
+                } else {
+                    frappe.msgprint(r.message?.message || 'Push failed.');
+                }
+            } catch (e) {
+                console.error('Push to PB failed', e);
+                frappe.msgprint('Error pushing to Production Board.');
+            }
         }
-    ], async (values) => {
-        const pbPlanName = values.pb_plan_name.trim();
-        if (!pbPlanName) return;
-        
-        // Collect unique item names
-        const itemNames = [...new Set(items.map(d => d.itemName).filter(Boolean))];
-        
-        if (itemNames.length === 0) {
-            frappe.msgprint('No valid items to push.');
-            return;
-        }
-        
-        frappe.show_alert({ message: `Pushing ${itemNames.length} items to Production Board plan "${pbPlanName}"...`, indicator: 'blue' });
-        
-        try {
-            const r = await frappe.call({
-                method: "production_scheduler.api.push_to_pb",
-                args: {
-                    item_names: JSON.stringify(itemNames),
-                    pb_plan_name: pbPlanName
+    });
+
+    d.show();
+
+    // Wire up checkbox events
+    function wireCheckboxes() {
+        const container = d.wrapper.querySelector('#sequence_html') || d.wrapper;
+        container.querySelectorAll('input[type=checkbox]').forEach(cb => {
+            cb.addEventListener('change', function() {
+                const idx = parseInt(this.dataset.idx);
+                currentSequence[idx].checked = this.checked;
+                // Update count label
+                const total = currentSequence.filter(i => i.checked !== false).length;
+                const countEl = d.wrapper.querySelector('span[style*="fontSize"]') ||
+                    d.wrapper.querySelector('span');
+                if (countEl && countEl.textContent.includes('item(s)')) {
+                    countEl.textContent = `${total} item(s) selected`;
                 }
             });
-            
-            if (r.message && r.message.status === 'success') {
-                frappe.show_alert({ 
-                    message: `✅ Pushed ${r.message.updated_count} sheet(s) to Production Board plan "${pbPlanName}"`, 
-                    indicator: 'green' 
+        });
+    }
+
+    // Wire Smart Sequence button
+    function wireSmartBtn() {
+        const btn = d.wrapper.querySelector('#smart_seq_btn');
+        if (!btn) return;
+        btn.onclick = async () => {
+            if (smartSequenceActive) {
+                // Toggle off — restore original order
+                smartSequenceActive = false;
+                currentSequence = allItemNames.map((n, i) => {
+                    const existing = currentSequence.find(c => c.name === n) || {};
+                    const dItem = items.find(it => it.itemName === n) || {};
+                    return {
+                        ...existing,
+                        name: n,
+                        color: dItem.color || existing.color || '',
+                        quality: dItem.quality || dItem.custom_quality || existing.quality || '',
+                        gsm: dItem.gsm || existing.gsm || '',
+                        unit: dItem.unit || existing.unit || '',
+                        qty: dItem.qty || existing.qty || '',
+                        customer: dItem.customer || dItem.partyCode || existing.customer || '',
+                        phase: '',
+                        is_seed_bridge: false,
+                        sequence_no: i + 1,
+                        checked: existing.checked !== false
+                    };
                 });
-                fetchData(); // Refresh
+                d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
+                setTimeout(() => { wireCheckboxes(); wireSmartBtn(); }, 100);
             } else {
-                frappe.msgprint(r.message?.message || 'Push failed.');
+                // Toggle on — fetch smart sequence
+                btn.textContent = '⏳ Sequencing...';
+                btn.disabled = true;
+                try {
+                    const r = await frappe.call({
+                        method: 'production_scheduler.api.get_smart_push_sequence',
+                        args: { item_names: JSON.stringify(allItemNames) }
+                    });
+                    const smartSeq = r.message || [];
+                    if (smartSeq.length > 0) {
+                        smartSequenceActive = true;
+                        currentSequence = smartSeq.map(s => ({
+                            name: s.name,
+                            color: s.color || '',
+                            quality: s.quality || s.custom_quality || '',
+                            gsm: s.gsm || s.gsmVal || '',
+                            unit: s.unit || s.unitKey || '',
+                            qty: s.qty || '',
+                            customer: s.customer || s.partyCode || '',
+                            phase: s.phase || '',
+                            is_seed_bridge: !!s.is_seed_bridge,
+                            sequence_no: s.sequence_no,
+                            checked: (() => {
+                                const existing = currentSequence.find(c => c.name === s.name);
+                                return existing ? existing.checked !== false : true;
+                            })()
+                        }));
+                        d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
+                        setTimeout(() => { wireCheckboxes(); wireSmartBtn(); }, 100);
+                    } else {
+                        frappe.show_alert({ message: 'No sequence data returned', indicator: 'orange' });
+                        d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
+                        setTimeout(() => { wireCheckboxes(); wireSmartBtn(); }, 100);
+                    }
+                } catch (e) {
+                    console.error('Smart sequence error', e);
+                    frappe.show_alert({ message: 'Smart sequence failed', indicator: 'red' });
+                    d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
+                    setTimeout(() => { wireCheckboxes(); wireSmartBtn(); }, 100);
+                }
             }
-        } catch (e) {
-            console.error('Push to PB failed', e);
-            frappe.msgprint('Error pushing to Production Board.');
-        }
-    }, 'Push to Production Board', 'Push');
+        };
+    }
+
+    setTimeout(() => { wireCheckboxes(); wireSmartBtn(); }, 300);
 }
+
 
 // ---- MOVE TO PLAN ----
 async function openMovePlanDialog() {

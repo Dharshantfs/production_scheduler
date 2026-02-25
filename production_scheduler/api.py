@@ -1077,6 +1077,213 @@ def delete_plan(plan_name, date=None, start_date=None, end_date=None):
 	frappe.db.commit()
 	return {"status": "success", "deleted_count": count}
 
+# ── White color group ─────────────────────────────────────────────────────────
+WHITE_COLORS = {
+	"BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE",
+	"BLEACH WHITE 1.0", "BLEACH WHITE 2.0", "BLEACH WHITE", "WHITE MIX", "WHITE",
+	"BRIGHT IVORY", "IVORY", "CREAM", "CREAM 2.0", "CREAM 3.0", "CREAM 4.0", "CREAM 5.0",
+	"OFF-WHITE", "OFF WHITE",
+}
+
+# ── Color light→dark order (full list — matches COL_LIST in server script) ────
+COLOR_ORDER_LIST = [
+	"BRIGHT WHITE","SUPER WHITE","MILKY WHITE","SUNSHINE WHITE",
+	"BLEACH WHITE 1.0","BLEACH WHITE 2.0","BLEACH WHITE","WHITE MIX","WHITE",
+	"CREAM 2.0","CREAM 3.0","CREAM 4.0","CREAM 5.0","BRIGHT IVORY","IVORY","CREAM","OFF WHITE",
+	"GOLDEN YELLOW 4.0 SPL","GOLDEN YELLOW 1.0","GOLDEN YELLOW 2.0","GOLDEN YELLOW 3.0","GOLDEN YELLOW",
+	"LEMON YELLOW 1.0","LEMON YELLOW 3.0","LEMON YELLOW",
+	"BRIGHT ORANGE","DARK ORANGE","ORANGE 2.0",
+	"PINK 7.0 DARK","PINK 6.0 DARK","DARK PINK","BABY PINK","PINK 1.0","PINK 2.0","PINK 3.0","PINK 5.0",
+	"CRIMSON RED","RED","LIGHT MAROON","DARK MAROON","MAROON 1.0","MAROON 2.0",
+	"BLUE 13.0 INK BLUE","BLUE 12.0 SPL NAVY BLUE","BLUE 11.0 NAVY BLUE",
+	"BLUE 8.0 DARK ROYAL BLUE","BLUE 7.0 DARK BLUE","BLUE 6.0 ROYAL BLUE",
+	"LIGHT PEACOCK BLUE","PEACOCK BLUE","LIGHT MEDICAL BLUE","MEDICAL BLUE",
+	"ROYAL BLUE","NAVY BLUE","SKY BLUE","LIGHT BLUE",
+	"BLUE 9.0","BLUE 4.0","BLUE 2.0","BLUE 1.0","BLUE",
+	"PURPLE 4.0 BLACKBERRY","PURPLE 1.0","PURPLE 2.0","PURPLE 3.0","VOILET",
+	"GREEN 13.0 ARMY GREEN","GREEN 12.0 OLIVE GREEN","GREEN 11.0 DARK GREEN",
+	"GREEN 10.0","GREEN 9.0 BOTTLE GREEN","GREEN 8.0 APPLE GREEN",
+	"GREEN 7.0","GREEN 6.0","GREEN 5.0 GRASS GREEN","GREEN 4.0",
+	"GREEN 3.0 RELIANCE GREEN","GREEN 2.0 TORQUISE GREEN","GREEN 1.0 MINT",
+	"MEDICAL GREEN","RELIANCE GREEN","PARROT GREEN","GREEN",
+	"SILVER 1.0","SILVER 2.0","LIGHT GREY","DARK GREY","GREY 1.0",
+	"CHOCOLATE BROWN 2.0","CHOCOLATE BROWN","CHOCOLATE BLACK",
+	"BROWN 3.0 DARK COFFEE","BROWN 2.0 DARK","BROWN 1.0",
+	"CHIKOO 1.0","CHIKOO 2.0",
+	"BEIGE 1.0","BEIGE 2.0","BEIGE 3.0","BEIGE 4.0","BEIGE 5.0",
+	"LIGHT BEIGE","DARK BEIGE","BEIGE MIX","BLACK MIX","COLOR MIX","BLACK",
+]
+COLOR_PRIORITY = {c: i for i, c in enumerate(COLOR_ORDER_LIST)}
+
+# ── Quality run order per unit ─────────────────────────────────────────────────
+UNIT_QUALITY_ORDER = {
+	"Unit 1": ["PREMIUM","PLATINUM","SUPER PLATINUM","GOLD","SILVER"],
+	"Unit 2": ["GOLD","SILVER","BRONZE","CLASSIC","SUPER CLASSIC","LIFE STYLE",
+	           "ECO SPECIAL","ECO GREEN","SUPER ECO","ULTRA","DELUXE"],
+	"Unit 3": ["PREMIUM","PLATINUM","SUPER PLATINUM","GOLD","SILVER","BRONZE"],
+	"Unit 4": ["PREMIUM","GOLD","SILVER","BRONZE"],
+}
+
+@frappe.whitelist()
+def get_smart_push_sequence(item_names):
+	"""
+	Returns items in smart push order:
+	  1. White phase (per unit, quality order + GSM)
+	  2. Color phase (per unit): seed quality from last white → find colors in
+	     seed quality (light→dark) → group all qualities of each color together
+	     → update seed = last quality in batch → repeat
+	Returns list of dicts with sequence_no, phase, is_seed_bridge.
+	"""
+	import json
+	if isinstance(item_names, str):
+		item_names = json.loads(item_names)
+	if not item_names:
+		return []
+
+	# Load item data
+	raw_items = frappe.get_all(
+		"Planning Sheet Item",
+		filters={"name": ["in", item_names]},
+		fields=["name","color","custom_quality","gsm","qty","unit","item_name",
+		        "weight_per_roll","party_code","parent"]
+	)
+
+	# Enrich with customer from parent sheet
+	parent_cache = {}
+	for item in raw_items:
+		if item.parent not in parent_cache:
+			parent_cache[item.parent] = frappe.db.get_value(
+				"Planning sheet", item.parent, ["customer","party_code"], as_dict=1) or {}
+		p = parent_cache[item.parent]
+		item["customer"] = p.get("customer","")
+		item["partyCode"] = item.get("party_code") or p.get("party_code","")
+		item["quality"] = (item.get("custom_quality") or "").upper().strip()
+		item["colorKey"] = (item.get("color") or "").upper().strip()
+		item["unitKey"] = item.get("unit") or "Mixed"
+		item["gsmVal"] = float(item.get("gsm") or 0)
+
+	def quality_sort_key(item, unit):
+		order = UNIT_QUALITY_ORDER.get(unit, [])
+		q = item["quality"]
+		idx = order.index(q) if q in order else len(order)
+		return (idx, item["gsmVal"])
+
+	def color_sort_key(color):
+		return COLOR_PRIORITY.get(color, 9999)
+
+	sequence = []
+	seq_no = [0]  # use list so inner scope can mutate
+
+	units_present = list({i["unitKey"] for i in raw_items if i["unitKey"] != "Mixed"})
+	units_present += (["Mixed"] if any(i["unitKey"] == "Mixed" for i in raw_items) else [])
+
+	for unit in ["Unit 1","Unit 2","Unit 3","Unit 4","Mixed"]:
+		if unit not in units_present:
+			continue
+
+		unit_items = [i for i in raw_items if i["unitKey"] == unit]
+		if not unit_items:
+			continue
+
+		white_items = [i for i in unit_items if i["colorKey"] in WHITE_COLORS]
+		color_items = [i for i in unit_items if i["colorKey"] not in WHITE_COLORS]
+
+		# ── Phase 1: White ──
+		white_sorted = sorted(white_items, key=lambda i: quality_sort_key(i, unit))
+		seed_quality = None
+		for idx, item in enumerate(white_sorted):
+			seq_no[0] += 1
+			is_last = (idx == len(white_sorted) - 1)
+			if is_last:
+				seed_quality = item["quality"]
+			sequence.append({
+				**item,
+				"sequence_no": seq_no[0],
+				"phase": "white",
+				"is_seed_bridge": is_last and len(color_items) > 0,
+			})
+
+		# ── Phase 2: Color chaining ──
+		remaining = list(color_items)
+		done_colors = set()
+		quality_order = UNIT_QUALITY_ORDER.get(unit, [])
+
+		max_loops = len(remaining) + len(quality_order) + 5  # safety
+		loops = 0
+
+		while remaining and loops < max_loops:
+			loops += 1
+
+			# Find colors available in current seed quality (light→dark)
+			if seed_quality:
+				seed_pool = [i for i in remaining if i["quality"] == seed_quality]
+			else:
+				seed_pool = remaining
+
+			seed_pool_colors = sorted(
+				list({i["colorKey"] for i in seed_pool if i["colorKey"] not in done_colors}),
+				key=color_sort_key
+			)
+
+			if not seed_pool_colors:
+				# No more colors in this seed quality → advance to next quality in unit order
+				if seed_quality and seed_quality in quality_order:
+					qi = quality_order.index(seed_quality)
+					advanced = False
+					for nq in quality_order[qi+1:]:
+						pool = [i for i in remaining if i["quality"] == nq and i["colorKey"] not in done_colors]
+						if pool:
+							seed_quality = nq
+							advanced = True
+							break
+					if not advanced:
+						# Just dump all remaining in color/GSM order
+						seed_quality = None
+						continue
+				else:
+					# No quality order reference — just take lightest remaining color
+					all_remaining_colors = sorted(
+						list({i["colorKey"] for i in remaining if i["colorKey"] not in done_colors}),
+						key=color_sort_key
+					)
+					if not all_remaining_colors:
+						break
+					seed_pool_colors = [all_remaining_colors[0]]
+
+				continue
+
+			# Pick the lightest color from seed pool
+			chosen_color = seed_pool_colors[0]
+			done_colors.add(chosen_color)
+
+			# Collect ALL items of this color (all qualities) and sort by unit quality order + GSM
+			color_batch = sorted(
+				[i for i in remaining if i["colorKey"] == chosen_color],
+				key=lambda i: quality_sort_key(i, unit)
+			)
+			remaining = [i for i in remaining if i["colorKey"] != chosen_color]
+
+			for idx, item in enumerate(color_batch):
+				seq_no[0] += 1
+				is_last = (idx == len(color_batch) - 1)
+				if is_last:
+					seed_quality = item["quality"]
+				sequence.append({
+					**item,
+					"sequence_no": seq_no[0],
+					"phase": "color",
+					"is_seed_bridge": is_last and len(remaining) > 0,
+				})
+
+	# Append any unsequenced (Mixed unit or edge cases)
+	sequenced_names = {i["name"] for i in sequence}
+	for item in raw_items:
+		if item["name"] not in sequenced_names:
+			seq_no[0] += 1
+			sequence.append({**item, "sequence_no": seq_no[0], "phase": "unassigned", "is_seed_bridge": False})
+
+	return sequence
+
 @frappe.whitelist()
 def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_date=None, days_in_view=1, force_move=0):
 	"""
