@@ -2401,12 +2401,17 @@ def push_items_to_pb(items_data, pb_plan_name):
 	for item in items_data:
 		name = item.get("name") if isinstance(item, dict) else item
 		target_date = item.get("target_date") if isinstance(item, dict) else None
+		target_unit = item.get("target_unit") if isinstance(item, dict) else None
 
 		try:
 			# Get the parent Planning Sheet
 			parent = frappe.db.get_value("Planning Sheet Item", name, "parent")
 			if not parent:
 				continue
+
+			# ── KEY FIX: Update the item's unit if user selected a different unit ──
+			if target_unit:
+				frappe.db.set_value("Planning Sheet Item", name, "unit", target_unit)
 
 			if parent not in updated_sheets:
 				frappe.db.set_value("Planning sheet", parent, "custom_pb_plan_name", pb_plan_name)
