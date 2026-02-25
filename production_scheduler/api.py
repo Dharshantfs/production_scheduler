@@ -1362,89 +1362,77 @@ def get_smart_push_sequence(item_names, seed_quality=None, seed_color=None):
 				"is_seed_bridge": is_last and len(color_items) > 0,
 			})
 
-		# ── Phase 2: Color chaining ──
+		# ── Phase 2: Color chaining (Strict Quality-by-Quality) ──
 		remaining = list(color_items)
-		done_colors = set()
 		quality_order = UNIT_QUALITY_ORDER.get(unit, [])
 
-		max_loops = len(remaining) + len(quality_order) + 5  # safety
+		# If no active quality, find the first quality in the unit's quality order that has items
+		if not effective_seed and remaining:
+			for q in quality_order:
+				if any(i["quality"] == q for i in remaining):
+					effective_seed = q
+					break
+			if not effective_seed:
+				effective_seed = remaining[0]["quality"]
+
+		max_loops = len(remaining) * 2 + 5  # safety
 		loops = 0
 
 		while remaining and loops < max_loops:
 			loops += 1
 
-			# Find colors available in current effective_seed quality (light→dark)
-			if effective_seed:
-				seed_pool = [i for i in remaining if i["quality"] == effective_seed]
-			else:
-				seed_pool = remaining
+			# Get items in current quality
+			qual_pool = [i for i in remaining if i["quality"] == effective_seed]
 
-			seed_pool_colors = sorted(
-				list({i["colorKey"] for i in seed_pool if i["colorKey"] not in done_colors}),
-				key=color_sort_key
-			)
-
-			if not seed_pool_colors:
-				# No more colors in this seed quality → advance to next quality in unit order
-				if effective_seed and effective_seed in quality_order:
-					qi = quality_order.index(effective_seed)
-					advanced = False
-					for nq in quality_order[qi+1:]:
-						pool = [i for i in remaining if i["quality"] == nq and i["colorKey"] not in done_colors]
-						if pool:
+			if not qual_pool:
+				# Advance to next quality
+				advanced = False
+				if quality_order:
+					try:
+						qi = quality_order.index(effective_seed)
+					except ValueError:
+						qi = -1
+					search_order = quality_order[qi+1:] + quality_order[:qi+1] if qi != -1 else quality_order
+					for nq in search_order:
+						if any(i["quality"] == nq for i in remaining):
 							effective_seed = nq
 							advanced = True
+							current_seed_color = None  # Reset color seed when switching qualities
 							break
-					if not advanced:
-						# Just dump all remaining in color/GSM order
-						effective_seed = None
-						continue
-				else:
-					# No quality order reference — just take lightest remaining color
-					all_remaining_colors = sorted(
-						list({i["colorKey"] for i in remaining if i["colorKey"] not in done_colors}),
-						key=color_sort_key
-					)
-					if not all_remaining_colors:
-						break
-					seed_pool_colors = [all_remaining_colors[0]]
-
+				if not advanced:
+					effective_seed = remaining[0]["quality"]
+					current_seed_color = None
 				continue
 
-			# Pick the color from seed pool that is >= current_seed_color
+			# We have items in the current quality. Sort their colors light->dark.
+			pool_colors = sorted(list({i["colorKey"] for i in qual_pool}), key=color_sort_key)
+
 			if current_seed_color and current_seed_color in COLOR_PRIORITY:
 				seed_idx = COLOR_PRIORITY[current_seed_color]
-				valid_options = [c for c in seed_pool_colors if COLOR_PRIORITY.get(c, -1) >= seed_idx]
-				if valid_options:
-					chosen_color = valid_options[0]
-				else:
-					# If no darker colors exist in this quality, wrap around to lightest
-					chosen_color = seed_pool_colors[0]
+				valid_options = [c for c in pool_colors if COLOR_PRIORITY.get(c, -1) >= seed_idx]
+				chosen_color = valid_options[0] if valid_options else pool_colors[0]
 			else:
-				# Pick the lightest color from seed pool
-				chosen_color = seed_pool_colors[0]
-			
-			current_seed_color = chosen_color
-			done_colors.add(chosen_color)
+				chosen_color = pool_colors[0]
 
-			# Collect ALL items of this color (all qualities) and sort by unit quality order + GSM
+			# Batch items by chosen color within THIS quality
 			color_batch = sorted(
-				[i for i in remaining if i["colorKey"] == chosen_color],
-				key=lambda i: quality_sort_key(i, unit)
+				[i for i in qual_pool if i["colorKey"] == chosen_color],
+				key=lambda i: (i.get("gsm") or 0)
 			)
-			remaining = [i for i in remaining if i["colorKey"] != chosen_color]
+
+			for i in color_batch:
+				remaining.remove(i)
 
 			for idx, item in enumerate(color_batch):
 				seq_no[0] += 1
-				is_last = (idx == len(color_batch) - 1)
-				if is_last:
-					effective_seed = item["quality"]
 				sequence.append({
 					**item,
 					"sequence_no": seq_no[0],
 					"phase": "color",
-					"is_seed_bridge": is_last and len(remaining) > 0,
+					"is_seed_bridge": (idx == len(color_batch) - 1) and len(remaining) > 0,
 				})
+
+			current_seed_color = chosen_color
 
 	# Append any unsequenced (Mixed unit or edge cases)
 	sequenced_names = {i["name"] for i in sequence}
