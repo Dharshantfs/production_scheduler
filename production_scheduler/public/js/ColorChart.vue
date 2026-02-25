@@ -2445,8 +2445,14 @@ async function pushToProductionBoard() {
         smartBtn.prop('disabled', true);
         
         try {
+            // Get the actual date of the items being pushed (since Global Push has no target_date input)
+            let itemDate = frappe.datetime.get_today();
+            if (items && items.length > 0) {
+                itemDate = items[0].ordered_date || items[0].orderDate || items[0].date || itemDate;
+            }
+
             // Get the last running order on Production Board per unit to use as seed
-            const targetDate = d.get_value ? (d.get_value('target_date') || frappe.datetime.get_today()) : frappe.datetime.get_today();
+            const targetDate = d.get_value && d.get_value('target_date') ? d.get_value('target_date') : itemDate;
             const unitsInBatch = [...new Set(currentSequence.map(s => s.unit || s.unitKey || 'Mixed').filter(u => u && u !== 'Mixed'))];
             
             let seedQuality = null, seedColor = null;
