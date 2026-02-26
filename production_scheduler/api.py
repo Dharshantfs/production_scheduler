@@ -97,6 +97,8 @@ COL_LIST = [
 COL_LIST.sort(key=len, reverse=True)
 
 # ... Limits ...
+WHITE_COLORS = ["BRIGHT WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"]
+
 HARD_LIMITS = {
 	"Unit 1": 4.4,
 	"Unit 2": 12.0,
@@ -646,7 +648,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			# Filter out items that have WO
 			items = [it for it in items if it.planningSheet not in wo_sheets]
 		
-		return items
+		# Deduplicate if mode is pull or board
+		return _deduplicate_items(items)
 	
 	# Support both single date and range
 	if start_date and end_date:
@@ -821,8 +824,57 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				"dod": str(sheet.dod) if sheet.dod else "",
 				"delivery_status": so_status_map.get(sheet.sales_order) or "Not Delivered",
 				"has_pp": sheet_has_pp,
-				"has_wo": sheet_has_wo
+				"has_wo": sheet_has_wo,
+				"salesOrderItem": item.get("sales_order_item"),
+				"isSplit": item.get("custom_is_split")
 			})
+
+	if cint(planned_only) and plan_name == "__all__":
+		return _deduplicate_items(data)
+
+	return data
+
+def _deduplicate_items(items):
+	"""
+	Helper to prevent duplicate orders appearing in board/list views.
+	Groups by sales_order_item and prioritizes:
+	1. Scheduled items (in custom plans) over Draft items (in Default).
+	2. Newer items (higher idx or recent creation) over older ones.
+	Legitimate splits (custom_is_split=1) are PRESERVED.
+	"""
+	seen = {}
+	result = []
+	for item in items:
+		# Support both dict keys (camelCase vs snake_case) 
+		so_item = item.get("salesOrderItem") or item.get("sales_order_item")
+		is_split = item.get("isSplit") or item.get("custom_is_split")
+		
+		if is_split or not so_item:
+			result.append(item)
+			continue
+			
+		if so_item not in seen:
+			seen[so_item] = item
+			result.append(item)
+		else:
+			existing = seen[so_item]
+			e_plan = existing.get("planName") or existing.get("custom_plan_name") or "Default"
+			i_plan = item.get("planName") or item.get("custom_plan_name") or "Default"
+			
+			replace = False
+			# Priority 1: Specific Plan > Default
+			if e_plan == "Default" and i_plan != "Default":
+				replace = True
+			# Priority 2: If same plan, pick newest (loop order is often Creation ASC, so later is newer)
+			elif e_plan == i_plan:
+				replace = True
+				
+			if replace:
+				if existing in result:
+					result.remove(existing)
+				seen[so_item] = item
+				result.append(item)
+	return result
 
 	return data
 
@@ -1379,43 +1431,50 @@ def get_smart_push_sequence(item_names, seed_quality=None, seed_color=None):
 		while remaining and loops < max_loops:
 			loops += 1
 
-			# Get items in current quality
-			qual_pool = [i for i in remaining if i["quality"] == effective_seed]
-
-			if not qual_pool:
-				# Advance to next quality
-				advanced = False
-				if quality_order:
-					try:
-						qi = quality_order.index(effective_seed)
-					except ValueError:
-						qi = -1
-					search_order = quality_order[qi+1:] + quality_order[:qi+1] if qi != -1 else quality_order
-					for nq in search_order:
-						if any(i["quality"] == nq for i in remaining):
-							effective_seed = nq
-							advanced = True
-							current_seed_color = None  # Reset color seed when switching qualities
-							break
-				if not advanced:
-					effective_seed = remaining[0]["quality"]
-					current_seed_color = None
-				continue
-
-			# We have items in the current quality. Sort their colors light->dark.
-			pool_colors = sorted(list({i["colorKey"] for i in qual_pool}), key=color_sort_key)
-
-			if current_seed_color and current_seed_color in COLOR_PRIORITY:
-				seed_idx = COLOR_PRIORITY[current_seed_color]
-				valid_options = [c for c in pool_colors if COLOR_PRIORITY.get(c, -1) >= seed_idx]
-				chosen_color = valid_options[0] if valid_options else pool_colors[0]
+			# 1. Anchor: Check if the current color (from board or previous color-batch) still exists in the remaining list
+			if current_seed_color and any(i["colorKey"] == current_seed_color for i in remaining):
+				chosen_color = current_seed_color
 			else:
-				chosen_color = pool_colors[0]
+				# 2. Transition: Find available colors in the CURRENT effective quality (ANCHOR QUALITY)
+				qual_pool = [i for i in remaining if i["quality"] == effective_seed]
 
-			# Batch items by chosen color within THIS quality
+				if not qual_pool:
+					# Advance to next quality in the unit's sequence that has items
+					advanced = False
+					if quality_order:
+						try:
+							qi = quality_order.index(effective_seed)
+						except ValueError:
+							qi = -1
+						search_order = quality_order[qi+1:] + quality_order[:qi+1] if qi != -1 else quality_order
+						for nq in search_order:
+							if any(i["quality"] == nq for i in remaining):
+								effective_seed = nq
+								advanced = True
+								current_seed_color = None  # Reset color seed when switching qualities
+								break
+					if not advanced:
+						effective_seed = remaining[0]["quality"]
+						current_seed_color = None
+					continue
+
+				# Colors available specifically in this "current" quality
+				pool_colors = sorted(list({i["colorKey"] for i in qual_pool}), key=color_sort_key)
+
+				# Pick the next color from the sorted list (based on light->dark priority)
+				if current_seed_color and current_seed_color in COLOR_PRIORITY:
+					seed_idx = COLOR_PRIORITY[current_seed_color]
+					# Find first color that is >= seed priority (so we don't jump back to light colors unless no darken ones left)
+					valid_options = [c for c in pool_colors if COLOR_PRIORITY.get(c, -1) >= seed_idx]
+					chosen_color = valid_options[0] if valid_options else pool_colors[0]
+				else:
+					chosen_color = pool_colors[0]
+
+			# 3. Batch EVERY item of 'chosen_color' across EVERY quality (Bridge logic)
+			# "must be run the pink color is all quality"
 			color_batch = sorted(
-				[i for i in qual_pool if i["colorKey"] == chosen_color],
-				key=lambda i: (i.get("gsm") or 0)
+				[i for i in remaining if i["colorKey"] == chosen_color],
+				key=lambda i: quality_sort_key(i, unit)
 			)
 
 			for i in color_batch:
@@ -1430,7 +1489,11 @@ def get_smart_push_sequence(item_names, seed_quality=None, seed_color=None):
 					"is_seed_bridge": (idx == len(color_batch) - 1) and len(remaining) > 0,
 				})
 
+			# Update seeds for the next color selection
 			current_seed_color = chosen_color
+			# "pink is end with silver... same concept running again"
+			# Anchor the search for the NEXT color to the quality where the PREVIOUS color ended
+			effective_seed = color_batch[-1]["quality"]
 
 	# Append any unsequenced (Mixed unit or edge cases)
 	sequenced_names = {i["name"] for i in sequence}
@@ -1528,20 +1591,12 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
 					)
 					continue
 
-			# --- COPY the item to target sheet (source stays unchanged) ---
-			new_item = frappe.new_doc("Planning Sheet Item")
-			for field in item_doc.meta.fields:
-				fname = field.fieldname
-				if fname in ("name", "parent", "parenttype", "parentfield", "idx", "creation", "modified", "owner"):
-					continue
-				try:
-					setattr(new_item, fname, item_doc.get(fname))
-				except Exception:
-					pass
-			new_item.parent = target_sheet_name
-			new_item.parenttype = "Planning sheet"
-			new_item.parentfield = "items"
-			new_item.insert(ignore_permissions=True)
+			# --- RE-PARENT the item to target sheet (Fixing duplication) ---
+			frappe.db.set_value("Planning Sheet Item", name, {
+				"parent": target_sheet_name,
+				"parenttype": "Planning sheet",
+				"parentfield": "items"
+			})
 			moved += 1
 
 		except Exception as e:
@@ -1837,7 +1892,7 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
     sql = f"""
         SELECT 
             i.name, i.item_code, i.item_name, i.qty, i.unit, i.color, 
-            i.gsm, i.custom_quality as quality, i.width_inch, i.idx,
+            i.gsm, i.custom_quality as quality, i.width_inch, i.idx, i.sales_order_item, i.custom_is_split,
             p.name as planning_sheet, p.party_code, p.customer, p.dod, p.planning_status, p.creation,
             so.transaction_date as so_date, so.custom_production_status, so.delivery_status
         FROM
@@ -1874,10 +1929,12 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
             "unit": item.unit or "", 
             "dod": str(item.dod) if item.dod else "",
             "order_date": str(item.so_date) if item.so_date else str(item.creation.date()),
-            "delivery_status": item.delivery_status or "Not Delivered"
+            "delivery_status": item.delivery_status or "Not Delivered",
+            "sales_order_item": item.sales_order_item,
+            "custom_is_split": item.custom_is_split
         })
         
-    return data
+    return _deduplicate_items(data)
 
 
 
