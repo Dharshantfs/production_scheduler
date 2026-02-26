@@ -2820,60 +2820,119 @@ def regenerate_planning_sheet(so_name):
 @frappe.whitelist()
 def run_global_cleanup():
     """
-    Identifies and removes duplicate Planning Sheet Items across the entire database.
-    Keeps the most relevant one (scheduled/pushed) for each sales_order_item.
+    Two-phase global cleanup:
+    Phase 1 — Remove duplicate Planning Sheet Items per sales_order_item.
+    Phase 2 — Remove duplicate Planning Sheet headers per Sales Order.
+                Keeps the OLDEST sheet. Moves unique items there. Deletes newer duplicates.
     """
-    frappe.only_for("System Manager") # Security guard
-    
-    # 1. Find all duplicate sales_order_item names
-    duplicates = frappe.db.sql("""
+    frappe.only_for("System Manager")
+
+    removed_items = 0
+    item_details = []
+
+    # ── PHASE 1: Deduplicate Planning Sheet ITEMS ─────────────────────────────
+    dup_so_items = frappe.db.sql("""
         SELECT sales_order_item, COUNT(*) as cnt
         FROM `tabPlanning Sheet Item`
         WHERE sales_order_item IS NOT NULL AND sales_order_item != ''
         GROUP BY sales_order_item
         HAVING COUNT(*) > 1
     """, as_dict=True)
-    
-    removed_count = 0
-    details = []
 
-    for dup in duplicates:
+    for dup in dup_so_items:
         so_item = dup.sales_order_item
-        
-        # Fetch all records for this so_item, prioritizing scheduled items and custom plans
-        items = frappe.db.sql("""
+        rows = frappe.db.sql("""
             SELECT it.name, it.parent, it.plannedDate, ps.custom_plan_name, it.creation
             FROM `tabPlanning Sheet Item` it
             JOIN `tabPlanning sheet` ps ON it.parent = ps.name
             WHERE it.sales_order_item = %s
-            ORDER BY 
+            ORDER BY
                 CASE WHEN it.plannedDate IS NOT NULL AND it.plannedDate != '' THEN 0 ELSE 1 END,
-                CASE WHEN ps.custom_plan_name IS NOT NULL AND ps.custom_plan_name != 'Default' AND ps.custom_plan_name != '' THEN 0 ELSE 1 END,
-                it.creation DESC
+                CASE WHEN ps.custom_plan_name IS NOT NULL AND ps.custom_plan_name != '' AND ps.custom_plan_name != 'Default' THEN 0 ELSE 1 END,
+                it.creation ASC
         """, (so_item,), as_dict=True)
-        
-        if len(items) <= 1:
+
+        if len(rows) <= 1:
             continue
-            
-        # Keep the best one, remove others
-        keep_name = items[0].name
-        to_remove = [it.name for it in items[1:]]
-        
-        for name in to_remove:
+
+        keep = rows[0].name
+        to_del = [r.name for r in rows[1:]]
+        for name in to_del:
             frappe.db.delete("Planning Sheet Item", {"name": name})
-            removed_count += 1
-            
-        details.append({
-            "so_item": so_item,
-            "kept": keep_name,
-            "removed": to_remove
+            removed_items += 1
+
+        item_details.append({"so_item": so_item, "kept": keep, "removed": to_del})
+
+    # ── PHASE 2: Deduplicate Planning Sheet HEADERS per Sales Order ───────────
+    removed_sheets = 0
+    sheet_details = []
+
+    dup_so_sheets = frappe.db.sql("""
+        SELECT sales_order, COUNT(*) as cnt
+        FROM `tabPlanning sheet`
+        WHERE sales_order IS NOT NULL AND sales_order != ''
+          AND docstatus < 2
+        GROUP BY sales_order
+        HAVING COUNT(*) > 1
+    """, as_dict=True)
+
+    for row in dup_so_sheets:
+        so = row.sales_order
+
+        # Oldest sheet first → keep it
+        sheets = frappe.db.sql("""
+            SELECT name FROM `tabPlanning sheet`
+            WHERE sales_order = %s AND docstatus < 2
+            ORDER BY creation ASC
+        """, (so,), as_dict=True)
+
+        if len(sheets) <= 1:
+            continue
+
+        keep_sheet = sheets[0].name
+
+        # Build set of SO item names already in the kept sheet
+        keep_items_set = set(
+            r[0] for r in frappe.db.sql(
+                "SELECT sales_order_item FROM `tabPlanning Sheet Item` WHERE parent = %s AND sales_order_item IS NOT NULL",
+                (keep_sheet,)
+            )
+        )
+
+        dup_names = [s.name for s in sheets[1:]]
+        for dup_name in dup_names:
+            dup_items = frappe.db.sql(
+                "SELECT name, sales_order_item FROM `tabPlanning Sheet Item` WHERE parent = %s",
+                (dup_name,), as_dict=True
+            )
+            for it in dup_items:
+                if it.sales_order_item and it.sales_order_item not in keep_items_set:
+                    # Move unique item to kept sheet
+                    frappe.db.sql("""
+                        UPDATE `tabPlanning Sheet Item`
+                        SET parent = %s
+                        WHERE name = %s
+                    """, (keep_sheet, it.name))
+                    keep_items_set.add(it.sales_order_item)
+                else:
+                    frappe.db.delete("Planning Sheet Item", {"name": it.name})
+
+            # Delete the now-empty duplicate sheet
+            frappe.db.delete("Planning sheet", {"name": dup_name})
+            removed_sheets += 1
+
+        sheet_details.append({
+            "sales_order": so,
+            "kept_sheet": keep_sheet,
+            "removed_sheets": dup_names
         })
-            
+
     frappe.db.commit()
     return {
         "status": "success",
-        "removed_count": removed_count,
-        "details": details
+        "removed_items_count": removed_items,
+        "removed_sheets_count": removed_sheets,
+        "sheet_details": sheet_details
     }
 
 
