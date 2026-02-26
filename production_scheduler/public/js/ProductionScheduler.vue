@@ -716,7 +716,7 @@ const unitEntriesCache = computed(() => {
       entries.push({ 
         type: "order", 
         ...unitItems[i],
-        uniqueKey: unitItems[i].itemName
+        uniqueKey: unitItems[i].name
       });
       if (i < unitItems.length - 1) {
         const curPri = getColorPriority(unitItems[i].color);
@@ -732,7 +732,7 @@ const unitEntriesCache = computed(() => {
                  type: "mix",
                  mixType: mType,
                  qty: mQty,
-                 uniqueKey: `mix-${unitItems[i].itemName}-${unitItems[i + 1].itemName}`
+                 uniqueKey: `mix-${unitItems[i].name}-${unitItems[i + 1].name}`
                });
            }
         }
