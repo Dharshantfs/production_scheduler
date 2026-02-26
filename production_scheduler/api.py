@@ -2031,7 +2031,7 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
     sql = f"""
         SELECT 
             i.name, i.item_code, i.item_name, i.qty, i.unit, i.color, 
-            i.gsm, i.custom_quality as quality, i.width_inch, i.idx, i.sales_order_item, i.custom_is_split,
+            i.gsm, i.custom_quality as quality, i.width_inch, i.idx,
             p.name as planning_sheet, p.party_code, p.customer, p.dod, p.planning_status, p.creation,
             so.transaction_date as so_date, so.custom_production_status, so.delivery_status
         FROM
@@ -2065,12 +2065,8 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
             "width": flt(item.width_inch or 0),
             "unit": item.unit or "", 
             "dod": str(item.dod) if item.dod else "",
-            "unit": item.unit or "", 
-            "dod": str(item.dod) if item.dod else "",
             "order_date": str(item.so_date) if item.so_date else str(item.creation.date()),
-            "delivery_status": item.delivery_status or "Not Delivered",
-            "sales_order_item": item.sales_order_item,
-            "custom_is_split": item.custom_is_split
+            "delivery_status": item.delivery_status or "Not Delivered"
         })
         
     return _deduplicate_items(data)
