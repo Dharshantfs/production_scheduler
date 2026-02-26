@@ -530,12 +530,32 @@ async function initSortable() {
         const isSameUnit = (newUnitEl === oldUnitEl);
 
         if (!isSameUnit || evt.newIndex !== evt.oldIndex) {
-            // For cross-unit moves: immediately hide the Sortable-moved DOM element.
-            // SortableJS already moved it into the new column's DOM.
-            // We hide it NOW (synchronously) so Vue's upcoming re-render from fetchData()
-            // doesn't see a duplicate — Vue will replace the entire list cleanly.
+            // Vue and Sortable conflict fix:
+            // Sortable physically moves the DOM element to the new column.
+            // When Vue re-renders the columns after fetching new data, it expects
+            // that element to still be in its virtual DOM tree location. 
+            // If it's missing, Vue throws `insertBefore on Node` or `nextSibling` errors.
+            // FIX: Manually move the physical DOM element back to its original column
+            // BEFORE we await any network calls or trigger Vue updates.
+            // Vue will smoothly re-render everything correctly based on the new array state.
+            const nextSibling = evt.item.nextSibling;
             if (!isSameUnit) {
-                itemEl.style.display = 'none';
+                // If it moved to another unit, it was inserted in newUnitEl. 
+                // We must return it to oldUnitEl at the old index.
+                const oldChildren = Array.from(oldUnitEl.children).filter(c => c !== itemEl && !c.classList.contains('cc-ghost'));
+                if (evt.oldIndex < oldChildren.length) {
+                    oldUnitEl.insertBefore(itemEl, oldChildren[evt.oldIndex]);
+                } else {
+                    oldUnitEl.appendChild(itemEl);
+                }
+            } else {
+                // Moved within same unit. Hard reset to old position as well
+                const oldChildren = Array.from(oldUnitEl.children).filter(c => c !== itemEl && !c.classList.contains('cc-ghost'));
+                if (evt.oldIndex < oldChildren.length) {
+                    oldUnitEl.insertBefore(itemEl, oldChildren[evt.oldIndex]);
+                } else {
+                    oldUnitEl.appendChild(itemEl);
+                }
             }
 
             setTimeout(async () => {
@@ -589,10 +609,10 @@ async function initSortable() {
                                     const dest = res2.message.moved_to;
                                     frappe.show_alert(`Placed in ${dest.unit} (${dest.date})`, 5);
                                 }
-                                fetchData();
+                                await fetchData();
                             },
                             secondary_action_label: 'Cancel',
-                            secondary_action: () => { d.hide(); fetchData(); }
+                            secondary_action: async () => { d.hide(); await fetchData(); }
                          });
                          
                          // Move to Next Day (strict — same unit, next day)
@@ -607,7 +627,7 @@ async function initSortable() {
                              } else if (res3.message && res3.message.status === 'success') {
                                  const dest = res3.message.moved_to;
                                  frappe.show_alert(`Moved to ${dest.unit} on ${dest.date}`, 5);
-                                 fetchData();
+                                 await fetchData();
                              }
                          }, 'btn-info');
                          d.show();
@@ -616,19 +636,13 @@ async function initSortable() {
                      showOverflowDialog(res.message, filterOrderDate.value, newUnit);
                 } else if (res.message && res.message.status === 'success') {
                     frappe.show_alert({ message: isSameUnit ? "Order resequenced" : "Successfully moved", indicator: "green" });
-                    if (isSameUnit) {
-                        unitSortConfig[newUnit].mode = 'manual';
-                        // Re-fetch from server to get correct order
-                        fetchData();
-                    } else {
-                        unitSortConfig[newUnit].mode = 'manual';
-                        await fetchData(); // Vue re-renders cleanly — hidden element is gone
-                    }
+                    unitSortConfig[newUnit].mode = 'manual';
+                    await fetchData(); 
                 }
              } catch (e) {
                  console.error(e);
                  frappe.msgprint("❌ Move Failed");
-                 fetchData(); 
+                 await fetchData(); 
              }
              }, 100);
         }
