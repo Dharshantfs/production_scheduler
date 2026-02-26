@@ -1938,9 +1938,11 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                 new_unit = get_preferred_unit(qual)
             
             # Use SQL for direct re-parenting (Robust for rescue)
-            frappe.db.sql("""
+            # Make sure we also update custom_item_planned_date so pulled items don't vanish from the board
+            set_date = f", custom_item_planned_date = '{target_date}'" if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date") else ""
+            frappe.db.sql(f"""
                 UPDATE `tabPlanning Sheet Item`
-                SET parent = %s, idx = %s, unit = %s, parenttype='Planning sheet', parentfield='items'
+                SET parent = %s, idx = %s, unit = %s, parenttype='Planning sheet', parentfield='items'{set_date}
                 WHERE name = %s
             """, (target_sheet.name, new_idx, new_unit, item_doc.name))
             
