@@ -2428,7 +2428,8 @@ def push_to_pb(item_names, pb_plan_name):
 def push_items_to_pb(items_data, pb_plan_name):
 	"""
 	Pushes Planning Sheet Items to a Production Board plan.
-	Sets custom_pb_plan_name on the parent Planning Sheet for each item.
+	Sets plannedDate on each ITEM individually (not the whole sheet),
+	so pushing e.g. RED items doesn't affect other colors in the same sheet.
 	items_data: list of dicts [{"name": "...", "target_date": "...", "target_unit": "..."}]
 	"""
 	import json
@@ -2454,11 +2455,17 @@ def push_items_to_pb(items_data, pb_plan_name):
 			if not parent:
 				continue
 
-			# ── KEY FIX: Update the item's unit if user selected a different unit ──
+			# ── Set item-level unit if user picked a different unit ──
 			if target_unit:
 				frappe.db.set_value("Planning Sheet Item", name, "unit", target_unit)
 
-			# ── KEY FIX: Update idx so sequences are globally preserved on the board ──
+			# ── Set plannedDate at ITEM level (NOT sheet level) ──
+			# This ensures only the selected items become visible on the board.
+			# Other colors in the same Planning Sheet remain hidden until pushed.
+			if target_date:
+				frappe.db.set_value("Planning Sheet Item", name, "plannedDate", target_date)
+
+			# ── Update idx for sequence ordering on board ──
 			if sequence_no is not None and target_unit and target_date:
 				cache_key = (target_unit, target_date)
 				if cache_key not in max_idx_cache:
@@ -2479,10 +2486,11 @@ def push_items_to_pb(items_data, pb_plan_name):
 				new_idx = max_idx_cache[cache_key] + int(sequence_no)
 				frappe.db.set_value("Planning Sheet Item", name, "idx", new_idx)
 
+			# ── Update sheet-level plan name (for tracking only, not visibility) ──
 			if parent not in updated_sheets:
 				frappe.db.set_value("Planning sheet", parent, "custom_pb_plan_name", pb_plan_name)
-				if target_date:
-					frappe.db.set_value("Planning sheet", parent, "custom_planned_date", target_date)
+				# NOTE: We deliberately do NOT set custom_planned_date on the sheet,
+				# because that would make ALL items in the sheet visible on the board.
 				updated_sheets.add(parent)
 			count += 1
 

@@ -3169,24 +3169,41 @@ async function handleMoveOrders(items, date, unit, plan, dialog) {
 }
 
 async function openPushColorDialog(color) {
-    // Hide items already pushed
-    const items = rawData.value.filter(d => {
-        if (d.plannedDate) return false; 
+    // ── Available options for filters ──
+    const allForColor = rawData.value.filter(d => {
         if ((d.color || "").toUpperCase().trim() !== color.toUpperCase().trim()) return false;
-        
-        // Exclude White colors from being pushed manually
         const colorUpper = (d.color || "").toUpperCase().trim();
         if (colorUpper === "WHITE" || colorUpper === "BRIGHT WHITE") return false;
-        
         if (filterUnit.value && (d.unit || "Mixed") !== filterUnit.value) return false;
         if (filterStatus.value && d.planningStatus !== filterStatus.value) return false;
         return true;
     });
 
-    if (!items.length) {
+    // Active filter state
+    let fQuality = "";
+    let fPartyCode = "";
+    let fGsm = "";
+
+    function getFilteredItems() {
+        return allForColor.filter(d => {
+            if (d.plannedDate) return false; // already pushed
+            if (fQuality && (d.quality || "").toUpperCase().trim() !== fQuality.toUpperCase().trim()) return false;
+            if (fPartyCode && (d.partyCode || "").toUpperCase().indexOf(fPartyCode.toUpperCase()) === -1) return false;
+            if (fGsm && String(d.gsm || "").trim() !== String(fGsm).trim()) return false;
+            return true;
+        });
+    }
+
+    let items = getFilteredItems();
+
+    if (allForColor.filter(d => !d.plannedDate).length === 0) {
         frappe.msgprint("No eligible items found. (Note: White orders are auto-allocated and do not need to be pushed manually, and already-pushed items are hidden.)");
         return;
     }
+
+    // Build unique quality/gsm options for datalists
+    const qualities = [...new Set(allForColor.map(d => (d.quality || "").trim()).filter(Boolean))];
+    const gsmOptions = [...new Set(allForColor.map(d => String(d.gsm || "").trim()).filter(Boolean))];
 
     const d = new frappe.ui.Dialog({
         title: `📤 Push ${color} to Production Board`,
@@ -3194,11 +3211,13 @@ async function openPushColorDialog(color) {
             { fieldname: "target_date", label: "Target Date", fieldtype: "Date", reqd: 1, default: filterOrderDate.value || frappe.datetime.get_today(),
               onchange: () => loadCapacityPreview(d)
             },
+            { fieldname: "filters_info", label: "Filters", fieldtype: "HTML" },
             { fieldname: "capacity_info", label: "", fieldtype: "HTML" },
             { fieldname: "items_info", label: "Order Selection", fieldtype: "HTML" }
         ],
         primary_action_label: "Push to Production Board",
         primary_action: () => {
+             items = getFilteredItems();
              const selected = d.calc_selected_items || [];
              if (!selected.length) { frappe.msgprint("Please select at least one order."); return; }
              
@@ -3301,6 +3320,46 @@ async function openPushColorDialog(color) {
         return html;
     }
 
+    d.set_value("filters_info", `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;padding:6px 0 2px 0;">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+                <label style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;">Quality</label>
+                <input id="push-filter-quality" list="push-qual-list" placeholder="All" value="${fQuality}" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;width:140px;">
+                <datalist id="push-qual-list">${qualities.map(q => `<option value="${q}">`).join('')}</datalist>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+                <label style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;">Party Code</label>
+                <input id="push-filter-party" placeholder="Search party..." value="${fPartyCode}" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;width:140px;">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:2px;">
+                <label style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;">GSM</label>
+                <input id="push-filter-gsm" list="push-gsm-list" placeholder="All" value="${fGsm}" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;width:80px;">
+                <datalist id="push-gsm-list">${gsmOptions.map(g => `<option value="${g}">`).join('')}</datalist>
+            </div>
+        </div>
+    `);
+
+    function bindFilterEvents() {
+        d.fields_dict.filters_info.$wrapper.find('#push-filter-quality').off('input').on('input', function() {
+            fQuality = this.value;
+            refreshItemList();
+        });
+        d.fields_dict.filters_info.$wrapper.find('#push-filter-party').off('input').on('input', function() {
+            fPartyCode = this.value;
+            refreshItemList();
+        });
+        d.fields_dict.filters_info.$wrapper.find('#push-filter-gsm').off('input').on('input', function() {
+            fGsm = this.value;
+            refreshItemList();
+        });
+    }
+
+    function refreshItemList() {
+        items = getFilteredItems();
+        d.set_value("items_info", renderItemRows(items));
+        setTimeout(() => { wireItemEvents(); bindFilterEvents(); }, 100);
+    }
+
     d.set_value("items_info", renderItemRows(items));
 
     // Track selections and trigger capacity preview
@@ -3388,7 +3447,7 @@ async function openPushColorDialog(color) {
     }
     
     // Initial load - wait for DOM
-    setTimeout(() => wireItemEvents(), 200);
+    setTimeout(() => { wireItemEvents(); bindFilterEvents(); }, 200);
 
     // Add Smart Auto-Tick button
     d.add_custom_action('🧠 Smart Auto-Tick', async () => {
