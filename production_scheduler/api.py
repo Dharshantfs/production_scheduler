@@ -2384,10 +2384,9 @@ def get_pb_plans(date=None, start_date=None, end_date=None):
 @frappe.whitelist()
 def push_to_pb(item_names, pb_plan_name):
 	"""
-	Pushes ONLY the selected Planning Sheet items to a Production Board plan.
-	Each item is re-parented to a new (or existing) Planning Sheet that has
-	custom_pb_plan_name set. The original sheet keeps any un-pushed items
-	(e.g., if Golden Yellow and Orange share a sheet, only Golden Yellow moves).
+	Pushes the selected Planning Sheet items to a Production Board plan.
+	Sets custom_item_planned_date on each item in-place so the Production Board
+	can find them via its filter. Does NOT re-parent items to a new sheet.
 	"""
 	import json
 	if isinstance(item_names, str):
@@ -2396,53 +2395,50 @@ def push_to_pb(item_names, pb_plan_name):
 	if not item_names or not pb_plan_name:
 		return {"status": "error", "message": "Missing item names or plan name"}
 
+	has_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
 	updated_count = 0
-	pb_sheet_cache = {}  # (party_code, effective_date) -> pb sheet name
 
 	for name in item_names:
 		try:
-			item = frappe.get_doc("Planning Sheet Item", name)
-			parent = frappe.get_doc("Planning sheet", item.parent)
+			# Get the parent sheet to determine the effective date for this item
+			row = frappe.db.get_value(
+				"Planning Sheet Item", name, "parent", as_dict=True
+			)
+			if not row or not row.parent:
+				continue
 
-			effective_date = str(parent.get("custom_planned_date") or parent.ordered_date)
-			party_code = parent.party_code or ""
+			parent_name = row.parent
+			parent = frappe.db.get_value(
+				"Planning sheet", parent_name,
+				["custom_planned_date", "ordered_date"],
+				as_dict=True
+			)
+			if not parent:
+				continue
 
-			# Find or create a dedicated PB Planning Sheet for this date+party
-			cache_key = (party_code, effective_date, pb_plan_name)
-			if cache_key in pb_sheet_cache:
-				pb_sheet_name = pb_sheet_cache[cache_key]
-			else:
-				existing = frappe.get_all("Planning sheet", filters={
-					"custom_pb_plan_name": pb_plan_name,
-					"ordered_date": effective_date,
-					"party_code": party_code,
-					"docstatus": ["<", 1]
-				}, fields=["name"], limit=1)
+			effective_date = str(parent.get("custom_planned_date") or parent.ordered_date or frappe.utils.today())
 
-				if existing:
-					pb_sheet_name = existing[0].name
-				else:
-					pb_sheet = frappe.new_doc("Planning sheet")
-					pb_sheet.custom_plan_name = parent.get("custom_plan_name") or "Default"
-					pb_sheet.custom_pb_plan_name = pb_plan_name
-					pb_sheet.ordered_date = effective_date
-					pb_sheet.custom_planned_date = effective_date
-					pb_sheet.party_code = party_code
-					pb_sheet.customer = parent.customer or ""
-					pb_sheet.sales_order = parent.sales_order or ""
-					pb_sheet.insert(ignore_permissions=True)
-					pb_sheet_name = pb_sheet.name
+			# ── Set plannedDate at ITEM level so the board picks it up ──
+			if has_col:
+				frappe.db.set_value("Planning Sheet Item", name, "custom_item_planned_date", effective_date)
 
-				pb_sheet_cache[cache_key] = pb_sheet_name
+			# Track the sheet as having a pushed item (for plan-level queries)
+			frappe.db.set_value("Planning sheet", parent_name, "custom_pb_plan_name", pb_plan_name)
 
-			# Move item to the PB sheet
-			frappe.db.set_value("Planning Sheet Item", name, "parent", pb_sheet_name)
-			frappe.db.set_value("Planning Sheet Item", name, "parenttype", "Planning sheet")
-			frappe.db.set_value("Planning Sheet Item", name, "parentfield", "items")
 			updated_count += 1
 
 		except Exception as e:
 			frappe.log_error(f"push_to_pb error for item {name}: {e}", "Push to PB")
+
+	# Persist this PB plan name so it appears in the plan dropdown
+	persisted = get_persisted_plans("production_board")
+	if not any(p["name"] == pb_plan_name for p in persisted):
+		persisted.append({"name": pb_plan_name, "locked": 0})
+		import json as _json
+		frappe.defaults.set_global_default(
+			"production_scheduler_production_board_plans",
+			_json.dumps(persisted)
+		)
 
 	frappe.db.commit()
 	return {"status": "success", "updated_count": updated_count, "plan_name": pb_plan_name}
