@@ -2336,6 +2336,9 @@ async function pushToProductionBoard() {
         // Instead of grouping by item's original date, use the user's selected Target Date
         const targetDate = dialog.get_value('target_date') || filterOrderDate.value || frappe.datetime.get_today();
         
+        let filterUnitValue = 'All Units';
+        try { filterUnitValue = dialog.get_value('filter_unit') || 'All Units'; } catch(e) {}
+        
         const limits = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5 };
         let capHtml = `<div style="display:flex; flex-direction:column; gap:6px;">`;
         let capacityExceeded = false;
@@ -2343,7 +2346,8 @@ async function pushToProductionBoard() {
         try {
             const r = await frappe.call({
                 method: "production_scheduler.api.get_color_chart_data",
-                args: { date: targetDate, plan_name: '__all__', planned_only: 1 }
+                // Remove planned_only to ensure we get White orders too
+                args: { date: targetDate, plan_name: '__all__' }
             });
             const allItems = r.message || [];
             
@@ -2356,18 +2360,38 @@ async function pushToProductionBoard() {
             capHtml += `<div style="font-size:11px;font-weight:600;margin-top:4px;">Target Date: ${targetDate}</div>`;
 
             ["Unit 1", "Unit 2", "Unit 3", "Unit 4"].forEach(u => {
+                // If the user selected a specific unit in the dropdown, only show that unit.
+                if (filterUnitValue !== 'All Units' && u !== filterUnitValue) return;
+                
                 const pushWeight = pushLoads[u] || 0;
-                if (pushWeight > 0) {
+                
+                // Show capacity if there's pushing weight OR if we explicitly filtered by this unit
+                if (pushWeight > 0 || filterUnitValue === u) {
                     const pushingNames = checkedItems.map(s => s.name);
-                    const existingU = allItems.filter(i => i.unit === u && i.plannedDate && !pushingNames.includes(i.itemName));
+                    
+                    const existingU = allItems.filter(i => {
+                        if (i.unit !== u) return false;
+                        if (pushingNames.includes(i.itemName)) return false; // Don't double count
+                        const isWhite = (i.color || '').toUpperCase().includes('WHITE');
+                        // Count if it's already pushed OR if it's a White order
+                        return i.plannedDate || isWhite;
+                    });
+                    
                     const currentLoad = existingU.reduce((s, i) => s + (parseFloat(i.qty || 0)), 0) / 1000;
+                    
+                    // Calculate explicitly how much of that load is White orders
+                    const whiteItems = existingU.filter(i => (i.color || '').toUpperCase().includes('WHITE'));
+                    const whiteLoad = whiteItems.reduce((s, i) => s + (parseFloat(i.qty || 0)), 0) / 1000;
+                    
                     const afterPush = currentLoad + pushWeight;
                     const limit = limits[u];
                     const isOver = afterPush > limit;
                     if (isOver) capacityExceeded = true;
+                    
                     capHtml += `<div style="padding:6px 10px;border-radius:6px;border:1px solid ${isOver ? '#fda4af' : '#bbf7d0'};background:${isOver ? '#fff1f2' : '#f0fdf4'};display:flex;justify-content:space-between;align-items:center;">
                         <div>
                             <div style="font-weight:700;font-size:12px;color:${isOver ? '#dc2626' : '#16a34a'};">${u}: ${currentLoad.toFixed(2)} / ${limit}T</div>
+                            ${whiteLoad > 0 ? `<div style="font-size:9px;color:#64748b;margin-top:1px;">(Includes ${whiteLoad.toFixed(2)}T White)</div>` : ''}
                             <div style="font-size:10px;color:#475569;margin-top:2px;">After push: <b>${afterPush.toFixed(2)}T</b> <span style="color:#64748b;">(+${pushWeight.toFixed(2)}T)</span></div>
                         </div>
                         ${isOver ? '<span style="font-size:16px;" title="Capacity Exceeded">⚠️</span>' : '<span style="font-size:16px;">✅</span>'}  
@@ -2581,22 +2605,66 @@ async function pushToProductionBoard() {
             });
             const smartSeq = r.message || [];
             if (smartSeq.length > 0) {
+                
+                // Get existing loads to respect capacity limits
+                let existingLoads = {};
+                const limits = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5 };
+                try {
+                    const rData = await frappe.call({
+                        method: "production_scheduler.api.get_color_chart_data",
+                        args: { date: targetDate, plan_name: '__all__' }
+                    });
+                    const allItems = rData.message || [];
+                    ["Unit 1", "Unit 2", "Unit 3", "Unit 4"].forEach(u => {
+                        const existingU = allItems.filter(i => {
+                            if (i.unit !== u) return false;
+                            const isWhite = (i.color || '').toUpperCase().includes('WHITE');
+                            return i.plannedDate || isWhite;
+                        });
+                        existingLoads[u] = existingU.reduce((s, i) => s + (parseFloat(i.qty || 0)), 0) / 1000;
+                    });
+                } catch(e) { console.error("Failed to get capacity for Smart Tick", e); }
+
                 smartSequenceActive = true;
-                currentSequence = smartSeq.map(s => ({
-                    name: s.name,
-                    color: s.color || '',
-                    quality: s.quality || s.custom_quality || '',
-                    gsm: s.gsm || s.gsmVal || '',
-                    unit: s.unit || s.unitKey || '',
-                    qty: s.qty || '',
-                    customer: s.customer || s.partyCode || '',
-                    phase: s.phase || '',
-                    is_seed_bridge: !!s.is_seed_bridge,
-                    sequence_no: s.sequence_no,
-                    checked: true // AUTO TICK THEM ALL
-                }));
+                let currentLoads = { ...existingLoads };
+                
+                currentSequence = smartSeq.map(s => {
+                    const mapped = {
+                        name: s.name,
+                        color: s.color || '',
+                        quality: s.quality || s.custom_quality || '',
+                        gsm: s.gsm || s.gsmVal || '',
+                        unit: s.unit || s.unitKey || '',
+                        qty: s.qty || '',
+                        customer: s.customer || s.partyCode || '',
+                        phase: s.phase || '',
+                        is_seed_bridge: !!s.is_seed_bridge,
+                        sequence_no: s.sequence_no,
+                        pushed: !!s.plannedDate
+                    };
+                    
+                    if (mapped.pushed) {
+                        mapped.checked = false;
+                        return mapped;
+                    }
+
+                    const u = mapped.unit || 'Unit 1';
+                    const weight = parseFloat(mapped.qty || 0) / 1000;
+                    const limit = limits[u] || 999;
+                    
+                    // Only tick if it perfectly fits in the remaining capacity
+                    if ((currentLoads[u] || 0) + weight <= limit) {
+                        mapped.checked = true;
+                        currentLoads[u] = (currentLoads[u] || 0) + weight;
+                    } else {
+                        mapped.checked = false; // Exceeds capacity, leave unchecked
+                    }
+                    
+                    return mapped;
+                });
+                
                 d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
-                setTimeout(() => { wireCheckboxes(); }, 100);
+                setTimeout(() => { wireCheckboxes(); updateCountLabel(); }, 100);
             } else {
                 frappe.show_alert({ message: 'No sequence data returned', indicator: 'orange' });
             }
@@ -3507,7 +3575,8 @@ async function openPushColorDialog(color, inputTargetDate = null) {
         try {
             const r = await frappe.call({
                 method: "production_scheduler.api.get_color_chart_data",
-                args: { date: date, plan_name: '__all__', planned_only: 1 }
+                // Remove planned_only: 1 to ensure we get White orders too
+                args: { date: date, plan_name: '__all__' }
             });
             const allItems = r.message || [];
             
@@ -3527,8 +3596,22 @@ async function openPushColorDialog(color, inputTargetDate = null) {
                 if (pushWeight > 0) {
                     unitsPrinted++;
                     const pushingNames = selected.map(s => s.name);
-                    const existingU = allItems.filter(i => i.unit === u && i.plannedDate && !pushingNames.includes(i.itemName));
+                    
+                    const existingU = allItems.filter(i => {
+                        if (i.unit !== u) return false;
+                        if (pushingNames.includes(i.itemName)) return false; // don't double count
+                        
+                        const isWhite = (i.color || '').toUpperCase().includes('WHITE');
+                        // Count if it's already pushed OR if it's a White order
+                        return i.plannedDate || isWhite;
+                    });
+                    
                     const currentLoad = existingU.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
+                    
+                    // Calculate explicitly how much of that load is White orders
+                    const whiteItems = existingU.filter(i => (i.color || '').toUpperCase().includes('WHITE'));
+                    const whiteLoad = whiteItems.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
+                    
                     const afterPush = currentLoad + pushWeight;
                     const limit = limits[u];
                     const isOver = afterPush > limit;
@@ -3536,6 +3619,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
                     capHtml += `<div style="padding:6px 10px;border-radius:6px;border:1px solid ${isOver ? '#fda4af' : '#bbf7d0'};background:${isOver ? '#fff1f2' : '#f0fdf4'};display:flex;justify-content:space-between;align-items:center;">
                         <div>
                             <div style="font-weight:700;font-size:12px;color:${isOver ? '#dc2626' : '#16a34a'};">${u}: ${currentLoad.toFixed(2)} / ${limit}T</div>
+                            ${whiteLoad > 0 ? `<div style="font-size:9px;color:#64748b;margin-top:1px;">(Includes ${whiteLoad.toFixed(2)}T White)</div>` : ''}
                             <div style="font-size:10px;color:#475569;margin-top:2px;">After push: <b>${afterPush.toFixed(2)}T</b> <span style="color:#64748b;">(+${pushWeight.toFixed(2)}T)</span></div>
                         </div>
                         ${isOver ? '<span style="font-size:16px;" title="Capacity Exceeded">⚠️</span>' : '<span style="font-size:16px;">✅</span>'}  
