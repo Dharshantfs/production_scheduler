@@ -194,7 +194,7 @@ def _populate_planning_sheet_items(ps, doc):
             "weight_per_roll": wt,
             "unit": unit,
             "party_code": ps.party_code,
-            "plannedDate": p_date
+            "custom_item_planned_date": p_date
         })
     return ps
 
@@ -911,20 +911,32 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			if not color or not quality or color.upper() == "NO COLOR":
 				continue
 
-			# Production Board filtering: use item.plannedDate if set, else sheet.custom_planned_date
+			# ── KEY FIX: Restore missing item details from sheet data ──
+			unit = item.get("unit") or sheet.get("unit") or "Unit 1"
+			effective_date_str = str(item.get("ordered_date") or sheet.get("ordered_date") or "")
+			
+			# Production Board filtering: use item.custom_item_planned_date if set, else sheet.custom_planned_date
 			if cint(planned_only):
 				# Resolve effective planned date: item-level first, then sheet-level
-				it_pdate = item.get("plannedDate") or sheet.get("custom_planned_date")
+				it_pdate = item.get("custom_item_planned_date") or sheet.get("custom_planned_date")
+				
 				# If filter is by single date
 				if date and str(it_pdate) != str(target_date):
 					continue
-				# If filter is by range
+				
+				# If filter is by date range
 				if start_date and end_date:
-					if not it_pdate or not (getdate(it_pdate) >= query_start and getdate(it_pdate) <= query_end):
+					# Skip if it_pdate is none or outside range
+					from frappe.utils import getdate
+					if not it_pdate:
 						continue
-
-			unit = item.get("unit") or ""
-			effective_date_str = str(sheet.effective_date) if sheet.get("effective_date") else str(sheet.ordered_date)
+					try:
+						pdt = getdate(str(it_pdate))
+						if not (pdt >= query_start and pdt <= query_end):
+							continue
+					except Exception:
+						# If date parsing fails, treat as invalid and skip
+						continue
 
 			data.append({
 				"name": "{}-{}".format(sheet.name, item.get("idx", 0)),
@@ -2460,10 +2472,8 @@ def push_items_to_pb(items_data, pb_plan_name):
 				frappe.db.set_value("Planning Sheet Item", name, "unit", target_unit)
 
 			# ── Set plannedDate at ITEM level (NOT sheet level) ──
-			# This ensures only the selected items become visible on the board.
-			# Other colors in the same Planning Sheet remain hidden until pushed.
 			if target_date:
-				frappe.db.set_value("Planning Sheet Item", name, "plannedDate", target_date)
+				frappe.db.set_value("Planning Sheet Item", name, "custom_item_planned_date", target_date)
 
 			# ── Update idx for sequence ordering on board ──
 			if sequence_no is not None and target_unit and target_date:
@@ -2471,7 +2481,7 @@ def push_items_to_pb(items_data, pb_plan_name):
 				if cache_key not in max_idx_cache:
 					from frappe.utils import getdate
 					actual_date = getdate(target_date)
-					has_col = _has_planned_date_column()
+					has_col = frappe.db.has_column("Planning sheet", "custom_planned_date")
 					date_cond = "COALESCE(p.custom_planned_date, p.ordered_date) = %s" if has_col else "p.ordered_date = %s"
 					max_idx = frappe.db.sql(f"""
 						SELECT MAX(i.idx)
@@ -2535,8 +2545,12 @@ def revert_items_from_pb(item_names):
 				continue
 			
 			# Clear Item-level Planned Date (Hides it from Production Board)
-			frappe.db.set_value("Planning Sheet Item", name, "plannedDate", None)
-
+			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+				frappe.db.set_value("Planning Sheet Item", name, "custom_item_planned_date", None)
+			
+			# Note: We must leave the sheet-level custom_planned_date intact here if we use item-level dates,
+			# Otherwise we'll hide other older items in the same sheet. 
+			# But for older deployed data, we must clear it so Revert actually works for legacy items.
 			if parent not in updated_sheets:
 				frappe.db.set_value("Planning sheet", parent, "custom_pb_plan_name", "")
 				frappe.db.set_value("Planning sheet", parent, "custom_planned_date", None)
@@ -2548,6 +2562,28 @@ def revert_items_from_pb(item_names):
 
 	frappe.db.commit()
 	return {"status": "success", "reverted_items": count, "updated_sheets": len(updated_sheets)}
+
+
+@frappe.whitelist()
+def sync_custom_fields():
+	"""
+	Creates the custom_item_planned_date field on Planning Sheet Item if it doesn't exist.
+	Run this once from the browser console.
+	"""
+	# Check if custom field exists
+	if not frappe.db.exists("Custom Field", {"dt": "Planning Sheet Item", "fieldname": "custom_item_planned_date"}):
+		doc = frappe.get_doc({
+			"doctype": "Custom Field",
+			"dt": "Planning Sheet Item",
+			"fieldname": "custom_item_planned_date",
+			"label": "Planned Date",
+			"fieldtype": "Date",
+			"insert_after": "unit"
+		})
+		doc.insert(ignore_permissions=True)
+		frappe.db.commit()
+		return "Field custom_item_planned_date created."
+	return "Field custom_item_planned_date already exists."
 
 
 @frappe.whitelist()
