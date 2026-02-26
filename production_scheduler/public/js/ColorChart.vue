@@ -2308,6 +2308,70 @@ async function pushToProductionBoard() {
         </div>
         ${renderTable(seq)}`;
     }
+    async function loadGlobalCapacityPreview(dialog, seq) {
+        const checkedItems = seq.filter(i => i.checked !== false);
+        if (!checkedItems.length) {
+            dialog.set_value("global_capacity_info", `<div style="font-size:11px;color:#64748b;font-style:italic;">Select items above to see capacity footprint.</div>`);
+            dialog.capacityExceeded = false;
+            return;
+        }
+
+        // Group by date
+        const byDate = {};
+        checkedItems.forEach(item => {
+            const dt = item.orderDate || filterOrderDate.value || frappe.datetime.get_today();
+            if (!byDate[dt]) byDate[dt] = [];
+            byDate[dt].push(item);
+        });
+
+        const limits = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5 };
+        let capHtml = `<div style="display:flex; flex-direction:column; gap:6px;">`;
+        let capacityExceeded = false;
+
+        for (const [dt, pushes] of Object.entries(byDate)) {
+            try {
+                const r = await frappe.call({
+                    method: "production_scheduler.api.get_color_chart_data",
+                    args: { date: dt, plan_name: '__all__', planned_only: 1 }
+                });
+                const allItems = r.message || [];
+                
+                const pushLoads = {};
+                pushes.forEach(sel => {
+                    const u = sel.unit || 'Unit 1';
+                    pushLoads[u] = (pushLoads[u] || 0) + (parseFloat(sel.qty || 0) / 1000);
+                });
+
+                let dateHtml = ``;
+                if (Object.keys(byDate).length > 1) dateHtml = `<div style="font-size:11px;font-weight:600;margin-top:4px;">Date: ${dt}</div>`;
+                capHtml += dateHtml;
+
+                ["Unit 1", "Unit 2", "Unit 3", "Unit 4"].forEach(u => {
+                    const pushWeight = pushLoads[u] || 0;
+                    if (pushWeight > 0) {
+                        const pushingNames = pushes.map(s => s.name);
+                        const existingU = allItems.filter(i => i.unit === u && i.plannedDate && !pushingNames.includes(i.itemName));
+                        const currentLoad = existingU.reduce((s, i) => s + (parseFloat(i.qty || 0)), 0) / 1000;
+                        const afterPush = currentLoad + pushWeight;
+                        const limit = limits[u];
+                        const isOver = afterPush > limit;
+                        if (isOver) capacityExceeded = true;
+                        capHtml += `<div style="padding:6px 10px;border-radius:6px;border:1px solid ${isOver ? '#fda4af' : '#bbf7d0'};background:${isOver ? '#fff1f2' : '#f0fdf4'};display:flex;justify-content:space-between;align-items:center;">
+                            <div>
+                                <div style="font-weight:700;font-size:12px;color:${isOver ? '#dc2626' : '#16a34a'};">${u}: ${currentLoad.toFixed(2)} / ${limit}T</div>
+                                <div style="font-size:10px;color:#475569;margin-top:2px;">After push: <b>${afterPush.toFixed(2)}T</b> <span style="color:#64748b;">(+${pushWeight.toFixed(2)}T)</span></div>
+                            </div>
+                            ${isOver ? '<span style="font-size:16px;" title="Capacity Exceeded">⚠️</span>' : '<span style="font-size:16px;">✅</span>'}  
+                        </div>`;
+                    }
+                });
+            } catch(e) { console.error(e); }
+        }
+
+        capHtml += `</div>`;
+        dialog.set_value("global_capacity_info", capHtml);
+        dialog.capacityExceeded = capacityExceeded;
+    }
 
     const d = new frappe.ui.Dialog({
         title: '🚀 Push to Production Board',
@@ -2324,7 +2388,9 @@ async function pushToProductionBoard() {
                 fieldname: 'sequence_html',
                 fieldtype: 'HTML',
                 options: buildDialogHtml(currentSequence)
-            }
+            },
+            { fieldtype: 'Section Break', label: 'Capacity Preview' },
+            { fieldname: 'global_capacity_info', fieldtype: 'HTML', label: '' }
         ],
         primary_action_label: 'Push',
         primary_action: async (values) => {
@@ -2368,6 +2434,7 @@ async function pushToProductionBoard() {
 
     d.show();
     d.$wrapper.find('.modal-dialog').css('max-width', '800px');
+    loadGlobalCapacityPreview(d, currentSequence);
 
     function applyFilters() {
         const qualitySearch = (d.get_value('filter_quality') || "").toLowerCase();
@@ -2398,6 +2465,7 @@ async function pushToProductionBoard() {
 
         d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
         wireCheckboxes();
+        updateCountLabel();
     }
 
     // Attach keyup events to inputs for real-time filtering
@@ -2437,6 +2505,8 @@ async function pushToProductionBoard() {
         const total = currentSequence.filter(i => i.checked !== false).length;
         const countSpan = d.wrapper.querySelector('#seq-count-label');
         if (countSpan) countSpan.textContent = total;
+        
+        loadGlobalCapacityPreview(d, currentSequence);
     }
 
     // Add Smart Push button to Dialog Footer
@@ -3403,7 +3473,7 @@ async function openPushColorDialog(color) {
         try {
             const r = await frappe.call({
                 method: "production_scheduler.api.get_color_chart_data",
-                args: { date: date, plan_name: selectedPlan.value }
+                args: { date: date, plan_name: '__all__', planned_only: 1 }
             });
             const allItems = r.message || [];
             
