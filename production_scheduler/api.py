@@ -175,6 +175,9 @@ def _populate_planning_sheet_items(ps, doc):
             elif q_up in UNIT_4:
                 unit = "Unit 4"
 
+        # plannedDate auto-set for White items
+        p_date = ps.ordered_date if _is_white_color(col) else None
+
         ps.append("items", {
             "sales_order_item": it.name,
             "item_code": it.item_code,
@@ -191,10 +194,23 @@ def _populate_planning_sheet_items(ps, doc):
             "weight_per_roll": wt,
             "unit": unit,
             "party_code": ps.party_code,
+            "plannedDate": p_date
         })
     return ps
 
-WHITE_COLORS = ["BRIGHT WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"]
+
+def _is_white_color(color):
+    """Return True if color string matches a white-family color."""
+    if not color:
+        return False
+    c = color.upper().strip()
+    return any(w == c for w in WHITE_COLORS)
+
+# User-defined White colors that are auto-planned on the Production Board
+WHITE_COLORS = [
+    "BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE", 
+    "BLEACH WHITE", "WHITE MIX", "WHITE"
+]
 
 HARD_LIMITS = {
 	"Unit 1": 4.4,
@@ -572,6 +588,7 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 	# 2. Handle IDX Shifting if inserting at specific position
 	# Update Item unit and parent first
 	item_doc.unit = unit
+	item_doc.plannedDate = target_date # Pushed/Planned date
 	item_doc.save(ignore_permissions=True)
 
 	if new_idx is not None:
@@ -894,9 +911,16 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			if not color or not quality or color.upper() == "NO COLOR":
 				continue
 
-			unit = item.get("unit") or ""
-			# For Matrix view calculation - use effective_date (planned or ordered)
-			effective_date_str = str(sheet.effective_date) if sheet.get("effective_date") else str(sheet.ordered_date)
+			# Production Board filtering: strictly check item.plannedDate if planned_only=1
+			if cint(planned_only):
+				it_pdate = item.get("plannedDate")
+				# If filter is by single date
+				if date and str(it_pdate) != str(target_date):
+					continue
+				# If filter is by range
+				if start_date and end_date:
+					if not it_pdate or not (getdate(it_pdate) >= query_start and getdate(it_pdate) <= query_end):
+						continue
 
 			data.append({
 				"name": "{}-{}".format(sheet.name, item.get("idx", 0)),
@@ -2498,6 +2522,9 @@ def revert_items_from_pb(item_names):
 			if not parent:
 				continue
 			
+			# Clear Item-level Planned Date (Hides it from Production Board)
+			frappe.db.set_value("Planning Sheet Item", name, "plannedDate", None)
+
 			if parent not in updated_sheets:
 				frappe.db.set_value("Planning sheet", parent, "custom_pb_plan_name", "")
 				frappe.db.set_value("Planning sheet", parent, "custom_planned_date", None)
@@ -2790,13 +2817,6 @@ def regenerate_planning_sheet(so_name):
     return ps
 
 
-# ─── WHITE ORDERS PLANNED DATE MIGRATION ───────────────────────────────────────
-WHITE_COLOR_KEYWORDS = [
-    "WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD",
-    "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE",
-    "SUNSHINE WHITE", "BLEACH WHITE", "OFF WHITE", "IVORY", "CREAM"
-]
-
 @frappe.whitelist()
 def run_global_cleanup():
     """
@@ -2856,13 +2876,6 @@ def run_global_cleanup():
         "details": details
     }
 
-
-def _is_white_color(color):
-    """Return True if color string matches a white-family color."""
-    if not color:
-        return False
-    c = color.upper().strip()
-    return any(kw in c for kw in WHITE_COLOR_KEYWORDS)
 
 @frappe.whitelist()
 def fix_white_orders_planned_date():
