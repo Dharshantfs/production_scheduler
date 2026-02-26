@@ -2480,8 +2480,8 @@ def push_to_pb(item_names, pb_plan_name):
 def push_items_to_pb(items_data, pb_plan_name):
 	"""
 	Pushes Planning Sheet Items to a Production Board plan.
-	Sets plannedDate on each ITEM individually (not the whole sheet),
-	so pushing e.g. RED items doesn't affect other colors in the same sheet.
+	Re-parents each item to a PB Planning Sheet (with custom_planned_date set)
+	so the Production Board can find them via the sheet-level filter.
 	items_data: list of dicts [{"name": "...", "target_date": "...", "target_unit": "..."}]
 	"""
 	import json
@@ -2493,7 +2493,7 @@ def push_items_to_pb(items_data, pb_plan_name):
 
 	count = 0
 	updated_sheets = set()
-	max_idx_cache = {}
+	pb_sheet_cache = {}  # (party_code, target_date, pb_plan_name) -> pb sheet name
 
 	for item in items_data:
 		name = item.get("name") if isinstance(item, dict) else item
@@ -2502,44 +2502,70 @@ def push_items_to_pb(items_data, pb_plan_name):
 		sequence_no = item.get("sequence_no") if isinstance(item, dict) else None
 
 		try:
-			# Get the parent Planning Sheet
-			parent = frappe.db.get_value("Planning Sheet Item", name, "parent")
-			if not parent:
-				continue
+			# Get item + parent sheet info
+			item_doc = frappe.get_doc("Planning Sheet Item", name)
+			parent_doc = frappe.get_doc("Planning sheet", item_doc.parent)
+
+			effective_date = target_date or str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
+			party_code = parent_doc.party_code or ""
 
 			# ── Set item-level unit if user picked a different unit ──
 			if target_unit:
 				frappe.db.set_value("Planning Sheet Item", name, "unit", target_unit)
 
-			# ── Set plannedDate at ITEM level (NOT sheet level) ──
-			if target_date:
-				frappe.db.set_value("Planning Sheet Item", name, "custom_item_planned_date", target_date)
+			# ── Find or create a dedicated PB Planning Sheet ──
+			cache_key = (party_code, effective_date, pb_plan_name)
+			if cache_key in pb_sheet_cache:
+				pb_sheet_name = pb_sheet_cache[cache_key]
+			else:
+				existing = frappe.get_all("Planning sheet", filters={
+					"custom_pb_plan_name": pb_plan_name,
+					"ordered_date": effective_date,
+					"party_code": party_code,
+					"docstatus": ["<", 2]
+				}, fields=["name"], limit=1)
+
+				if existing:
+					pb_sheet_name = existing[0].name
+				else:
+					pb_sheet = frappe.new_doc("Planning sheet")
+					pb_sheet.custom_plan_name = parent_doc.get("custom_plan_name") or "Default"
+					pb_sheet.custom_pb_plan_name = pb_plan_name
+					pb_sheet.ordered_date = effective_date
+					pb_sheet.custom_planned_date = effective_date
+					pb_sheet.party_code = party_code
+					pb_sheet.customer = parent_doc.customer or ""
+					pb_sheet.sales_order = parent_doc.sales_order or ""
+					pb_sheet.insert(ignore_permissions=True)
+					pb_sheet_name = pb_sheet.name
+
+				pb_sheet_cache[cache_key] = pb_sheet_name
+
+			# ── Move item to the PB sheet ──
+			frappe.db.set_value("Planning Sheet Item", name, "parent", pb_sheet_name)
+			frappe.db.set_value("Planning Sheet Item", name, "parenttype", "Planning sheet")
+			frappe.db.set_value("Planning Sheet Item", name, "parentfield", "items")
+
+			# Also set item-level planned date for consistency
+			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+				frappe.db.set_value("Planning Sheet Item", name, "custom_item_planned_date", effective_date)
 
 			# ── Update idx for sequence ordering on board ──
-			if sequence_no is not None and target_unit and target_date:
-				cache_key = (target_unit, target_date)
-				if cache_key not in max_idx_cache:
-					from frappe.utils import getdate
-					actual_date = getdate(target_date)
-					has_col = frappe.db.has_column("Planning sheet", "custom_planned_date")
-					date_cond = "COALESCE(p.custom_planned_date, p.ordered_date) = %s" if has_col else "p.ordered_date = %s"
-					max_idx = frappe.db.sql(f"""
-						SELECT MAX(i.idx)
-						FROM `tabPlanning Sheet Item` i
-						JOIN `tabPlanning sheet` p ON i.parent = p.name
-						WHERE i.unit = %s
-						  AND {date_cond}
-						  AND p.docstatus < 2
-					""", (target_unit, actual_date))
-					max_idx_cache[cache_key] = max_idx[0][0] if max_idx and max_idx[0][0] else 0
-				
-				new_idx = max_idx_cache[cache_key] + int(sequence_no)
-				frappe.db.set_value("Planning Sheet Item", name, "idx", new_idx)
+			if sequence_no is not None:
+				frappe.db.set_value("Planning Sheet Item", name, "idx", int(sequence_no))
 
-			# ── Keep track of which sheets were touched ──
-			if parent not in updated_sheets:
-				updated_sheets.add(parent)
-				
+			# ── Track which original sheets were touched ──
+			updated_sheets.add(item_doc.parent)  # original parent
+
+			# ── Clean up original sheet if now empty ──
+			if item_doc.parent != pb_sheet_name:
+				remaining = frappe.db.count("Planning Sheet Item", {"parent": item_doc.parent})
+				if remaining == 0:
+					try:
+						frappe.delete_doc("Planning sheet", item_doc.parent, ignore_permissions=True, force=True)
+					except Exception:
+						pass
+
 			count += 1
 
 		except Exception as e:
