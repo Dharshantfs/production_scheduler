@@ -711,6 +711,8 @@ def get_kanban_board(start_date, end_date):
 
 @frappe.whitelist()
 def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=None, mode=None, planned_only=0):
+	from frappe.utils import getdate
+	
 	# PULL MODE: Return raw items by ordered_date, exclude items with Work Orders
 	if mode == "pull" and date:
 		target_date = getdate(date)
@@ -765,7 +767,6 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		# Deduplicate if mode is pull or board
 		return _deduplicate_items(items)
 	
-	from frappe.utils import getdate
 	# Support both single date and range
 	if start_date and end_date:
 		query_start = getdate(start_date)
