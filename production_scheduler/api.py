@@ -546,18 +546,27 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 		date_cond = "COALESCE(custom_planned_date, ordered_date) = %(target)s" if has_col else "ordered_date = %(target)s"
 		so_cond = "sales_order = %(so)s" if source_parent.sales_order else "party_code = %(party)s"
 		
+		# IMPORTANT: also match custom_pb_plan_name so PB items stay on PB sheets
+		pb_plan = source_parent.get("custom_pb_plan_name") or ""
+		if pb_plan:
+			pb_cond = "AND custom_pb_plan_name = %(pb_plan)s"
+		else:
+			pb_cond = "AND (custom_pb_plan_name IS NULL OR custom_pb_plan_name = '')"
+		
 		existing = frappe.db.sql(f"""
 			SELECT name FROM `tabPlanning sheet`
 			WHERE {so_cond}
 			  AND {date_cond}
 			  AND docstatus < 2
 			  AND name != %(source)s
+			  {pb_cond}
 			LIMIT 1
 		""", {
 			"so": source_parent.sales_order,
 			"party": source_parent.party_code,
 			"target": target_date,
-			"source": source_parent.name
+			"source": source_parent.name,
+			"pb_plan": pb_plan
 		})
 		
 		if existing:
@@ -583,7 +592,10 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 		
 		# Clean up source parent if empty
 		if frappe.db.count("Planning Sheet Item", {"parent": source_parent.name}) == 0:
-			frappe.delete_doc("Planning sheet", source_parent.name, ignore_permissions=True)
+			try:
+				frappe.delete_doc("Planning sheet", source_parent.name, ignore_permissions=True)
+			except Exception:
+				pass  # Ignore if linked to Production Plan
 
 	# 2. Handle IDX Shifting if inserting at specific position
 	# Update Item unit and parent first
@@ -807,10 +819,10 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	else:
 		plan_condition = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
 
-	# NOTE: Do NOT add a sheet-level filter for planned_only here.
-	# Item-level custom_item_planned_date is checked in the loop below (lines ~932-953).
-	# Adding p.custom_planned_date IS NOT NULL here would exclude all color chart sheets
-	# (RED, NAVY etc.) since only white orders have sheet-level planned_date.
+	# Production Board only: require custom_planned_date to be explicitly set on the sheet
+	# Items are re-parented to PB sheets that have this set when pushed via push_to_pb
+	if cint(planned_only) and _has_planned_date_column():
+		plan_condition += " AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
 	
 	# Build SELECT fields — include custom_planned_date only if column exists
 	extra_fields = ", p.custom_planned_date" if _has_planned_date_column() else ""
@@ -2385,9 +2397,10 @@ def get_pb_plans(date=None, start_date=None, end_date=None):
 @frappe.whitelist()
 def push_to_pb(item_names, pb_plan_name):
 	"""
-	Pushes the selected Planning Sheet items to a Production Board plan.
-	Sets custom_item_planned_date on each item in-place so the Production Board
-	can find them via its filter. Does NOT re-parent items to a new sheet.
+	Pushes ONLY the selected Planning Sheet items to a Production Board plan.
+	Each item is re-parented to a new (or existing) Planning Sheet that has
+	custom_pb_plan_name AND custom_planned_date set. The board finds them
+	via the sheet-level custom_planned_date IS NOT NULL filter.
 	"""
 	import json
 	if isinstance(item_names, str):
@@ -2396,35 +2409,53 @@ def push_to_pb(item_names, pb_plan_name):
 	if not item_names or not pb_plan_name:
 		return {"status": "error", "message": "Missing item names or plan name"}
 
-	has_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
 	updated_count = 0
+	pb_sheet_cache = {}  # (party_code, effective_date) -> pb sheet name
 
 	for name in item_names:
 		try:
-			# Get the parent sheet to determine the effective date for this item
-			row = frappe.db.get_value(
-				"Planning Sheet Item", name, "parent", as_dict=True
-			)
-			if not row or not row.parent:
-				continue
+			item = frappe.get_doc("Planning Sheet Item", name)
+			parent = frappe.get_doc("Planning sheet", item.parent)
 
-			parent_name = row.parent
-			parent = frappe.db.get_value(
-				"Planning sheet", parent_name,
-				["custom_planned_date", "ordered_date"],
-				as_dict=True
-			)
-			if not parent:
-				continue
+			effective_date = str(parent.get("custom_planned_date") or parent.ordered_date)
+			party_code = parent.party_code or ""
 
-			effective_date = str(parent.get("custom_planned_date") or parent.ordered_date or frappe.utils.today())
+			# Find or create a dedicated PB Planning Sheet for this date+party
+			cache_key = (party_code, effective_date, pb_plan_name)
+			if cache_key in pb_sheet_cache:
+				pb_sheet_name = pb_sheet_cache[cache_key]
+			else:
+				existing = frappe.get_all("Planning sheet", filters={
+					"custom_pb_plan_name": pb_plan_name,
+					"ordered_date": effective_date,
+					"party_code": party_code,
+					"docstatus": ["<", 2]
+				}, fields=["name"], limit=1)
 
-			# ── Set plannedDate at ITEM level so the board picks it up ──
-			if has_col:
+				if existing:
+					pb_sheet_name = existing[0].name
+				else:
+					pb_sheet = frappe.new_doc("Planning sheet")
+					pb_sheet.custom_plan_name = parent.get("custom_plan_name") or "Default"
+					pb_sheet.custom_pb_plan_name = pb_plan_name
+					pb_sheet.ordered_date = effective_date
+					pb_sheet.custom_planned_date = effective_date
+					pb_sheet.party_code = party_code
+					pb_sheet.customer = parent.customer or ""
+					pb_sheet.sales_order = parent.sales_order or ""
+					pb_sheet.insert(ignore_permissions=True)
+					pb_sheet_name = pb_sheet.name
+
+				pb_sheet_cache[cache_key] = pb_sheet_name
+
+			# Move item to the PB sheet
+			frappe.db.set_value("Planning Sheet Item", name, "parent", pb_sheet_name)
+			frappe.db.set_value("Planning Sheet Item", name, "parenttype", "Planning sheet")
+			frappe.db.set_value("Planning Sheet Item", name, "parentfield", "items")
+
+			# Also set item-level planned date for consistency
+			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
 				frappe.db.set_value("Planning Sheet Item", name, "custom_item_planned_date", effective_date)
-
-			# Track the sheet as having a pushed item (for plan-level queries)
-			frappe.db.set_value("Planning sheet", parent_name, "custom_pb_plan_name", pb_plan_name)
 
 			updated_count += 1
 
@@ -2532,8 +2563,8 @@ def push_items_to_pb(items_data, pb_plan_name):
 def revert_items_from_pb(item_names):
 	"""
 	Reverts Planning Sheet Items from the Production Board.
-	Clears custom_pb_plan_name and custom_planned_date on the parent Planning Sheets.
-	 item_names: list of Planning Sheet Item names
+	Moves items back from PB sheets to original Color Chart sheets,
+	and cleans up empty PB sheets afterward.
 	"""
 	import json
 	if isinstance(item_names, str):
@@ -2543,7 +2574,6 @@ def revert_items_from_pb(item_names):
 		return {"status": "error", "message": "No items provided"}
 
 	count = 0
-	updated_sheets = set()
 
 	for name in item_names:
 		try:
@@ -2551,29 +2581,63 @@ def revert_items_from_pb(item_names):
 			if not parent:
 				continue
 			
-			# Clear Item-level Planned Date (Hides it from Production Board)
+			parent_doc = frappe.get_doc("Planning sheet", parent)
+			
+			# Clear Item-level Planned Date
 			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
 				frappe.db.set_value("Planning Sheet Item", name, "custom_item_planned_date", None)
 			
-			# DO NOT clear the sheet-level custom_planned_date here, because that would 
-			# hide other existing items in the same sheet from the board/color chart.
-			# But we DO want to clear custom_pb_plan_name if ALL items are reverted.
-			
-			# Check if any items on this sheet are still on the PB
-			remaining = frappe.db.sql("""
-				SELECT name FROM `tabPlanning Sheet Item` 
-				WHERE parent = %s AND custom_item_planned_date IS NOT NULL
-			""", parent)
-			
-			if not remaining:
+			# If the parent has custom_pb_plan_name (it's a PB sheet), move item back
+			# to an original CC sheet (one without custom_pb_plan_name)
+			if parent_doc.get("custom_pb_plan_name"):
+				eff_date = str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
+				party = parent_doc.party_code or ""
+				
+				# Find the original CC sheet for this party+date (no pb_plan_name)
+				orig_sheets = frappe.get_all("Planning sheet", filters={
+					"ordered_date": eff_date,
+					"party_code": party,
+					"custom_pb_plan_name": ["in", ["", None]],
+					"docstatus": ["<", 2]
+				}, fields=["name"], limit=1)
+				
+				if orig_sheets:
+					orig_name = orig_sheets[0].name
+				else:
+					# Create new CC sheet if none exists
+					orig = frappe.new_doc("Planning sheet")
+					orig.custom_plan_name = parent_doc.get("custom_plan_name") or "Default"
+					orig.ordered_date = eff_date
+					orig.party_code = party
+					orig.customer = parent_doc.customer or ""
+					orig.sales_order = parent_doc.sales_order or ""
+					orig.insert(ignore_permissions=True)
+					orig_name = orig.name
+				
+				# Move item back to original sheet
+				frappe.db.set_value("Planning Sheet Item", name, "parent", orig_name)
+				frappe.db.set_value("Planning Sheet Item", name, "parenttype", "Planning sheet")
+				frappe.db.set_value("Planning Sheet Item", name, "parentfield", "items")
+				
+				# Delete PB sheet if now empty
+				remaining = frappe.db.count("Planning Sheet Item", {"parent": parent})
+				if remaining == 0:
+					try:
+						frappe.delete_doc("Planning sheet", parent, ignore_permissions=True, force=True)
+					except Exception:
+						pass
+			else:
+				# Not on a PB sheet - just clear the planned fields
 				frappe.db.set_value("Planning sheet", parent, "custom_pb_plan_name", "")
-
+				if _has_planned_date_column():
+					frappe.db.set_value("Planning sheet", parent, "custom_planned_date", None)
+			
 			count += 1
 		except Exception as e:
 			frappe.log_error(f"revert_items_from_pb error for {name}: {e}", "Revert from PB")
 
 	frappe.db.commit()
-	return {"status": "success", "reverted_items": count, "updated_sheets": len(updated_sheets)}
+	return {"status": "success", "reverted_items": count}
 
 
 @frappe.whitelist()
