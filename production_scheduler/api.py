@@ -717,7 +717,17 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	# PULL MODE: Return raw items by ordered_date, exclude items with Work Orders
 	if mode == "pull" and date:
 		target_date = getdate(date)
-		items = frappe.db.sql("""
+		
+		# If we have the column, ensure we aren't pulling items already planned for ANY date
+		# We want items whose underlying sheet date is target_date, but they are NOT assigned yet
+		has_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+		date_filter = "AND i.custom_item_planned_date IS NULL" if has_col else ""
+		
+		# For pull, we check the sheet's original ordered_date or sheet-level planned_date
+		# to find items "available" on that date but not yet item-planned.
+		sheet_date_col = "COALESCE(p.custom_planned_date, p.ordered_date)" if frappe.db.has_column("Planning sheet", "custom_planned_date") else "p.ordered_date"
+
+		items = frappe.db.sql(f"""
 			SELECT 
 				i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
 				i.color, i.custom_quality as quality, i.gsm, i.idx,
@@ -725,7 +735,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				p.ordered_date, p.dod, p.sales_order as salesOrder
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
-			WHERE p.ordered_date = %s AND p.docstatus < 2
+			WHERE {sheet_date_col} = %s AND p.docstatus < 2
+			  {date_filter}
 			  AND i.color IS NOT NULL AND i.color != ''
 			  AND i.custom_quality IS NOT NULL AND i.custom_quality != ''
 			ORDER BY i.unit, i.idx
@@ -2495,12 +2506,10 @@ def push_items_to_pb(items_data, pb_plan_name):
 				new_idx = max_idx_cache[cache_key] + int(sequence_no)
 				frappe.db.set_value("Planning Sheet Item", name, "idx", new_idx)
 
-			# ── Update sheet-level plan name (for tracking only, not visibility) ──
+			# ── Keep track of which sheets were touched ──
 			if parent not in updated_sheets:
-				frappe.db.set_value("Planning sheet", parent, "custom_pb_plan_name", pb_plan_name)
-				# NOTE: We deliberately do NOT set custom_planned_date on the sheet,
-				# because that would make ALL items in the sheet visible on the board.
 				updated_sheets.add(parent)
+				
 			count += 1
 
 		except Exception as e:
@@ -2547,14 +2556,19 @@ def revert_items_from_pb(item_names):
 			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
 				frappe.db.set_value("Planning Sheet Item", name, "custom_item_planned_date", None)
 			
-			# Note: We must leave the sheet-level custom_planned_date intact here if we use item-level dates,
-			# Otherwise we'll hide other older items in the same sheet. 
-			# But for older deployed data, we must clear it so Revert actually works for legacy items.
-			if parent not in updated_sheets:
-				frappe.db.set_value("Planning sheet", parent, "custom_pb_plan_name", "")
-				frappe.db.set_value("Planning sheet", parent, "custom_planned_date", None)
-				updated_sheets.add(parent)
+			# DO NOT clear the sheet-level custom_planned_date here, because that would 
+			# hide other existing items in the same sheet from the board/color chart.
+			# But we DO want to clear custom_pb_plan_name if ALL items are reverted.
 			
+			# Check if any items on this sheet are still on the PB
+			remaining = frappe.db.sql("""
+				SELECT name FROM `tabPlanning Sheet Item` 
+				WHERE parent = %s AND custom_item_planned_date IS NOT NULL
+			""", parent)
+			
+			if not remaining:
+				frappe.db.set_value("Planning sheet", parent, "custom_pb_plan_name", "")
+
 			count += 1
 		except Exception as e:
 			frappe.log_error(f"revert_items_from_pb error for {name}: {e}", "Revert from PB")
