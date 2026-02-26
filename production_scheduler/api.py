@@ -588,7 +588,8 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 	# 2. Handle IDX Shifting if inserting at specific position
 	# Update Item unit and parent first
 	item_doc.unit = unit
-	item_doc.plannedDate = target_date # Pushed/Planned date
+	if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+		item_doc.custom_item_planned_date = target_date
 	item_doc.save(ignore_permissions=True)
 
 	if new_idx is not None:
