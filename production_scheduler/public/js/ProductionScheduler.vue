@@ -113,7 +113,7 @@
           </div>
 
         <div class="cc-col-body" :data-unit="unit" ref="columnRefs">
-          <template v-for="(entry, idx) in getUnitEntries(unit)" :key="entry.uniqueKey">
+          <template v-for="(entry, idx) in getUnitEntries(unit)" :key="entry.uniqueKey + '-' + renderKey">
             <!-- Mix Roll Marker (HIDDEN as per user request, but handled correctly) -->
             <div v-if="entry.type === 'mix'" class="cc-mix-marker" style="display:none;">
               <div class="cc-mix-line"></div>
@@ -530,33 +530,11 @@ async function initSortable() {
         const isSameUnit = (newUnitEl === oldUnitEl);
 
         if (!isSameUnit || evt.newIndex !== evt.oldIndex) {
-            // Vue and Sortable conflict fix:
-            // Sortable physically moves the DOM element to the new column.
-            // When Vue re-renders the columns after fetching new data, it expects
-            // that element to still be in its virtual DOM tree location. 
-            // If it's missing, Vue throws `insertBefore on Node` or `nextSibling` errors.
-            // FIX: Manually move the physical DOM element back to its original column
-            // BEFORE we await any network calls or trigger Vue updates.
-            // Vue will smoothly re-render everything correctly based on the new array state.
-            const nextSibling = evt.item.nextSibling;
-            if (!isSameUnit) {
-                // If it moved to another unit, it was inserted in newUnitEl. 
-                // We must return it to oldUnitEl at the old index.
-                const oldChildren = Array.from(oldUnitEl.children).filter(c => c !== itemEl && !c.classList.contains('cc-ghost'));
-                if (evt.oldIndex < oldChildren.length) {
-                    oldUnitEl.insertBefore(itemEl, oldChildren[evt.oldIndex]);
-                } else {
-                    oldUnitEl.appendChild(itemEl);
-                }
-            } else {
-                // Moved within same unit. Hard reset to old position as well
-                const oldChildren = Array.from(oldUnitEl.children).filter(c => c !== itemEl && !c.classList.contains('cc-ghost'));
-                if (evt.oldIndex < oldChildren.length) {
-                    oldUnitEl.insertBefore(itemEl, oldChildren[evt.oldIndex]);
-                } else {
-                    oldUnitEl.appendChild(itemEl);
-                }
-            }
+            // Vue 3 + Sortable JS fix:
+            // Since we use `:key="entry.uniqueKey + '-' + renderKey"`, changing the renderKey
+            // forces Vue to destroy and recreate the DOM nodes for this list, completely bypassing
+            // the Virtual DOM patching errors (insertBefore / nextSibling).
+            renderKey.value++; 
 
             setTimeout(async () => {
             try {
