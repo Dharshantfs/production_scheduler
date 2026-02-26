@@ -807,9 +807,10 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	else:
 		plan_condition = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
 
-	# Production Board only: require custom_planned_date to be explicitly set
-	if cint(planned_only) and _has_planned_date_column():
-		plan_condition += " AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
+	# NOTE: Do NOT add a sheet-level filter for planned_only here.
+	# Item-level custom_item_planned_date is checked in the loop below (lines ~932-953).
+	# Adding p.custom_planned_date IS NOT NULL here would exclude all color chart sheets
+	# (RED, NAVY etc.) since only white orders have sheet-level planned_date.
 	
 	# Build SELECT fields — include custom_planned_date only if column exists
 	extra_fields = ", p.custom_planned_date" if _has_planned_date_column() else ""
