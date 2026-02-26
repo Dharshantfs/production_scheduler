@@ -2395,7 +2395,7 @@ def get_pb_plans(date=None, start_date=None, end_date=None):
 	return [{"name": n, "locked": persisted.get(n, 0)} for n in sorted_plans]
 
 @frappe.whitelist()
-def push_to_pb(item_names, pb_plan_name):
+def push_to_pb(item_names, pb_plan_name, target_date=None):
 	"""
 	Pushes ONLY the selected Planning Sheet items to a Production Board plan.
 	Each item is re-parented to a new (or existing) Planning Sheet that has
@@ -2417,7 +2417,8 @@ def push_to_pb(item_names, pb_plan_name):
 			item = frappe.get_doc("Planning Sheet Item", name)
 			parent = frappe.get_doc("Planning sheet", item.parent)
 
-			effective_date = str(parent.get("custom_planned_date") or parent.ordered_date)
+			# Use the provided target_date if available, otherwise fallback to the item's original date
+			effective_date = target_date if target_date else str(parent.get("custom_planned_date") or parent.ordered_date)
 			party_code = parent.party_code or ""
 
 			# Find or create a dedicated PB Planning Sheet for this date+party

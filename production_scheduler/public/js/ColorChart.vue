@@ -2194,8 +2194,8 @@ function deletePlan() {
 
 // ---- PUSH TO PRODUCTION BOARD ----
 async function pushToProductionBoard() {
-    // Exclude items that are already pushed (they have a plannedDate)
-    const items = (filteredData.value || []).filter(i => !i.plannedDate);
+    // Collect all items (we will mark the pushed ones visually instead of hiding them)
+    const items = filteredData.value || [];
     if (items.length === 0) {
         frappe.msgprint('No orders visible to push. Apply filters first.');
         return;
@@ -2227,6 +2227,7 @@ async function pushToProductionBoard() {
     let smartSequenceActive = false;
     let masterSequence = allItemNames.map((n, i) => {
         const d = items.find(it => it.itemName === n) || {};
+        const isPushed = !!d.plannedDate; // If it has a plannedDate, it's already on the board
         return {
             name: n,
             color: d.color || '',
@@ -2237,7 +2238,8 @@ async function pushToProductionBoard() {
             customer: d.customer || d.partyCode || '',
             phase: '',
             is_seed_bridge: false,
-            checked: true
+            pushed: isPushed,
+            checked: !isPushed // Only check by default if not already pushed
         };
     });
     
@@ -2262,12 +2264,21 @@ async function pushToProductionBoard() {
                 </tr>`;
             }
             const bridge = item.is_seed_bridge ? ' 🔗' : '';
-            const rowBg = smartSequenceActive ? getPhaseColor(item.phase) : '#fff';
+            const rowBg = smartSequenceActive ? getPhaseColor(item.phase) : (item.pushed ? '#f8fafc' : '#fff');
+            const rowOpacity = item.pushed ? '0.6' : '1';
             const checked = item.checked !== false;
             const qty_str = item.qty ? parseFloat(item.qty).toFixed(0) + ' Kg' : '—';
-            return `${unitDivider}<tr style="background:${rowBg};border-bottom:1px solid #eee;">
+            
+            let actionHtml = '';
+            if (item.pushed) {
+                actionHtml = `<span style="font-size:10px;background:#e2e8f0;color:#475569;padding:2px 4px;border-radius:4px;font-weight:bold;">Pushed</span>`;
+            } else {
+                actionHtml = `<input type="checkbox" data-idx="${i}" ${checked ? 'checked' : ''} style="cursor:pointer;">`;
+            }
+
+            return `${unitDivider}<tr style="background:${rowBg};border-bottom:1px solid #eee;opacity:${rowOpacity};">
                 <td style="padding:4px 6px;text-align:center;">
-                    <input type="checkbox" data-idx="${i}" ${checked ? 'checked' : ''} style="cursor:pointer;">
+                    ${actionHtml}
                 </td>
                 <td style="padding:4px 6px;font-weight:bold;color:#555;font-size:12px;">${item.sequence_no}${bridge}</td>
                 <td style="padding:4px 6px;font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${item.color}">${item.color || '—'}</td>
@@ -2317,57 +2328,48 @@ async function pushToProductionBoard() {
             return;
         }
 
-        // Group by date
-        const byDate = {};
-        checkedItems.forEach(item => {
-            const dt = item.orderDate || filterOrderDate.value || frappe.datetime.get_today();
-            if (!byDate[dt]) byDate[dt] = [];
-            byDate[dt].push(item);
-        });
-
+        // Instead of grouping by item's original date, use the user's selected Target Date
+        const targetDate = dialog.get_value('target_date') || filterOrderDate.value || frappe.datetime.get_today();
+        
         const limits = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5 };
         let capHtml = `<div style="display:flex; flex-direction:column; gap:6px;">`;
         let capacityExceeded = false;
 
-        for (const [dt, pushes] of Object.entries(byDate)) {
-            try {
-                const r = await frappe.call({
-                    method: "production_scheduler.api.get_color_chart_data",
-                    args: { date: dt, plan_name: '__all__', planned_only: 1 }
-                });
-                const allItems = r.message || [];
-                
-                const pushLoads = {};
-                pushes.forEach(sel => {
-                    const u = sel.unit || 'Unit 1';
-                    pushLoads[u] = (pushLoads[u] || 0) + (parseFloat(sel.qty || 0) / 1000);
-                });
+        try {
+            const r = await frappe.call({
+                method: "production_scheduler.api.get_color_chart_data",
+                args: { date: targetDate, plan_name: '__all__', planned_only: 1 }
+            });
+            const allItems = r.message || [];
+            
+            const pushLoads = {};
+            checkedItems.forEach(sel => {
+                const u = sel.unit || 'Unit 1';
+                pushLoads[u] = (pushLoads[u] || 0) + (parseFloat(sel.qty || 0) / 1000);
+            });
 
-                let dateHtml = ``;
-                if (Object.keys(byDate).length > 1) dateHtml = `<div style="font-size:11px;font-weight:600;margin-top:4px;">Date: ${dt}</div>`;
-                capHtml += dateHtml;
+            capHtml += `<div style="font-size:11px;font-weight:600;margin-top:4px;">Target Date: ${targetDate}</div>`;
 
-                ["Unit 1", "Unit 2", "Unit 3", "Unit 4"].forEach(u => {
-                    const pushWeight = pushLoads[u] || 0;
-                    if (pushWeight > 0) {
-                        const pushingNames = pushes.map(s => s.name);
-                        const existingU = allItems.filter(i => i.unit === u && i.plannedDate && !pushingNames.includes(i.itemName));
-                        const currentLoad = existingU.reduce((s, i) => s + (parseFloat(i.qty || 0)), 0) / 1000;
-                        const afterPush = currentLoad + pushWeight;
-                        const limit = limits[u];
-                        const isOver = afterPush > limit;
-                        if (isOver) capacityExceeded = true;
-                        capHtml += `<div style="padding:6px 10px;border-radius:6px;border:1px solid ${isOver ? '#fda4af' : '#bbf7d0'};background:${isOver ? '#fff1f2' : '#f0fdf4'};display:flex;justify-content:space-between;align-items:center;">
-                            <div>
-                                <div style="font-weight:700;font-size:12px;color:${isOver ? '#dc2626' : '#16a34a'};">${u}: ${currentLoad.toFixed(2)} / ${limit}T</div>
-                                <div style="font-size:10px;color:#475569;margin-top:2px;">After push: <b>${afterPush.toFixed(2)}T</b> <span style="color:#64748b;">(+${pushWeight.toFixed(2)}T)</span></div>
-                            </div>
-                            ${isOver ? '<span style="font-size:16px;" title="Capacity Exceeded">⚠️</span>' : '<span style="font-size:16px;">✅</span>'}  
-                        </div>`;
-                    }
-                });
-            } catch(e) { console.error(e); }
-        }
+            ["Unit 1", "Unit 2", "Unit 3", "Unit 4"].forEach(u => {
+                const pushWeight = pushLoads[u] || 0;
+                if (pushWeight > 0) {
+                    const pushingNames = checkedItems.map(s => s.name);
+                    const existingU = allItems.filter(i => i.unit === u && i.plannedDate && !pushingNames.includes(i.itemName));
+                    const currentLoad = existingU.reduce((s, i) => s + (parseFloat(i.qty || 0)), 0) / 1000;
+                    const afterPush = currentLoad + pushWeight;
+                    const limit = limits[u];
+                    const isOver = afterPush > limit;
+                    if (isOver) capacityExceeded = true;
+                    capHtml += `<div style="padding:6px 10px;border-radius:6px;border:1px solid ${isOver ? '#fda4af' : '#bbf7d0'};background:${isOver ? '#fff1f2' : '#f0fdf4'};display:flex;justify-content:space-between;align-items:center;">
+                        <div>
+                            <div style="font-weight:700;font-size:12px;color:${isOver ? '#dc2626' : '#16a34a'};">${u}: ${currentLoad.toFixed(2)} / ${limit}T</div>
+                            <div style="font-size:10px;color:#475569;margin-top:2px;">After push: <b>${afterPush.toFixed(2)}T</b> <span style="color:#64748b;">(+${pushWeight.toFixed(2)}T)</span></div>
+                        </div>
+                        ${isOver ? '<span style="font-size:16px;" title="Capacity Exceeded">⚠️</span>' : '<span style="font-size:16px;">✅</span>'}  
+                    </div>`;
+                }
+            });
+        } catch(e) { console.error(e); }
 
         capHtml += `</div>`;
         dialog.set_value("global_capacity_info", capHtml);
@@ -2377,6 +2379,8 @@ async function pushToProductionBoard() {
     const d = new frappe.ui.Dialog({
         title: '🚀 Push to Production Board',
         fields: [
+            { fieldname: 'target_date', fieldtype: 'Date', label: 'Target Date', default: filterOrderDate.value || frappe.datetime.get_today(), reqd: 1 },
+            { fieldtype: 'Column Break' },
             { fieldname: 'filter_logic', fieldtype: 'Select', label: 'Match', options: ['AND', 'OR'], default: 'AND' },
             { fieldtype: 'Column Break' },
             { fieldname: 'filter_unit', fieldtype: 'Select', label: 'Unit', options: ['All Units', 'Unit 1', 'Unit 2', 'Unit 3', 'Unit 4'], default: 'All Units' },
@@ -2398,21 +2402,34 @@ async function pushToProductionBoard() {
         primary_action_label: 'Push',
         primary_action: async (values) => {
             const pbPlanName = 'Default';
+            const targetDate = values.target_date;
 
             const checkedItems = currentSequence.filter(i => i.checked !== false);
             if (checkedItems.length === 0) { frappe.msgprint('No items selected.'); return; }
 
+            if (d.capacityExceeded) {
+                const proceed = await new Promise(resolve => {
+                    frappe.confirm(
+                        'Capacity limits exceeded. Do you want to proceed?',
+                        () => resolve(true),
+                        () => resolve(false)
+                    );
+                });
+                if (!proceed) return;
+            }
+
             const itemNamesToSend = checkedItems.map(i => i.name);
 
             d.hide();
-            frappe.show_alert({ message: `Pushing ${itemNamesToSend.length} items...`, indicator: 'blue' });
+            frappe.show_alert({ message: `Pushing ${itemNamesToSend.length} items to ${targetDate}...`, indicator: 'blue' });
 
             try {
                 const r = await frappe.call({
                     method: "production_scheduler.api.push_to_pb",
                     args: {
                         item_names: JSON.stringify(itemNamesToSend),
-                        pb_plan_name: pbPlanName
+                        pb_plan_name: pbPlanName,
+                        target_date: targetDate
                     }
                 });
                 if (r.message && r.message.status === 'success') {
@@ -2481,6 +2498,7 @@ async function pushToProductionBoard() {
     });
     d.fields_dict.filter_logic.$input.on('change', () => applyFilters());
     d.fields_dict.filter_unit.$input.on('change', () => applyFilters());
+    d.fields_dict.target_date.$input.on('change', () => loadGlobalCapacityPreview(d, currentSequence));
 
     // Wire up checkbox events
     function wireCheckboxes() {
@@ -2510,7 +2528,7 @@ async function pushToProductionBoard() {
 
 
     function updateCountLabel() {
-        const total = currentSequence.filter(i => i.checked !== false).length;
+        const total = currentSequence.filter(i => i.checked !== false && !i.pushed).length;
         const countSpan = d.wrapper.querySelector('#seq-count-label');
         if (countSpan) countSpan.textContent = total;
         
