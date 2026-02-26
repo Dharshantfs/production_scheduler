@@ -405,6 +405,11 @@
                             v-for="col in matrixData.columns" 
                             :key="col.id" 
                             class="text-right"
+                            :style="(col.id !== 'Total' && (row.cells[col.id] || 0) > 0) ? 'cursor:pointer;' : ''"
+                            @click="(col.id !== 'Total' && (row.cells[col.id] || 0) > 0) ? openPushColorDialog(row.color, col.id) : null"
+                            :title="(col.id !== 'Total' && (row.cells[col.id] || 0) > 0) ? `Click to push orders for ${col.id}` : ''"
+                            onmouseover="if(this.style.cursor==='pointer') this.style.backgroundColor='#f1f5f9';"
+                            onmouseout="if(this.style.cursor==='pointer') this.style.backgroundColor='';"
                         >
                             {{ (row.cells[col.id] || 0) > 0 ? (row.cells[col.id]).toFixed(0) : '' }}
                         </td>
@@ -3264,7 +3269,10 @@ async function handleMoveOrders(items, date, unit, plan, dialog) {
     }
 }
 
-async function openPushColorDialog(color) {
+async function openPushColorDialog(color, inputTargetDate = null) {
+    // Determine the default target date based on what was passed in, falling back to the global filter or today
+    const dialogTargetDate = inputTargetDate || filterOrderDate.value || frappe.datetime.get_today();
+    
     // ── Available options for filters ──
     const allForColor = rawData.value.filter(d => {
         if ((d.color || "").toUpperCase().trim() !== color.toUpperCase().trim()) return false;
@@ -3304,7 +3312,7 @@ async function openPushColorDialog(color) {
     const d = new frappe.ui.Dialog({
         title: `📤 Push ${color} to Production Board`,
         fields: [
-            { fieldname: "target_date", label: "Target Date", fieldtype: "Date", reqd: 1, default: filterOrderDate.value || frappe.datetime.get_today(),
+            { fieldname: "target_date", label: "Target Date", fieldtype: "Date", reqd: 1, default: dialogTargetDate,
               onchange: () => loadCapacityPreview(d)
             },
             { fieldname: "filters_info", label: "Filters", fieldtype: "HTML" },
