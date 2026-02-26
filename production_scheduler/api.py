@@ -911,9 +911,10 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			if not color or not quality or color.upper() == "NO COLOR":
 				continue
 
-			# Production Board filtering: strictly check item.plannedDate if planned_only=1
+			# Production Board filtering: use item.plannedDate if set, else sheet.custom_planned_date
 			if cint(planned_only):
-				it_pdate = item.get("plannedDate")
+				# Resolve effective planned date: item-level first, then sheet-level
+				it_pdate = item.get("plannedDate") or sheet.get("custom_planned_date")
 				# If filter is by single date
 				if date and str(it_pdate) != str(target_date):
 					continue
