@@ -2194,7 +2194,8 @@ function deletePlan() {
 
 // ---- PUSH TO PRODUCTION BOARD ----
 async function pushToProductionBoard() {
-    const items = filteredData.value || [];
+    // Exclude items that are already pushed (they have a plannedDate)
+    const items = (filteredData.value || []).filter(i => !i.plannedDate);
     if (items.length === 0) {
         frappe.msgprint('No orders visible to push. Apply filters first.');
         return;
@@ -2378,6 +2379,8 @@ async function pushToProductionBoard() {
         fields: [
             { fieldname: 'filter_logic', fieldtype: 'Select', label: 'Match', options: ['AND', 'OR'], default: 'AND' },
             { fieldtype: 'Column Break' },
+            { fieldname: 'filter_unit', fieldtype: 'Select', label: 'Unit', options: ['All Units', 'Unit 1', 'Unit 2', 'Unit 3', 'Unit 4'], default: 'All Units' },
+            { fieldtype: 'Column Break' },
             { fieldname: 'filter_quality', fieldtype: 'Data', label: 'Quality' },
             { fieldtype: 'Column Break' },
             { fieldname: 'filter_color', fieldtype: 'Data', label: 'Color' },
@@ -2437,12 +2440,16 @@ async function pushToProductionBoard() {
     loadGlobalCapacityPreview(d, currentSequence);
 
     function applyFilters() {
+        const unitSearch = d.get_value('filter_unit') || 'All Units';
         const qualitySearch = (d.get_value('filter_quality') || "").toLowerCase();
         const colorSearch = (d.get_value('filter_color') || "").toLowerCase();
         const partySearch = (d.get_value('filter_party') || "").toLowerCase();
         const matchLogic = d.get_value('filter_logic') || "AND";
 
         currentSequence = masterSequence.filter(item => {
+            // Unit filter is always strict (AND condition)
+            if (unitSearch !== 'All Units' && item.unit !== unitSearch) return false;
+
             const matchQ = qualitySearch ? item.quality.toLowerCase().includes(qualitySearch) : false;
             const matchC = colorSearch ? item.color.toLowerCase().includes(colorSearch) : false;
             const matchP = partySearch ? item.customer.toLowerCase().includes(partySearch) : false;
@@ -2473,6 +2480,7 @@ async function pushToProductionBoard() {
         d.fields_dict[fn].$input.on('input', () => applyFilters());
     });
     d.fields_dict.filter_logic.$input.on('change', () => applyFilters());
+    d.fields_dict.filter_unit.$input.on('change', () => applyFilters());
 
     // Wire up checkbox events
     function wireCheckboxes() {
