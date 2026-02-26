@@ -530,11 +530,21 @@ async function initSortable() {
         const isSameUnit = (newUnitEl === oldUnitEl);
 
         if (!isSameUnit || evt.newIndex !== evt.oldIndex) {
-            // Vue 3 + Sortable JS fix:
-            // Since we use `:key="entry.uniqueKey + '-' + renderKey"`, changing the renderKey
-            // forces Vue to destroy and recreate the DOM nodes for this list, completely bypassing
-            // the Virtual DOM patching errors (insertBefore / nextSibling).
-            renderKey.value++; 
+            // Ultimate Vue 3 + Sortable JS fix:
+            // Vue 3's Virtual DOM crashes completely if SortableJS moves elements around 
+            // and we try to let Vue update it naturally.
+            // We MUST undo Sortable's DOM manipulation instantly so the DOM returns to the 
+            // exact state Vue expects before we trigger any data refreshes.
+            
+            // 1. Remove the item from its new position
+            itemEl.parentNode.removeChild(itemEl);
+            
+            // 2. Put it back exactly where it was in the old column
+            if (evt.oldIndex < oldUnitEl.childNodes.length) {
+                oldUnitEl.insertBefore(itemEl, oldUnitEl.childNodes[evt.oldIndex]);
+            } else {
+                oldUnitEl.appendChild(itemEl);
+            }
 
             setTimeout(async () => {
             try {

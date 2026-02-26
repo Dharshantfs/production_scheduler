@@ -375,11 +375,20 @@ async function fetchData() {
             args.date = filterOrderDate.value;
         }
 
+        args.plan_name = "__all__";
+        args.planned_only = 1;
+
         const r = await frappe.call({
           method: "production_scheduler.api.get_color_chart_data",
           args: args,
         });
-        rawData.value = r.message || [];
+        rawData.value = (r.message || []).map(d => ({
+          ...d,
+          plannedDate: d.plannedDate || d.planned_date || "",
+          partyCode: d.partyCode || d.party_code || "",
+          itemName: d.itemName || d.item_name || "",
+          orderDate: d.orderDate || d.ordered_date || "",
+        }));
       } catch (e) {
         frappe.msgprint("Error loading plan data");
         console.error(e);
