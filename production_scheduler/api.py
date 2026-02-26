@@ -97,6 +97,103 @@ COL_LIST = [
 COL_LIST.sort(key=len, reverse=True)
 
 # ... Limits ...
+# --------------------------------------------------------------------------------
+# SHARED HELPERS
+# --------------------------------------------------------------------------------
+
+def _populate_planning_sheet_items(ps, doc):
+    """
+    Populates items from a Sales Order into a Planning Sheet.
+    Includes strict de-duplication based on sales_order_item.
+    """
+    existing_items = [it.sales_order_item for it in ps.items]
+    
+    for it in doc.items:
+        if it.name in existing_items:
+            continue
+            
+        raw_txt = (it.item_code or "") + " " + (it.item_name or "")
+        clean_txt = raw_txt.upper().replace("-", " ").replace("_", " ").replace("(", " ").replace(")", " ")
+        clean_txt = clean_txt.replace("''", " INCH ").replace('"', " INCH ")
+        words = clean_txt.split()
+
+        # GSM extraction (More robust version)
+        gsm = 0
+        for i, w in enumerate(words):
+            if w == "GSM" and i > 0 and words[i-1].isdigit():
+                gsm = int(words[i-1])
+                break
+            elif w.endswith("GSM") and w[:-3].isdigit():
+                gsm = int(w[:-3])
+                break
+
+        # WIDTH extraction
+        width = 0.0
+        for i, w in enumerate(words):
+            if w == "W" and i < len(words)-1 and words[i+1].replace('.','',1).isdigit():
+                width = float(words[i+1])
+                break
+            elif w.startswith("W") and len(w) > 1 and w[1:].replace('.','',1).isdigit():
+                width = float(w[1:])
+                break
+            elif w == "INCH" and i > 0 and words[i-1].replace('.','',1).isdigit():
+                width = float(words[i-1])
+                break
+            elif w.endswith("INCH") and w[:-4].replace('.','',1).isdigit():
+                width = float(w[:-4])
+                break
+
+        # QUALITY & COLOR detection
+        search_text = " " + " ".join(words) + " "
+        qual = ""
+        for q in QUAL_LIST:
+            if (" " + q + " ") in search_text:
+                qual = q
+                break
+        col = ""
+        for c in COL_LIST:
+            if (" " + c + " ") in search_text:
+                col = c
+                break
+
+        # WEIGHT calculation
+        m_roll = float(it.custom_meter_per_roll or 0)
+        wt = 0.0
+        if gsm > 0 and width > 0 and m_roll > 0:
+            wt = (gsm * width * m_roll * 0.0254) / 1000
+
+        # UNIT determination
+        unit = "Unit 1"
+        if qual:
+            q_up = qual.upper()
+            if gsm > 50 and q_up in UNIT_1:
+                unit = "Unit 1"
+            elif gsm > 20 and q_up in UNIT_2:
+                unit = "Unit 2"
+            elif gsm > 10 and q_up in UNIT_3:
+                unit = "Unit 3"
+            elif q_up in UNIT_4:
+                unit = "Unit 4"
+
+        ps.append("items", {
+            "sales_order_item": it.name,
+            "item_code": it.item_code,
+            "item_name": it.item_name,
+            "qty": it.qty,
+            "uom": it.uom,
+            "meter": float(it.custom_meter or 0),
+            "meter_per_roll": m_roll,
+            "no_of_rolls": float(it.custom_no_of_rolls or 0),
+            "gsm": gsm,
+            "width_inch": width,
+            "custom_quality": qual,
+            "color": col,
+            "weight_per_roll": wt,
+            "unit": unit,
+            "party_code": ps.party_code,
+        })
+    return ps
+
 WHITE_COLORS = ["BRIGHT WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"]
 
 HARD_LIMITS = {
@@ -1971,45 +2068,6 @@ def create_planning_sheet_from_so(doc):
         UNIT_3_MAP = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER", "BRONZE"]
         UNIT_4_MAP = ["PREMIUM", "GOLD", "SILVER", "BRONZE"]
 
-        # Longest first to avoid partial matches
-        QUAL_LIST = ["SUPER PLATINUM", "SUPER CLASSIC", "SUPER ECO", "ECO SPECIAL", "ECO GREEN",
-                     "ECO SPL", "LIFE STYLE", "LIFESTYLE", "PREMIUM", "PLATINUM", "CLASSIC",
-                     "DELUXE", "BRONZE", "SILVER", "ULTRA", "GOLD", "UV"]
-        QUAL_LIST.sort(key=len, reverse=True)
-
-        COL_LIST = [
-            "BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE",
-            "BLEACH WHITE", "WHITE MIX", "WHITE",
-            "CREAM 2.0", "CREAM 3.0", "CREAM 4.0", "CREAM 5.0",
-            "GOLDEN YELLOW 4.0 SPL", "GOLDEN YELLOW 1.0", "GOLDEN YELLOW 2.0",
-            "GOLDEN YELLOW 3.0", "GOLDEN YELLOW",
-            "LEMON YELLOW 1.0", "LEMON YELLOW 3.0", "LEMON YELLOW",
-            "BRIGHT ORANGE", "DARK ORANGE", "ORANGE 2.0",
-            "PINK 7.0 DARK", "PINK 6.0 DARK", "DARK PINK",
-            "BABY PINK", "PINK 1.0", "PINK 2.0", "PINK 3.0", "PINK 5.0",
-            "CRIMSON RED", "RED",
-            "LIGHT MAROON", "DARK MAROON", "MAROON 1.0", "MAROON 2.0",
-            "BLUE 13.0 INK BLUE", "BLUE 12.0 SPL NAVY BLUE", "BLUE 11.0 NAVY BLUE",
-            "BLUE 8.0 DARK ROYAL BLUE", "BLUE 7.0 DARK BLUE", "BLUE 6.0 ROYAL BLUE",
-            "LIGHT PEACOCK BLUE", "PEACOCK BLUE", "LIGHT MEDICAL BLUE", "MEDICAL BLUE",
-            "ROYAL BLUE", "NAVY BLUE", "SKY BLUE", "LIGHT BLUE",
-            "BLUE 9.0", "BLUE 4.0", "BLUE 2.0", "BLUE 1.0", "BLUE",
-            "PURPLE 4.0 BLACKBERRY", "PURPLE 1.0", "PURPLE 2.0", "PURPLE 3.0", "VOILET",
-            "GREEN 13.0 ARMY GREEN", "GREEN 12.0 OLIVE GREEN", "GREEN 11.0 DARK GREEN",
-            "GREEN 10.0", "GREEN 9.0 BOTTLE GREEN", "GREEN 8.0 APPLE GREEN",
-            "GREEN 7.0", "GREEN 6.0", "GREEN 5.0 GRASS GREEN", "GREEN 4.0",
-            "GREEN 3.0 RELIANCE GREEN", "GREEN 2.0 TORQUISE GREEN", "GREEN 1.0 MINT",
-            "MEDICAL GREEN", "RELIANCE GREEN", "PARROT GREEN", "GREEN",
-            "SILVER 1.0", "SILVER 2.0", "LIGHT GREY", "DARK GREY", "GREY 1.0",
-            "CHOCOLATE BROWN 2.0", "CHOCOLATE BROWN", "CHOCOLATE BLACK",
-            "BROWN 3.0 DARK COFFEE", "BROWN 2.0 DARK", "BROWN 1.0",
-            "CHIKOO 1.0", "CHIKOO 2.0",
-            "BEIGE 1.0", "BEIGE 2.0", "BEIGE 3.0", "BEIGE 4.0", "BEIGE 5.0",
-            "LIGHT BEIGE", "DARK BEIGE", "BEIGE MIX",
-            "BLACK MIX", "COLOR MIX", "BLACK",
-        ]
-        COL_LIST.sort(key=len, reverse=True)
-
         ps = frappe.new_doc("Planning sheet")
         ps.sales_order = doc.name
         ps.customer = doc.customer
@@ -2021,85 +2079,7 @@ def create_planning_sheet_from_so(doc):
         ps.custom_plan_name = cc_plan
         ps.custom_pb_plan_name = pb_plan
 
-        for it in doc.items:
-            raw_txt = (it.item_code or "") + " " + (it.item_name or "")
-            clean_txt = raw_txt.upper().replace("-", " ").replace("_", " ").replace("(", " ").replace(")", " ")
-            clean_txt = clean_txt.replace("''", " INCH ").replace('"', " INCH ")
-            words = clean_txt.split()
-
-            # GSM
-            gsm = 0
-            for i in range(1, len(words)):
-                if words[i] == "GSM":
-                    if words[i-1].isdigit():
-                        gsm = int(words[i-1])
-                        break
-
-            # WIDTH
-            width = 0.0
-            for i in range(len(words) - 1):
-                if words[i] == "W":
-                    next_word = words[i+1]
-                    if next_word.replace('.', '', 1).isdigit():
-                        width = float(next_word)
-                        break
-            if width == 0.0:
-                for i in range(1, len(words)):
-                    if words[i] == "INCH":
-                        prev = words[i-1]
-                        if prev.replace('.', '', 1).isdigit():
-                            width = float(prev)
-                            break
-
-            # QUALITY & COLOR
-            search_text = " " + " ".join(words) + " "
-            qual = ""
-            for q in QUAL_LIST:
-                if (" " + q + " ") in search_text:
-                    qual = q
-                    break
-            col = ""
-            for c in COL_LIST:
-                if (" " + c + " ") in search_text:
-                    col = c
-                    break
-
-            # WEIGHT
-            m_roll = float(it.custom_meter_per_roll or 0)
-            wt = 0.0
-            if gsm > 0 and width > 0 and m_roll > 0:
-                wt = (gsm * width * m_roll * 0.0254) / 1000
-
-            # UNIT
-            unit = "Unit 1"
-            if qual:
-                q_up = qual.upper()
-                if gsm > 50 and q_up in UNIT_1_MAP:
-                    unit = "Unit 1"
-                elif gsm > 20 and q_up in UNIT_2_MAP:
-                    unit = "Unit 2"
-                elif gsm > 10 and q_up in UNIT_3_MAP:
-                    unit = "Unit 3"
-                elif q_up in UNIT_4_MAP:
-                    unit = "Unit 4"
-
-            ps.append("items", {
-                "sales_order_item": it.name,
-                "item_code": it.item_code,
-                "item_name": it.item_name,
-                "qty": it.qty,
-                "uom": it.uom,
-                "meter": float(it.custom_meter or 0),
-                "meter_per_roll": m_roll,
-                "no_of_rolls": float(it.custom_no_of_rolls or 0),
-                "gsm": gsm,
-                "width_inch": width,
-                "custom_quality": qual,
-                "color": col,
-                "weight_per_roll": wt,
-                "unit": unit,
-                "party_code": ps.party_code
-            })
+        _populate_planning_sheet_items(ps, doc)
 
         ps.flags.ignore_permissions = True
         ps.insert()
@@ -2246,44 +2226,15 @@ def create_planning_sheets_bulk(sales_orders):
             
             ps = frappe.new_doc("Planning sheet")
             ps.sales_order = doc.name
-            ps.party_code = doc.party_code if hasattr(doc, 'party_code') else doc.customer
+            ps.party_code = doc.get("party_code") or doc.customer
             ps.customer = doc.customer
             ps.dod = doc.delivery_date
             ps.ordered_date = doc.transaction_date
             ps.planning_status = "Draft"
             
-            for it in doc.items:
-                # Logic from Step 1270, simplified since we have helpers now
-                qual = it.custom_quality or it.quality
-                gsm = flt(it.custom_gsm or it.gsm or 0)
-                
-                # Unit Logic
-                unit = "Unit 1"
-                q_up = str(qual or "").upper()
-                if q_up:
-                    if gsm > 50 and q_up in UNIT_QUALITY_MAP["Unit 1"]: unit = "Unit 1"
-                    elif gsm > 20 and q_up in UNIT_QUALITY_MAP["Unit 2"]: unit = "Unit 2"
-                    elif gsm > 10 and q_up in UNIT_QUALITY_MAP["Unit 3"]: unit = "Unit 3"
-                    elif q_up in UNIT_QUALITY_MAP["Unit 4"]: unit = "Unit 4"
-                
-                # Handling custom fields safely
-                width = flt(it.custom_width or 0)
-                
-                ps.append("items", {
-                    "sales_order_item": it.name,
-                    "item_code": it.item_code,
-                    "item_name": it.item_name,
-                    "qty": it.qty,
-                    "uom": it.uom,
-                    "gsm": gsm,
-                    "custom_quality": qual,
-                    "color": it.custom_color or it.color,
-                    "width_inch": width,
-                    "unit": unit,
-                    "meter": it.custom_meter or 0,
-                    "no_of_rolls": it.custom_no_of_rolls or 0,
-                    "meter_per_roll": it.custom_meter_per_roll or 0
-                })
+            _populate_planning_sheet_items(ps, doc)
+            
+            ps.insert(ignore_permissions=True)
                 
             ps.insert(ignore_permissions=True)
             created.append(ps.name)
@@ -2759,88 +2710,7 @@ def auto_create_planning_sheet(doc, method=None):
     ps.custom_plan_name = cc_plan
     ps.custom_pb_plan_name = ""
 
-    # Populate items – reuse the same parsing logic from the original script
-    for it in doc.items:
-        raw_txt = (it.item_code or "") + " " + (it.item_name or "")
-        clean_txt = raw_txt.upper().replace("-", " ").replace("_", " ").replace("(", " ").replace(")", " ")
-        clean_txt = clean_txt.replace("''", " INCH ").replace('"', " INCH ")
-        words = clean_txt.split()
-
-        # GSM extraction
-        gsm = 0
-        for i, w in enumerate(words):
-            if w == "GSM" and i > 0 and words[i-1].isdigit():
-                gsm = int(words[i-1])
-                break
-            elif w.endswith("GSM") and w[:-3].isdigit():
-                gsm = int(w[:-3])
-                break
-
-        # WIDTH extraction
-        width = 0.0
-        for i, w in enumerate(words):
-            if w == "W" and i < len(words)-1 and words[i+1].replace('.','',1).isdigit():
-                width = float(words[i+1])
-                break
-            elif w.startswith("W") and len(w) > 1 and w[1:].replace('.','',1).isdigit():
-                width = float(w[1:])
-                break
-            elif w == "INCH" and i > 0 and words[i-1].replace('.','',1).isdigit():
-                width = float(words[i-1])
-                break
-            elif w.endswith("INCH") and w[:-4].replace('.','',1).isdigit():
-                width = float(w[:-4])
-                break
-
-        # QUALITY & COLOR detection
-        search_text = " " + " ".join(words) + " "
-        qual = ""
-        for q in QUAL_LIST:
-            if (" " + q + " ") in search_text:
-                qual = q
-                break
-        col = ""
-        for c in COL_LIST:
-            if (" " + c + " ") in search_text:
-                col = c
-                break
-
-        # WEIGHT calculation
-        m_roll = float(it.custom_meter_per_roll or 0)
-        wt = 0.0
-        if gsm > 0 and width > 0 and m_roll > 0:
-            wt = (gsm * width * m_roll * 0.0254) / 1000
-
-        # UNIT determination
-        unit = "Unit 1"
-        if qual:
-            q_up = qual.upper()
-            if gsm > 50 and q_up in UNIT_1:
-                unit = "Unit 1"
-            elif gsm > 20 and q_up in UNIT_2:
-                unit = "Unit 2"
-            elif gsm > 10 and q_up in UNIT_3:
-                unit = "Unit 3"
-            elif q_up in UNIT_4:
-                unit = "Unit 4"
-
-        ps.append("items", {
-            "sales_order_item": it.name,
-            "item_code": it.item_code,
-            "item_name": it.item_name,
-            "qty": it.qty,
-            "uom": it.uom,
-            "meter": float(it.custom_meter or 0),
-            "meter_per_roll": m_roll,
-            "no_of_rolls": float(it.custom_no_of_rolls or 0),
-            "gsm": gsm,
-            "width_inch": width,
-            "custom_quality": qual,
-            "color": col,
-            "weight_per_roll": wt,
-            "unit": unit,
-            "party_code": ps.party_code,
-        })
+    _populate_planning_sheet_items(ps, doc)
 
     ps.flags.ignore_permissions = True
     ps.insert()
@@ -2911,76 +2781,7 @@ def regenerate_planning_sheet(so_name):
     ps.custom_plan_name = cc_plan
     ps.custom_pb_plan_name = ""
 
-    for it in doc.items:
-        raw_txt = (it.item_code or "") + " " + (it.item_name or "")
-        clean_txt = raw_txt.upper().replace("-", " ").replace("_", " ").replace("(", " ").replace(")", " ")
-        clean_txt = clean_txt.replace("''", " INCH ").replace('"', " INCH ")
-        words = clean_txt.split()
-        gsm = 0
-        for i, w in enumerate(words):
-            if w == "GSM" and i > 0 and words[i-1].isdigit():
-                gsm = int(words[i-1])
-                break
-            elif w.endswith("GSM") and w[:-3].isdigit():
-                gsm = int(w[:-3])
-                break
-        width = 0.0
-        for i, w in enumerate(words):
-            if w == "W" and i < len(words)-1 and words[i+1].replace('.','',1).isdigit():
-                width = float(words[i+1])
-                break
-            elif w.startswith("W") and len(w) > 1 and w[1:].replace('.','',1).isdigit():
-                width = float(w[1:])
-                break
-            elif w == "INCH" and i > 0 and words[i-1].replace('.','',1).isdigit():
-                width = float(words[i-1])
-                break
-            elif w.endswith("INCH") and w[:-4].replace('.','',1).isdigit():
-                width = float(w[:-4])
-                break
-        search_text = " " + " ".join(words) + " "
-        qual = ""
-        for q in QUAL_LIST:
-            if (" " + q + " ") in search_text:
-                qual = q
-                break
-        col = ""
-        for c in COL_LIST:
-            if (" " + c + " ") in search_text:
-                col = c
-                break
-        m_roll = float(it.custom_meter_per_roll or 0)
-        wt = 0.0
-        if gsm > 0 and width > 0 and m_roll > 0:
-            wt = (gsm * width * m_roll * 0.0254) / 1000
-        unit = "Unit 1"
-        if qual:
-            q_up = qual.upper()
-            if gsm > 50 and q_up in UNIT_1:
-                unit = "Unit 1"
-            elif gsm > 20 and q_up in UNIT_2:
-                unit = "Unit 2"
-            elif gsm > 10 and q_up in UNIT_3:
-                unit = "Unit 3"
-            elif q_up in UNIT_4:
-                unit = "Unit 4"
-        ps.append("items", {
-            "sales_order_item": it.name,
-            "item_code": it.item_code,
-            "item_name": it.item_name,
-            "qty": it.qty,
-            "uom": it.uom,
-            "meter": float(it.custom_meter or 0),
-            "meter_per_roll": m_roll,
-            "no_of_rolls": float(it.custom_no_of_rolls or 0),
-            "gsm": gsm,
-            "width_inch": width,
-            "custom_quality": qual,
-            "color": col,
-            "weight_per_roll": wt,
-            "unit": unit,
-            "party_code": ps.party_code,
-        })
+    _populate_planning_sheet_items(ps, doc)
 
     ps.flags.ignore_permissions = True
     ps.insert()
@@ -2995,6 +2796,66 @@ WHITE_COLOR_KEYWORDS = [
     "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE",
     "SUNSHINE WHITE", "BLEACH WHITE", "OFF WHITE", "IVORY", "CREAM"
 ]
+
+@frappe.whitelist()
+def run_global_cleanup():
+    """
+    Identifies and removes duplicate Planning Sheet Items across the entire database.
+    Keeps the most relevant one (scheduled/pushed) for each sales_order_item.
+    """
+    frappe.only_for("System Manager") # Security guard
+    
+    # 1. Find all duplicate sales_order_item names
+    duplicates = frappe.db.sql("""
+        SELECT sales_order_item, COUNT(*) as cnt
+        FROM `tabPlanning Sheet Item`
+        WHERE sales_order_item IS NOT NULL AND sales_order_item != ''
+        GROUP BY sales_order_item
+        HAVING COUNT(*) > 1
+    """, as_dict=True)
+    
+    removed_count = 0
+    details = []
+
+    for dup in duplicates:
+        so_item = dup.sales_order_item
+        
+        # Fetch all records for this so_item, prioritizing scheduled items and custom plans
+        items = frappe.db.sql("""
+            SELECT it.name, it.parent, it.plannedDate, ps.custom_plan_name, it.creation
+            FROM `tabPlanning Sheet Item` it
+            JOIN `tabPlanning sheet` ps ON it.parent = ps.name
+            WHERE it.sales_order_item = %s
+            ORDER BY 
+                CASE WHEN it.plannedDate IS NOT NULL AND it.plannedDate != '' THEN 0 ELSE 1 END,
+                CASE WHEN ps.custom_plan_name IS NOT NULL AND ps.custom_plan_name != 'Default' AND ps.custom_plan_name != '' THEN 0 ELSE 1 END,
+                it.creation DESC
+        """, (so_item,), as_dict=True)
+        
+        if len(items) <= 1:
+            continue
+            
+        # Keep the best one, remove others
+        keep_name = items[0].name
+        to_remove = [it.name for it in items[1:]]
+        
+        for name in to_remove:
+            frappe.db.delete("Planning Sheet Item", {"name": name})
+            removed_count += 1
+            
+        details.append({
+            "so_item": so_item,
+            "kept": keep_name,
+            "removed": to_remove
+        })
+            
+    frappe.db.commit()
+    return {
+        "status": "success",
+        "removed_count": removed_count,
+        "details": details
+    }
+
 
 def _is_white_color(color):
     """Return True if color string matches a white-family color."""
