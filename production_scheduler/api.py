@@ -923,6 +923,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 					if not it_pdate or not (getdate(it_pdate) >= query_start and getdate(it_pdate) <= query_end):
 						continue
 
+			unit = item.get("unit") or ""
+			effective_date_str = str(sheet.effective_date) if sheet.get("effective_date") else str(sheet.ordered_date)
+
 			data.append({
 				"name": "{}-{}".format(sheet.name, item.get("idx", 0)),
 				"itemName": item.name,
