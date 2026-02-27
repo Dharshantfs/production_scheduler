@@ -2508,7 +2508,7 @@ async function pushToProductionBoard() {
                     args: {
                         item_names: JSON.stringify(itemNamesToSend),
                         pb_plan_name: pbPlanName,
-                        target_date: targetDate
+                        target_dates: targetDate
                     }
                 });
                 if (r.message && r.message.status === 'success') {
@@ -2646,20 +2646,33 @@ async function pushToProductionBoard() {
             }
 
             // Get the last running order on Production Board per unit to use as seed
-            const targetDate = d.get_value && d.get_value('target_date') ? d.get_value('target_date') : itemDate;
+            const rawTargetDate = d.get_value && d.get_value('target_date') ? d.get_value('target_date') : itemDate;
+            const singleTargetDate = rawTargetDate.split(',')[0].trim();
             const unitsInBatch = [...new Set(currentSequence.map(s => s.unit || s.unitKey || 'Mixed').filter(u => u && u !== 'Mixed'))];
             
-            let seedQuality = null, seedColor = null;
-            if (unitsInBatch.length === 1) {
-                // Try to get seed from board for single-unit batches
+            // Re-order items
+            for (const u of unitsInBatch) {
+                // Determine seed
+                let seedQuality = null;
+                let seedColor = null;
+
                 try {
-                    const lastRes = await frappe.call({
-                        method: 'production_scheduler.api.get_last_unit_order',
-                        args: { unit: unitsInBatch[0], date: targetDate }
+                    const lastPBOrders = await frappe.call({
+                        method: "frappe.client.get_list",
+                        args: {
+                            doctype: "Planning sheet",
+                            filters: {
+                                custom_pb_plan_name: 'Default',
+                                ordered_date: ["<=", singleTargetDate]
+                            },
+                            fields: ["name", "custom_quality", "custom_color", "custom_unit", "ordered_date"],
+                            order_by: "ordered_date desc",
+                            limit_page_length: 1
+                        }
                     });
-                    if (lastRes.message) {
-                        seedQuality = lastRes.message.quality;
-                        seedColor = lastRes.message.color;
+                    if (lastPBOrders.message && lastPBOrders.message.length > 0) {
+                        seedQuality = lastPBOrders.message[0].custom_quality;
+                        seedColor = lastPBOrders.message[0].custom_color;
                     }
                 } catch(e) { /* silently ignore */ }
             }
@@ -2926,14 +2939,19 @@ async function openMovePlanDialog() {
             frappe.show_alert({ message: `Moving ${checkedNames.length} items to "${targetPlan}"...`, indicator: 'blue' });
 
             try {
-                const daysInView = (() => {
-                    if (viewScope.value === 'weekly') return 7;
-                    if (viewScope.value === 'monthly' && filterMonth.value) {
-                        const [y, m] = filterMonth.value.split('-');
-                        return new Date(y, m, 0).getDate();
-                    }
-                    return 1;
-                })();
+                function getDaysInViewScope() {
+    if (viewScope.value === 'weekly') return 7;
+    if (viewScope.value === 'monthly' && filterMonth.value) {
+        const [year, month] = filterMonth.value.split('-');
+        return new Date(year, month, 0).getDate();
+    }
+    // Default to Daily: count the number of comma-separated dates
+    if (viewScope.value === 'daily' && filterOrderDate.value) {
+        return String(filterOrderDate.value).split(',').filter(d => d.trim()).length || 1;
+    }
+    return 1;
+}
+                const daysInView = getDaysInViewScope();
                 const isAggregateView = viewScope.value === 'monthly' || viewScope.value === 'weekly';
 
                 const r = await frappe.call({
@@ -2999,17 +3017,18 @@ async function fetchData() {
       
       const simple = new Date(year, 0, 1 + (week - 1) * 7);
       const dow = simple.getDay();
-      const ISOweekStart = simple;
+      const ISOweekStart = new Date(simple);
       if (dow <= 4)
           ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
       else
           ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
           
-      const startStr = ISOweekStart.toISOString().split('T')[0];
+      const format = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      const startStr = format(ISOweekStart);
       
       const endSimple = new Date(ISOweekStart);
       endSimple.setDate(ISOweekStart.getDate() + 6);
-      const endStr = endSimple.toISOString().split('T')[0];
+      const endStr = format(endSimple);
       
       // Let the backend handle standard start_date/end_date mapping
       args = { start_date: startStr, end_date: endStr };

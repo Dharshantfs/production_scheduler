@@ -441,7 +441,11 @@ function getDaysInViewScope() {
         const [year, month] = filterMonth.value.split('-');
         return new Date(year, month, 0).getDate();
     }
-    return 1; // Default to 1 day for Daily view
+    // Default to Daily: count the number of comma-separated dates
+    if (viewScope.value === 'daily' && filterOrderDate.value) {
+        return filterOrderDate.value.split(',').filter(d => d.trim()).length || 1;
+    }
+    return 1;
 }
 
 function getUnitCapacityLimit(unit) {
@@ -1533,50 +1537,88 @@ watch(filterUnit, updateUrlParams);
 watch(filterStatus, updateUrlParams);
 watch(viewScope, updateUrlParams);
 
-onMounted(async () => {
-  // 1. Read URL Params and restore state (fallback to LocalStorage)
-  const params = new URLSearchParams(window.location.search);
-  let prefs = {};
-  try {
-      const stored = localStorage.getItem('ps_board_prefs');
-      if (stored) prefs = JSON.stringify(stored) ? JSON.parse(stored) : {};
-  } catch(e) {}
+const datePickerInput = ref(null);
+let flatpickrInst = null;
 
-  const dateParam = params.get('date') || prefs.date;
-  const unitParam = params.get('unit') || prefs.unit;
-  const statusParam = params.get('status') || prefs.status;
-  const scopeParam = params.get('scope') || prefs.scope;
-  const weekParam = params.get('week') || prefs.week;
-  const monthParam = params.get('month') || prefs.month;
-  
-  // Restore view scope FIRST
-  if (scopeParam && ['daily', 'weekly', 'monthly'].includes(scopeParam)) viewScope.value = scopeParam;
-  
-  if (weekParam) filterWeek.value = weekParam;
-  else if (viewScope.value === 'weekly' && !filterWeek.value) {
-      const d = new Date();
-      const dStart = new Date(d.getFullYear(), 0, 1);
-      const days = Math.floor((d - dStart) / (24 * 60 * 60 * 1000));
-      const weekNum = Math.ceil(days / 7);
-      filterWeek.value = `${d.getFullYear()}-W${String(weekNum).padStart(2,'0')}`;
-  }
+function initFlatpickr() {
+    if (viewScope.value !== 'daily') {
+        if (flatpickrInst) flatpickrInst.destroy();
+        flatpickrInst = null;
+        return;
+    }
+    if (!datePickerInput.value) return;
+    
+    // Parse existing value into array if it's comma separated
+    const defaultDates = (filterOrderDate.value || "").split(",").map(d => d.trim()).filter(Boolean);
+    
+    flatpickrInst = datePickerInput.value.flatpickr({
+        mode: "multiple",
+        dateFormat: "Y-m-d",
+        defaultDate: defaultDates,
+        onChange: function(selectedDates, dateStr, instance) {
+            filterOrderDate.value = dateStr;
+            fetchData();
+        }
+    });
+}
 
-  if (monthParam) filterMonth.value = monthParam;
-  else if (viewScope.value === 'monthly' && !filterMonth.value) {
-      filterMonth.value = frappe.datetime.get_today().substring(0, 7);
-  }
-  
-  if (dateParam) {
-      filterOrderDate.value = dateParam;
-  } else {
-      if (!filterOrderDate.value) filterOrderDate.value = frappe.datetime.get_today();
-  }
-  
-  if (unitParam) filterUnit.value = unitParam;
-  if (statusParam && ["Draft", "Finalized"].includes(statusParam)) filterStatus.value = statusParam;
-  
-  // 2. Fetch Data (this will also load plans from server)
-  await fetchData();
+onMounted(() => {
+    // 1. Load CSS
+    if (!document.getElementById('flatpickr-css')) {
+        const link = document.createElement('link');
+        link.id = 'flatpickr-css';
+        link.rel = 'stylesheet';
+        link.href = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css';
+        document.head.appendChild(link);
+    }
+
+    // 2. Initial values based on URL params
+    const qParams = new URLSearchParams(window.location.search);
+    const dateParam = qParams.get("date");
+    const monthParam = qParams.get("month");
+    const weekParam = qParams.get("week");
+    
+    // Fallbacks
+    if (dateParam) {
+        filterOrderDate.value = dateParam;
+    } else if (monthParam) {
+        filterMonth.value = monthParam;
+    } else if (weekParam) {
+        filterWeek.value = weekParam;
+    }
+
+    const scopeParam = qParams.get("scope");
+    if (scopeParam && ["daily", "weekly", "monthly"].includes(scopeParam)) {
+        viewScope.value = scopeParam;
+    } else {
+        viewScope.value = 'daily';
+    }
+
+    if (viewScope.value === 'daily' && !filterOrderDate.value) {
+         filterOrderDate.value = frappe.datetime.get_today();
+    } else if (viewScope.value === 'monthly' && !filterMonth.value) {
+         filterMonth.value = frappe.datetime.get_today().substring(0, 7);
+    } else if (viewScope.value === 'weekly' && !filterWeek.value) {
+         const d = new Date();
+         const dStart = new Date(d.getFullYear(), 0, 1);
+         const days = Math.floor((d - dStart) / (24 * 60 * 60 * 1000));
+         const weekNum = Math.ceil(days / 7);
+         filterWeek.value = `${d.getFullYear()}-W${String(weekNum).padStart(2,'0')}`;
+    }
+
+    // 3. Load flatpickr JS and init
+    frappe.require('https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.js', () => {
+        initFlatpickr();
+        fetchData();
+    });
+});
+
+watch(viewScope, () => {
+    updateUrlParams(); // Use updateUrlParams instead of updateURL
+    nextTick(() => {
+        initFlatpickr();
+        fetchData();
+    });
 });
 </script>
 

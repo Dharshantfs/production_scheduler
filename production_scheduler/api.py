@@ -1597,7 +1597,7 @@ def get_smart_push_sequence(item_names, seed_quality=None, seed_color=None):
 		order = UNIT_QUALITY_ORDER.get(unit, [])
 		q = item["quality"]
 		idx = order.index(q) if q in order else len(order)
-		return (idx, item["gsmVal"])
+		return (idx, -item["gsmVal"])
 
 	def color_sort_key(color):
 		return COLOR_PRIORITY.get(color, 9999)
@@ -1623,15 +1623,9 @@ def get_smart_push_sequence(item_names, seed_quality=None, seed_color=None):
 		effective_seed = seed_quality.upper().strip() if seed_quality else None
 		current_seed_color = seed_color.upper().strip() if seed_color else None
 
-		start_with_color = False
-		# Only start with color phase if the seed from the board is specifically a non-white color
-		if current_seed_color and current_seed_color not in WHITE_COLORS:
-			start_with_color = True
-
-		if start_with_color:
-			phases = [("color", color_items), ("white", white_items)]
-		else:
-			phases = [("white", white_items), ("color", color_items)]
+		# ── Unconditionally order: White phase -> Color phase ──
+		# This ensures White is never awkwardly forced to the end of the batch.
+		phases = [("white", white_items), ("color", color_items)]
 
 		for phase_idx, (phase_name, items) in enumerate(phases):
 			if not items:
@@ -1650,7 +1644,7 @@ def get_smart_push_sequence(item_names, seed_quality=None, seed_color=None):
 						rotated = order
 					
 					idx = rotated.index(q) if q in rotated else len(rotated)
-					return (idx, i["gsmVal"])
+					return (idx, -i["gsmVal"])
 
 				white_sorted = sorted(items, key=white_dynamic_key)
 				for idx, item in enumerate(white_sorted):
@@ -2599,10 +2593,16 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None):
 
 				pb_sheet_cache[cache_key] = pb_sheet_name
 
+			# Find the current max idx on this PB sheet to append correctly
+			max_idx = frappe.db.sql("""
+				SELECT COALESCE(MAX(idx), 0) FROM `tabPlanning Sheet Item` WHERE parent = %s
+			""", (pb_sheet_name,))[0][0]
+
 			# Move item to the PB sheet
 			frappe.db.set_value("Planning Sheet Item", name, "parent", pb_sheet_name)
 			frappe.db.set_value("Planning Sheet Item", name, "parenttype", "Planning sheet")
 			frappe.db.set_value("Planning Sheet Item", name, "parentfield", "items")
+			frappe.db.set_value("Planning Sheet Item", name, "idx", max_idx + 1)
 
 			# Also set item-level planned date for consistency
 			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
@@ -2645,10 +2645,11 @@ def push_items_to_pb(items_data, pb_plan_name):
 	count = 0
 	updated_sheets = set()
 	pb_sheet_cache = {}  # (party_code, target_date, pb_plan_name) -> pb sheet name
+	local_loads = {} # (date, unit) -> current load
 
 	for item in items_data:
 		name = item.get("name") if isinstance(item, dict) else item
-		target_date = item.get("target_date") if isinstance(item, dict) else None
+		target_date_raw = item.get("target_dates") or item.get("target_date") if isinstance(item, dict) else None
 		target_unit = item.get("target_unit") if isinstance(item, dict) else None
 		sequence_no = item.get("sequence_no") if isinstance(item, dict) else None
 
@@ -2656,8 +2657,29 @@ def push_items_to_pb(items_data, pb_plan_name):
 			# Get item + parent sheet info
 			item_doc = frappe.get_doc("Planning Sheet Item", name)
 			parent_doc = frappe.get_doc("Planning sheet", item_doc.parent)
+			item_wt = float(item_doc.qty or 0) / 1000.0
 
-			effective_date = target_date or str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
+			target_dates = [d.strip() for d in str(target_date_raw).split(",")] if target_date_raw else []
+
+			effective_date = target_dates[0] if target_dates else str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
+
+			# --- FIND CAPACITY SLOT ACROSS MULTIPLE DATES ---
+			if len(target_dates) > 0:
+				unit = target_unit or item_doc.unit or get_preferred_unit(item_doc.custom_quality)
+				limit = HARD_LIMITS.get(unit, 999.0)
+				for check_date in target_dates:
+					load_key = (check_date, unit)
+					if load_key not in local_loads:
+						local_loads[load_key] = get_unit_load(check_date, unit, pb_plan_name)
+					
+					load = local_loads[load_key]
+					# Allow the item to slot here if we are under the limit, OR if it's the very last date fallback 
+					if (load + item_wt <= limit * 1.05) or (check_date == target_dates[-1]):
+						effective_date = check_date
+						local_loads[load_key] = load + item_wt
+						break
+			# ------------------------------------------------
+
 			party_code = parent_doc.party_code or ""
 
 			# ── Set item-level unit if user picked a different unit ──
@@ -2692,6 +2714,11 @@ def push_items_to_pb(items_data, pb_plan_name):
 
 				pb_sheet_cache[cache_key] = pb_sheet_name
 
+			# ── Find the current max idx on this PB sheet ──
+			max_idx = frappe.db.sql("""
+				SELECT COALESCE(MAX(idx), 0) FROM `tabPlanning Sheet Item` WHERE parent = %s
+			""", (pb_sheet_name,))[0][0]
+
 			# ── Move item to the PB sheet ──
 			frappe.db.set_value("Planning Sheet Item", name, "parent", pb_sheet_name)
 			frappe.db.set_value("Planning Sheet Item", name, "parenttype", "Planning sheet")
@@ -2704,6 +2731,9 @@ def push_items_to_pb(items_data, pb_plan_name):
 			# ── Update idx for sequence ordering on board ──
 			if sequence_no is not None:
 				frappe.db.set_value("Planning Sheet Item", name, "idx", int(sequence_no))
+			else:
+				# Append to the bottom if no explicit sequence provided
+				frappe.db.set_value("Planning Sheet Item", name, "idx", max_idx + 1)
 
 			# ── Track which original sheets were touched ──
 			updated_sheets.add(item_doc.parent)  # original parent
