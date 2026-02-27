@@ -692,6 +692,8 @@ const matrixBody = ref(null);      // Ref for Matrix Row sorting
 const customRowOrder = ref([]);    // Store user-defined row order (List of Colors)
 const renderKey = ref(0); // Force re-render for drag revert
 const matrixSortableInstances = []; // Track matrix sortable instances for cleanup
+const kanbanSortableInstances = [];
+const monthlySortableInstances = [];
 let matrixInitTimer = null; // Track pending matrix sortable init timeout
 
 // Matrix View Helpers
@@ -1228,17 +1230,13 @@ async function initSortable() {
   }
   
   // Clear old kanban instances
-  if (columnRefs.value) {
-    columnRefs.value.forEach(col => {
-        if (col && col._sortable) { try { col._sortable.destroy(); } catch(e) {} }
-    });
+  while (kanbanSortableInstances.length > 0) {
+      try { kanbanSortableInstances.pop().destroy(); } catch(e) {}
   }
   
   // Clear old monthly instances
-  if (monthlyCellRefs.value) {
-    monthlyCellRefs.value.forEach(col => {
-        if (col && col._sortable) { try { col._sortable.destroy(); } catch(e) {} }
-    });
+  while (monthlySortableInstances.length > 0) {
+      try { monthlySortableInstances.pop().destroy(); } catch(e) {}
   }
 
   // Clear old matrix instances
@@ -1372,6 +1370,7 @@ async function initSortable() {
                 }, 10);
              }
          });
+         monthlySortableInstances.push(monthlySortable);
          cellEl._sortable = monthlySortable;
      });
      return;
@@ -1508,6 +1507,7 @@ async function initSortable() {
             }
         },
         });
+        kanbanSortableInstances.push(kanbanSortable);
         colEl._sortable = kanbanSortable;
     });
   }
@@ -2600,7 +2600,9 @@ async function pushToProductionBoard() {
 
     // Wire up checkbox events
     function wireCheckboxes() {
-        const container = d.wrapper.querySelector('.frappe-control[data-fieldname="sequence_html"]') || d.wrapper;
+        const wrapperEl = $(d.wrapper || d.$wrapper).get(0);
+        if (!wrapperEl) return;
+        const container = wrapperEl.querySelector('.frappe-control[data-fieldname="sequence_html"]') || wrapperEl;
         
         const mainCheckbox = container.querySelector('thead input[type=checkbox]');
         if (mainCheckbox) {
@@ -2627,8 +2629,11 @@ async function pushToProductionBoard() {
 
     function updateCountLabel() {
         const total = currentSequence.filter(i => i.checked !== false && !i.pushed).length;
-        const countSpan = d.wrapper.querySelector('#seq-count-label');
-        if (countSpan) countSpan.textContent = total;
+        const wrapperEl = $(d.wrapper || d.$wrapper).get(0);
+        if (wrapperEl) {
+            const countSpan = wrapperEl.querySelector('#seq-count-label');
+            if (countSpan) countSpan.textContent = total;
+        }
         
         loadGlobalCapacityPreview(d, currentSequence);
     }
@@ -2655,10 +2660,10 @@ async function pushToProductionBoard() {
             const unitsInBatch = [...new Set(currentSequence.map(s => s.unit || s.unitKey || 'Mixed').filter(u => u && u !== 'Mixed'))];
             
             // Re-order items
+            let seedQuality = null;
+            let seedColor = null;
             for (const u of unitsInBatch) {
                 // Determine seed
-                let seedQuality = null;
-                let seedColor = null;
 
                 try {
                     const lastPBOrders = await frappe.call({
@@ -2669,14 +2674,22 @@ async function pushToProductionBoard() {
                                 custom_pb_plan_name: 'Default',
                                 ordered_date: ["<=", singleTargetDate]
                             },
-                            fields: ["name", "custom_quality", "custom_color", "custom_unit", "ordered_date"],
+                            fields: ["name"], // Removed restricted custom_ fields
                             order_by: "ordered_date desc",
                             limit_page_length: 1
                         }
                     });
                     if (lastPBOrders.message && lastPBOrders.message.length > 0) {
-                        seedQuality = lastPBOrders.message[0].custom_quality;
-                        seedColor = lastPBOrders.message[0].custom_color;
+                        try {
+                            const doc = await frappe.call({
+                                method: "frappe.client.get",
+                                args: { doctype: "Planning sheet", name: lastPBOrders.message[0].name }
+                            });
+                            if (doc.message) {
+                                seedQuality = doc.message.custom_quality;
+                                seedColor = doc.message.custom_color;
+                            }
+                        } catch (e) { /* silently ignore internal fetch */ }
                     }
                 } catch(e) { /* silently ignore */ }
             }
