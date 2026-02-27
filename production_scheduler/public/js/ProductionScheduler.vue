@@ -71,20 +71,11 @@
         🔄
       </button>
       
-      <button
-        class="cc-clear-btn"
-        style="margin-left:8px;"
-        @click="toggleSelectMode"
-        :title="selectMode ? 'Disable selection mode' : 'Enable selection mode'"
-      >
-        {{ selectMode ? '☑ Select On' : '☐ Select' }}
-      </button>
-
       <button class="cc-clear-btn" style="margin-left:auto; background-color: #3b82f6; color: white; border: none;" @click="goToPlan" title="View Production Plan (Table)">
           📅 View Table
       </button>
 
-      <div v-if="selectMode && hasSelection" class="cc-bulk-bar">
+      <div v-if="hasSelection" class="cc-bulk-bar">
         <span class="cc-bulk-label">{{ selectedItems.length }} selected</span>
         <button class="cc-clear-btn" @click="openBulkMoveDialog" title="Move selected orders to another unit/date">
           ⇄ Move Selected
@@ -144,17 +135,16 @@
             <!-- Order Card -->
             <div
               v-else
-              :class="['cc-card', (selectMode && isSelected(entry.itemName)) ? 'cc-card-selected' : '']"
+              :class="['cc-card', isSelected(entry.itemName) ? 'cc-card-selected' : '']"
               :data-name="entry.name"
               :data-item-name="entry.itemName"
               :data-color="entry.color"
               :data-planning-sheet="entry.planningSheet"
               :data-date="entry.plannedDate || entry.orderDate"
-              @click="selectMode ? toggleCardSelection(entry.itemName) : openForm(entry.planningSheet)"
+              @click="openForm(entry.planningSheet)"
             >
               <div class="cc-card-left">
                 <input
-                  v-if="selectMode"
                   type="checkbox"
                   class="cc-card-select"
                   :checked="isSelected(entry.itemName)"
@@ -288,7 +278,6 @@ units.forEach(u => {
 
 const rawData = ref([]);
 const selectedItems = ref([]); // Names of Planning Sheet Items selected for bulk actions
-const selectMode = ref(false);
 
 const columnRefs = ref([]);
 
@@ -339,13 +328,6 @@ function toggleCardSelection(itemName) {
 
 function clearSelection() {
   selectedItems.value = [];
-}
-
-function toggleSelectMode() {
-  selectMode.value = !selectMode.value;
-  if (!selectMode.value) {
-    clearSelection();
-  }
 }
 
 function goToPlan() {
@@ -594,8 +576,6 @@ async function initSortable() {
       ghostClass: "cc-ghost",
       disabled: isLoading.value,
       draggable: ".cc-card",
-      filter: ".cc-card-select, .cc-revert-btn",
-      preventOnFilter: false,
       onEnd: async (evt) => {
         const itemEl = evt.item;
         const newUnitEl = evt.to;
