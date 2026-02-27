@@ -1662,13 +1662,17 @@ def get_last_unit_order(unit, date=None):
 	}
 
 @frappe.whitelist()
-def get_smart_push_sequence(item_names, seed_quality=None, seed_color=None):
+def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, seed_color=None):
 	"""
 	Returns items in smart push order:
 	  1. White phase (per unit, quality order + GSM)
 	  2. Color phase (per unit): seed quality from last white → find colors in
 	     seed quality (light→dark) → group all qualities of each color together
 	     → update seed = last quality in batch → repeat
+	
+	If target_date is provided, the algorithm autonomously finds the last pushed
+	order on the Production Board for each unit to use as the seed.
+	
 	Returns list of dicts with sequence_no, phase, is_seed_bridge.
 	"""
 	import json
@@ -1728,6 +1732,18 @@ def get_smart_push_sequence(item_names, seed_quality=None, seed_color=None):
 		# Initialize phase seeds from board (if provided)
 		effective_seed = seed_quality.upper().strip() if seed_quality else None
 		current_seed_color = seed_color.upper().strip() if seed_color else None
+
+		# If target_date is provided, try to fetch unit-specific seed if no seed given
+		if target_date and not effective_seed:
+			last_order = get_last_unit_order(unit, target_date)
+			if last_order:
+				effective_seed = last_order.get("quality", "").upper().strip()
+				current_seed_color = last_order.get("color", "").upper().strip()
+				# If last item was white, we effectively want to treat that as a seed for the white-chain
+				# and then transition to color-chain. If it was already a color, it becomes the color-seed.
+				if last_order.get("is_white") and not white_items:
+					# Already skipped white phase? Then this helps choose the first color seed more wisely.
+					pass
 
 		# ── Unconditionally order: White phase -> Color phase ──
 		# This ensures White is never awkwardly forced to the end of the batch.

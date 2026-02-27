@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="cc-container">
     <!-- Filter Bar -->
     <div class="cc-filters">
@@ -2478,19 +2478,21 @@ async function pushToProductionBoard() {
     const d = new frappe.ui.Dialog({
         title: '🚀 Push to Production Board',
         fields: [
-            { fieldname: 'fetch_dates', fieldtype: 'Data', label: 'Fetch Date(s)', default: (fetchDates.join(", ") || defaultTargetDate), read_only: 1, description: 'Used to fetch source orders only.' },
+            { fieldname: 'fetch_dates', fieldtype: 'Data', label: 'Fetch Date(s)', default: (fetchDates.join(", ") || defaultTargetDate), read_only: 1 },
             { fieldtype: 'Column Break' },
-            { fieldname: 'target_date', fieldtype: 'Date', label: 'Target Date', default: defaultTargetDate, reqd: 1, description: 'Capacity and push allocation start from this date.' },
-            { fieldtype: 'Column Break' },
-            { fieldname: 'filter_logic', fieldtype: 'Select', label: 'Match', options: ['AND', 'OR'], default: 'AND' },
-            { fieldtype: 'Column Break' },
+            { fieldname: 'target_date', fieldtype: 'Date', label: 'Target Date', default: defaultTargetDate, reqd: 1, description: 'Push start point.' },
+            
+            { fieldtype: 'Section Break', label: 'Filters' },
             { fieldname: 'filter_unit', fieldtype: 'Select', label: 'Unit', options: ['All Units', 'Unit 1', 'Unit 2', 'Unit 3', 'Unit 4'], default: 'All Units' },
             { fieldtype: 'Column Break' },
+            { fieldname: 'filter_logic', fieldtype: 'Select', label: 'Match', options: ['AND', 'OR'], default: 'AND' },
+            { fieldtype: 'Section Break' },
             { fieldname: 'filter_quality', fieldtype: 'Data', label: 'Quality' },
             { fieldtype: 'Column Break' },
             { fieldname: 'filter_color', fieldtype: 'Data', label: 'Color' },
             { fieldtype: 'Column Break' },
             { fieldname: 'filter_party', fieldtype: 'Data', label: 'Party Code' },
+
             { fieldtype: 'Section Break' },
             {
                 fieldname: 'sequence_html',
@@ -2735,46 +2737,13 @@ async function pushToProductionBoard() {
 
             // Get the last running order on Production Board per unit to use as seed
             const singleTargetDate = (d.get_value && d.get_value('target_date') ? d.get_value('target_date') : itemDate).trim();
-            const unitsInBatch = [...new Set(currentSequence.map(s => s.unit || s.unitKey || 'Mixed').filter(u => u && u !== 'Mixed'))];
             
-            // Re-order items
-            let seedQuality = null;
-            let seedColor = null;
-            for (const u of unitsInBatch) {
-                // Determine seed
-
-                try {
-                    const lastPBOrders = await frappe.call({
-                        method: "frappe.client.get_list",
-                        args: {
-                            doctype: "Planning sheet",
-                            filters: {
-                                custom_pb_plan_name: 'Default',
-                                ordered_date: ["<=", singleTargetDate]
-                            },
-                            fields: ["name"], // Removed restricted custom_ fields
-                            order_by: "ordered_date desc",
-                            limit_page_length: 1
-                        }
-                    });
-                    if (lastPBOrders.message && lastPBOrders.message.length > 0) {
-                        try {
-                            const doc = await frappe.call({
-                                method: "frappe.client.get",
-                                args: { doctype: "Planning sheet", name: lastPBOrders.message[0].name }
-                            });
-                            if (doc.message) {
-                                seedQuality = doc.message.custom_quality;
-                                seedColor = doc.message.custom_color;
-                            }
-                        } catch (e) { /* silently ignore internal fetch */ }
-                    }
-                } catch(e) { /* silently ignore */ }
-            }
-
             const r = await frappe.call({
                 method: 'production_scheduler.api.get_smart_push_sequence',
-                args: { item_names: JSON.stringify(currentSequence.map(s => s.name)), seed_quality: seedQuality, seed_color: seedColor }
+                args: { 
+                    item_names: JSON.stringify(currentSequence.map(s => s.name)),
+                    target_date: singleTargetDate
+                }
             });
             const smartSeq = r.message || [];
             if (smartSeq.length > 0) {
