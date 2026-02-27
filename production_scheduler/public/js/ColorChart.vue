@@ -661,6 +661,10 @@ function initFlatpickr() {
     });
 }
 
+onMounted(() => {
+    initFlatpickr();
+});
+
 async function togglePlanLock() {
     if (!selectedPlan.value) return;
     const p = plans.value.find(p => p.name === selectedPlan.value);
@@ -2442,7 +2446,7 @@ async function pushToProductionBoard() {
                         <div>
                             <div style="font-weight:700;font-size:12px;color:${isOver ? '#dc2626' : '#16a34a'};">${u}: ${currentLoad.toFixed(2)} / ${limit.toFixed(2)}T</div>
                             ${whiteLoad > 0 ? `<div style="font-size:9px;color:#64748b;margin-top:1px;">(Includes ${whiteLoad.toFixed(2)}T White)</div>` : ''}
-                            <div style="font-size:10px;color:#475569;margin-top:2px;">After push: <b>${afterPush.toFixed(2)}T</b> <span style="color:#64748b;">(+${pushWeight.toFixed(2)}T)</span></div>
+                            <div style="font-size:10px;color:#475569;margin-top:2px;">After push: <b>${afterPush.toFixed(2)}T</b> <span style="color:${pushWeight > 0 ? '#64748b' : 'transparent'};">(+${pushWeight.toFixed(2)}T)</span></div>
                         </div>
                         ${isOver ? '<span style="font-size:16px;" title="Capacity Exceeded">⚠️</span>' : '<span style="font-size:16px;">✅</span>'}  
                     </div>`;
@@ -2458,7 +2462,7 @@ async function pushToProductionBoard() {
     const d = new frappe.ui.Dialog({
         title: '🚀 Push to Production Board',
         fields: [
-            { fieldname: 'target_date', fieldtype: 'Date', label: 'Target Date', default: filterOrderDate.value || frappe.datetime.get_today(), reqd: 1 },
+            { fieldname: 'target_date', fieldtype: 'Data', label: 'Target Date(s)', default: filterOrderDate.value || frappe.datetime.get_today(), reqd: 1, description: 'Comma separated dates (e.g. 2026-02-27, 2026-02-28)' },
             { fieldtype: 'Column Break' },
             { fieldname: 'filter_logic', fieldtype: 'Select', label: 'Match', options: ['AND', 'OR'], default: 'AND' },
             { fieldtype: 'Column Break' },
@@ -2576,8 +2580,23 @@ async function pushToProductionBoard() {
         d.fields_dict[fn].$input.on('input', () => applyFilters());
     });
     d.fields_dict.filter_logic.$input.on('change', () => applyFilters());
-    d.fields_dict.filter_unit.$input.on('change', () => applyFilters());
+    d.fields_dict.filter_unit.$input.on('change', () => { applyFilters(); loadGlobalCapacityPreview(d, currentSequence); });
     d.fields_dict.target_date.$input.on('change', () => loadGlobalCapacityPreview(d, currentSequence));
+
+    // Custom Flatpickr for target_date field
+    setTimeout(() => {
+        if (d.fields_dict.target_date && d.fields_dict.target_date.$input) {
+            flatpickr(d.fields_dict.target_date.$input[0], {
+                mode: "multiple",
+                dateFormat: "Y-m-d",
+                defaultDate: (d.get_value('target_date') || filterOrderDate.value || frappe.datetime.get_today()).split(',').map(dt => dt.trim()),
+                onChange: function(selectedDates, dateStr, instance) {
+                    d.set_value('target_date', dateStr);
+                    loadGlobalCapacityPreview(d, currentSequence);
+                }
+            });
+        }
+    }, 200);
 
     // Wire up checkbox events
     function wireCheckboxes() {
@@ -2684,6 +2703,8 @@ async function pushToProductionBoard() {
                 limitsMap['Unit 3'] = 9 * numDates;
                 limitsMap['Unit 4'] = 5.5 * numDates;
                 
+                const filterUnitValue = d.get_value('filter_unit') || 'All Units';
+                
                 currentSequence = smartSeq.map(s => {
                     const mapped = {
                         name: s.name,
@@ -2705,6 +2726,13 @@ async function pushToProductionBoard() {
                     }
 
                     const u = mapped.unit || 'Unit 1';
+                    
+                    // If a specific unit is filtered in the dialog, don't auto-tick items from other units
+                    if (filterUnitValue !== 'All Units' && u !== filterUnitValue) {
+                        mapped.checked = false;
+                        return mapped;
+                    }
+
                     const weight = parseFloat(mapped.qty || 0) / 1000;
                     const limit = limitsMap[u] || 999;
                     
