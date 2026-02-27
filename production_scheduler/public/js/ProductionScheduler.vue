@@ -112,8 +112,8 @@
             </span>
           </div>
 
-        <div class="cc-col-body" :data-unit="unit" ref="columnRefs">
-          <template v-for="(entry, idx) in getUnitEntries(unit)" :key="entry.uniqueKey + '-' + renderKey">
+        <div class="cc-col-body" :data-unit="unit" ref="columnRefs" :key="'col-' + unit + '-' + renderKey">
+          <template v-for="(entry, idx) in getUnitEntries(unit)" :key="entry.uniqueKey">
             <!-- Mix Roll Marker (HIDDEN as per user request, but handled correctly) -->
             <div v-if="entry.type === 'mix'" class="cc-mix-marker" style="display:none;">
               <div class="cc-mix-line"></div>
@@ -130,6 +130,7 @@
               :data-item-name="entry.itemName"
               :data-color="entry.color"
               :data-planning-sheet="entry.planningSheet"
+              :data-date="entry.plannedDate || entry.orderDate"
               @click="openForm(entry.planningSheet)"
             >
               <div class="cc-card-left">
@@ -531,21 +532,9 @@ async function initSortable() {
         const isSameUnit = (newUnitEl === oldUnitEl);
 
         if (!isSameUnit || evt.newIndex !== evt.oldIndex) {
-            // Ultimate Vue 3 + Sortable JS fix:
-            // Vue 3's Virtual DOM crashes completely if SortableJS moves elements around 
-            // and we try to let Vue update it naturally.
-            // We MUST undo Sortable's DOM manipulation instantly so the DOM returns to the 
-            // exact state Vue expects before we trigger any data refreshes.
-            
-            // 1. Remove the item from its new position
-            itemEl.parentNode.removeChild(itemEl);
-            
-            // 2. Put it back exactly where it was in the old column
-            if (evt.oldIndex < oldUnitEl.childNodes.length) {
-                oldUnitEl.insertBefore(itemEl, oldUnitEl.childNodes[evt.oldIndex]);
-            } else {
-                oldUnitEl.appendChild(itemEl);
-            }
+            // We NO LONGER manually undo Sortable's DOM manipulation because 
+            // Vue 3 will completely destroy the parent .cc-col-body via the 
+            // :key="'col-'+unit+'-'+renderKey" and rebuild from scratch.
 
             setTimeout(async () => {
             try {
@@ -1562,8 +1551,20 @@ onMounted(async () => {
   
   // Restore view scope FIRST
   if (scopeParam && ['daily', 'weekly', 'monthly'].includes(scopeParam)) viewScope.value = scopeParam;
+  
   if (weekParam) filterWeek.value = weekParam;
+  else if (viewScope.value === 'weekly' && !filterWeek.value) {
+      const d = new Date();
+      const dStart = new Date(d.getFullYear(), 0, 1);
+      const days = Math.floor((d - dStart) / (24 * 60 * 60 * 1000));
+      const weekNum = Math.ceil(days / 7);
+      filterWeek.value = `${d.getFullYear()}-W${String(weekNum).padStart(2,'0')}`;
+  }
+
   if (monthParam) filterMonth.value = monthParam;
+  else if (viewScope.value === 'monthly' && !filterMonth.value) {
+      filterMonth.value = frappe.datetime.get_today().substring(0, 7);
+  }
   
   if (dateParam) {
       filterOrderDate.value = dateParam;
