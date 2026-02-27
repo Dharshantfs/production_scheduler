@@ -162,18 +162,38 @@ def _populate_planning_sheet_items(ps, doc):
         if gsm > 0 and width > 0 and m_roll > 0:
             wt = (gsm * width * m_roll * 0.0254) / 1000
 
-        # UNIT determination
+        # UNIT determination based STRICTLY on quality priority
         unit = "Unit 1"
         if qual:
             q_up = qual.upper()
-            if gsm > 50 and q_up in UNIT_1:
-                unit = "Unit 1"
-            elif gsm > 20 and q_up in UNIT_2:
-                unit = "Unit 2"
-            elif gsm > 10 and q_up in UNIT_3:
-                unit = "Unit 3"
-            elif q_up in UNIT_4:
-                unit = "Unit 4"
+            
+            QUALITY_PRIORITY = {
+              "Unit 1": { "PREMIUM": 1, "PLATINUM": 2, "SUPER PLATINUM": 3, "GOLD": 4, "SILVER": 5 },
+              "Unit 2": { 
+                  "GOLD": 1, "SILVER": 2, "BRONZE": 3, "CLASSIC": 4, "SUPER CLASSIC": 5, 
+                  "LIFE STYLE": 6, "ECO SPECIAL": 7, "ECO GREEN": 8, "SUPER ECO": 9, "ULTRA": 10, "DELUXE": 11 
+              },
+              "Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPER PLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
+              "Unit 4": { "PREMIUM": 1, "GOLD": 2, "SILVER": 3, "BRONZE": 4 }
+            }
+            
+            best_unit = "Unit 1"
+            best_score = 999
+            
+            for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
+                score = QUALITY_PRIORITY.get(u, {}).get(q_up)
+                if score is not None and score < best_score:
+                    best_score = score
+                    best_unit = u
+            
+            if best_score < 999:
+                unit = best_unit
+            else:
+                # Fallback if not mapped
+                if q_up in UNIT_1: unit = "Unit 1"
+                elif q_up in UNIT_2: unit = "Unit 2"
+                elif q_up in UNIT_3: unit = "Unit 3"
+                elif q_up in UNIT_4: unit = "Unit 4"
 
         # plannedDate auto-set for White items
         p_date = ps.ordered_date if _is_white_color(col) else None
@@ -358,11 +378,35 @@ def find_best_slot(item_qty_tons, quality, preferred_unit, start_date, recursion
 def get_preferred_unit(quality):
 	"""Determines the best unit based on Item Quality."""
 	if not quality: return "Unit 1"
-	# check strict order as per original logic
-	if quality in UNIT_QUALITY_MAP["Unit 1"]: return "Unit 1"
-	if quality in UNIT_QUALITY_MAP["Unit 2"]: return "Unit 2"
-	if quality in UNIT_QUALITY_MAP["Unit 3"]: return "Unit 3"
-	if quality in UNIT_QUALITY_MAP["Unit 4"]: return "Unit 4"
+	
+	q_up = quality.upper().strip()
+	QUALITY_PRIORITY = {
+		"Unit 1": { "PREMIUM": 1, "PLATINUM": 2, "SUPER PLATINUM": 3, "GOLD": 4, "SILVER": 5 },
+		"Unit 2": { 
+			"GOLD": 1, "SILVER": 2, "BRONZE": 3, "CLASSIC": 4, "SUPER CLASSIC": 5, 
+			"LIFE STYLE": 6, "ECO SPECIAL": 7, "ECO GREEN": 8, "SUPER ECO": 9, "ULTRA": 10, "DELUXE": 11 
+		},
+		"Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPER PLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
+		"Unit 4": { "PREMIUM": 1, "GOLD": 2, "SILVER": 3, "BRONZE": 4 }
+	}
+	
+	best_unit = "Unit 1"
+	best_score = 999
+	
+	for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
+		score = QUALITY_PRIORITY.get(u, {}).get(q_up)
+		if score is not None and score < best_score:
+			best_score = score
+			best_unit = u
+			
+	if best_score < 999:
+		return best_unit
+
+	# Fallback if quality not mapped in priority dict
+	if q_up in UNIT_QUALITY_MAP.get("Unit 1", []): return "Unit 1"
+	if q_up in UNIT_QUALITY_MAP.get("Unit 2", []): return "Unit 2"
+	if q_up in UNIT_QUALITY_MAP.get("Unit 3", []): return "Unit 3"
+	if q_up in UNIT_QUALITY_MAP.get("Unit 4", []): return "Unit 4"
 	return "Unit 1"
 
 @frappe.whitelist()

@@ -517,6 +517,7 @@ async function initSortable() {
       animation: 150,
       ghostClass: "cc-ghost",
       disabled: isLoading.value,
+      draggable: ".cc-card",
       onEnd: async (evt) => {
         const itemEl = evt.item;
         const newUnitEl = evt.to;
@@ -641,8 +642,10 @@ async function initSortable() {
 }
 
 function getUnitSortConfig(unit) {
-  // Config is pre-initialized, return fallback if unit missing
-  return unitSortConfig[unit] || { color: 'asc', gsm: 'desc', priority: 'color' };
+  if (!unitSortConfig[unit]) {
+      unitSortConfig[unit] = { mode: 'auto', color: 'asc', gsm: 'desc', priority: 'color' };
+  }
+  return unitSortConfig[unit];
 }
 
 function toggleUnitColor(unit) {
@@ -662,9 +665,9 @@ function toggleUnitGsm(unit) {
   config.mode = 'auto'; // Reset to auto on sort click
   if (config.priority !== 'gsm') {
       config.priority = 'gsm';
-      config.gsm = 'asc';
+      config.gsm = 'desc'; // Default to High -> Low
   } else {
-      config.gsm = config.gsm === 'asc' ? 'desc' : 'asc';
+      config.gsm = config.gsm === 'desc' ? 'asc' : 'desc';
   }
   renderKey.value++;
 }
@@ -1494,6 +1497,7 @@ async function fetchData() {
         } catch(e) { console.error("Failed to load color order", e); }
         
         // Reinit sortable after Vue settles
+        renderKey.value++; // Force complete re-render to erase Sortable's DOM manipulation hacks
         await nextTick();
         await nextTick(); // Double tick — Vue needs two ticks for v-for to fully render
         initSortable();
@@ -1508,24 +1512,30 @@ async function fetchData() {
   });
 }
 
-// ---- STATE PERSISTENCE (URL SYNC) ----
+// ---- STATE PERSISTENCE (URL SYNC + LOCAL STORAGE) ----
 function updateUrlParams() {
   const url = new URL(window.location);
-  if (filterOrderDate.value) url.searchParams.set('date', filterOrderDate.value);
+  const prefs = {};
+
+  if (filterOrderDate.value) { url.searchParams.set('date', filterOrderDate.value); prefs.date = filterOrderDate.value; }
   
-  if (filterUnit.value) url.searchParams.set('unit', filterUnit.value);
-  else url.searchParams.delete('unit');
+  if (filterUnit.value) { url.searchParams.set('unit', filterUnit.value); prefs.unit = filterUnit.value; }
+  else { url.searchParams.delete('unit'); }
   
-  if (filterStatus.value) url.searchParams.set('status', filterStatus.value);
-  else url.searchParams.delete('status');
+  if (filterStatus.value) { url.searchParams.set('status', filterStatus.value); prefs.status = filterStatus.value; }
+  else { url.searchParams.delete('status'); }
   
   url.searchParams.set('scope', viewScope.value);
-  if (viewScope.value === 'weekly' && filterWeek.value) url.searchParams.set('week', filterWeek.value);
-  else url.searchParams.delete('week');
-  if (viewScope.value === 'monthly' && filterMonth.value) url.searchParams.set('month', filterMonth.value);
-  else url.searchParams.delete('month');
+  prefs.scope = viewScope.value;
+
+  if (viewScope.value === 'weekly' && filterWeek.value) { url.searchParams.set('week', filterWeek.value); prefs.week = filterWeek.value; }
+  else { url.searchParams.delete('week'); }
+
+  if (viewScope.value === 'monthly' && filterMonth.value) { url.searchParams.set('month', filterMonth.value); prefs.month = filterMonth.value; }
+  else { url.searchParams.delete('month'); }
   
   window.history.replaceState({}, '', url);
+  localStorage.setItem('ps_board_prefs', JSON.stringify(prefs));
 }
 
 // Watchers to sync state to URL
@@ -1535,15 +1545,20 @@ watch(filterStatus, updateUrlParams);
 watch(viewScope, updateUrlParams);
 
 onMounted(async () => {
-  // 1. Read URL Params and restore state
+  // 1. Read URL Params and restore state (fallback to LocalStorage)
   const params = new URLSearchParams(window.location.search);
-  const dateParam = params.get('date');
-  const unitParam = params.get('unit');
-  const statusParam = params.get('status');
-  const scopeParam = params.get('scope');
-  const weekParam = params.get('week');
-  const monthParam = params.get('month');
-  const planParam = params.get('plan');
+  let prefs = {};
+  try {
+      const stored = localStorage.getItem('ps_board_prefs');
+      if (stored) prefs = JSON.stringify(stored) ? JSON.parse(stored) : {};
+  } catch(e) {}
+
+  const dateParam = params.get('date') || prefs.date;
+  const unitParam = params.get('unit') || prefs.unit;
+  const statusParam = params.get('status') || prefs.status;
+  const scopeParam = params.get('scope') || prefs.scope;
+  const weekParam = params.get('week') || prefs.week;
+  const monthParam = params.get('month') || prefs.month;
   
   // Restore view scope FIRST
   if (scopeParam && ['daily', 'weekly', 'monthly'].includes(scopeParam)) viewScope.value = scopeParam;

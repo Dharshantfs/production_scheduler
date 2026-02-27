@@ -142,40 +142,64 @@
     </div>
 
     <!-- TABLE VIEW -->
-    <div v-else-if="viewMode === 'table'" style="flex:1; overflow:auto; padding:16px;">
-        <table style="width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-            <thead>
-                <tr style="background:#f8fafc; border-bottom:2px solid #e2e8f0;">
-                    <th style="padding:10px 12px; text-align:left; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; cursor:pointer;" @click="toggleSort('unit')">Unit</th>
-                    <th style="padding:10px 12px; text-align:left; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; cursor:pointer;" @click="toggleSort('color')">Color</th>
-                    <th style="padding:10px 12px; text-align:left; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; cursor:pointer;" @click="toggleSort('partyCode')">Party Code</th>
-                    <th style="padding:10px 12px; text-align:left; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; cursor:pointer;" @click="toggleSort('customer')">Customer</th>
-                    <th style="padding:10px 12px; text-align:left; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Quality</th>
-                    <th style="padding:10px 12px; text-align:center; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">GSM</th>
-                    <th style="padding:10px 12px; text-align:right; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase; cursor:pointer;" @click="toggleSort('qty')">Qty (Kg)</th>
-                    <th style="padding:10px 12px; text-align:right; font-size:11px; font-weight:700; color:#64748b; text-transform:uppercase;">Qty (T)</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr v-for="item in tableData" :key="item.itemName" style="border-bottom:1px solid #f1f5f9;" class="hover:bg-gray-50" @click="openForm(item.planningSheet)">
-                    <td style="padding:8px 12px; font-size:12px; font-weight:600; color:#64748b;"><span style="background:#f1f5f9; padding:2px 8px; border-radius:4px;">{{ item.unit || 'Mixed' }}</span></td>
-                    <td style="padding:8px 12px; font-size:13px; font-weight:700; color:#1e293b;"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:middle;" :style="{backgroundColor: getHexColor(item.color)}"></span>{{ item.color }}</td>
-                    <td style="padding:8px 12px; font-size:12px; font-weight:600; color:#111827;">{{ item.partyCode }}</td>
-                    <td style="padding:8px 12px; font-size:12px; color:#6b7280;">{{ item.customer }}</td>
-                    <td style="padding:8px 12px; font-size:12px;"><span style="background:#e2e8f0; padding:1px 6px; border-radius:4px; font-weight:600; font-size:10px;">{{ item.quality || 'N/A' }}</span></td>
-                    <td style="padding:8px 12px; font-size:12px; text-align:center;">{{ item.gsm || '-' }}</td>
-                    <td style="padding:8px 12px; font-size:13px; font-weight:700; text-align:right; color:#0f172a;">{{ item.qty }}</td>
-                    <td style="padding:8px 12px; font-size:13px; font-weight:600; text-align:right; color:#475569;">{{ (item.qty / 1000).toFixed(3) }}</td>
-                </tr>
-            </tbody>
-            <tfoot>
-                <tr style="background:#fffbeb; border-top:2px solid #fbbf24;">
-                    <td colspan="6" style="padding:10px 12px; font-weight:700; color:#92400e;">TOTAL</td>
-                    <td style="padding:10px 12px; font-weight:700; text-align:right; color:#92400e;">{{ tableTotal.toFixed(0) }}</td>
-                    <td style="padding:10px 12px; font-weight:700; text-align:right; color:#92400e;">{{ (tableTotal / 1000).toFixed(3) }}</td>
-                </tr>
-            </tfoot>
-        </table>
+    <div v-else-if="viewMode === 'table'" class="cc-table-container" style="padding:16px;">
+        <div v-for="unitGroup in tableData" :key="unitGroup.unit" class="cc-table-unit-block">
+            <!-- Unit Header -->
+            <div class="cc-table-unit-header" :style="{ backgroundColor: getUnitHeaderColor(unitGroup.unit) }">
+                {{ unitGroup.unit.toUpperCase() }} (06:00 am to 06:00 am) - Total: {{ unitGroup.totalWeight.toFixed(2) }} T
+            </div>
+            
+            <table class="cc-prod-table">
+                <thead>
+                    <tr>
+                        <th style="width: 80px;">DATE</th>
+                        <th style="width: 80px;">DAY</th>
+                        <th style="width: 100px;">PARTY CODE</th>
+                        <th style="width: 150px;">PARTY NAME</th>
+                        <th style="width: 80px;">QUALITY</th>
+                        <th style="width: 100px;">COLOUR</th>
+                        <th style="width: 80px;">GSM</th>
+                        <th style="width: 80px;">WEIGHT (Kg)</th>
+                        <th style="width: 80px;">ACTUAL PROD</th>
+                        <th style="width: 100px;">DESPATCH STATUS</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template v-for="dateGroup in unitGroup.dates" :key="dateGroup.date">
+                        <template v-for="(item, idx) in dateGroup.items" :key="item.itemName">
+                            <tr>
+                                <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center font-bold">
+                                    {{ formatDate(dateGroup.date) }}
+                                </td>
+                                <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center">
+                                    {{ getDayName(dateGroup.date) }}
+                                </td>
+                                
+                                <td class="cell-center">{{ item.partyCode }}</td>
+                                <td>{{ item.customer }}</td>
+                                <td class="cell-center">{{ item.quality }}</td>
+                                <td class="cell-center font-bold">{{ item.color }}</td>
+                                <td class="cell-center">{{ item.gsm }}</td>
+                                <td class="cell-right font-bold">{{ item.qty }}</td>
+                                
+                                <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center font-bold bg-yellow-50">
+                                    {{ dateGroup.dailyTotal.toFixed(0) }}
+                                </td>
+                                
+                                <td class="cell-center">
+                                    <span class="status-badge" :class="getDispatchStatusClass(item.delivery_status || item.status)">
+                                        {{ formatDispatchStatus(item.delivery_status || item.status) }}
+                                    </span>
+                                </td>
+                            </tr>
+                        </template>
+                    </template>
+                    <tr v-if="unitGroup.dates.length === 0">
+                        <td colspan="10" style="text-align:center; padding: 20px; color:#999;">No production planned for this unit</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
   </div>
 </template>
@@ -271,19 +295,56 @@ function toggleSort(key) {
 }
 
 const tableData = computed(() => {
-    let data = [...filteredData.value];
-    const k = tableSortKey.value;
-    const dir = tableSortDir.value === 'asc' ? 1 : -1;
-    data.sort((a, b) => {
-        let vA = a[k] || '';
-        let vB = b[k] || '';
-        if (k === 'qty') return (parseFloat(vA) - parseFloat(vB)) * dir;
-        return String(vA).localeCompare(String(vB)) * dir;
+    return visibleUnits.value.map(unit => {
+        let items = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
+        
+        // Sort items using existing logic
+        items = sortItems(unit, items);
+
+        const dateGroupsObj = {};
+        items.forEach(item => {
+            const d = item.orderDate || item.date || "No Date";
+            if (!dateGroupsObj[d]) dateGroupsObj[d] = { date: d, items: [], dailyTotal: 0 };
+            dateGroupsObj[d].items.push(item);
+            dateGroupsObj[d].dailyTotal += (item.qty || 0);
+        });
+        
+        const dates = Object.values(dateGroupsObj).sort((a, b) => new Date(a.date) - new Date(b.date));
+        const totalWeight = items.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
+
+        return { unit, dates, totalWeight };
     });
-    return data;
 });
 
-const tableTotal = computed(() => filteredData.value.reduce((s, d) => s + (d.qty || 0), 0));
+function formatDate(dateStr) {
+    if (!dateStr || dateStr === 'No Date') return '-';
+    const d = new Date(dateStr);
+    return `${d.getDate()}/${d.getMonth()+1}/${d.getFullYear()}`;
+}
+
+function getDayName(dateStr) {
+    if (!dateStr || dateStr === 'No Date') return '-';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { weekday: 'long' }).toUpperCase();
+}
+
+function getUnitHeaderColor(unit) {
+    return "#fcd34d"; 
+}
+
+function formatDispatchStatus(status) {
+    if (!status || status === 'Not Delivered') return 'NOT DESPATCHED';
+    if (status === 'Fully Delivered') return 'DESPATCHED';
+    if (status === 'Partly Delivered') return 'PARTLY DESPATCHED';
+    return status.toUpperCase();
+}
+
+function getDispatchStatusClass(status) {
+    if (!status || status === 'Not Delivered') return 'bg-red-100 text-red-800';
+    if (status === 'Fully Delivered') return 'bg-green-100 text-green-800';
+    if (status === 'Partly Delivered') return 'bg-orange-100 text-orange-800';
+    return 'bg-gray-100 text-gray-800';
+}
 
 function toggleViewScope() {
     if (viewScope.value === 'monthly' && !filterMonth.value) {
@@ -787,7 +848,50 @@ onMounted(() => {
 }
 
 .cc-table-container {
-    flex: 1;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 30px;
 }
+.cc-table-unit-header {
+    padding: 10px 15px;
+    font-weight: 800;
+    font-size: 14px;
+    border-radius: 8px 8px 0 0;
+    border: 1px solid #e5e7eb;
+    border-bottom: none;
+}
+.cc-prod-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    font-size: 12px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.cc-prod-table th {
+    background: #f8fafc;
+    padding: 10px;
+    border: 1px solid #e5e7eb;
+    text-align: center;
+    font-weight: 700;
+}
+.cc-prod-table td {
+    padding: 8px;
+    border: 1px solid #e5e7eb;
+}
+.cell-center { text-align: center; }
+.cell-right { text-align: right; }
+.font-bold { font-weight: 700; }
+.bg-yellow-50 { background-color: #fefce8; }
+
+.status-badge {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+}
+.bg-red-100 { background: #fee2e2; color: #991b1b; }
+.bg-green-100 { background: #dcfce7; color: #166534; }
+.bg-orange-100 { background: #ffedd5; color: #9a3412; }
+.bg-gray-100 { background: #f3f4f6; color: #374151; }
 </style>
