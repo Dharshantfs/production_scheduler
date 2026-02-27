@@ -661,10 +661,6 @@ function initFlatpickr() {
     });
 }
 
-onMounted(() => {
-    initFlatpickr();
-});
-
 async function togglePlanLock() {
     if (!selectedPlan.value) return;
     const p = plans.value.find(p => p.name === selectedPlan.value);
@@ -3323,7 +3319,7 @@ onMounted(async () => {
       document.head.appendChild(link);
   }
 
-  frappe.require('https://cdn.jsdelivr.net/npm/flatpickr', () => {
+  frappe.require('https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.js', () => {
        if (viewScope.value === 'daily') {
            nextTick(() => {
                initFlatpickr();
