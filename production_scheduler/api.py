@@ -2623,10 +2623,33 @@ def get_multiple_dates_capacity(dates, plan_name=None, pb_only=0):
 	return result
 
 @frappe.whitelist()
-def push_to_pb(item_names, pb_plan_name, target_dates=None):
+def find_next_available_date(unit, start_date, required_tons=0, pb_only=1, days_ahead=30):
+	"""Find next date where unit has enough available capacity."""
+	if not unit or not start_date:
+		return {"date": None}
+
+	start_dt = getdate(start_date)
+	required = flt(required_tons)
+	pb_only = cint(pb_only)
+	days_ahead = cint(days_ahead) or 30
+	limit = HARD_LIMITS.get(unit, 999.0)
+
+	for i in range(1, days_ahead + 1):
+		candidate = frappe.utils.add_days(start_dt, i)
+		load = get_unit_load(candidate, unit, "__all__", pb_only=pb_only)
+		if load + required <= (limit * 1.05):
+			return {"date": str(candidate), "current_load": load, "limit": limit}
+
+	# Fallback suggestion if no clean slot found in lookahead window
+	fallback = frappe.utils.add_days(start_dt, 1)
+	return {"date": str(fallback), "current_load": get_unit_load(fallback, unit, "__all__", pb_only=pb_only), "limit": limit}
+
+@frappe.whitelist()
+def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fetch_dates=None):
 	"""
 	Pushes ONLY the selected Planning Sheet items to a Production Board plan.
-	target_dates can be a comma-separated list of dates.
+	target_dates can be a comma-separated list of dates (legacy).
+	target_date is the explicit single start date (preferred).
 	Items will be sequentially load-balanced into the dates honoring their HARD_LIMITS daily limits.
 	"""
 	import json
@@ -2637,7 +2660,9 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None):
 		return {"status": "error", "message": "Missing item names or plan name"}
 		
 	dates = []
-	if target_dates:
+	if target_date:
+		dates = [str(target_date).strip()]
+	elif target_dates:
 		dates = [d.strip() for d in str(target_dates).split(",") if d.strip()]
 
 	updated_count = 0
@@ -2660,7 +2685,7 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None):
 				for check_date in dates:
 					load_key = (check_date, unit)
 					if load_key not in local_loads:
-						local_loads[load_key] = get_unit_load(check_date, unit, pb_plan_name)
+						local_loads[load_key] = get_unit_load(check_date, unit, "__all__", pb_only=1)
 					
 					load = local_loads[load_key]
 					# Allow the item to slot here if we are under the limit, OR if it's the very last date fallback 
@@ -2735,7 +2760,7 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None):
 
 
 @frappe.whitelist()
-def push_items_to_pb(items_data, pb_plan_name):
+def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=None):
 	"""
 	Pushes Planning Sheet Items to a Production Board plan.
 	Re-parents each item to a PB Planning Sheet (with custom_planned_date set)
@@ -2771,13 +2796,13 @@ def push_items_to_pb(items_data, pb_plan_name):
 			effective_date = target_dates[0] if target_dates else str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
 
 			# --- FIND CAPACITY SLOT ACROSS MULTIPLE DATES ---
-			if len(target_dates) > 0:
+			if len(target_dates) > 1:
 				unit = target_unit or item_doc.unit or get_preferred_unit(item_doc.custom_quality)
 				limit = HARD_LIMITS.get(unit, 999.0)
 				for check_date in target_dates:
 					load_key = (check_date, unit)
 					if load_key not in local_loads:
-						local_loads[load_key] = get_unit_load(check_date, unit, pb_plan_name)
+						local_loads[load_key] = get_unit_load(check_date, unit, "__all__", pb_only=1)
 					
 					load = local_loads[load_key]
 					# Allow the item to slot here if we are under the limit, OR if it's the very last date fallback 

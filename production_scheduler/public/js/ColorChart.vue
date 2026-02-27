@@ -2289,6 +2289,13 @@ async function pushToProductionBoard() {
         return;
     }
 
+    const today = frappe.datetime.get_today();
+    const fetchDates = (filterOrderDate.value || today)
+        .split(",")
+        .map(d => d.trim())
+        .filter(Boolean);
+    const defaultTargetDate = fetchDates.length ? fetchDates[fetchDates.length - 1] : today;
+
     // State for the dialog
     let smartSequenceActive = false;
     let masterSequence = allItemNames.map((n, i) => {
@@ -2394,23 +2401,19 @@ async function pushToProductionBoard() {
             return;
         }
 
-        const rawTargetDate = dialog.get_value('target_date') || filterOrderDate.value || frappe.datetime.get_today();
+        const targetDate = (dialog.get_value('target_date') || defaultTargetDate || today).trim();
         
         let filterUnitValue = 'All Units';
         try { filterUnitValue = dialog.get_value('filter_unit') || 'All Units'; } catch(e) {}
-        
-        // Multi-Date Support implementation:
-        const targetDates = [ ...new Set(rawTargetDate.split(",").map(d => d.trim()).filter(Boolean)) ];
-        const dateStrParam = targetDates.join(",");
 
         let capHtml = `<div style="display:flex; flex-direction:column; gap:6px;">`;
         let capacityExceeded = false;
 
         try {
-            // First fetch the raw orders data mapping for those dates to count White sheets.
+            // Capacity preview is target-day only.
             const rData = await frappe.call({
                 method: "production_scheduler.api.get_color_chart_data",
-                args: { date: dateStrParam, plan_name: '__all__', planned_only: 1 }
+                args: { date: targetDate, plan_name: '__all__', planned_only: 1 }
             });
             const allItems = rData.message || [];
             
@@ -2418,10 +2421,10 @@ async function pushToProductionBoard() {
             // This keeps push preview perfectly aligned with Production Board totals.
             const UNIT_LIMITS = { "Unit 1": 4.4, "Unit 2": 12.0, "Unit 3": 9.0, "Unit 4": 5.5 };
             const capacities = {
-                "Unit 1": { total_limit: UNIT_LIMITS["Unit 1"] * targetDates.length, total_load: 0 },
-                "Unit 2": { total_limit: UNIT_LIMITS["Unit 2"] * targetDates.length, total_load: 0 },
-                "Unit 3": { total_limit: UNIT_LIMITS["Unit 3"] * targetDates.length, total_load: 0 },
-                "Unit 4": { total_limit: UNIT_LIMITS["Unit 4"] * targetDates.length, total_load: 0 }
+                "Unit 1": { total_limit: UNIT_LIMITS["Unit 1"], total_load: 0 },
+                "Unit 2": { total_limit: UNIT_LIMITS["Unit 2"], total_load: 0 },
+                "Unit 3": { total_limit: UNIT_LIMITS["Unit 3"], total_load: 0 },
+                "Unit 4": { total_limit: UNIT_LIMITS["Unit 4"], total_load: 0 }
             };
 
             allItems.forEach(i => {
@@ -2436,8 +2439,7 @@ async function pushToProductionBoard() {
                 pushLoads[u] = (pushLoads[u] || 0) + (parseFloat(sel.qty || 0) / 1000);
             });
 
-            const dateCountLabel = targetDates.length > 1 ? ` (${targetDates.length} days combined)` : '';
-            capHtml += `<div style="font-size:11px;font-weight:600;margin-top:4px;">Target Date(s): ${rawTargetDate}${dateCountLabel}</div>`;
+            capHtml += `<div style="font-size:11px;font-weight:600;margin-top:4px;">Target Date: ${targetDate}</div>`;
 
             ["Unit 1", "Unit 2", "Unit 3", "Unit 4"].forEach(u => {
                 if (filterUnitValue !== 'All Units' && u !== filterUnitValue) return;
@@ -2476,7 +2478,9 @@ async function pushToProductionBoard() {
     const d = new frappe.ui.Dialog({
         title: '🚀 Push to Production Board',
         fields: [
-            { fieldname: 'target_date', fieldtype: 'Data', label: 'Target Date(s)', default: filterOrderDate.value || frappe.datetime.get_today(), reqd: 1, description: 'Comma separated dates (e.g. 2026-02-27, 2026-02-28)' },
+            { fieldname: 'fetch_dates', fieldtype: 'Data', label: 'Fetch Date(s)', default: (fetchDates.join(", ") || defaultTargetDate), read_only: 1, description: 'Used to fetch source orders only.' },
+            { fieldtype: 'Column Break' },
+            { fieldname: 'target_date', fieldtype: 'Date', label: 'Target Date', default: defaultTargetDate, reqd: 1, description: 'Capacity and push allocation start from this date.' },
             { fieldtype: 'Column Break' },
             { fieldname: 'filter_logic', fieldtype: 'Select', label: 'Match', options: ['AND', 'OR'], default: 'AND' },
             { fieldtype: 'Column Break' },
@@ -2499,40 +2503,116 @@ async function pushToProductionBoard() {
         primary_action_label: 'Push',
         primary_action: async (values) => {
             const pbPlanName = 'Default';
-            const targetDate = values.target_date;
+            const targetDate = (values.target_date || defaultTargetDate || today).trim();
+            const fetchDatesValue = values.fetch_dates || fetchDates.join(",");
 
             const checkedItems = currentSequence.filter(i => i.checked !== false);
             if (checkedItems.length === 0) { frappe.msgprint('No items selected.'); return; }
 
-            if (d.capacityExceeded) {
-                const proceed = await new Promise(resolve => {
-                    frappe.confirm(
-                        'Capacity limits exceeded. Do you want to proceed?',
-                        () => resolve(true),
-                        () => resolve(false)
-                    );
-                });
-                if (!proceed) return;
-            }
-
-            const itemNamesToSend = checkedItems.map(i => i.name);
-
             d.hide();
-            frappe.show_alert({ message: `Pushing ${itemNamesToSend.length} items to ${targetDate}...`, indicator: 'blue' });
+            frappe.show_alert({ message: `Pushing ${checkedItems.length} items from fetch date(s) to ${targetDate}...`, indicator: 'blue' });
 
             try {
+                // Manual overflow handling by unit:
+                // start each unit from target date, and if full ask user for the next date.
+                const UNIT_LIMITS = { "Unit 1": 4.4, "Unit 2": 12.0, "Unit 3": 9.0, "Unit 4": 5.5 };
+                const unitDateMap = {};
+                const loadCache = {};
+                const itemsToMove = [];
+
+                const getDayLoads = async (dateKey) => {
+                    if (loadCache[dateKey]) return loadCache[dateKey];
+                    const cap = await frappe.call({
+                        method: "production_scheduler.api.get_multiple_dates_capacity",
+                        args: { dates: dateKey, plan_name: '__all__', pb_only: 1 }
+                    });
+                    const payload = cap.message || {};
+                    loadCache[dateKey] = {
+                        "Unit 1": payload["Unit 1"]?.total_load || 0,
+                        "Unit 2": payload["Unit 2"]?.total_load || 0,
+                        "Unit 3": payload["Unit 3"]?.total_load || 0,
+                        "Unit 4": payload["Unit 4"]?.total_load || 0
+                    };
+                    return loadCache[dateKey];
+                };
+
+                let seqNo = 1;
+                for (const item of checkedItems) {
+                    const unit = item.unit || 'Unit 1';
+                    const wt = (parseFloat(item.qty || 0) / 1000.0);
+                    const limit = UNIT_LIMITS[unit] || 999.0;
+                    let chosenDate = unitDateMap[unit] || targetDate;
+
+                    while (true) {
+                        const dayLoads = await getDayLoads(chosenDate);
+                        const currentLoad = dayLoads[unit] || 0;
+                        const after = currentLoad + wt;
+
+                        if (after <= (limit * 1.05)) {
+                            dayLoads[unit] = after;
+                            unitDateMap[unit] = chosenDate;
+                            itemsToMove.push({
+                                name: item.name,
+                                target_date: chosenDate,
+                                target_unit: unit,
+                                sequence_no: seqNo++
+                            });
+                            break;
+                        }
+
+                        // Ask planner to choose next date manually for overflow
+                        const suggest = await frappe.call({
+                            method: "production_scheduler.api.find_next_available_date",
+                            args: { unit, start_date: chosenDate, required_tons: wt, pb_only: 1 }
+                        });
+                        const suggestedDate = suggest?.message?.date || chosenDate;
+
+                        const nextDate = await new Promise((resolve) => {
+                            const overflowDialog = new frappe.ui.Dialog({
+                                title: 'Capacity Full',
+                                fields: [{
+                                    fieldname: 'next_date',
+                                    fieldtype: 'Date',
+                                    label: `${unit} full on ${chosenDate}. Choose next date`,
+                                    reqd: 1,
+                                    default: suggestedDate
+                                }],
+                                primary_action_label: 'Continue',
+                                primary_action: (vals) => {
+                                    const picked = (vals?.next_date || '').trim();
+                                    overflowDialog.hide();
+                                    resolve(picked);
+                                },
+                                secondary_action_label: 'Cancel',
+                                secondary_action: () => {
+                                    overflowDialog.hide();
+                                    resolve('');
+                                }
+                            });
+                            overflowDialog.show();
+                        });
+
+                        if (!nextDate) {
+                            frappe.msgprint('Push cancelled. No next date selected for overflow items.');
+                            return;
+                        }
+                        chosenDate = nextDate;
+                    }
+                }
+
                 const r = await frappe.call({
-                    method: "production_scheduler.api.push_to_pb",
+                    method: "production_scheduler.api.push_items_to_pb",
                     args: {
-                        item_names: JSON.stringify(itemNamesToSend),
+                        items_data: JSON.stringify(itemsToMove),
                         pb_plan_name: pbPlanName,
-                        target_dates: targetDate
+                        fetch_dates: fetchDatesValue,
+                        target_date: targetDate
                     }
                 });
                 if (r.message && r.message.status === 'success') {
                     d.get_primary_btn().text('✅ Pushed').css({'background-color': '#10b981', 'color': 'white'});
                     frappe.show_alert({
-                        message: `✅ Pushed ${r.message.updated_count} sheet(s) to Production Board`,
+                        message: `✅ Pushed ${r.message.moved_items || itemsToMove.length} item(s) to Production Board`,
                         indicator: 'green'
                     });
                     setTimeout(() => {
@@ -2597,21 +2677,6 @@ async function pushToProductionBoard() {
     d.fields_dict.filter_unit.$input.on('change', () => { applyFilters(); loadGlobalCapacityPreview(d, currentSequence); });
     d.fields_dict.target_date.$input.on('change', () => loadGlobalCapacityPreview(d, currentSequence));
 
-    // Custom Flatpickr for target_date field
-    setTimeout(() => {
-        if (d.fields_dict.target_date && d.fields_dict.target_date.$input) {
-            flatpickr(d.fields_dict.target_date.$input[0], {
-                mode: "multiple",
-                dateFormat: "Y-m-d",
-                defaultDate: (d.get_value('target_date') || filterOrderDate.value || frappe.datetime.get_today()).split(',').map(dt => dt.trim()),
-                onChange: function(selectedDates, dateStr, instance) {
-                    d.set_value('target_date', dateStr);
-                    loadGlobalCapacityPreview(d, currentSequence);
-                }
-            });
-        }
-    }, 200);
-
     // Wire up checkbox events
     function wireCheckboxes() {
         const wrapperEl = $(d.wrapper || d.$wrapper).get(0);
@@ -2662,15 +2727,14 @@ async function pushToProductionBoard() {
         smartBtn.prop('disabled', true);
         
         try {
-            // Get the actual date of the items being pushed (since Global Push has no target_date input)
+            // Target date drives capacity/seed context (fetch dates only fetch source rows).
             let itemDate = frappe.datetime.get_today();
             if (items && items.length > 0) {
                 itemDate = items[0].ordered_date || items[0].orderDate || items[0].date || itemDate;
             }
 
             // Get the last running order on Production Board per unit to use as seed
-            const rawTargetDate = d.get_value && d.get_value('target_date') ? d.get_value('target_date') : itemDate;
-            const singleTargetDate = rawTargetDate.split(',')[0].trim();
+            const singleTargetDate = (d.get_value && d.get_value('target_date') ? d.get_value('target_date') : itemDate).trim();
             const unitsInBatch = [...new Set(currentSequence.map(s => s.unit || s.unitKey || 'Mixed').filter(u => u && u !== 'Mixed'))];
             
             // Re-order items
@@ -2715,13 +2779,13 @@ async function pushToProductionBoard() {
             const smartSeq = r.message || [];
             if (smartSeq.length > 0) {
                 
-                // Get existing loads to respect capacity limits across MULTIPLE selected dates
+                // Get existing loads to respect capacity limits on target day only
                 let currentLoads = {};
                 try {
-                    const targetDatesStr = d.get_value && d.get_value('target_date') ? d.get_value('target_date') : itemDate;
+                    const targetDatesStr = singleTargetDate;
                     const rCap = await frappe.call({
                         method: "production_scheduler.api.get_multiple_dates_capacity",
-                        args: { dates: targetDatesStr, plan_name: '__all__' }
+                        args: { dates: targetDatesStr, plan_name: '__all__', pb_only: 1 }
                     });
                     
                     if (rCap.message) {
@@ -2734,14 +2798,12 @@ async function pushToProductionBoard() {
 
                 smartSequenceActive = true;
                 
-                // Track mult-date limits
+                // Track target-day limits
                 const limitsMap = {};
-                const targetDatesStr = d.get_value && d.get_value('target_date') ? d.get_value('target_date') : itemDate;
-                const numDates = targetDatesStr.split(',').filter(x => x.trim()).length || 1;
-                limitsMap['Unit 1'] = 4.4 * numDates;
-                limitsMap['Unit 2'] = 12 * numDates;
-                limitsMap['Unit 3'] = 9 * numDates;
-                limitsMap['Unit 4'] = 5.5 * numDates;
+                limitsMap['Unit 1'] = 4.4;
+                limitsMap['Unit 2'] = 12;
+                limitsMap['Unit 3'] = 9;
+                limitsMap['Unit 4'] = 5.5;
                 
                 const filterUnitValue = d.get_value('filter_unit') || 'All Units';
                 
