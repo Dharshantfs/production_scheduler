@@ -2410,22 +2410,25 @@ async function pushToProductionBoard() {
             // First fetch the raw orders data mapping for those dates to count White sheets.
             const rData = await frappe.call({
                 method: "production_scheduler.api.get_color_chart_data",
-                args: { date: dateStrParam, plan_name: '__all__' }
+                args: { date: dateStrParam, plan_name: '__all__', planned_only: 1 }
             });
             const allItems = rData.message || [];
             
-            // Second fetch the combined total limit / load from the new API
-            const rCap = await frappe.call({
-                method: "production_scheduler.api.get_multiple_dates_capacity",
-                args: { dates: dateStrParam, plan_name: '__all__' }
-            });
-            
-            const capacities = rCap.message || {
-                "Unit 1": { total_limit: 4.4 * targetDates.length, total_load: 0 },
-                "Unit 2": { total_limit: 12.0 * targetDates.length, total_load: 0 },
-                "Unit 3": { total_limit: 9.0 * targetDates.length, total_load: 0 },
-                "Unit 4": { total_limit: 5.5 * targetDates.length, total_load: 0 }
+            // Build capacity snapshot directly from the same PB dataset used by the board.
+            // This keeps push preview perfectly aligned with Production Board totals.
+            const UNIT_LIMITS = { "Unit 1": 4.4, "Unit 2": 12.0, "Unit 3": 9.0, "Unit 4": 5.5 };
+            const capacities = {
+                "Unit 1": { total_limit: UNIT_LIMITS["Unit 1"] * targetDates.length, total_load: 0 },
+                "Unit 2": { total_limit: UNIT_LIMITS["Unit 2"] * targetDates.length, total_load: 0 },
+                "Unit 3": { total_limit: UNIT_LIMITS["Unit 3"] * targetDates.length, total_load: 0 },
+                "Unit 4": { total_limit: UNIT_LIMITS["Unit 4"] * targetDates.length, total_load: 0 }
             };
+
+            allItems.forEach(i => {
+                const u = i.unit || "Mixed";
+                if (!capacities[u]) return;
+                capacities[u].total_load += (parseFloat(i.qty || 0) / 1000);
+            });
 
             const pushLoads = {};
             checkedItems.forEach(sel => {

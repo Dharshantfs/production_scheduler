@@ -307,11 +307,12 @@ def _effective_date_expr(alias="p"):
 		return f"COALESCE({alias}.custom_planned_date, {alias}.ordered_date)"
 	return f"{alias}.ordered_date"
 
-def get_unit_load(date, unit, plan_name=None):
+def get_unit_load(date, unit, plan_name=None, pb_only=0):
 	"""Calculates current load (in Tons) for a unit on a given date.
 	Filtered per-plan so each plan has its own independent capacity.
 	Uses custom_planned_date if set, otherwise falls back to ordered_date."""
 	eff = _effective_date_expr("p")
+	pb_only = cint(pb_only)
 	# Build plan filter — each plan is treated independently
 	if plan_name and plan_name != "__all__":
 		if plan_name == "Default":
@@ -324,6 +325,12 @@ def get_unit_load(date, unit, plan_name=None):
 		# No plan filter — sum all (used internally for global capacity checks)
 		plan_cond = ""
 		params = (date, unit)
+
+	# Optional Production Board-only mode:
+	# Only count items/sheets explicitly pushed/planned to PB.
+	pb_cond = ""
+	if pb_only and _has_planned_date_column():
+		pb_cond = "AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
 	sql = f"""
 		SELECT SUM(i.qty) as total_qty
 		FROM `tabPlanning Sheet Item` i
@@ -333,6 +340,7 @@ def get_unit_load(date, unit, plan_name=None):
 		  AND p.docstatus < 2
 		  AND i.docstatus < 2
 		  {plan_cond}
+		  {pb_cond}
 	"""
 	result = frappe.db.sql(sql, params)
 	return flt(result[0][0]) / 1000.0 if result and result[0][0] else 0.0
@@ -2591,7 +2599,7 @@ def get_pb_plans(date=None, start_date=None, end_date=None):
 	return [{"name": n, "locked": persisted.get(n, 0)} for n in sorted_plans]
 
 @frappe.whitelist()
-def get_multiple_dates_capacity(dates, plan_name=None):
+def get_multiple_dates_capacity(dates, plan_name=None, pb_only=0):
 	"""
 	Calculates the total aggregate capacity and load for multiple dates.
 	Returns: {
@@ -2600,13 +2608,14 @@ def get_multiple_dates_capacity(dates, plan_name=None):
 	}
 	"""
 	import json
+	pb_only = cint(pb_only)
 	if isinstance(dates, str):
 		dates = [d.strip() for d in dates.split(",") if d.strip()]
 		
 	result = {}
 	for unit in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
 		total_limit = HARD_LIMITS.get(unit, 999.0) * len(dates)
-		total_load = sum(get_unit_load(d, unit, plan_name) for d in dates)
+		total_load = sum(get_unit_load(d, unit, plan_name, pb_only=pb_only) for d in dates)
 		result[unit] = {
 			"total_limit": total_limit,
 			"total_load": total_load
