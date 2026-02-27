@@ -3,13 +3,14 @@
     <!-- Filter Bar -->
     <div class="cc-filters">
       <div class="cc-filter-item">
-        <label>{{ viewScope === 'daily' ? 'Order Date' : 'Select Month' }}</label>
+        <label>{{ viewScope === 'daily' ? 'Order Date(s)' : (viewScope === 'weekly' ? 'Select Week' : 'Select Month') }}</label>
         <div style="display:flex; gap:4px;">
-            <input v-if="viewScope === 'daily'" type="date" v-model="filterOrderDate" @change="fetchData" />
-            <input v-else type="month" v-model="filterMonth" @change="fetchData" />
+            <input v-show="viewScope === 'daily'" type="text" ref="datePickerInput" placeholder="Select dates..." />
+            <input v-if="viewScope === 'weekly'" type="week" v-model="filterWeek" @change="fetchData" />
+            <input v-if="viewScope === 'monthly'" type="month" v-model="filterMonth" @change="fetchData" />
             
-            <button class="cc-mini-btn" @click="toggleViewScope" :title="viewScope === 'daily' ? 'Switch to Monthly View' : 'Switch to Daily View'">
-                {{ viewScope === 'daily' ? '📅 Month' : '📆 Day' }}
+            <button class="cc-mini-btn" @click="toggleViewScope" :title="viewScope === 'daily' ? 'Switch to Weekly View' : (viewScope === 'weekly' ? 'Switch to Monthly View' : 'Switch to Daily View')">
+                {{ viewScope === 'daily' ? '🗓️ Week' : (viewScope === 'weekly' ? '📅 Month' : '📆 Day') }}
             </button>
         </div>
       </div>
@@ -624,6 +625,7 @@ const headerColors = { "Unit 1": "#3b82f6", "Unit 2": "#10b981", "Unit 3": "#f59
 
 const filterOrderDate = ref(frappe.datetime.get_today());
 const viewScope = ref('daily');
+const filterWeek = ref("");
 const filterMonth = ref(frappe.datetime.get_today().substring(0, 7));
 const filterPartyCode = ref("");
 const filterCustomer = ref("");
@@ -631,10 +633,33 @@ const filterUnit = ref("");
 const filterStatus = ref("");
 const selectedPlan = ref("Default");
 
+// Flatpickr ref
+const datePickerInput = ref(null);
+let flatpickrInstance = ref(null);
+
 const isCurrentPlanLocked = computed(() => {
-    const p = plans.value.find(p => p.name === selectedPlan.value);
-    return p ? p.locked : 0;
+  const plan = plans.value.find(p => p.name === selectedPlan.value);
+  return plan ? !!plan.locked : false;
 });
+
+function initFlatpickr() {
+    if (!datePickerInput.value) return;
+    
+    // Destroy existing instance if any
+    if (flatpickrInstance.value) {
+        flatpickrInstance.value.destroy();
+    }
+    
+    flatpickrInstance.value = flatpickr(datePickerInput.value, {
+        mode: "multiple",
+        dateFormat: "Y-m-d",
+        defaultDate: filterOrderDate.value ? filterOrderDate.value.split(',').map(d => d.trim()) : "today",
+        onChange: function(selectedDates, dateStr, instance) {
+            filterOrderDate.value = dateStr;
+            // updateUrlParams is called via watcher on filterOrderDate
+        }
+    });
+}
 
 async function togglePlanLock() {
     if (!selectedPlan.value) return;
@@ -2097,6 +2122,20 @@ async function analyzePreviousFlow() {
 // View Scope Logic
 async function toggleViewScope() {
   if (viewScope.value === 'daily') {
+      viewScope.value = 'weekly';
+      if (!filterWeek.value) {
+          // Default to the week containing the first selected date or today
+          const baseDate = filterOrderDate.value ? filterOrderDate.value.split(',')[0].trim() : frappe.datetime.get_today();
+          const d = new Date(baseDate);
+          
+          const y = d.getFullYear();
+          const firstDayOfYear = new Date(y, 0, 1);
+          const pastDaysOfYear = (d - firstDayOfYear) / 86400000;
+          const weekNum = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+          
+          filterWeek.value = `${y}-W${String(weekNum).padStart(2, '0')}`;
+      }
+  } else if (viewScope.value === 'weekly') {
       viewScope.value = 'monthly';
       if (!filterMonth.value) {
           filterMonth.value = frappe.datetime.get_today().substring(0, 7);
@@ -2106,6 +2145,13 @@ async function toggleViewScope() {
       if (!filterOrderDate.value) {
           filterOrderDate.value = frappe.datetime.get_today();
       }
+      
+      // Re-initialize Flatpickr if returning to daily view
+      nextTick(() => {
+          if (!flatpickrInstance.value) {
+             initFlatpickr();
+          }
+      });
   }
   await fetchData();
 }
@@ -2333,64 +2379,68 @@ async function pushToProductionBoard() {
             return;
         }
 
-        // Instead of grouping by item's original date, use the user's selected Target Date
-        const targetDate = dialog.get_value('target_date') || filterOrderDate.value || frappe.datetime.get_today();
+        const rawTargetDate = dialog.get_value('target_date') || filterOrderDate.value || frappe.datetime.get_today();
         
         let filterUnitValue = 'All Units';
         try { filterUnitValue = dialog.get_value('filter_unit') || 'All Units'; } catch(e) {}
         
-        const limits = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5 };
+        // Multi-Date Support implementation:
+        const targetDates = [ ...new Set(rawTargetDate.split(",").map(d => d.trim()).filter(Boolean)) ];
+        const dateStrParam = targetDates.join(",");
+
         let capHtml = `<div style="display:flex; flex-direction:column; gap:6px;">`;
         let capacityExceeded = false;
 
         try {
-            const r = await frappe.call({
+            // First fetch the raw orders data mapping for those dates to count White sheets.
+            const rData = await frappe.call({
                 method: "production_scheduler.api.get_color_chart_data",
-                // Remove planned_only to ensure we get White orders too
-                args: { date: targetDate, plan_name: '__all__' }
+                args: { date: dateStrParam, plan_name: '__all__' }
             });
-            const allItems = r.message || [];
+            const allItems = rData.message || [];
             
+            // Second fetch the combined total limit / load from the new API
+            const rCap = await frappe.call({
+                method: "production_scheduler.api.get_multiple_dates_capacity",
+                args: { dates: dateStrParam, plan_name: '__all__' }
+            });
+            
+            const capacities = rCap.message || {
+                "Unit 1": { total_limit: 4.4 * targetDates.length, total_load: 0 },
+                "Unit 2": { total_limit: 12.0 * targetDates.length, total_load: 0 },
+                "Unit 3": { total_limit: 9.0 * targetDates.length, total_load: 0 },
+                "Unit 4": { total_limit: 5.5 * targetDates.length, total_load: 0 }
+            };
+
             const pushLoads = {};
             checkedItems.forEach(sel => {
                 const u = sel.unit || 'Unit 1';
                 pushLoads[u] = (pushLoads[u] || 0) + (parseFloat(sel.qty || 0) / 1000);
             });
 
-            capHtml += `<div style="font-size:11px;font-weight:600;margin-top:4px;">Target Date: ${targetDate}</div>`;
+            const dateCountLabel = targetDates.length > 1 ? ` (${targetDates.length} days combined)` : '';
+            capHtml += `<div style="font-size:11px;font-weight:600;margin-top:4px;">Target Date(s): ${rawTargetDate}${dateCountLabel}</div>`;
 
             ["Unit 1", "Unit 2", "Unit 3", "Unit 4"].forEach(u => {
-                // If the user selected a specific unit in the dropdown, only show that unit.
                 if (filterUnitValue !== 'All Units' && u !== filterUnitValue) return;
                 
                 const pushWeight = pushLoads[u] || 0;
                 
-                // Show capacity if there's pushing weight OR if we explicitly filtered by this unit
                 if (pushWeight > 0 || filterUnitValue === u) {
-                    const pushingNames = checkedItems.map(s => s.name);
+                    const unitCap = capacities[u] || { total_limit: 0, total_load: 0 };
+                    const currentLoad = unitCap.total_load;
+                    const limit = unitCap.total_limit;
                     
-                    const existingU = allItems.filter(i => {
-                        if (i.unit !== u) return false;
-                        if (pushingNames.includes(i.itemName)) return false; // Don't double count
-                        const isWhite = (i.color || '').toUpperCase().includes('WHITE');
-                        // Count if it's already pushed OR if it's a White order
-                        return i.plannedDate || isWhite;
-                    });
-                    
-                    const currentLoad = existingU.reduce((s, i) => s + (parseFloat(i.qty || 0)), 0) / 1000;
-                    
-                    // Calculate explicitly how much of that load is White orders
-                    const whiteItems = existingU.filter(i => (i.color || '').toUpperCase().includes('WHITE'));
+                    const whiteItems = allItems.filter(i => i.unit === u && (i.color || '').toUpperCase().includes('WHITE'));
                     const whiteLoad = whiteItems.reduce((s, i) => s + (parseFloat(i.qty || 0)), 0) / 1000;
                     
                     const afterPush = currentLoad + pushWeight;
-                    const limit = limits[u];
                     const isOver = afterPush > limit;
                     if (isOver) capacityExceeded = true;
                     
                     capHtml += `<div style="padding:6px 10px;border-radius:6px;border:1px solid ${isOver ? '#fda4af' : '#bbf7d0'};background:${isOver ? '#fff1f2' : '#f0fdf4'};display:flex;justify-content:space-between;align-items:center;">
                         <div>
-                            <div style="font-weight:700;font-size:12px;color:${isOver ? '#dc2626' : '#16a34a'};">${u}: ${currentLoad.toFixed(2)} / ${limit}T</div>
+                            <div style="font-weight:700;font-size:12px;color:${isOver ? '#dc2626' : '#16a34a'};">${u}: ${currentLoad.toFixed(2)} / ${limit.toFixed(2)}T</div>
                             ${whiteLoad > 0 ? `<div style="font-size:9px;color:#64748b;margin-top:1px;">(Includes ${whiteLoad.toFixed(2)}T White)</div>` : ''}
                             <div style="font-size:10px;color:#475569;margin-top:2px;">After push: <b>${afterPush.toFixed(2)}T</b> <span style="color:#64748b;">(+${pushWeight.toFixed(2)}T)</span></div>
                         </div>
@@ -2398,7 +2448,7 @@ async function pushToProductionBoard() {
                     </div>`;
                 }
             });
-        } catch(e) { console.error(e); }
+        } catch(e) { console.error('Error fetching global capacity', e); }
 
         capHtml += `</div>`;
         dialog.set_value("global_capacity_info", capHtml);
@@ -2606,27 +2656,33 @@ async function pushToProductionBoard() {
             const smartSeq = r.message || [];
             if (smartSeq.length > 0) {
                 
-                // Get existing loads to respect capacity limits
-                let existingLoads = {};
-                const limits = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5 };
+                // Get existing loads to respect capacity limits across MULTIPLE selected dates
+                let currentLoads = {};
                 try {
-                    const rData = await frappe.call({
-                        method: "production_scheduler.api.get_color_chart_data",
-                        args: { date: targetDate, plan_name: '__all__' }
+                    const targetDatesStr = d.get_value && d.get_value('target_date') ? d.get_value('target_date') : itemDate;
+                    const rCap = await frappe.call({
+                        method: "production_scheduler.api.get_multiple_dates_capacity",
+                        args: { dates: targetDatesStr, plan_name: '__all__' }
                     });
-                    const allItems = rData.message || [];
-                    ["Unit 1", "Unit 2", "Unit 3", "Unit 4"].forEach(u => {
-                        const existingU = allItems.filter(i => {
-                            if (i.unit !== u) return false;
-                            const isWhite = (i.color || '').toUpperCase().includes('WHITE');
-                            return i.plannedDate || isWhite;
+                    
+                    if (rCap.message) {
+                        ["Unit 1", "Unit 2", "Unit 3", "Unit 4"].forEach(u => {
+                             // Initialize tracking with the total aggregated load currently hitting the target dates.
+                             currentLoads[u] = rCap.message[u] ? rCap.message[u].total_load : 0;
                         });
-                        existingLoads[u] = existingU.reduce((s, i) => s + (parseFloat(i.qty || 0)), 0) / 1000;
-                    });
+                    }
                 } catch(e) { console.error("Failed to get capacity for Smart Tick", e); }
 
                 smartSequenceActive = true;
-                let currentLoads = { ...existingLoads };
+                
+                // Track mult-date limits
+                const limitsMap = {};
+                const targetDatesStr = d.get_value && d.get_value('target_date') ? d.get_value('target_date') : itemDate;
+                const numDates = targetDatesStr.split(',').filter(x => x.trim()).length || 1;
+                limitsMap['Unit 1'] = 4.4 * numDates;
+                limitsMap['Unit 2'] = 12 * numDates;
+                limitsMap['Unit 3'] = 9 * numDates;
+                limitsMap['Unit 4'] = 5.5 * numDates;
                 
                 currentSequence = smartSeq.map(s => {
                     const mapped = {
@@ -2650,9 +2706,9 @@ async function pushToProductionBoard() {
 
                     const u = mapped.unit || 'Unit 1';
                     const weight = parseFloat(mapped.qty || 0) / 1000;
-                    const limit = limits[u] || 999;
+                    const limit = limitsMap[u] || 999;
                     
-                    // Only tick if it perfectly fits in the remaining capacity
+                    // Only tick if it perfectly fits in the aggregated multi-date capacity
                     if ((currentLoads[u] || 0) + weight <= limit) {
                         mapped.checked = true;
                         currentLoads[u] = (currentLoads[u] || 0) + weight;
@@ -2911,8 +2967,34 @@ async function fetchData() {
       
       args = { start_date: startDate, end_date: endDate };
       
+  } else if (viewScope.value === 'weekly') {
+      if (!filterWeek.value) return;
+      const [yearStr, weekStr] = filterWeek.value.split("-W");
+      const year = parseInt(yearStr);
+      const week = parseInt(weekStr);
+      
+      const simple = new Date(year, 0, 1 + (week - 1) * 7);
+      const dow = simple.getDay();
+      const ISOweekStart = simple;
+      if (dow <= 4)
+          ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+      else
+          ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+          
+      const startStr = ISOweekStart.toISOString().split('T')[0];
+      
+      const endSimple = new Date(ISOweekStart);
+      endSimple.setDate(ISOweekStart.getDate() + 6);
+      const endStr = endSimple.toISOString().split('T')[0];
+      
+      // Let the backend handle standard start_date/end_date mapping
+      args = { start_date: startStr, end_date: endStr };
+
   } else {
       if (!filterOrderDate.value) return;
+      
+      // Pass the potentially comma-separated string straight to the backend
+      // Modified our backend to split by comma if 'date' comes in that way
       args = { date: filterOrderDate.value };
   }
   
@@ -3128,7 +3210,9 @@ async function autoAllocate() {
 // ---- STATE PERSISTENCE (URL SYNC) ----
 function updateUrlParams() {
   const url = new URL(window.location);
+  
   if (filterOrderDate.value) url.searchParams.set('date', filterOrderDate.value);
+  
   if (filterUnit.value) url.searchParams.set('unit', filterUnit.value);
   else url.searchParams.delete('unit');
   
@@ -3141,8 +3225,12 @@ function updateUrlParams() {
   // Persist view state
   url.searchParams.set('view', viewMode.value);
   url.searchParams.set('scope', viewScope.value);
+  
   if (viewScope.value === 'monthly' && filterMonth.value) url.searchParams.set('month', filterMonth.value);
   else url.searchParams.delete('month');
+  
+  if (viewScope.value === 'weekly' && filterWeek.value) url.searchParams.set('week', filterWeek.value);
+  else url.searchParams.delete('week');
   
   window.history.replaceState({}, '', url);
 }
@@ -3184,17 +3272,36 @@ onMounted(async () => {
   const viewParam = params.get('view');
   const scopeParam = params.get('scope');
   const monthParam = params.get('month');
+  const weekParam = params.get('week');
   
   // Restore view mode and scope FIRST (before data fetch)
   if (viewParam && ['kanban', 'matrix'].includes(viewParam)) viewMode.value = viewParam;
-  if (scopeParam && ['daily', 'monthly'].includes(scopeParam)) viewScope.value = scopeParam;
+  if (scopeParam && ['daily', 'weekly', 'monthly'].includes(scopeParam)) viewScope.value = scopeParam;
   if (monthParam) filterMonth.value = monthParam;
+  if (weekParam) filterWeek.value = weekParam;
   
   if (dateParam) {
       filterOrderDate.value = dateParam;
   } else {
       if (!filterOrderDate.value) filterOrderDate.value = frappe.datetime.get_today();
   }
+  
+  // Dynamically load Flatpickr style and script if not already present
+  if (!document.getElementById('flatpickr-style')) {
+      const link = document.createElement('link');
+      link.id = 'flatpickr-style';
+      link.rel = 'stylesheet';
+      link.href = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css';
+      document.head.appendChild(link);
+  }
+
+  frappe.require('https://cdn.jsdelivr.net/npm/flatpickr', () => {
+       if (viewScope.value === 'daily') {
+           nextTick(() => {
+               initFlatpickr();
+           });
+       }
+  });
   
   if (unitParam) filterUnit.value = unitParam;
   if (statusParam) {

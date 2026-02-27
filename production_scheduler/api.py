@@ -840,7 +840,11 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		query_start = getdate(start_date)
 		query_end = getdate(end_date)
 	elif date:
-		target_date = getdate(date)
+		# Check if multiple dates are provided (comma separated)
+		if "," in str(date):
+			target_dates = [getdate(d.strip()) for d in str(date).split(",") if d.strip()]
+		else:
+			target_dates = [getdate(date)]
 	else:
 		return []
 
@@ -852,8 +856,13 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		date_condition = f"{eff} BETWEEN %s AND %s"
 		params.extend([query_start, query_end])
 	else:
-		date_condition = f"{eff} = %s"
-		params.append(target_date)
+		if len(target_dates) > 1:
+			fmt = ','.join(['%s'] * len(target_dates))
+			date_condition = f"{eff} IN ({fmt})"
+			params.extend(target_dates)
+		else:
+			date_condition = f"{eff} = %s"
+			params.append(target_dates[0])
 	
 	if plan_name == "__all__":
 		plan_condition = ""  # No plan filter — return all items
@@ -991,9 +1000,12 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				# Resolve effective planned date: item-level first, then sheet-level
 				it_pdate = item.get("custom_item_planned_date") or sheet.get("custom_planned_date")
 				
-				# If filter is by single date
-				if date and str(it_pdate) != str(target_date):
-					continue
+				# If filter is by single date or multiple dates
+				if date:
+					it_pdt = str(it_pdate)
+					target_dts = [str(d) for d in target_dates]
+					if it_pdt not in target_dts:
+						continue
 				
 				# If filter is by date range
 				if start_date and end_date:
@@ -1155,9 +1167,15 @@ def get_plans(date=None, start_date=None, end_date=None, **kwargs):
 		date_condition = f"{eff} BETWEEN %s AND %s"
 		params = [query_start, query_end]
 	elif date:
-		target_date = getdate(date)
-		date_condition = f"{eff} = %s"
-		params = [target_date]
+		if "," in str(date):
+			target_dates = [getdate(d.strip()) for d in str(date).split(",") if d.strip()]
+			fmt = ','.join(['%s'] * len(target_dates))
+			date_condition = f"{eff} IN ({fmt})"
+			params = target_dates
+		else:
+			target_date = getdate(date)
+			date_condition = f"{eff} = %s"
+			params = [target_date]
 	else:
 		return ["Default"]
 	
@@ -2416,9 +2434,15 @@ def get_pb_plans(date=None, start_date=None, end_date=None):
 		date_condition = f"{eff} BETWEEN %s AND %s"
 		params = [query_start, query_end]
 	elif date:
-		target_date = frappe.utils.getdate(date)
-		date_condition = f"{eff} = %s"
-		params = [target_date]
+		if "," in str(date):
+			target_dates = [frappe.utils.getdate(d.strip()) for d in str(date).split(",") if d.strip()]
+			fmt = ','.join(['%s'] * len(target_dates))
+			date_condition = f"{eff} IN ({fmt})"
+			params = target_dates
+		else:
+			target_date = frappe.utils.getdate(date)
+			date_condition = f"{eff} = %s"
+			params = [target_date]
 	else:
 		return []
 	
@@ -2439,12 +2463,34 @@ def get_pb_plans(date=None, start_date=None, end_date=None):
 	return [{"name": n, "locked": persisted.get(n, 0)} for n in sorted_plans]
 
 @frappe.whitelist()
-def push_to_pb(item_names, pb_plan_name, target_date=None):
+def get_multiple_dates_capacity(dates, plan_name=None):
+	"""
+	Calculates the total aggregate capacity and load for multiple dates.
+	Returns: {
+		"Unit 1": {"total_limit": X, "total_load": Y},
+		...
+	}
+	"""
+	import json
+	if isinstance(dates, str):
+		dates = [d.strip() for d in dates.split(",") if d.strip()]
+		
+	result = {}
+	for unit in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
+		total_limit = HARD_LIMITS.get(unit, 999.0) * len(dates)
+		total_load = sum(get_unit_load(d, unit, plan_name) for d in dates)
+		result[unit] = {
+			"total_limit": total_limit,
+			"total_load": total_load
+		}
+	return result
+
+@frappe.whitelist()
+def push_to_pb(item_names, pb_plan_name, target_dates=None):
 	"""
 	Pushes ONLY the selected Planning Sheet items to a Production Board plan.
-	Each item is re-parented to a new (or existing) Planning Sheet that has
-	custom_pb_plan_name AND custom_planned_date set. The board finds them
-	via the sheet-level custom_planned_date IS NOT NULL filter.
+	target_dates can be a comma-separated list of dates.
+	Items will be sequentially load-balanced into the dates honoring their HARD_LIMITS daily limits.
 	"""
 	import json
 	if isinstance(item_names, str):
@@ -2452,17 +2498,41 @@ def push_to_pb(item_names, pb_plan_name, target_date=None):
 
 	if not item_names or not pb_plan_name:
 		return {"status": "error", "message": "Missing item names or plan name"}
+		
+	dates = []
+	if target_dates:
+		dates = [d.strip() for d in str(target_dates).split(",") if d.strip()]
 
 	updated_count = 0
 	pb_sheet_cache = {}  # (party_code, effective_date) -> pb sheet name
+	local_loads = {} # (date, unit) -> current load
 
 	for name in item_names:
 		try:
 			item = frappe.get_doc("Planning Sheet Item", name)
 			parent = frappe.get_doc("Planning sheet", item.parent)
+			item_wt = float(item.qty or 0) / 1000.0
 
-			# Use the provided target_date if available, otherwise fallback to the item's original date
-			effective_date = target_date if target_date else str(parent.get("custom_planned_date") or parent.ordered_date)
+			# Default to the single original date if no dates provided
+			effective_date = dates[0] if dates else str(parent.get("custom_planned_date") or parent.ordered_date)
+
+			# --- FIND CAPACITY SLOT ACROSS MULTIPLE DATES ---
+			if len(dates) > 0:
+				unit = item.unit or get_preferred_unit(item.custom_quality)
+				limit = HARD_LIMITS.get(unit, 999.0)
+				for check_date in dates:
+					load_key = (check_date, unit)
+					if load_key not in local_loads:
+						local_loads[load_key] = get_unit_load(check_date, unit, pb_plan_name)
+					
+					load = local_loads[load_key]
+					# Allow the item to slot here if we are under the limit, OR if it's the very last date fallback 
+					if (load + item_wt <= limit * 1.05) or (check_date == dates[-1]):
+						effective_date = check_date
+						local_loads[load_key] = load + item_wt
+						break
+			# ------------------------------------------------
+
 			party_code = parent.party_code or ""
 
 			# Find or create a dedicated PB Planning Sheet for this date+party
