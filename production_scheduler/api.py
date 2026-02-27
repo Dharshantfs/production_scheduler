@@ -651,11 +651,20 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 	if new_idx is not None:
 		try:
 			eff = _effective_date_expr("sheet")
+			
+			# Filter to siblings on the exact same board/plan
+			pb_plan = source_parent.get("custom_pb_plan_name") or ""
+			if pb_plan:
+				pb_cond = f"AND sheet.custom_pb_plan_name = '{frappe.db.escape(pb_plan)}'"
+			else:
+				pb_cond = "AND (sheet.custom_pb_plan_name IS NULL OR sheet.custom_pb_plan_name = '')"
+
 			sql_fetch = f"""
 				SELECT item.name 
 				FROM `tabPlanning Sheet Item` item
 				JOIN `tabPlanning sheet` sheet ON item.parent = sheet.name
 				WHERE {eff} = %s AND item.unit = %s AND item.name != %s
+				{pb_cond}
 				ORDER BY item.idx ASC, item.creation ASC
 			"""
 			other_items = frappe.db.sql(sql_fetch, (target_date, unit, item_doc.name))

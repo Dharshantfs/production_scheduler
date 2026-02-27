@@ -1416,6 +1416,10 @@ async function initSortable() {
 
                     let res = await performMove();
                     
+                    // Switch both units to manual sort mode so they respect the new idx sequence
+                    getUnitSortConfig(newUnit).mode = 'manual';
+                    if (!isSameUnit) getUnitSortConfig(oldUnit).mode = 'manual';
+                    
                     if (res.message && res.message.status === 'overflow') {
                          const showOverflowDialog = (overflowData, moveDate, moveUnit) => {
                              const avail = overflowData.available;

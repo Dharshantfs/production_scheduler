@@ -558,6 +558,11 @@ async function initSortable() {
                             perform_split: split
                         }
                     });
+                    
+                    // Switch both units to manual sort mode so they respect the new idx sequence
+                    getUnitSortConfig(newUnit).mode = 'manual';
+                    if (!isSameUnit) getUnitSortConfig(oldUnit).mode = 'manual';
+                    
                     return res;
                 };
 
