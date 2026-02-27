@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="cc-container">
     <!-- Filter Bar -->
     <div class="cc-filters">
@@ -506,7 +506,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch, reactive } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch, reactive } from "vue";
 import Sortable from "sortablejs";
 
 // Color groups for keyword-based matching
@@ -1284,11 +1284,14 @@ async function initSortable() {
                                               method: "production_scheduler.api.move_orders_to_date",
                                               args: { item_names: itemNames, target_date: targetDate }
                                           });
-                                          item.style.display = 'none';
                                           fetchData();
-                                      } catch(e) { console.error(e); }
+                                      } catch(e) { 
+                                          console.error(e); 
+                                          renderKey.value++; 
+                                      }
                                   }
                               } else {
+                                  renderKey.value++;
                                   fetchData();
                               }
                           }
@@ -1346,7 +1349,10 @@ async function initSortable() {
                 const newUnit = to.dataset.unit;
                 const newDate = to.dataset.date;
                 
-                if (!itemName || !newUnit || !newDate) return;
+                // Calculate "True Index" - ignore elements that aren't cards
+                const siblings = Array.from(to.children);
+                const cardsBefore = siblings.slice(0, newIndex).filter(el => el.classList.contains('cc-card')).length;
+                const targetIdx = cardsBefore + 1; // 1-based
 
                 setTimeout(async () => {
                     try {
@@ -1356,7 +1362,7 @@ async function initSortable() {
                                 item_name: itemName,
                                 unit: newUnit,
                                 date: newDate,
-                                index: newIndex + 1,
+                                index: targetIdx,
                                 force_move: 1
                             }
                         });
@@ -1396,6 +1402,11 @@ async function initSortable() {
             if (!itemName || !newUnit) return;
 
             if (!isSameUnit || newIndex !== oldIndex) {
+                 // Calculate "True Index" - ignore mix markers
+                 const siblings = Array.from(to.children);
+                 const cardsBefore = siblings.slice(0, newIndex).filter(el => el.classList.contains('cc-card')).length;
+                 const targetIdx = cardsBefore + 1; // 1-based
+
                  setTimeout(async () => {
                  try {
                     const performMove = async (force=0, split=0) => {
@@ -1405,7 +1416,7 @@ async function initSortable() {
                                 item_name: itemName, 
                                 unit: newUnit,
                                 date: filterOrderDate.value,
-                                index: newIndex + 1,
+                                index: targetIdx,
                                 force_move: force,
                                 perform_split: split,
                                 plan_name: selectedPlan.value
@@ -1444,7 +1455,7 @@ async function initSortable() {
                                     d.hide();
                                     const res2 = await frappe.call({
                                         method: "production_scheduler.api.update_schedule",
-                                        args: { item_name: itemName, unit: moveUnit, date: moveDate, index: newIndex + 1, force_move: 1, plan_name: selectedPlan.value }
+                                        args: { item_name: itemName, unit: moveUnit, date: moveDate, index: targetIdx, force_move: 1, plan_name: selectedPlan.value }
                                     });
                                     if (res2.message && res2.message.status === 'success') {
                                         const dest = res2.message.moved_to;
@@ -3012,6 +3023,13 @@ async function openMovePlanDialog() {
 }
 
 
+let ccRealtimeHandlerRegistered = false;
+function handleRealtimeColorUpdate(payload) {
+  // Keep logic simple: always refetch so all viewers stay in sync.
+  // Color Chart and Production Board share the same underlying data.
+  fetchData();
+}
+
 async function fetchData() {
 
   let args = {};
@@ -3380,6 +3398,27 @@ onMounted(async () => {
   // 2. Fetch Data
   await fetchData();
   analyzePreviousFlow();
+
+  // 3. Realtime sync with backend moves
+  if (frappe.realtime && frappe.realtime.on && !ccRealtimeHandlerRegistered) {
+      try {
+          frappe.realtime.on("production_board_update", handleRealtimeColorUpdate);
+          ccRealtimeHandlerRegistered = true;
+      } catch (e) {
+          console.error("Failed to attach realtime handler (Color Chart)", e);
+      }
+  }
+});
+
+onBeforeUnmount(() => {
+  if (ccRealtimeHandlerRegistered && frappe.realtime && frappe.realtime.off) {
+      try {
+          frappe.realtime.off("production_board_update", handleRealtimeColorUpdate);
+      } catch (e) {
+          console.error("Failed to detach realtime handler (Color Chart)", e);
+      }
+      ccRealtimeHandlerRegistered = false;
+  }
 });
 
 const NO_RULE_WHITES = ["BRIGHT WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"];

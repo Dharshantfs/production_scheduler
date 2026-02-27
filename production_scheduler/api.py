@@ -1,4 +1,4 @@
-﻿import frappe
+import frappe
 from frappe import _
 from frappe.utils import getdate, flt, cint
 import json
@@ -523,6 +523,7 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 			
 			# Update Original Item -> This will go to Best Slot
 			item.qty = remainder_qty
+			item.custom_is_split = 1
 			item.save()
 			
 			# Create New Item -> This stays in Target Unit/Date
@@ -545,6 +546,10 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 			_move_item_to_slot(item, best_slot_rem["unit"], best_slot_rem["date"], None, plan_name)
 			
 			frappe.db.commit()
+			try:
+				frappe.publish_realtime("production_board_update", {"date": str(best_slot_rem["date"])})
+			except Exception:
+				pass
 			return {"status": "success", "message": "Split successful"}
 			
 		else:
@@ -570,6 +575,10 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 	_move_item_to_slot(item, final_unit, final_date, idx_val, plan_name)
 	
 	frappe.db.commit()
+	try:
+		frappe.publish_realtime("production_board_update", {"date": str(final_date)})
+	except Exception:
+		pass
 	return {
 		"status": "success", 
 		"moved_to": {"date": final_date, "unit": final_unit}
@@ -647,15 +656,16 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 	if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
 		item_doc.custom_item_planned_date = target_date
 	item_doc.save(ignore_permissions=True)
-
+	
 	if new_idx is not None:
 		try:
 			eff = _effective_date_expr("sheet")
 			
-			# Filter to siblings on the exact same board/plan
-			pb_plan = source_parent.get("custom_pb_plan_name") or ""
+			# Re-load the current parent to ensure we use the TARGET sheet's plan
+			target_parent = frappe.get_doc("Planning sheet", item_doc.parent)
+			pb_plan = target_parent.get("custom_pb_plan_name") or ""
 			if pb_plan:
-				pb_cond = f"AND sheet.custom_pb_plan_name = '{frappe.db.escape(pb_plan)}'"
+				pb_cond = "AND sheet.custom_pb_plan_name = %(pb_plan)s"
 			else:
 				pb_cond = "AND (sheet.custom_pb_plan_name IS NULL OR sheet.custom_pb_plan_name = '')"
 
@@ -663,18 +673,29 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 				SELECT item.name 
 				FROM `tabPlanning Sheet Item` item
 				JOIN `tabPlanning sheet` sheet ON item.parent = sheet.name
-				WHERE {eff} = %s AND item.unit = %s AND item.name != %s
+				WHERE {eff} = %(target_date)s AND item.unit = %(unit)s AND item.name != %(item_name)s
 				{pb_cond}
 				ORDER BY item.idx ASC, item.creation ASC
 			"""
-			other_items = frappe.db.sql(sql_fetch, (target_date, unit, item_doc.name))
+			params = {
+				"target_date": target_date,
+				"unit": unit,
+				"item_name": item_doc.name,
+			}
+			if pb_plan:
+				params["pb_plan"] = pb_plan
+
+			other_items = frappe.db.sql(sql_fetch, params)
 			others = [r[0] for r in other_items]
 			
 			insert_pos = max(0, new_idx - 1)
 			others.insert(insert_pos, item_doc.name)
 			
 			for i, name in enumerate(others):
-				frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET idx = %s WHERE name = %s", (i + 1, name))
+				frappe.db.sql(
+					"UPDATE `tabPlanning Sheet Item` SET idx = %s WHERE name = %s",
+					(i + 1, name),
+				)
 		except Exception as e:
 			frappe.log_error(f"Global Sequence Fix Error: {str(e)}")
 
@@ -1146,25 +1167,92 @@ def update_item_unit(item_name, unit):
 
 
 @frappe.whitelist()
-def update_items_bulk(items):
+def update_items_bulk(items, plan_name=None):
+	"""Bulk move/update Planning Sheet Items.
+
+	Each entry in ``items`` can optionally specify:
+	- name: Planning Sheet Item name (required)
+	- unit: target unit (optional, falls back to current)
+	- date: target date as string (optional, falls back to current effective date)
+	- index: desired 1-based position within the (unit, date, plan) slot (optional)
+	- force_move / perform_split / strict_next_day: forwarded to update_schedule
+
+	We intentionally route through ``update_schedule`` so that capacity rules,
+	quality rules, and idx-based re-sequencing remain consistent with
+	single-item drag-and-drop behaviour on the board.
+	"""
 	import json
+
 	if isinstance(items, str):
 		items = json.loads(items)
 	
-	for item in items:
-		if item.get("name"):
-			# Update Unit
-			if item.get("unit"):
-				frappe.db.set_value("Planning Sheet Item", item.get("name"), "unit", item.get("unit"))
-			
-			# Update Date (Auto-Rollover)
-			if item.get("date"):
-				# Get Parent
-				parent = frappe.db.get_value("Planning Sheet Item", item.get("name"), "parent")
-				if parent:
-					frappe.db.set_value("Planning sheet", parent, "ordered_date", item.get("date"))
+	if not items:
+		return {"status": "success", "count": 0}
 
-	return {"status": "success"}
+	moved_dates = set()
+	count = 0
+
+	for row in items:
+		name = row.get("name")
+		if not name:
+			continue
+
+		# Fetch current state to provide sensible fallbacks
+		current = frappe.db.get_value(
+			"Planning Sheet Item",
+			name,
+			["unit", "parent"],
+			as_dict=True,
+		)
+		if not current:
+			continue
+
+		target_unit = row.get("unit") or current.unit
+
+		# Resolve effective date via parent sheet if not explicitly provided
+		target_date = row.get("date")
+		if not target_date:
+			parent_sheet = frappe.db.get_value(
+				"Planning sheet",
+				current.parent,
+				["custom_planned_date", "ordered_date"],
+				as_dict=True,
+			)
+			if parent_sheet:
+				target_date = parent_sheet.custom_planned_date or parent_sheet.ordered_date
+
+		if not target_date:
+			# If we still don't have a date, skip this item
+			continue
+
+		index = row.get("index") or 0
+		force_move = row.get("force_move", 0)
+		perform_split = row.get("perform_split", 0)
+		strict_next_day = row.get("strict_next_day", 0)
+
+		res = update_schedule(
+			name,
+			target_unit,
+			target_date,
+			index=index,
+			force_move=force_move,
+			perform_split=perform_split,
+			plan_name=plan_name,
+			strict_next_day=strict_next_day,
+		)
+
+		if isinstance(res, dict) and res.get("status") == "success":
+			moved_dates.add(str(target_date))
+			count += 1
+
+	# Fire a coarse realtime update for all affected dates
+	for d in moved_dates:
+		try:
+			frappe.publish_realtime("production_board_update", {"date": d})
+		except Exception:
+			pass
+
+	return {"status": "success", "count": count}
 
 @frappe.whitelist()
 def get_plans(date=None, start_date=None, end_date=None, **kwargs):

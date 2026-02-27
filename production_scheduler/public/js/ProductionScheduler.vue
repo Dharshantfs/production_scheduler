@@ -74,6 +74,16 @@
       <button class="cc-clear-btn" style="margin-left:auto; background-color: #3b82f6; color: white; border: none;" @click="goToPlan" title="View Production Plan (Table)">
           📅 View Table
       </button>
+
+      <div v-if="hasSelection" class="cc-bulk-bar">
+        <span class="cc-bulk-label">{{ selectedItems.length }} selected</span>
+        <button class="cc-clear-btn" @click="openBulkMoveDialog" title="Move selected orders to another unit/date">
+          ⇄ Move Selected
+        </button>
+        <button class="cc-clear-btn" @click="clearSelection" title="Clear selection">
+          ✕ Clear Sel.
+        </button>
+      </div>
     </div>
 
     <div class="cc-board">
@@ -125,7 +135,7 @@
             <!-- Order Card -->
             <div
               v-else
-              class="cc-card"
+              :class="['cc-card', isSelected(entry.itemName) ? 'cc-card-selected' : '']"
               :data-name="entry.name"
               :data-item-name="entry.itemName"
               :data-color="entry.color"
@@ -134,6 +144,13 @@
               @click="openForm(entry.planningSheet)"
             >
               <div class="cc-card-left">
+                <input
+                  type="checkbox"
+                  class="cc-card-select"
+                  :checked="isSelected(entry.itemName)"
+                  @click.stop="toggleCardSelection(entry.itemName)"
+                  title="Select for bulk move"
+                />
                 <div
                   class="cc-color-swatch"
                   :style="{ backgroundColor: getHexColor(entry.color) }"
@@ -260,11 +277,19 @@ units.forEach(u => {
 });
 
 const rawData = ref([]);
+const selectedItems = ref([]); // Names of Planning Sheet Items selected for bulk actions
 
 const columnRefs = ref([]);
 
 // Robust Sortable Tracking
 const sortableInstances = []; // Non-reactive array to track instances
+
+let realtimeHandlerRegistered = false;
+function handleRealtimeBoardUpdate(payload) {
+  // Optional optimisation: only refresh if date matches current view.
+  // For now, keep it simple and always refresh so supervisors see changes.
+  fetchData();
+}
 
 // Proper cleanup on unmount only (NOT on every update — that caused freeze loops)
 onBeforeUnmount(() => {
@@ -272,10 +297,38 @@ onBeforeUnmount(() => {
     try { s.destroy(); } catch(e) {}
   });
   sortableInstances.length = 0;
+
+  if (realtimeHandlerRegistered && frappe.realtime && frappe.realtime.off) {
+    try {
+      frappe.realtime.off("production_board_update", handleRealtimeBoardUpdate);
+    } catch (e) {
+      console.error("Failed to detach realtime handler", e);
+    }
+    realtimeHandlerRegistered = false;
+  }
 });
 
 const renderKey = ref(0); 
 const customRowOrder = ref([]); // Store user-defined color order
+
+const hasSelection = computed(() => selectedItems.value.length > 0);
+
+function isSelected(itemName) {
+  return selectedItems.value.includes(itemName);
+}
+
+function toggleCardSelection(itemName) {
+  const idx = selectedItems.value.indexOf(itemName);
+  if (idx === -1) {
+    selectedItems.value.push(itemName);
+  } else {
+    selectedItems.value.splice(idx, 1);
+  }
+}
+
+function clearSelection() {
+  selectedItems.value = [];
+}
 
 function goToPlan() {
     let query = {};
@@ -1616,6 +1669,16 @@ onMounted(() => {
         initFlatpickr();
         fetchData();
     });
+
+    // 4. Realtime sync: listen for board updates from backend
+    if (frappe.realtime && frappe.realtime.on && !realtimeHandlerRegistered) {
+        try {
+            frappe.realtime.on("production_board_update", handleRealtimeBoardUpdate);
+            realtimeHandlerRegistered = true;
+        } catch (e) {
+            console.error("Failed to attach realtime handler", e);
+        }
+    }
 });
 
 watch(viewScope, () => {
@@ -1625,6 +1688,80 @@ watch(viewScope, () => {
         fetchData();
     });
 });
+
+async function openBulkMoveDialog() {
+  if (!selectedItems.value.length) {
+    frappe.msgprint("Please select at least one order on the board.");
+    return;
+  }
+
+  const d = new frappe.ui.Dialog({
+    title: "⇄ Move Selected Orders",
+    fields: [
+      {
+        label: "Target Unit (optional)",
+        fieldname: "target_unit",
+        fieldtype: "Select",
+        options: ["", ...units],
+        description: "Leave empty to keep each order's current unit.",
+      },
+      {
+        label: "Target Date",
+        fieldname: "target_date",
+        fieldtype: "Date",
+        default: viewScope.value === "daily" ? filterOrderDate.value : "",
+        description:
+          "If left empty, each order keeps its current planned date.",
+      },
+    ],
+    primary_action_label: "Move",
+    primary_action: async (values) => {
+      if (!selectedItems.value.length) {
+        frappe.msgprint("No orders selected.");
+        return;
+      }
+
+      d.get_primary_btn().prop("disabled", true).text("Moving...");
+
+      try {
+        const targetUnit = values.target_unit || null;
+        const targetDate = values.target_date || null;
+
+        const updates = selectedItems.value.map((name, idx) => {
+          const item = (rawData.value || []).find((r) => r.itemName === name) || {};
+          return {
+            name,
+            unit: targetUnit || item.unit || null,
+            // Use explicit target date if provided; otherwise keep each item's own planned date
+            date: targetDate || item.plannedDate || item.orderDate || null,
+            index: idx + 1,
+          };
+        });
+
+        await frappe.call({
+          method: "production_scheduler.api.update_items_bulk",
+          args: { items: updates },
+          freeze: true,
+        });
+
+        frappe.show_alert({
+          message: `Moved ${updates.length} orders.`,
+          indicator: "green",
+        });
+
+        selectedItems.value = [];
+        d.hide();
+        await fetchData();
+      } catch (e) {
+        console.error("Bulk move failed", e);
+        frappe.msgprint("Error moving selected orders.");
+        d.get_primary_btn().prop("disabled", false).text("Move");
+      }
+    },
+  });
+
+  d.show();
+}
 </script>
 
 <style scoped>
@@ -1643,6 +1780,7 @@ watch(viewScope, () => {
   background-color: white;
   border-bottom: 1px solid #e5e7eb;
   gap: 12px;
+  flex-wrap: wrap;
 }
 .cc-filter-item {
   display: flex;
@@ -1738,6 +1876,28 @@ watch(viewScope, () => {
   cursor: grab;
   box-shadow: 0 1px 2px rgba(0,0,0,0.03);
   transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.cc-card-selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.3);
+}
+
+.cc-card-select {
+  margin-right: 6px;
+  cursor: pointer;
+}
+
+.cc-bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cc-bulk-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #4b5563;
 }
 .cc-card:hover {
   transform: translateY(-1px);
