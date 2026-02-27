@@ -107,8 +107,8 @@
     <!-- Kanban View -->
     <div v-if="viewMode === 'kanban'" class="cc-board" :key="renderKey">
       
-      <!-- DAILY VIEW -->
-      <template v-if="viewScope === 'daily'">
+      <!-- DAILY & WEEKLY VIEW -->
+      <template v-if="viewScope === 'daily' || viewScope === 'weekly'">
         <div
             v-for="unit in visibleUnits"
             :key="unit"
