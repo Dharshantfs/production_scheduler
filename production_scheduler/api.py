@@ -830,11 +830,17 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		else:
 			so_item_col = "'' as salesOrderItem,"
 
+		split_col = ""
+		if frappe.db.has_column("Planning Sheet Item", "custom_is_split"):
+			split_col = "i.custom_is_split as isSplit,"
+		else:
+			split_col = "0 as isSplit,"
+
 		items = frappe.db.sql(f"""
 			SELECT 
 				i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
 				i.color, i.custom_quality as quality, i.gsm, i.idx,
-				{so_item_col} i.custom_is_split as isSplit,
+				{so_item_col} {split_col}
 				p.name as planningSheet, p.party_code as partyCode, p.customer,
 				p.ordered_date, p.dod, p.sales_order as salesOrder
 			FROM `tabPlanning Sheet Item` i
