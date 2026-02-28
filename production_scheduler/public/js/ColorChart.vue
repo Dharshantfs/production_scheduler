@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="cc-container">
     <!-- Filter Bar -->
     <div class="cc-filters">
@@ -3122,12 +3122,17 @@ async function fetchData() {
       args: args,
     });
     
-    // Ensure idx is integer
+    // Normalize API fields for consistent UI behavior across views
     rawData.value = (r.message || []).map(d => ({
         ...d,
         idx: parseInt(d.idx || 0) || 9999,
         // Ensure date is parsed for monthly grouping
-        orderDate: d.ordered_date || ""
+        orderDate: d.orderDate || d.ordered_date || "",
+        // Production Board status (snake_case -> camelCase)
+        plannedDate: d.plannedDate || d.planned_date || "",
+        // Ensure stable keys even if backend varies
+        partyCode: d.partyCode || d.party_code || "",
+        itemName: d.itemName || d.item_name || d.name || ""
     }));
     
     // Load Custom Color Order (Sync)

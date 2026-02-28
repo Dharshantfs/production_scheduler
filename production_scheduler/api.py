@@ -2773,6 +2773,7 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
 		dates = [d.strip() for d in str(target_dates).split(",") if d.strip()]
 
 	updated_count = 0
+	skipped_already_pushed = []
 	pb_sheet_cache = {}  # (party_code, effective_date) -> pb sheet name
 	local_loads = {} # (date, unit) -> current load
 
@@ -2780,6 +2781,16 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
 		try:
 			item = frappe.get_doc("Planning Sheet Item", name)
 			parent = frappe.get_doc("Planning sheet", item.parent)
+			# Prevent re-pushing the same order again until it is reverted
+			already_pushed = False
+			if parent.get("custom_pb_plan_name"):
+				already_pushed = True
+			if not already_pushed and frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+				if item.get("custom_item_planned_date"):
+					already_pushed = True
+			if already_pushed:
+				skipped_already_pushed.append(name)
+				continue
 			item_wt = float(item.qty or 0) / 1000.0
 
 			# Default to the single original date if no dates provided
@@ -2863,7 +2874,19 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
 		)
 
 	frappe.db.commit()
-	return {"status": "success", "updated_count": updated_count, "plan_name": pb_plan_name}
+	if updated_count == 0 and skipped_already_pushed:
+		return {
+			"status": "error",
+			"message": "All selected orders are already pushed to the Production Board. Revert them first to push again.",
+			"skipped_already_pushed": len(skipped_already_pushed),
+			"plan_name": pb_plan_name,
+		}
+	return {
+		"status": "success",
+		"updated_count": updated_count,
+		"skipped_already_pushed": len(skipped_already_pushed),
+		"plan_name": pb_plan_name,
+	}
 
 
 @frappe.whitelist()
@@ -2882,6 +2905,7 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 		return {"status": "error", "message": "Missing item data or plan name"}
 
 	count = 0
+	skipped_already_pushed = []
 	updated_sheets = set()
 	pb_sheet_cache = {}  # (party_code, target_date, pb_plan_name) -> pb sheet name
 	local_loads = {} # (date, unit) -> current load
@@ -2896,6 +2920,16 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 			# Get item + parent sheet info
 			item_doc = frappe.get_doc("Planning Sheet Item", name)
 			parent_doc = frappe.get_doc("Planning sheet", item_doc.parent)
+			# Prevent re-pushing the same order again until it is reverted
+			already_pushed = False
+			if parent_doc.get("custom_pb_plan_name"):
+				already_pushed = True
+			if not already_pushed and frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+				if item_doc.get("custom_item_planned_date"):
+					already_pushed = True
+			if already_pushed:
+				skipped_already_pushed.append(name)
+				continue
 			item_wt = float(item_doc.qty or 0) / 1000.0
 
 			target_dates = [d.strip() for d in str(target_date_raw).split(",")] if target_date_raw else []
@@ -3002,7 +3036,21 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 		)
 
 	frappe.db.commit()
-	return {"status": "success", "moved_items": count, "updated_sheets": len(updated_sheets), "plan_name": pb_plan_name}
+	if count == 0 and skipped_already_pushed:
+		return {
+			"status": "error",
+			"message": "All selected orders are already pushed to the Production Board. Revert them first to push again.",
+			"skipped_already_pushed": len(skipped_already_pushed),
+			"updated_sheets": len(updated_sheets),
+			"plan_name": pb_plan_name,
+		}
+	return {
+		"status": "success",
+		"moved_items": count,
+		"skipped_already_pushed": len(skipped_already_pushed),
+		"updated_sheets": len(updated_sheets),
+		"plan_name": pb_plan_name,
+	}
 
 
 @frappe.whitelist()
