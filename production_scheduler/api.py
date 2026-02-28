@@ -821,11 +821,20 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		# to find items "available" on that date but not yet item-planned.
 		sheet_date_col = "COALESCE(p.custom_planned_date, p.ordered_date)" if frappe.db.has_column("Planning sheet", "custom_planned_date") else "p.ordered_date"
 
+		# Check if the problematic column actually exists in the DB to prevent crashes
+		so_item_col = ""
+		if frappe.db.has_column("Planning Sheet Item", "sales_order_item"):
+			so_item_col = "i.sales_order_item as salesOrderItem,"
+		elif frappe.db.has_column("Planning Sheet Item", "custom_sales_order_item"):
+			so_item_col = "i.custom_sales_order_item as salesOrderItem,"
+		else:
+			so_item_col = "'' as salesOrderItem,"
+
 		items = frappe.db.sql(f"""
 			SELECT 
 				i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
 				i.color, i.custom_quality as quality, i.gsm, i.idx,
-				i.sales_order_item as salesOrderItem, i.custom_is_split as isSplit,
+				{so_item_col} i.custom_is_split as isSplit,
 				p.name as planningSheet, p.party_code as partyCode, p.customer,
 				p.ordered_date, p.dod, p.sales_order as salesOrder
 			FROM `tabPlanning Sheet Item` i
