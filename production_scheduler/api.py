@@ -845,8 +845,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				p.ordered_date, p.dod, p.sales_order as salesOrder
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
-			WHERE {sheet_date_col} = %s AND p.docstatus < 2
-			  {date_filter}
+			WHERE {sheet_date_col} = %s
 			  AND i.color IS NOT NULL AND i.color != ''
 			  AND i.custom_quality IS NOT NULL AND i.custom_quality != ''
 			ORDER BY i.unit, i.idx
