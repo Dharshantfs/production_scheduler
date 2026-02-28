@@ -2745,7 +2745,7 @@ async function pushToProductionBoard() {
             const r = await frappe.call({
                 method: 'production_scheduler.api.get_smart_push_sequence',
                 args: { 
-                    item_names: JSON.stringify(currentSequence.map(s => s.name)),
+                    item_names: JSON.stringify(currentSequence.filter(s => !s.pushed).map(s => s.name)),
                     target_date: singleTargetDate
                 }
             });
@@ -2780,7 +2780,7 @@ async function pushToProductionBoard() {
                 
                 const filterUnitValue = d.get_value('filter_unit') || 'All Units';
                 
-                currentSequence = smartSeq.map(s => {
+                let mappedSeq = smartSeq.map(s => {
                     const mapped = {
                         name: s.name,
                         color: s.color || '',
@@ -2821,6 +2821,14 @@ async function pushToProductionBoard() {
                     
                     return mapped;
                 });
+                
+                // Smart sequence only returns un-pushed items now, so we must add the pushed items back
+                // to the bottom of the list so they remain visible in the UI table.
+                const pushedItems = currentSequence.filter(s => s.pushed);
+                currentSequence = [...mappedSeq, ...pushedItems];
+                
+                // Re-calculate sequence numbers so the table numbers make sense
+                currentSequence.forEach((item, i) => { item.sequence_no = i + 1; });
                 
                 d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
                 setTimeout(() => { wireCheckboxes(); updateCountLabel(); }, 100);
