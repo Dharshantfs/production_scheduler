@@ -888,7 +888,65 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		
 		# Deduplicate if mode is pull or board
 		return _deduplicate_items(items)
-	
+
+	# PULL_BOARD MODE (Production Board only): items already ON the board for this date
+	# Use item-level custom_item_planned_date when set, else sheet custom_planned_date
+	if mode == "pull_board" and date:
+		target_date = getdate(date)
+		has_item_planned = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+		has_sheet_planned = frappe.db.has_column("Planning sheet", "custom_planned_date")
+		item_date_expr = (
+			"COALESCE(i.custom_item_planned_date, p.custom_planned_date) = %s"
+			if (has_item_planned and has_sheet_planned)
+			else "p.custom_planned_date = %s" if has_sheet_planned else "p.ordered_date = %s"
+		)
+		sheet_pushed = "AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''" if has_sheet_planned else ""
+
+		so_item_col = ""
+		if frappe.db.has_column("Planning Sheet Item", "sales_order_item"):
+			so_item_col = "i.sales_order_item as salesOrderItem,"
+		elif frappe.db.has_column("Planning Sheet Item", "custom_sales_order_item"):
+			so_item_col = "i.custom_sales_order_item as salesOrderItem,"
+		else:
+			so_item_col = "'' as salesOrderItem,"
+		split_col = "i.custom_is_split as isSplit," if frappe.db.has_column("Planning Sheet Item", "custom_is_split") else "0 as isSplit,"
+
+		items = frappe.db.sql(f"""
+			SELECT
+				i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
+				i.color, i.custom_quality as quality, i.gsm, i.idx,
+				{so_item_col} {split_col}
+				p.name as planningSheet, p.party_code as partyCode, p.customer,
+				p.ordered_date, p.dod, p.sales_order as salesOrder,
+				COALESCE(i.custom_item_planned_date, p.custom_planned_date) as planned_date
+			FROM `tabPlanning Sheet Item` i
+			JOIN `tabPlanning sheet` p ON i.parent = p.name
+			WHERE {item_date_expr}
+			  AND i.color IS NOT NULL AND i.color != ''
+			  AND i.custom_quality IS NOT NULL AND i.custom_quality != ''
+			  {sheet_pushed}
+			  AND p.docstatus < 2
+			ORDER BY i.unit, i.idx
+		""", (target_date,), as_dict=True)
+
+		if items:
+			sheet_names = list(set(it.planningSheet for it in items))
+			so_names = list(set(it.salesOrder for it in items if it.salesOrder))
+			wo_sheets = set()
+			if so_names:
+				fmt = ','.join(['%s'] * len(so_names))
+				for r in frappe.db.sql(f"SELECT DISTINCT sales_order FROM `tabWork Order` WHERE sales_order IN ({fmt}) AND docstatus < 2", tuple(so_names)):
+					wo_sheets.add(r[0])
+			if sheet_names:
+				fmt2 = ','.join(['%s'] * len(sheet_names))
+				try:
+					for r in frappe.db.sql(f"SELECT DISTINCT custom_planning_sheet FROM `tabWork Order` WHERE custom_planning_sheet IN ({fmt2}) AND docstatus < 2", tuple(sheet_names)):
+						wo_sheets.add(r[0])
+				except Exception:
+					pass
+			items = [it for it in items if it.planningSheet not in wo_sheets]
+		return _deduplicate_items(items) if items else []
+
 	# Support both single date and range
 	if start_date and end_date:
 		query_start = getdate(start_date)
@@ -1054,11 +1112,13 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				# Resolve effective planned date: item-level first, then sheet-level
 				it_pdate = item.get("custom_item_planned_date") or sheet.get("custom_planned_date")
 				
-				# If filter is by single date or multiple dates
+				# If filter is by single date or multiple dates (normalize so DD-MM-YYYY and YYYY-MM-DD both match)
 				if date:
-					it_pdt = str(it_pdate)
-					target_dts = [str(d) for d in target_dates]
-					if it_pdt not in target_dts:
+					try:
+						it_pdt_normalized = getdate(str(it_pdate)) if it_pdate else None
+					except Exception:
+						it_pdt_normalized = None
+					if it_pdt_normalized not in target_dates:
 						continue
 				
 				# If filter is by date range

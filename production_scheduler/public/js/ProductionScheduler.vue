@@ -997,16 +997,16 @@ async function loadOrders(d) {
     d.set_value('preview_html', '<p class="text-gray-500 italic p-2">Loading...</p>');
     
     try {
+        // Production Board Pull = orders already ON the board for this date (move to today).
         const r = await frappe.call({
             method: "production_scheduler.api.get_color_chart_data",
-            args: { date: date, mode: 'pull' }
+            args: { date: date, mode: 'pull_board' }
         });
         
         let items = r.message || [];
         
-        // Pull mode returns items by sheet date that are available to pull (no plannedDate filter).
         if (items.length === 0) {
-            d.set_value('preview_html', '<p class="text-gray-500 italic p-2">No orders found for this date in the selected plan.</p>');
+            d.set_value('preview_html', '<p class="text-gray-500 italic p-2">No orders on the Production Board for this date.</p>');
             d.calc_selected_items = [];
             return;
         }
