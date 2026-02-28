@@ -901,7 +901,6 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			else "p.custom_planned_date = %s" if has_sheet_planned else "p.ordered_date = %s"
 		)
 		sheet_pushed = "AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''" if has_sheet_planned else ""
-		pb_only = "AND p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != ''"
 
 		so_item_col = ""
 		if frappe.db.has_column("Planning Sheet Item", "sales_order_item"):
@@ -919,6 +918,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				{so_item_col} {split_col}
 				p.name as planningSheet, p.party_code as partyCode, p.customer,
 				p.ordered_date, p.dod, p.sales_order as salesOrder,
+				p.custom_pb_plan_name as pbPlanName,
 				COALESCE(i.custom_item_planned_date, p.custom_planned_date) as planned_date
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
@@ -926,10 +926,15 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			  AND i.color IS NOT NULL AND i.color != ''
 			  AND i.custom_quality IS NOT NULL AND i.custom_quality != ''
 			  {sheet_pushed}
-			  {pb_only}
 			  AND p.docstatus < 2
 			ORDER BY i.unit, i.idx
 		""", (target_date,), as_dict=True)
+
+		# Keep PB-plan items plus allowed whites (whites can appear without PB plan)
+		items = [
+			it for it in (items or [])
+			if (it.get("pbPlanName") or "").strip() or _is_white_color(it.get("color"))
+		]
 
 		if items:
 			sheet_names = list(set(it.planningSheet for it in items))
@@ -986,12 +991,12 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	else:
 		plan_condition = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
 
-	# Production Board only: require explicit PB markers
-	# - custom_planned_date must be set (pushed/scheduled)
-	# - custom_pb_plan_name must be set (belongs to a PB plan, not Color Chart)
+	# Production Board only: require custom_planned_date to be set (scheduled).
+	# IMPORTANT: We do NOT require custom_pb_plan_name here because "white" orders
+	# are allowed to appear directly on the Production Board without being pushed.
+	# Non-white items are filtered per-item later unless they belong to a PB plan.
 	if cint(planned_only) and _has_planned_date_column():
 		plan_condition += " AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
-		plan_condition += " AND p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != ''"
 	
 	# Build SELECT fields — include custom_planned_date only if column exists
 	extra_fields = ", p.custom_planned_date" if _has_planned_date_column() else ""
@@ -1113,6 +1118,13 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			
 			# Production Board filtering: use item.custom_item_planned_date if set, else sheet.custom_planned_date
 			if cint(planned_only):
+				# Separation rule:
+				# - White-family orders may appear directly on the Production Board
+				# - Non-white orders must belong to a PB plan (custom_pb_plan_name set)
+				if not (sheet.get("custom_pb_plan_name") or "").strip():
+					if not _is_white_color(color):
+						continue
+
 				# Resolve effective planned date: item-level first, then sheet-level
 				it_pdate = item.get("custom_item_planned_date") or sheet.get("custom_planned_date")
 				
