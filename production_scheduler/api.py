@@ -825,7 +825,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			SELECT 
 				i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
 				i.color, i.custom_quality as quality, i.gsm, i.idx,
-				i.custom_sales_order_item as salesOrderItem, i.custom_is_split as isSplit,
+				i.sales_order_item as salesOrderItem, i.custom_is_split as isSplit,
 				p.name as planningSheet, p.party_code as partyCode, p.customer,
 				p.ordered_date, p.dod, p.sales_order as salesOrder
 			FROM `tabPlanning Sheet Item` i
