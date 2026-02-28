@@ -848,6 +848,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			WHERE {sheet_date_col} = %s
 			  AND i.color IS NOT NULL AND i.color != ''
 			  AND i.custom_quality IS NOT NULL AND i.custom_quality != ''
+			  {date_filter}
 			ORDER BY i.unit, i.idx
 		""", (target_date,), as_dict=True)
 		

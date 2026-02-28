@@ -1004,9 +1004,7 @@ async function loadOrders(d) {
         
         let items = r.message || [];
         
-        // ─── PRODUCTION BOARD FILTER MUST APPLY IN PULL AS WELL ───
-        items = items.filter(i => !!i.plannedDate);
-        
+        // Pull mode returns items by sheet date that are available to pull (no plannedDate filter).
         if (items.length === 0) {
             d.set_value('preview_html', '<p class="text-gray-500 italic p-2">No orders found for this date in the selected plan.</p>');
             d.calc_selected_items = [];
