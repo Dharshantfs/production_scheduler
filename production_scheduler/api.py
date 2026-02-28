@@ -1685,6 +1685,21 @@ WHITE_COLORS = {
 	"SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0",
 }
 
+# ── Beige / buffer colors used after very dark shades (Black / Red families) ──
+BEIGE_COLORS = {
+	"CREAM 2.0","CREAM 3.0","CREAM 4.0","CREAM 5.0",
+	"BRIGHT IVORY","IVORY","CREAM","OFF WHITE",
+	"BEIGE 1.0","BEIGE 2.0","BEIGE 3.0","BEIGE 4.0","BEIGE 5.0",
+	"LIGHT BEIGE","DARK BEIGE","BEIGE MIX",
+}
+
+# ── Very dark colors that should be followed by beige buffers when possible ──
+VERY_DARK_COLORS = {
+	"BLACK","BLACK MIX","CHOCOLATE BLACK",
+	"CRIMSON RED","RED","DARK MAROON","MAROON 2.0","MAROON 1.0",
+	"BROWN 3.0 DARK COFFEE","BROWN 2.0 DARK",
+}
+
 # ── Color light→dark order (full list — matches COL_LIST in server script) ────
 COLOR_ORDER_LIST = [
 	"BRIGHT WHITE","SUPER WHITE","MILKY WHITE","SUNSHINE WHITE",
@@ -1874,6 +1889,8 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 			else:
 				# ── Phase: Color chaining (Strict Quality-by-Quality) ──
 				remaining = list(items)
+				# Flag to enforce Beige/cream bridge immediately after a very dark batch
+				dark_bridge_pending = False
 				quality_order = UNIT_QUALITY_ORDER.get(unit, [])
 
 				# If no active quality, find the first quality in the unit's quality order that has items
@@ -1891,44 +1908,54 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 				while remaining and loops < max_loops:
 					loops += 1
 
-					# 1. Anchor: Check if the current color (from board or previous color-batch) still exists in the remaining list
-					if current_seed_color and any(i["colorKey"] == current_seed_color for i in remaining):
-						chosen_color = current_seed_color
+					# 1. If we just finished a very dark color, try to insert a Beige/cream buffer next
+					if dark_bridge_pending and any(i["colorKey"] in BEIGE_COLORS for i in remaining):
+						# Choose the lightest beige available by COLOR_PRIORITY
+						beige_options = sorted(
+							{ i["colorKey"] for i in remaining if i["colorKey"] in BEIGE_COLORS },
+							key=color_sort_key
+						)
+						chosen_color = beige_options[0]
+						dark_bridge_pending = False
 					else:
-						# 2. Transition: Find available colors in the CURRENT effective quality (ANCHOR QUALITY)
-						qual_pool = [i for i in remaining if i["quality"] == effective_seed]
-
-						if not qual_pool:
-							# Advance to next quality in the unit's sequence that has items
-							advanced = False
-							if quality_order:
-								try:
-									qi = quality_order.index(effective_seed)
-								except ValueError:
-									qi = -1
-								search_order = quality_order[qi+1:] + quality_order[:qi+1] if qi != -1 else quality_order
-								for nq in search_order:
-									if any(i["quality"] == nq for i in remaining):
-										effective_seed = nq
-										advanced = True
-										current_seed_color = None  # Reset color seed when switching qualities
-										break
-							if not advanced:
-								effective_seed = remaining[0]["quality"]
-								current_seed_color = None
-							continue
-
-						# Colors available specifically in this "current" quality
-						pool_colors = sorted(list({i["colorKey"] for i in qual_pool}), key=color_sort_key)
-
-						# Pick the next color from the sorted list (based on light->dark priority)
-						if current_seed_color and current_seed_color in COLOR_PRIORITY:
-							seed_idx = COLOR_PRIORITY[current_seed_color]
-							# Find first color that is >= seed priority (so we don't jump back to light colors unless no darken ones left)
-							valid_options = [c for c in pool_colors if COLOR_PRIORITY.get(c, -1) >= seed_idx]
-							chosen_color = valid_options[0] if valid_options else pool_colors[0]
+						# 2. Anchor: Check if the current color (from board or previous color-batch) still exists in the remaining list
+						if current_seed_color and any(i["colorKey"] == current_seed_color for i in remaining):
+							chosen_color = current_seed_color
 						else:
-							chosen_color = pool_colors[0]
+							# 3. Transition: Find available colors in the CURRENT effective quality (ANCHOR QUALITY)
+							qual_pool = [i for i in remaining if i["quality"] == effective_seed]
+
+							if not qual_pool:
+								# Advance to next quality in the unit's sequence that has items
+								advanced = False
+								if quality_order:
+									try:
+										qi = quality_order.index(effective_seed)
+									except ValueError:
+										qi = -1
+									search_order = quality_order[qi+1:] + quality_order[:qi+1] if qi != -1 else quality_order
+									for nq in search_order:
+										if any(i["quality"] == nq for i in remaining):
+											effective_seed = nq
+											advanced = True
+											current_seed_color = None  # Reset color seed when switching qualities
+											break
+								if not advanced:
+									effective_seed = remaining[0]["quality"]
+									current_seed_color = None
+								continue
+
+							# Colors available specifically in this "current" quality
+							pool_colors = sorted(list({i["colorKey"] for i in qual_pool}), key=color_sort_key)
+
+							# Pick the next color from the sorted list (based on light→dark priority)
+							if current_seed_color and current_seed_color in COLOR_PRIORITY:
+								seed_idx = COLOR_PRIORITY[current_seed_color]
+								# Find first color that is >= seed priority (so we don't jump back to light colors unless no darker ones left)
+								valid_options = [c for c in pool_colors if COLOR_PRIORITY.get(c, -1) >= seed_idx]
+								chosen_color = valid_options[0] if valid_options else pool_colors[0]
+							else:
+								chosen_color = pool_colors[0]
 
 					# 3. Batch EVERY item of 'chosen_color' across EVERY quality (Bridge logic)
 					# "must be run the pink color is all quality"
@@ -1960,6 +1987,12 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 
 					# Update seeds for the next color selection
 					current_seed_color = chosen_color
+					# If we just ran a very dark color (Black/Red family), request a Beige/cream bridge next
+					if current_seed_color in VERY_DARK_COLORS:
+						dark_bridge_pending = True
+					else:
+						dark_bridge_pending = False
+
 					# "pink is end with silver... same concept running again"
 					# Anchor the search for the NEXT color to the quality where the PREVIOUS color ended
 					effective_seed = color_batch[-1]["quality"]
