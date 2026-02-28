@@ -176,7 +176,7 @@
                 <button 
                   class="cc-revert-btn" 
                   @click.stop="revertOrder(entry)" 
-                  title="Revert to Planning Sheet"
+                  title="Send back to Color Chart"
                 >
                   ↩️ Revert
                 </button>
@@ -829,7 +829,7 @@ async function revertOrder(entry) {
     if (!entry.itemName) return;
     
     frappe.confirm(
-        `Are you sure you want to revert <b>${entry.color}</b> order back to Planning Sheet? <br><small>This will remove it from the Production Board.</small>`,
+        `Are you sure you want to revert <b>${entry.color}</b> order back to <b>Color Chart</b>? <br><small>This will remove it from the Production Board.</small>`,
         async () => {
             try {
                 isLoading.value = true;

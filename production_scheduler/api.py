@@ -901,6 +901,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			else "p.custom_planned_date = %s" if has_sheet_planned else "p.ordered_date = %s"
 		)
 		sheet_pushed = "AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''" if has_sheet_planned else ""
+		pb_only = "AND p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != ''"
 
 		so_item_col = ""
 		if frappe.db.has_column("Planning Sheet Item", "sales_order_item"):
@@ -925,6 +926,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			  AND i.color IS NOT NULL AND i.color != ''
 			  AND i.custom_quality IS NOT NULL AND i.custom_quality != ''
 			  {sheet_pushed}
+			  {pb_only}
 			  AND p.docstatus < 2
 			ORDER BY i.unit, i.idx
 		""", (target_date,), as_dict=True)
@@ -984,10 +986,12 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	else:
 		plan_condition = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
 
-	# Production Board only: require custom_planned_date to be explicitly set on the sheet
-	# Items are re-parented to PB sheets that have this set when pushed via push_to_pb
+	# Production Board only: require explicit PB markers
+	# - custom_planned_date must be set (pushed/scheduled)
+	# - custom_pb_plan_name must be set (belongs to a PB plan, not Color Chart)
 	if cint(planned_only) and _has_planned_date_column():
 		plan_condition += " AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
+		plan_condition += " AND p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != ''"
 	
 	# Build SELECT fields — include custom_planned_date only if column exists
 	extra_fields = ", p.custom_planned_date" if _has_planned_date_column() else ""
@@ -2102,7 +2106,7 @@ def get_orders_for_date(date):
     return data
 
 @frappe.whitelist()
-def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=None, pb_plan_name=None):
+def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=None, pb_plan_name=None, force_move=0):
     """
     Moves list of Planning Sheet Items to a new Date.
     Supports item-level granularity by re-parenting items if necessary.
