@@ -406,9 +406,9 @@
                             v-for="col in matrixData.columns" 
                             :key="col.id" 
                             class="text-right"
-                            :style="(col.id !== 'Total' && (row.cells[col.id] || 0) > 0) ? 'cursor:pointer;' : ''"
-                            @click="(col.id !== 'Total' && (row.cells[col.id] || 0) > 0) ? openPushColorDialog(row.color, col.id) : null"
-                            :title="(col.id !== 'Total' && (row.cells[col.id] || 0) > 0) ? `Click to push orders for ${col.id}` : ''"
+                            :style="(col.id !== 'Total' && (row.cells[col.id] || 0) > 0 && !row.isPushed) ? 'cursor:pointer;' : ''"
+                            @click="(col.id !== 'Total' && (row.cells[col.id] || 0) > 0 && !row.isPushed) ? openPushColorDialog(row.color, col.id) : null"
+                            :title="(col.id !== 'Total' && (row.cells[col.id] || 0) > 0 && !row.isPushed) ? `Click to push orders for ${col.id}` : ''"
                             onmouseover="if(this.style.cursor==='pointer') this.style.backgroundColor='#f1f5f9';"
                             onmouseout="if(this.style.cursor==='pointer') this.style.backgroundColor='';"
                         >
@@ -835,15 +835,17 @@ const matrixData = computed(() => {
     const processRows = (rowArray) => {
         rowArray.forEach(row => {
             let pushedPlanNames = new Set();
-            let allPushed = true;
+            let anyPushed = false;
             let hasItems = false;
             
             sortedGroups.forEach(group => {
                 const matchs = group.items.filter(i => i.color === row.color);
                 matchs.forEach(m => {
                     hasItems = true;
-                    if (m.plannedDate) pushedPlanNames.add(m.plannedDate);
-                    else allPushed = false;
+                    if (m.plannedDate) {
+                        anyPushed = true;
+                        pushedPlanNames.add(m.plannedDate);
+                    }
                 });
                 
                 const sumQty = matchs.reduce((sum, item) => sum + (item.qty || 0), 0);
@@ -853,7 +855,9 @@ const matrixData = computed(() => {
                 }
             });
             
-            if (hasItems && allPushed) {
+            // Business rule: if a color has been pushed once, block pushing again until reverted.
+            // So we show "Pushed" as soon as ANY item of the color is on the Production Board.
+            if (hasItems && anyPushed) {
                 row.isPushed = true;
                 row.pushedPlanName = Array.from(pushedPlanNames).join(', ') || 'Pushed';
             } else {
