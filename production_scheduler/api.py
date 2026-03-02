@@ -655,9 +655,13 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 		# Clean up source parent if empty
 		if frappe.db.count("Planning Sheet Item", {"parent": source_parent.name}) == 0:
 			try:
+				# Cancel submitted sheets before deleting
+				src_docstatus = frappe.db.get_value("Planning sheet", source_parent.name, "docstatus")
+				if src_docstatus == 1:
+					frappe.db.sql("UPDATE `tabPlanning sheet` SET docstatus = 2 WHERE name = %s", source_parent.name)
 				frappe.delete_doc("Planning sheet", source_parent.name, ignore_permissions=True, force=True)
 			except Exception:
-				pass  # Ignore if linked to Production Plan
+				pass  # Ignore if linked to Production Plan or other constraints
 
 	# 2. Handle IDX Shifting if inserting at specific position
 	# Update Item unit and parent first — use raw SQL to bypass docstatus immutability

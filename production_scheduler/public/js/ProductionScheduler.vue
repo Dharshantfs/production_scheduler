@@ -589,12 +589,38 @@ async function initSortable() {
         const isSameUnit = (newUnitEl === oldUnitEl);
 
         if (!isSameUnit || evt.newIndex !== evt.oldIndex) {
-            // We NO LONGER manually undo Sortable's DOM manipulation because 
-            // Vue 3 will completely destroy the parent .cc-col-body via the 
-            // :key="'col-'+unit+'-'+renderKey" and rebuild from scratch.
-
             setTimeout(async () => {
             try {
+                // ── MULTI-SELECT DRAG: move ALL selected items if dragged card is selected ──
+                if (selectedItems.value.length > 0 && (selectedItems.value.includes(itemName) || !isSameUnit)) {
+                    // Collect all selected item names (include the dragged one if not already)
+                    const itemsToMove = [...new Set([...selectedItems.value, itemName])];
+                    
+                    frappe.show_alert({ message: `Moving ${itemsToMove.length} selected orders...`, indicator: "orange" });
+                    
+                    const bulkItems = itemsToMove.map((name, idx) => ({
+                        name: name,
+                        unit: newUnit,
+                        index: newIndex + idx,
+                        force_move: 0
+                    }));
+                    
+                    const res = await frappe.call({
+                        method: "production_scheduler.api.update_items_bulk",
+                        args: { items: JSON.stringify(bulkItems) }
+                    });
+                    
+                    if (res.message && res.message.status === 'success') {
+                        frappe.show_alert({ message: `Moved ${res.message.count} orders to ${newUnit}`, indicator: "green" });
+                        getUnitSortConfig(newUnit).mode = 'manual';
+                        if (!isSameUnit) getUnitSortConfig(oldUnit).mode = 'manual';
+                        clearSelection();
+                    }
+                    await fetchData();
+                    return;
+                }
+
+                // ── SINGLE ITEM DRAG ──
                 if (!isSameUnit) {
                     frappe.show_alert({ message: "Validating Capacity...", indicator: "orange" });
                 }
