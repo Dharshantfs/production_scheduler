@@ -2231,7 +2231,7 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         find_filters = {
             "ordered_date": target_date,
             "party_code": parent_doc.party_code,
-            "docstatus": 0
+            "docstatus": ["<", 2]  # Include submitted sheets (docstatus 0 or 1)
         }
         
         # Determine target plan: if explicitly "Default", force to None (no plan = Default view)
@@ -2272,6 +2272,9 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         else:
             target_sheet = frappe.new_doc("Planning sheet")
             target_sheet.ordered_date = target_date
+            # Also set custom_planned_date so items appear on the Production Board
+            if frappe.db.has_column("Planning sheet", "custom_planned_date"):
+                target_sheet.custom_planned_date = target_date
             target_sheet.party_code = parent_doc.party_code
             target_sheet.customer = parent_doc.customer
             target_sheet.sales_order = parent_doc.sales_order
@@ -2325,9 +2328,12 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         if target_sheet.name != parent_doc.name:
             parent_doc.reload()
             if not parent_doc.get("items"):
-                # Source is empty -> DELETE
+                # Source is empty -> DELETE (cancel first if submitted)
                 try:
-                    frappe.delete_doc("Planning sheet", parent_doc.name, force=1)
+                    src_ds = int(parent_doc.docstatus or 0)
+                    if src_ds == 1:
+                        frappe.db.sql("UPDATE `tabPlanning sheet` SET docstatus = 2 WHERE name = %s", parent_doc.name)
+                    frappe.delete_doc("Planning sheet", parent_doc.name, force=1, ignore_permissions=True)
                 except Exception as e:
                     # If it's linked to a Production Plan, Frappe prevents deletion. 
                     # We catch it so the move doesn't crash since the items were already moved via SQL.
@@ -2336,6 +2342,80 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                 parent_doc.save()
         
     frappe.db.commit()
+
+
+@frappe.whitelist()
+def rescue_orphaned_items(target_date=None, colour=None, party_code=None):
+	"""Find Planning Sheet Items whose parent sheets are deleted/missing,
+	   and re-home them to a valid sheet on target_date (default: today)."""
+	target_date = getdate(target_date or frappe.utils.today())
+	
+	# 1. Find orphaned items: parent sheet does not exist
+	conds = []
+	params = {"target": target_date}
+	if colour:
+		conds.append("AND item.colour LIKE %(colour)s")
+		params["colour"] = f"%{colour}%"
+	if party_code:
+		conds.append("AND item.party_code LIKE %(party_code)s")
+		params["party_code"] = f"%{party_code}%"
+	
+	extra = " ".join(conds)
+	orphans = frappe.db.sql(f"""
+		SELECT item.name, item.parent, item.unit, item.colour, item.qty,
+		       item.party_code, item.customer, item.custom_quality, item.item_name,
+		       item.sales_order
+		FROM `tabPlanning Sheet Item` item
+		LEFT JOIN `tabPlanning sheet` sheet ON item.parent = sheet.name
+		WHERE sheet.name IS NULL
+		{extra}
+	""", params, as_dict=True)
+	
+	if not orphans:
+		return {"status": "success", "count": 0, "message": "No orphaned items found"}
+	
+	# 2. Group by party_code and re-home
+	by_party = {}
+	for o in orphans:
+		key = o.party_code or "UNKNOWN"
+		if key not in by_party:
+			by_party[key] = []
+		by_party[key].append(o)
+	
+	rescued = 0
+	for party, items in by_party.items():
+		# Find or create a draft sheet for this party on target_date
+		existing = frappe.db.get_value("Planning sheet", {
+			"party_code": party,
+			"ordered_date": target_date,
+			"docstatus": ["<", 2]
+		}, "name")
+		
+		if existing:
+			sheet_name = existing
+		else:
+			first = items[0]
+			new_sheet = frappe.new_doc("Planning sheet")
+			new_sheet.ordered_date = target_date
+			if frappe.db.has_column("Planning sheet", "custom_planned_date"):
+				new_sheet.custom_planned_date = target_date
+			new_sheet.party_code = party
+			new_sheet.customer = first.get("customer") or ""
+			new_sheet.sales_order = first.get("sales_order") or ""
+			new_sheet.save(ignore_permissions=True)
+			sheet_name = new_sheet.name
+		
+		# Reparent all orphaned items to this sheet
+		for item in items:
+			frappe.db.sql("""
+				UPDATE `tabPlanning Sheet Item`
+				SET parent = %s, parenttype='Planning sheet', parentfield='items'
+				WHERE name = %s
+			""", (sheet_name, item.name))
+			rescued += 1
+	
+	frappe.db.commit()
+	return {"status": "success", "count": rescued, "message": f"Rescued {rescued} orphaned items to {target_date}"}
 
 
 @frappe.whitelist()
