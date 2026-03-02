@@ -252,8 +252,8 @@ const COLOR_GROUPS = [
   { keywords: ["BLACK"], priority: 98, hex: "#000000" },
 
   // 9. BROWNS & BEIGES (Moved to End as per Transition Rule)
-  { keywords: ["BEIGE", "LIGHT BEIGE", "CREAM"], priority: 99, hex: "#F5F5DC" },
-  { keywords: ["DARK BEIGE", "KHAKI", "SAND"], priority: 99, hex: "#C2B280" }, 
+  { keywords: ["DARK BEIGE", "KHAKI", "SAND"], priority: 99, hex: "#C2B280" }, // dark beige first (bridge after black/red)
+  { keywords: ["BEIGE", "LIGHT BEIGE", "CREAM"], priority: 100, hex: "#F5F5DC" },
   { keywords: ["BROWN", "CHOCOLATE", "COFFEE"], priority: 90, hex: "#A52A2A" }, 
 ];
 

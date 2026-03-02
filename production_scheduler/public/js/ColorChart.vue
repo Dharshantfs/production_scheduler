@@ -611,10 +611,10 @@ const COLOR_GROUPS = [
   // ── 12. BEIGE (95-96) — mandatory AFTER BLACK ────────────────────
   // Machine MUST run BEIGE after BLACK (and other heavy dark colors)
   // to recover/transition before next cycle. BEIGE is the last step.
-  { keywords: ["LIGHT BEIGE"],           priority: 95, hex: "#F5F5DC" },
-  { keywords: ["DARK BEIGE"],            priority: 96, hex: "#C2B280" }, // before BEIGE
-  { keywords: ["KHAKI", "SAND"],         priority: 96, hex: "#C2B280" },
-  { keywords: ["BEIGE"],                 priority: 95, hex: "#F5F5DC" },
+  { keywords: ["DARK BEIGE"],            priority: 95, hex: "#C2B280" }, // dark beige first (bridge after black/red)
+  { keywords: ["KHAKI", "SAND"],         priority: 95, hex: "#C2B280" },
+  { keywords: ["LIGHT BEIGE"],           priority: 96, hex: "#F5F5DC" },
+  { keywords: ["BEIGE"],                 priority: 96, hex: "#F5F5DC" },
 ];
 
 const GAP_THRESHOLD = 0; // any color priority difference triggers mix roll

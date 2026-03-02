@@ -455,11 +455,8 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 	item = frappe.get_doc("Planning Sheet Item", item_name)
 	parent_sheet = frappe.get_doc("Planning sheet", item.parent)
 	
-	# 2. Check Docstatus (Requirement: Cannot move submitted/cancelled)
-	if parent_sheet.docstatus != 0:
-		frappe.throw(_("Cannot move items from a {} Planning Sheet.").format(
-			"Submitted" if parent_sheet.docstatus == 1 else "Cancelled"
-		))
+	# 2. Docstatus check — allow movement even from submitted sheets
+	# (user requested free movement; we use raw SQL to bypass Frappe immutability)
 
 	item_wt_tons = flt(item.qty) / 1000.0
 	quality = item.custom_quality or ""
@@ -647,23 +644,32 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 			new_sheet.insert(ignore_permissions=True)
 			new_parent_name = new_sheet.name
 		
-		# Reparent the item
+		# Reparent the item using raw SQL (works even for submitted sheets)
+		frappe.db.sql("""
+			UPDATE `tabPlanning Sheet Item`
+			SET parent = %s, parentfield = 'items'
+			WHERE name = %s
+		""", (new_parent_name, item_doc.name))
 		item_doc.parent = new_parent_name
-		item_doc.save(ignore_permissions=True)
 		
 		# Clean up source parent if empty
 		if frappe.db.count("Planning Sheet Item", {"parent": source_parent.name}) == 0:
 			try:
-				frappe.delete_doc("Planning sheet", source_parent.name, ignore_permissions=True)
+				frappe.delete_doc("Planning sheet", source_parent.name, ignore_permissions=True, force=True)
 			except Exception:
 				pass  # Ignore if linked to Production Plan
 
 	# 2. Handle IDX Shifting if inserting at specific position
-	# Update Item unit and parent first
-	item_doc.unit = unit
+	# Update Item unit and parent first — use raw SQL to bypass docstatus immutability
+	update_fields = {"unit": unit}
 	if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-		item_doc.custom_item_planned_date = target_date
-	item_doc.save(ignore_permissions=True)
+		update_fields["custom_item_planned_date"] = target_date
+	set_clause = ", ".join([f"`{k}` = %s" for k in update_fields.keys()])
+	frappe.db.sql(
+		f"UPDATE `tabPlanning Sheet Item` SET {set_clause} WHERE name = %s",
+		list(update_fields.values()) + [item_doc.name]
+	)
+	item_doc.unit = unit
 	
 	if new_idx is not None:
 		try:
@@ -1910,10 +1916,11 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 
 					# 1. If we just finished a very dark color, try to insert a Beige/cream buffer next
 					if dark_bridge_pending and any(i["colorKey"] in BEIGE_COLORS for i in remaining):
-						# Choose the lightest beige available by COLOR_PRIORITY
+						# Choose the DARKEST beige available (dark beige first to reduce mix waste)
 						beige_options = sorted(
 							{ i["colorKey"] for i in remaining if i["colorKey"] in BEIGE_COLORS },
-							key=color_sort_key
+							key=color_sort_key,
+							reverse=True
 						)
 						chosen_color = beige_options[0]
 						dark_bridge_pending = False
