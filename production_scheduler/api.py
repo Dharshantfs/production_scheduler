@@ -631,11 +631,16 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 			new_parent_name = existing[0][0]
 			# Ensure the existing sheet has custom_planned_date set to target_date
 			if has_col:
-				frappe.db.set_value("Planning sheet", new_parent_name, "custom_planned_date", target_date)
+				frappe.db.sql(
+					"UPDATE `tabPlanning sheet` SET custom_planned_date = %s WHERE name = %s",
+					(target_date, new_parent_name)
+				)
 		else:
 			# Create new sheet for the target date
 			new_sheet = frappe.copy_doc(source_parent)
 			new_sheet.name = None
+			new_sheet.docstatus = 0  # Reset docstatus — copied doc must be Draft
+			new_sheet.amended_from = None
 			new_sheet.set("items", []) # clear items
 			if has_col:
 				new_sheet.custom_planned_date = target_date

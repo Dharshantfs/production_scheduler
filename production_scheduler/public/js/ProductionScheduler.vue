@@ -591,6 +591,9 @@ async function initSortable() {
         if (!isSameUnit || evt.newIndex !== evt.oldIndex) {
             setTimeout(async () => {
             try {
+                // Use the card's own date (crucial for weekly/monthly views)
+                const cardDate = itemEl.dataset.date || filterOrderDate.value;
+
                 // ── MULTI-SELECT DRAG: move ALL selected items if dragged card is selected ──
                 if (selectedItems.value.length > 0 && (selectedItems.value.includes(itemName) || !isSameUnit)) {
                     // Collect all selected item names (include the dragged one if not already)
@@ -602,12 +605,14 @@ async function initSortable() {
                         name: name,
                         unit: newUnit,
                         index: newIndex + idx,
-                        force_move: 0
+                        force_move: 1
                     }));
                     
                     const res = await frappe.call({
                         method: "production_scheduler.api.update_items_bulk",
-                        args: { items: JSON.stringify(bulkItems) }
+                        args: { items: JSON.stringify(bulkItems) },
+                        freeze: true,
+                        freeze_message: `Moving ${itemsToMove.length} orders...`
                     });
                     
                     if (res.message && res.message.status === 'success') {
@@ -615,6 +620,8 @@ async function initSortable() {
                         getUnitSortConfig(newUnit).mode = 'manual';
                         if (!isSameUnit) getUnitSortConfig(oldUnit).mode = 'manual';
                         clearSelection();
+                    } else {
+                        frappe.show_alert({ message: "Some orders could not be moved", indicator: "orange" });
                     }
                     await fetchData();
                     return;
@@ -631,7 +638,7 @@ async function initSortable() {
                         args: {
                             item_name: itemName, 
                             unit: newUnit,
-                            date: filterOrderDate.value,
+                            date: cardDate,
                             index: newIndex,
                             force_move: force,
                             perform_split: split
