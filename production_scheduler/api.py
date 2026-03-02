@@ -1,4 +1,4 @@
-import frappe
+﻿import frappe
 from frappe import _
 from frappe.utils import getdate, flt, cint
 import json
@@ -1740,8 +1740,10 @@ COLOR_ORDER_LIST = [
 	"CHOCOLATE BROWN 2.0","CHOCOLATE BROWN","CHOCOLATE BLACK",
 	"BROWN 3.0 DARK COFFEE","BROWN 2.0 DARK","BROWN 1.0",
 	"CHIKOO 1.0","CHIKOO 2.0",
+	"BLACK MIX","COLOR MIX","BLACK",
+	# Beige colors moved to the VERY END so they never run before black/red in normal light-to-dark sort
 	"BEIGE 1.0","BEIGE 2.0","BEIGE 3.0","BEIGE 4.0","BEIGE 5.0",
-	"LIGHT BEIGE","DARK BEIGE","BEIGE MIX","BLACK MIX","COLOR MIX","BLACK",
+	"DARK BEIGE","BEIGE MIX","LIGHT BEIGE",
 ]
 COLOR_PRIORITY = {c: i for i, c in enumerate(COLOR_ORDER_LIST)}
 
@@ -1962,7 +1964,15 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 								continue
 
 							# Colors available specifically in this "current" quality
-							pool_colors = sorted(list({i["colorKey"] for i in qual_pool}), key=color_sort_key)
+							# Filter out Beige colors from normal pool so they don't jump ahead of Black/Red
+							pool_colors = sorted(
+								[i["colorKey"] for i in qual_pool if i["colorKey"] not in BEIGE_COLORS], 
+								key=color_sort_key
+							)
+							
+							# If ONLY beige colors are left in this quality, allow them
+							if not pool_colors:
+								pool_colors = sorted([i["colorKey"] for i in qual_pool], key=color_sort_key)
 
 							# Pick the next color from the sorted list (based on light→dark priority)
 							if current_seed_color and current_seed_color in COLOR_PRIORITY:
@@ -2266,9 +2276,14 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         
         if target_sheet_name and target_sheet_name != parent_name:
             target_sheet = frappe.get_doc("Planning sheet", target_sheet_name)
+            # Ensure existing sheet has custom_planned_date synced (fixes invisible orders)
+            if frappe.db.has_column("Planning sheet", "custom_planned_date") and target_sheet.custom_planned_date != target_date:
+                frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_planned_date = %s WHERE name = %s", (target_date, target_sheet.name))
         elif target_sheet_name == parent_name:
             # Already on target date, but maybe unit change requested or date same
             target_sheet = parent_doc
+            if frappe.db.has_column("Planning sheet", "custom_planned_date") and target_sheet.custom_planned_date != target_date:
+                frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_planned_date = %s WHERE name = %s", (target_date, target_sheet.name))
         else:
             target_sheet = frappe.new_doc("Planning sheet")
             target_sheet.ordered_date = target_date
