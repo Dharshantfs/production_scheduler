@@ -473,32 +473,51 @@
             <thead class="bg-gray-100 text-gray-800" style="font-weight: 800;">
                 <tr>
                     <th class="p-2 border" style="width: 80px;">UNIT</th>
-                    <th class="p-2 border" style="width: 120px;">COLOR 1</th>
-                    <th class="p-2 border" style="width: 120px;">COLOR 2</th>
+                    <th class="p-2 border" style="width: 130px;">COLOR 1</th>
+                    <th class="p-2 border" style="width: 130px;">COLOR 2</th>
                     <th class="p-2 border" style="width: 170px;">MIX NAME</th>
                     <th class="p-2 border" style="width: 70px;">GSM</th>
+                    <th class="p-2 border" style="width: 140px;">SHAFT DETAILS</th>
                     <th class="p-2 border" style="width: 100px;">Width (Inches)</th>
-                    <th class="p-2 border" style="width: 120px;">WEIGHT (Kg)</th>
+                    <th class="p-2 border" style="width: 110px;">WEIGHT (Kg)</th>
                     <th class="p-2 border" style="width: 80px; text-align: center;">RECYCLE</th>
                 </tr>
             </thead>
             <tbody>
                 <tr v-for="(mix, idx) in mixRolls" :key="idx" class="border-b hover:bg-gray-50" :style="mix.isRecycle ? 'background-color: #fef3c7;' : ''">
                     <td class="p-2 border font-bold text-gray-700">{{ mix.unit }}</td>
-                    <td class="p-2 border font-bold" :style="{ color: getHexColor(mix.color1) !== '#FFFFFF' ? getHexColor(mix.color1) : '#000', fontSize: '13px' }">{{ mix.color1 }}</td>
-                    <td class="p-2 border font-bold" :style="{ color: getHexColor(mix.color2) !== '#FFFFFF' ? getHexColor(mix.color2) : '#000', fontSize: '13px' }">{{ mix.color2 }}</td>
+                    <!-- COLOR 1 with background badge -->
                     <td class="p-2 border">
-                        <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 font-bold uppercase text-gray-800" style="font-size: 13px;" v-model="mix.mixName" :disabled="mix.isRecycle" :class="mix.isRecycle ? 'bg-yellow-100' : ''" />
+                        <span class="mix-color-badge" :style="getMixColorBadgeStyle(mix.color1)">{{ mix.color1 }}</span>
                     </td>
+                    <!-- COLOR 2 with background badge -->
                     <td class="p-2 border">
-                        <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.gsm" />
+                        <span class="mix-color-badge" :style="getMixColorBadgeStyle(mix.color2)">{{ mix.color2 }}</span>
                     </td>
-                    <td class="p-2 border">
-                        <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.width" />
-                    </td>
-                    <td class="p-2 border text-center">
-                         <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-right font-mono font-bold" style="font-size: 13px;" placeholder="0.0" v-model="mix.kg" />
-                    </td>
+                    <!-- RECYCLE row: merge MIX NAME + GSM + SHAFT + WIDTH + WEIGHT into one cell -->
+                    <template v-if="mix.isRecycle">
+                        <td class="p-2 border text-center font-bold" colspan="5" style="background: #fef3c7; font-size: 15px; letter-spacing: 2px; color: #92400e;">
+                            ♻️ RECYCLE
+                        </td>
+                    </template>
+                    <!-- Normal row: show all fields -->
+                    <template v-else>
+                        <td class="p-2 border">
+                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 font-bold uppercase text-gray-800" style="font-size: 13px;" v-model="mix.mixName" />
+                        </td>
+                        <td class="p-2 border">
+                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.gsm" />
+                        </td>
+                        <td class="p-2 border">
+                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.shaft" placeholder='34" + 42" + 45"' />
+                        </td>
+                        <td class="p-2 border">
+                            <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.width" />
+                        </td>
+                        <td class="p-2 border text-center">
+                            <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-right font-mono font-bold" style="font-size: 13px;" placeholder="0.0" v-model="mix.kg" />
+                        </td>
+                    </template>
                     <td class="p-2 border text-center">
                         <button 
                             @click="mix.isRecycle = !mix.isRecycle; if(mix.isRecycle) { mix._prevMixName = mix.mixName; mix.mixName = 'RECYCLE'; } else { mix.mixName = mix._prevMixName || 'GPKL - GOLD MIX'; }"
@@ -1054,6 +1073,7 @@ const mixRolls = computed(() => {
                     color2: (next.color || "").toUpperCase(),
                     mixName: mixName,
                     gsm: cur.gsm || next.gsm || "",
+                    shaft: "",
                     width: cur.width || next.width || "",
                     kg: "",
                     isRecycle: false,
@@ -1065,6 +1085,39 @@ const mixRolls = computed(() => {
     
     return results;
 });
+
+// Returns inline style for color badge with background color + contrasting text
+function getMixColorBadgeStyle(colorName) {
+    const upper = (colorName || "").toUpperCase().trim();
+    // Find matching color group from COLOR_GROUPS
+    let hex = "#e5e7eb"; // default gray
+    for (const group of COLOR_GROUPS) {
+        for (const keyword of group.keywords) {
+            if (upper.includes(keyword)) {
+                hex = group.hex;
+                break;
+            }
+        }
+        if (hex !== "#e5e7eb") break;
+    }
+    // Calculate luminance to pick text color (white on dark, black on light)
+    const r = parseInt(hex.slice(1,3), 16);
+    const g = parseInt(hex.slice(3,5), 16);
+    const b = parseInt(hex.slice(5,7), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    const textColor = luminance > 0.55 ? "#1a1a1a" : "#ffffff";
+    return {
+        backgroundColor: hex,
+        color: textColor,
+        padding: "3px 8px",
+        borderRadius: "4px",
+        fontWeight: "700",
+        fontSize: "12px",
+        display: "inline-block",
+        border: "1px solid rgba(0,0,0,0.15)",
+        textShadow: luminance > 0.55 ? "none" : "0 1px 2px rgba(0,0,0,0.3)"
+    };
+}
 
 function clearFilters() {
   filterOrderDate.value = frappe.datetime.get_today();
