@@ -509,7 +509,7 @@
                             <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.gsm" />
                         </td>
                         <td class="p-2 border">
-                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.shaft" placeholder='34" + 42" + 45"' />
+                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.shaft" />
                         </td>
                         <td class="p-2 border">
                             <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.width" />
