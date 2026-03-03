@@ -3725,3 +3725,67 @@ def fix_white_orders_planned_date():
         "skipped": skipped,
         "message": f"✅ Updated {updated} white Planning Sheet(s). Skipped {skipped} (color or no items)."
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# MIX ROLL DATA PERSISTENCE
+# ═══════════════════════════════════════════════════════════════════════
+
+@frappe.whitelist()
+def save_mix_roll_data(date_key, entries):
+    """Save mix roll entries to a simple key-value store.
+    date_key: string like '2026-03-03' or '2026-W10' or '2026-03'
+    entries: JSON array of mix roll objects
+    """
+    if isinstance(entries, str):
+        entries = json.loads(entries)
+
+    # Use a simple SQL table to store mix roll data
+    # Create table if not exists
+    frappe.db.sql("""
+        CREATE TABLE IF NOT EXISTS `tabMix Roll Store` (
+            `name` VARCHAR(140) PRIMARY KEY,
+            `date_key` VARCHAR(50) NOT NULL,
+            `data` LONGTEXT,
+            `modified` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY `idx_date_key` (`date_key`)
+        )
+    """)
+
+    existing = frappe.db.sql(
+        "SELECT name FROM `tabMix Roll Store` WHERE date_key = %s", date_key
+    )
+
+    data_json = json.dumps(entries, ensure_ascii=False)
+
+    if existing:
+        frappe.db.sql(
+            "UPDATE `tabMix Roll Store` SET data = %s, modified = NOW() WHERE date_key = %s",
+            (data_json, date_key)
+        )
+    else:
+        import hashlib
+        name = hashlib.md5(date_key.encode()).hexdigest()[:10]
+        frappe.db.sql(
+            "INSERT INTO `tabMix Roll Store` (name, date_key, data, modified) VALUES (%s, %s, %s, NOW())",
+            (name, date_key, data_json)
+        )
+
+    frappe.db.commit()
+    return {"status": "ok"}
+
+
+@frappe.whitelist()
+def get_mix_roll_data(date_key):
+    """Load saved mix roll entries for a given date key."""
+    try:
+        frappe.db.sql("SELECT 1 FROM `tabMix Roll Store` LIMIT 1")
+    except Exception:
+        return []
+
+    rows = frappe.db.sql(
+        "SELECT data FROM `tabMix Roll Store` WHERE date_key = %s", date_key
+    )
+    if rows and rows[0][0]:
+        return json.loads(rows[0][0])
+    return []

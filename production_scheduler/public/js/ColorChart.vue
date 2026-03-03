@@ -503,24 +503,24 @@
                     <!-- Normal row: show all fields -->
                     <template v-else>
                         <td class="p-2 border">
-                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 font-bold uppercase text-gray-800" style="font-size: 13px;" v-model="mix.mixName" />
+                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 font-bold uppercase text-gray-800" style="font-size: 13px;" v-model="mix.mixName" @input="debouncedSaveMixRolls()" />
                         </td>
                         <td class="p-2 border">
-                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.gsm" />
+                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.gsm" @input="debouncedSaveMixRolls()" />
                         </td>
                         <td class="p-2 border">
-                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.shaft" />
+                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.shaft" @input="debouncedSaveMixRolls()" />
                         </td>
                         <td class="p-2 border">
-                            <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.width" />
+                            <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.width" @input="debouncedSaveMixRolls()" />
                         </td>
                         <td class="p-2 border text-center">
-                            <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-right font-mono font-bold" style="font-size: 13px;" placeholder="0.0" v-model="mix.kg" />
+                            <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-right font-mono font-bold" style="font-size: 13px;" placeholder="0.0" v-model="mix.kg" @input="debouncedSaveMixRolls()" />
                         </td>
                     </template>
                     <td class="p-2 border text-center">
                         <button 
-                            @click="mix.isRecycle = !mix.isRecycle; if(mix.isRecycle) { mix._prevMixName = mix.mixName; mix.mixName = 'RECYCLE'; } else { mix.mixName = mix._prevMixName || 'GPKL - GOLD MIX'; }"
+                            @click="toggleRecycle(mix)"
                             :class="mix.isRecycle ? 'recycle-btn-active' : 'recycle-btn'"
                             :title="mix.isRecycle ? 'Click to undo Recycle' : 'Click to mark as Recycle'"
                         >
@@ -1031,15 +1031,25 @@ const filteredData = computed(() => {
   return data;
 });
 
-// Calculate Mix Rolls Based on Current Filters
-const mixRolls = computed(() => {
+// ═══════════════════════════════════════════════════════════════════════
+// MIX ROLL — with backend persistence
+// ═══════════════════════════════════════════════════════════════════════
+const mixRolls = ref([]);
+let _mixSaveTimeout = null;
+
+// Unique key for the current date context (daily / weekly / monthly)
+function getMixRollDateKey() {
+    if (viewScope.value === 'monthly') return 'month-' + (filterMonth.value || 'none');
+    if (viewScope.value === 'weekly') return 'week-' + (filterWeek.value || 'none');
+    return 'day-' + (filterOrderDate.value || 'none');
+}
+
+// Build mix rolls from current filteredData
+function _buildRawMixRolls() {
     let data = filteredData.value || [];
     const results = [];
-    
-    // Use the actual visible units
     const unitsList = visibleUnits.value;
-    
-    // Simple unit sort helper
+
     function sortUnitItems(items) {
         return items.sort((a, b) => {
             const pA = a.color ? getColorPriority(a.color) : 999;
@@ -1061,13 +1071,12 @@ const mixRolls = computed(() => {
             const cur = uItems[i];
             const next = uItems[i+1];
             if ((cur.color || "").toUpperCase() !== (next.color || "").toUpperCase()) {
-                let mixName = "RECYCLE"; // Default
+                let mixName = "RECYCLE";
                 const q = (cur.quality || "").toUpperCase();
                 if (q && q !== "RECYCLE") mixName = `GPKL - ${q} MIX`;
                 else if (!q) mixName = "COLOURMIX";
-                
-                // Just as a UI feature, provide empty kg ref
-                results.push(reactive({
+
+                results.push({
                     unit: unit,
                     color1: (cur.color || "").toUpperCase(),
                     color2: (next.color || "").toUpperCase(),
@@ -1078,13 +1087,105 @@ const mixRolls = computed(() => {
                     kg: "",
                     isRecycle: false,
                     _prevMixName: mixName
-                }));
+                });
             }
         }
     });
-    
     return results;
-});
+}
+
+// Generate a unique key for each mix roll row: unit|color1|color2
+function _mixKey(m) {
+    return `${m.unit}|${m.color1}|${m.color2}`;
+}
+
+// Rebuild mix rolls and merge saved state from backend
+async function rebuildMixRolls() {
+    const raw = _buildRawMixRolls();
+    const dateKey = getMixRollDateKey();
+
+    // Load saved state from backend
+    let saved = [];
+    try {
+        const r = await frappe.call({
+            method: "production_scheduler.api.get_mix_roll_data",
+            args: { date_key: dateKey },
+            async: true
+        });
+        saved = r.message || [];
+    } catch(e) {
+        console.warn("Could not load saved mix roll data:", e);
+    }
+
+    // Build a lookup from saved entries
+    const savedMap = {};
+    saved.forEach(s => {
+        const key = _mixKey(s);
+        savedMap[key] = s;
+    });
+
+    // Merge: for each computed row, if a saved entry exists, overlay its editable fields
+    const merged = raw.map(row => {
+        const key = _mixKey(row);
+        const s = savedMap[key];
+        if (s) {
+            row.mixName = s.isRecycle ? "RECYCLE" : (s.mixName || row.mixName);
+            row.gsm = s.gsm || row.gsm;
+            row.shaft = s.shaft || "";
+            row.width = s.width || row.width;
+            row.kg = s.kg || "";
+            row.isRecycle = !!s.isRecycle;
+            row._prevMixName = s._prevMixName || row._prevMixName;
+        }
+        return reactive(row);
+    });
+
+    mixRolls.value = merged;
+}
+
+// Save current mix roll state to backend
+function saveMixRolls() {
+    const dateKey = getMixRollDateKey();
+    const entries = mixRolls.value.map(m => ({
+        unit: m.unit,
+        color1: m.color1,
+        color2: m.color2,
+        mixName: m.mixName,
+        gsm: m.gsm,
+        shaft: m.shaft,
+        width: m.width,
+        kg: m.kg,
+        isRecycle: m.isRecycle,
+        _prevMixName: m._prevMixName
+    }));
+
+    frappe.call({
+        method: "production_scheduler.api.save_mix_roll_data",
+        args: { date_key: dateKey, entries: JSON.stringify(entries) },
+        async: true
+    });
+}
+
+function debouncedSaveMixRolls() {
+    if (_mixSaveTimeout) clearTimeout(_mixSaveTimeout);
+    _mixSaveTimeout = setTimeout(() => saveMixRolls(), 600);
+}
+
+function toggleRecycle(mix) {
+    mix.isRecycle = !mix.isRecycle;
+    if (mix.isRecycle) {
+        mix._prevMixName = mix.mixName;
+        mix.mixName = "RECYCLE";
+    } else {
+        mix.mixName = mix._prevMixName || "GPKL - GOLD MIX";
+    }
+    saveMixRolls();
+}
+
+// Watch filteredData changes → rebuild mix rolls with saved state
+watch(filteredData, () => {
+    rebuildMixRolls();
+}, { deep: false });
 
 // Returns inline style for color badge with background color + contrasting text
 function getMixColorBadgeStyle(colorName) {
