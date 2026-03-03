@@ -469,34 +469,44 @@
         <h3 class="text-sm font-bold mb-4 text-gray-800 flex items-center">
             <span class="mr-2">♻️</span> MIX ROLL AREA (Manual Entry)
         </h3>
-        <table class="w-full text-xs text-left border-collapse border border-gray-200">
-            <thead class="bg-gray-100 text-gray-700">
+        <table class="w-full text-left border-collapse border border-gray-200" style="font-size: 13px;">
+            <thead class="bg-gray-100 text-gray-800" style="font-weight: 800;">
                 <tr>
-                    <th class="p-2 border">UNIT</th>
-                    <th class="p-2 border">COLOR 1</th>
-                    <th class="p-2 border">COLOR 2</th>
-                    <th class="p-2 border">MIX NAME</th>
-                    <th class="p-2 border">GSM</th>
-                    <th class="p-2 border">WIDTH</th>
-                    <th class="p-2 border w-32">WEIGHT (Kg)</th>
+                    <th class="p-2 border" style="width: 80px;">UNIT</th>
+                    <th class="p-2 border" style="width: 120px;">COLOR 1</th>
+                    <th class="p-2 border" style="width: 120px;">COLOR 2</th>
+                    <th class="p-2 border" style="width: 170px;">MIX NAME</th>
+                    <th class="p-2 border" style="width: 70px;">GSM</th>
+                    <th class="p-2 border" style="width: 100px;">Width (Inches)</th>
+                    <th class="p-2 border" style="width: 120px;">WEIGHT (Kg)</th>
+                    <th class="p-2 border" style="width: 80px; text-align: center;">RECYCLE</th>
                 </tr>
             </thead>
             <tbody>
-                <tr v-for="(mix, idx) in mixRolls" :key="idx" class="border-b hover:bg-gray-50">
-                    <td class="p-2 border font-semibold text-gray-600">{{ mix.unit }}</td>
-                    <td class="p-2 border font-bold" :style="{ color: getHexColor(mix.color1) !== '#FFFFFF' ? getHexColor(mix.color1) : '#000' }">{{ mix.color1 }}</td>
-                    <td class="p-2 border font-bold" :style="{ color: getHexColor(mix.color2) !== '#FFFFFF' ? getHexColor(mix.color2) : '#000' }">{{ mix.color2 }}</td>
+                <tr v-for="(mix, idx) in mixRolls" :key="idx" class="border-b hover:bg-gray-50" :style="mix.isRecycle ? 'background-color: #fef3c7;' : ''">
+                    <td class="p-2 border font-bold text-gray-700">{{ mix.unit }}</td>
+                    <td class="p-2 border font-bold" :style="{ color: getHexColor(mix.color1) !== '#FFFFFF' ? getHexColor(mix.color1) : '#000', fontSize: '13px' }">{{ mix.color1 }}</td>
+                    <td class="p-2 border font-bold" :style="{ color: getHexColor(mix.color2) !== '#FFFFFF' ? getHexColor(mix.color2) : '#000', fontSize: '13px' }">{{ mix.color2 }}</td>
                     <td class="p-2 border">
-                        <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 font-bold uppercase text-gray-800" v-model="mix.mixName" />
+                        <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 font-bold uppercase text-gray-800" style="font-size: 13px;" v-model="mix.mixName" :disabled="mix.isRecycle" :class="mix.isRecycle ? 'bg-yellow-100' : ''" />
                     </td>
                     <td class="p-2 border">
-                        <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-semibold text-gray-600" v-model="mix.gsm" />
+                        <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.gsm" />
                     </td>
                     <td class="p-2 border">
-                        <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center" v-model="mix.width" />
+                        <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.width" />
                     </td>
                     <td class="p-2 border text-center">
-                         <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-right font-mono" placeholder="0.0" v-model="mix.kg" />
+                         <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-right font-mono font-bold" style="font-size: 13px;" placeholder="0.0" v-model="mix.kg" />
+                    </td>
+                    <td class="p-2 border text-center">
+                        <button 
+                            @click="mix.isRecycle = !mix.isRecycle; if(mix.isRecycle) { mix._prevMixName = mix.mixName; mix.mixName = 'RECYCLE'; } else { mix.mixName = mix._prevMixName || 'GPKL - GOLD MIX'; }"
+                            :class="mix.isRecycle ? 'recycle-btn-active' : 'recycle-btn'"
+                            :title="mix.isRecycle ? 'Click to undo Recycle' : 'Click to mark as Recycle'"
+                        >
+                            {{ mix.isRecycle ? '♻️ YES' : '⬜ No' }}
+                        </button>
                     </td>
                 </tr>
             </tbody>
@@ -1045,7 +1055,9 @@ const mixRolls = computed(() => {
                     mixName: mixName,
                     gsm: cur.gsm || next.gsm || "",
                     width: cur.width || next.width || "",
-                    kg: ""
+                    kg: "",
+                    isRecycle: false,
+                    _prevMixName: mixName
                 }));
             }
         }
@@ -4861,4 +4873,32 @@ function updateRescueSelection(d) {
     border: 1px solid rgba(0,0,0,0.1);
     flex-shrink: 0;
 }
+
+/* Recycle toggle buttons */
+.recycle-btn {
+    padding: 4px 10px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: #f9fafb;
+    color: #6b7280;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.recycle-btn:hover {
+    background: #fef3c7;
+    border-color: #f59e0b;
+}
+.recycle-btn-active {
+    padding: 4px 10px;
+    border: 2px solid #16a34a;
+    border-radius: 6px;
+    background: #dcfce7;
+    color: #166534;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+.bg-yellow-100 { background-color: #fef3c7 !important; }
 </style>
