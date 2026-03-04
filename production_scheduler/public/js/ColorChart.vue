@@ -2083,12 +2083,33 @@ function getItemsForDay(dateStr, unit) {
     if (!filteredData.value) return [];
     
     try {
-       // Filter by Unit and Exact Date
-       // Handle "Mixed" unit as well
-       let dayItems = filteredData.value.filter(d => 
-           (d.unit || "Mixed") === unit && 
-           d.orderDate === dateStr
-       );
+       // Normalize dateStr to YYYY-MM-DD
+       const normalizedDateStr = dateStr ? dateStr.trim() : "";
+       
+       // Filter by Unit and Exact Date (with date normalization)
+       let dayItems = filteredData.value.filter(d => {
+           if ((d.unit || "Mixed") !== unit) return false;
+           // Normalize item's orderDate for comparison
+           const itemDate = (d.orderDate || "").trim();
+           // Try exact match first
+           if (itemDate === normalizedDateStr) return true;
+           // Try matching just the date part (in case backend returns datetime)
+           if (itemDate && itemDate.substring(0, 10) === normalizedDateStr) return true;
+           return false;
+       });
+       
+       // Debug: log when plan is not Default and no items found
+       if (selectedPlan.value && selectedPlan.value !== 'Default' && dayItems.length === 0) {
+           // Only log once per unit per day to avoid spam
+           const allForUnit = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
+           if (allForUnit.length > 0 && !getItemsForDay._logged) {
+               console.warn(`[ColorChart Debug] Plan="${selectedPlan.value}", Unit="${unit}", DateStr="${normalizedDateStr}"`,
+                   `filteredData has ${allForUnit.length} items for this unit.`,
+                   `Sample orderDates:`, allForUnit.slice(0, 5).map(d => d.orderDate));
+               getItemsForDay._logged = true;
+               setTimeout(() => { getItemsForDay._logged = false; }, 2000);
+           }
+       }
        
        // Force sorting to ALWAYS strictly be Light -> Dark 
        const config = getUnitSortConfig(unit);
