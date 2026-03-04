@@ -138,9 +138,6 @@
             <div class="cc-header-stats">
                 <span class="cc-stat-weight" :class="getUnitCapacityStatus(unit).class">
                 {{ getUnitTotal(unit).toFixed(2) }} / {{ UNIT_TONNAGE_LIMITS[unit] }}T
-                <span v-if="getHiddenWhiteTotal(unit) > 0" style="font-size:10px; font-weight:400; color:#64748b; display:block;">
-                    (Inc. {{ getHiddenWhiteTotal(unit).toFixed(2) }}T White)
-                </span>
                 </span>
                 <div v-if="getUnitCapacityStatus(unit).warning" class="text-xs text-red-600 font-bold">
                 {{ getUnitCapacityStatus(unit).warning }}
@@ -1387,11 +1384,15 @@ function getSortLabel(unit) {
     return 'Color Sort';
 }
 
-// Capacity Helper - Uses RAW DATA (Correct!) to include Hidden White Orders
 function getUnitTotal(unit) {
-  // Use rawData.value to ensure hidden orders (White) are counted in capacity
   return rawData.value
-    .filter((d) => (d.unit || "Mixed") === unit)
+    .filter((d) => {
+        if ((d.unit || "Mixed") !== unit) return false;
+        const colorUpper = (d.color || "").toUpperCase();
+        if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return true;
+        if (EXCLUDED_WHITES.some(ex => colorUpper.includes(ex))) return false;
+        return true;
+    })
     .reduce((sum, d) => sum + d.qty, 0) / 1000;
 }
 
