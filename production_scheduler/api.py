@@ -2139,12 +2139,13 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
 					)
 					continue
 
-			# --- RE-PARENT the item to target sheet (Fixing duplication) ---
-			frappe.db.set_value("Planning Sheet Item", name, {
-				"parent": target_sheet_name,
-				"parenttype": "Planning sheet",
-				"parentfield": "items"
-			})
+			# --- RE-PARENT the item to target sheet via raw SQL ---
+			# (frappe.db.set_value fails on children of submitted docs)
+			frappe.db.sql("""
+				UPDATE `tabPlanning Sheet Item`
+				SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items'
+				WHERE name = %s
+			""", (target_sheet_name, name))
 			moved += 1
 
 		except Exception as e:
