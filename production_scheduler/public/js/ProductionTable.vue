@@ -60,6 +60,7 @@
                         <th style="width: 80px;">DAY</th>
                         <th style="width: 100px;">PARTY CODE</th>
                         <th style="width: 150px;">PARTY NAME</th>
+                        <th style="width: 120px;">PLAN CODE</th>
                         <th style="width: 80px;">QUALITY</th>
                         <th style="width: 100px;">COLOUR</th>
                         <th style="width: 80px;">GSM</th>
@@ -81,6 +82,7 @@
                                 
                                 <td class="cell-center">{{ item.partyCode }}</td>
                                 <td>{{ item.customer }}</td>
+                                <td class="cell-center font-mono font-bold" style="font-size:11px; color:#4f46e5;">{{ item.planCode }}</td>
                                 <td class="cell-center">{{ item.quality }}</td>
                                 <td class="cell-center font-bold">{{ item.color }}</td>
                                 <td class="cell-center">{{ item.gsm }}</td>
@@ -388,6 +390,7 @@ async function fetchData() {
           partyCode: d.partyCode || d.party_code || "",
           itemName: d.itemName || d.item_name || "",
           orderDate: d.orderDate || d.ordered_date || "",
+          planCode: d.custom_plan_code || "",
         }));
       } catch (e) {
         frappe.msgprint("Error loading plan data");

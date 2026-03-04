@@ -387,6 +387,63 @@ def get_preferred_unit(quality):
 	if q_up in UNIT_QUALITY_MAP.get("Unit 4", []): return "Unit 4"
 	return "Unit 1"
 
+def generate_plan_code(date_str, unit, plan_name):
+	"""
+	Generates a readable plan code: {YY}{MonthLetter}{Unit}-{PlanName}
+	e.g. 26CU1-PLAN 1
+	"""
+	if not str(date_str) or not plan_name:
+		return ""
+	
+	try:
+		d = frappe.utils.getdate(str(date_str))
+		yy = str(d.year)[-2:]
+		# Month letters mapping (A-L)
+		month_letters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"]
+		month_char = month_letters[d.month - 1]
+		
+		# Unit translation
+		if unit == "Unit 1": u_code = "U1"
+		elif unit == "Unit 2": u_code = "U2"
+		elif unit == "Unit 3": u_code = "U3"
+		elif unit == "Unit 4": u_code = "U4"
+		else: u_code = "MAIN"
+
+		# Strip month prefix from plan name ("Mar-26 PLAN 1" -> "PLAN 1")
+		import re
+		clean_plan = re.sub(r'^[A-Z][a-z]{2}-\d{2}\s+', '', plan_name)
+		
+		return f"{yy}{month_char}{u_code}-{clean_plan}"
+	except Exception:
+		return ""
+
+def update_sheet_plan_codes(sheet_doc):
+	"""
+	Calculates and sets the `custom_plan_code` for each item, and aggregates them on the header.
+	Must be called right before saving a sheet or after manual SQL updates.
+	"""
+	if not frappe.db.has_column("Planning Sheet Item", "custom_plan_code"):
+		return
+	
+	sheet_date = sheet_doc.get("custom_planned_date") or sheet_doc.get("ordered_date")
+	# Look at PB plan if it exists, otherwise rely on CC plan
+	active_plan = sheet_doc.get("custom_pb_plan_name") or sheet_doc.get("custom_plan_name") or "Default"
+	
+	unique_codes = set()
+	
+	for item in sheet_doc.get("items", []):
+		item_date = item.get("custom_item_planned_date") or sheet_date
+		item_unit = item.get("unit") or "MAIN"
+		
+		code = generate_plan_code(item_date, item_unit, active_plan)
+		item.custom_plan_code = code
+		if code:
+			unique_codes.add(code)
+			
+	# Update parent custom field if it exists
+	if frappe.db.has_column("Planning sheet", "custom_plan_code"):
+		sheet_doc.custom_plan_code = ", ".join(sorted(unique_codes))
+
 @frappe.whitelist()
 def update_sequence(items):
 	"""
@@ -824,7 +881,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		items = frappe.db.sql(f"""
 			SELECT 
 				i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
-				i.color, i.custom_quality as quality, i.gsm, i.idx,
+				i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
 				{so_item_col} {split_col}
 				p.name as planningSheet, p.party_code as partyCode, p.customer,
 				p.ordered_date, p.dod, p.sales_order as salesOrder
@@ -899,7 +956,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		items = frappe.db.sql(f"""
 			SELECT
 				i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
-				i.color, i.custom_quality as quality, i.gsm, i.idx,
+				i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
 				{so_item_col} {split_col}
 				p.name as planningSheet, p.party_code as partyCode, p.customer,
 				p.ordered_date, p.dod, p.sales_order as salesOrder,
@@ -1154,6 +1211,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				"unit": unit,
 				"planName": sheet.get("custom_plan_name") or "Default",
 				"pbPlanName": sheet.get("custom_pb_plan_name") or "",
+				"planCode": item.get("custom_plan_code") or "",
 				"ordered_date": str(sheet.ordered_date) if sheet.ordered_date else "",
 				"planned_date": str(sheet.custom_planned_date) if sheet.get("custom_planned_date") else "",
 				"dod": str(sheet.dod) if sheet.dod else "",
@@ -1543,6 +1601,32 @@ def create_plan_name_field():
 			WHERE custom_plan_name IS NULL OR custom_plan_name = ''
 		""")
 		frappe.db.commit()
+		
+	# Create Plan Code custom fields for Tracking Code logic
+	if not frappe.db.exists('Custom Field', 'Planning sheet-custom_plan_code'):
+		cf4 = frappe.get_doc({
+			"doctype": "Custom Field",
+			"dt": "Planning sheet",
+			"fieldname": "custom_plan_code",
+			"label": "Plan Code",
+			"fieldtype": "Data",
+			"read_only": 1,
+			"insert_after": "custom_pb_plan_name"
+		})
+		cf4.insert(ignore_permissions=True)
+		
+	if not frappe.db.exists('Custom Field', 'Planning Sheet Item-custom_plan_code'):
+		cf5 = frappe.get_doc({
+			"doctype": "Custom Field",
+			"dt": "Planning Sheet Item",
+			"fieldname": "custom_plan_code",
+			"label": "Plan Code",
+			"fieldtype": "Data",
+			"read_only": 1,
+			"insert_after": "color",
+			"in_list_view": 1
+		})
+		cf5.insert(ignore_permissions=True)
 	
 	return {"status": "success"}
 
@@ -2585,7 +2669,7 @@ def create_planning_sheet_from_so(doc):
         ps.custom_pb_plan_name = pb_plan
 
         _populate_planning_sheet_items(ps, doc)
-
+        update_sheet_plan_codes(ps) # Call new helper
         ps.flags.ignore_permissions = True
         ps.insert()
         frappe.db.commit()
@@ -2738,7 +2822,7 @@ def create_planning_sheets_bulk(sales_orders):
             ps.planning_status = "Draft"
             
             _populate_planning_sheet_items(ps, doc)
-            
+            update_sheet_plan_codes(ps) # Call new helper
             ps.insert(ignore_permissions=True)
                 
             ps.insert(ignore_permissions=True)
@@ -3175,13 +3259,16 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 				WHERE name = %s
 			""", (pb_sheet_name, name))
 
-			# Also set item-level planned date for consistency
+			# Also set item-level planned date + plan code for consistency
 			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+				# Determine new plan code
+				new_plan_code = generate_plan_code(effective_date, unit, pb_plan_name)
+				
 				frappe.db.sql("""
 					UPDATE `tabPlanning Sheet Item`
-					SET custom_item_planned_date = %s
+					SET custom_item_planned_date = %s, custom_plan_code = %s
 					WHERE name = %s
-				""", (effective_date, name))
+				""", (effective_date, new_plan_code, name))
 
 			# ── Update idx for sequence ordering on board ──
 			if sequence_no is not None:
@@ -3544,6 +3631,8 @@ def auto_create_planning_sheet(doc, method=None):
     ps.custom_pb_plan_name = ""
 
     _populate_planning_sheet_items(ps, doc)
+    
+    update_sheet_plan_codes(ps)
 
     ps.flags.ignore_permissions = True
     ps.insert()
@@ -3659,6 +3748,8 @@ def regenerate_planning_sheet(so_name):
     ps.custom_pb_plan_name = ""
 
     _populate_planning_sheet_items(ps, doc)
+    
+    update_sheet_plan_codes(ps)
 
     ps.flags.ignore_permissions = True
     ps.insert()

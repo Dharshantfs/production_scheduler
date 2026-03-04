@@ -64,6 +64,15 @@
           <option value="Finalized">Finalized</option>
         </select>
       </div>
+
+      <!-- NEW: dynamically computed Plan Code indicator -->
+      <div v-if="derivedPlanCode" class="cc-filter-item" style="margin-left:8px; border-left: 1px solid #e5e7eb; padding-left: 12px; justify-content: center;">
+          <label style="color:#6366f1; font-weight:bold;">Plan Code</label>
+          <div style="font-family: monospace; font-size:14px; font-weight:800; color:#1e1b4b; background:#e0e7ff; padding: 4px 10px; border-radius: 6px; border: 1px solid #c7d2fe; letter-spacing: 0.5px;">
+              {{ derivedPlanCode }}
+          </div>
+      </div>
+
       <div class="cc-filter-item" style="flex-direction:row; align-items:flex-end; gap:4px; margin-left:auto;">
           <button 
             class="cc-view-btn" 
@@ -757,6 +766,48 @@ const visiblePlans = computed(() => {
         if (!hasMonthPrefix) return true;
         return false;
     });
+});
+
+// Calculate the frontend viewing Plan Code (e.g., 26CU1-PLAN 1)
+const derivedPlanCode = computed(() => {
+    if (!selectedPlan.value || selectedPlan.value === 'Default') return '';
+    
+    // Calculate Date
+    let d = new Date();
+    if (viewScope.value === 'daily' && filterOrderDate.value) {
+        d = new Date(filterOrderDate.value.split(",")[0].trim());
+    } else if (viewScope.value === 'monthly' && filterMonth.value) {
+        const [y, m] = filterMonth.value.split("-");
+        d = new Date(y, parseInt(m)-1, 1);
+    } else if (viewScope.value === 'weekly' && filterWeek.value) {
+        const parts = filterWeek.value.split("-W");
+        if (parts.length === 2) {
+            const y = parseInt(parts[0]);
+            const w = parseInt(parts[1]);
+            const simple = new Date(y, 0, 1 + (w - 1) * 7);
+            const dow = simple.getDay();
+            d = simple;
+            if (dow <= 4) d.setDate(simple.getDate() - simple.getDay() + 1);
+            else d.setDate(simple.getDate() + 8 - simple.getDay());
+        }
+    }
+    
+    if (isNaN(d)) return '';
+    
+    const yy = String(d.getFullYear()).slice(-2);
+    const monthLetters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
+    const monthChar = monthLetters[d.getMonth()] || "X";
+    
+    let uCode = "MAIN";
+    if (filterUnit.value === "Unit 1") uCode = "U1";
+    else if (filterUnit.value === "Unit 2") uCode = "U2";
+    else if (filterUnit.value === "Unit 3") uCode = "U3";
+    else if (filterUnit.value === "Unit 4") uCode = "U4";
+    
+    // Strip Mar-26 prefix
+    const cleanPlan = selectedPlan.value.replace(/^[A-Z][a-z]{2}-\d{2}\s+/, '');
+    
+    return `${yy}${monthChar}${uCode}-${cleanPlan}`;
 });
 
 // Per-unit sort configuration
