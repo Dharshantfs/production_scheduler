@@ -3645,6 +3645,12 @@ onMounted(async () => {
   // 2. Fetch Data
   await fetchData();
   analyzePreviousFlow();
+  
+  // DEBUG: Check plan field status
+  try {
+      const dbg = await frappe.call("production_scheduler.api.debug_plan_check");
+      console.log("[CC Debug] Plan field check:", JSON.stringify(dbg.message, null, 2));
+  } catch(e) { console.warn("debug_plan_check failed:", e); }
 
   // 3. Realtime sync with backend moves
   if (frappe.realtime && frappe.realtime.on && !ccRealtimeHandlerRegistered) {

@@ -2095,9 +2095,17 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
 					new_sheet.ordered_date = effective_date
 					new_sheet.party_code = party_code
 					new_sheet.customer = parent_sheet.customer or ""
-					# Don't copy sales_order to avoid cancelled SO linkage issues
 					new_sheet.insert(ignore_permissions=True)
 					target_sheet_name = new_sheet.name
+					# Force custom_plan_name via raw SQL to ensure persistence
+					if frappe.db.has_column("Planning sheet", "custom_plan_name"):
+						frappe.db.sql(
+							"UPDATE `tabPlanning sheet` SET custom_plan_name = %s WHERE name = %s",
+							(target_plan, target_sheet_name)
+						)
+						frappe.logger().info(f"[MoveItems] Set custom_plan_name='{target_plan}' on sheet {target_sheet_name}")
+					else:
+						frappe.logger().error("[MoveItems] custom_plan_name column DOES NOT EXIST!")
 
 				new_sheet_cache[cache_key] = target_sheet_name
 
@@ -3789,3 +3797,40 @@ def get_mix_roll_data(date_key):
     if rows and rows[0][0]:
         return json.loads(rows[0][0])
     return []
+
+
+@frappe.whitelist()
+def debug_plan_check():
+    """Diagnostic: Check custom_plan_name field and data."""
+    result = {}
+    
+    # 1. Check if column exists
+    result["column_exists"] = frappe.db.has_column("Planning sheet", "custom_plan_name")
+    
+    # 2. Check Custom Field record
+    result["custom_field_exists"] = frappe.db.exists("Custom Field", "Planning sheet-custom_plan_name")
+    
+    # 3. Show plan name distribution
+    if result["column_exists"]:
+        dist = frappe.db.sql("""
+            SELECT COALESCE(custom_plan_name, '(NULL)') as plan_name, COUNT(*) as cnt
+            FROM `tabPlanning sheet`
+            GROUP BY custom_plan_name
+            ORDER BY cnt DESC
+        """, as_dict=True)
+        result["plan_distribution"] = dist
+    else:
+        result["plan_distribution"] = "Column does not exist!"
+    
+    # 4. Show sheets in March 2026
+    if result["column_exists"]:
+        march_sheets = frappe.db.sql("""
+            SELECT name, ordered_date, custom_plan_name, custom_planned_date, docstatus
+            FROM `tabPlanning sheet`
+            WHERE ordered_date BETWEEN '2026-03-01' AND '2026-03-31'
+            ORDER BY ordered_date, custom_plan_name
+            LIMIT 30
+        """, as_dict=True)
+        result["march_sheets"] = march_sheets
+    
+    return result
