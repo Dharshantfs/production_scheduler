@@ -2388,26 +2388,45 @@ async function fetchPlans(args) {
 }
 
 function createNewPlan() {
+    // Determine month prefix from current view context
+    const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    let monthPrefix = "";
+    if (viewScope.value === 'monthly' && filterMonth.value) {
+        const [y, m] = filterMonth.value.split("-");
+        monthPrefix = `${monthNames[parseInt(m)-1]}-${y.slice(2)} `;
+    } else if (viewScope.value === 'daily' && filterOrderDate.value) {
+        const d = new Date(filterOrderDate.value.split(",")[0].trim());
+        if (!isNaN(d)) monthPrefix = `${monthNames[d.getMonth()]}-${String(d.getFullYear()).slice(2)} `;
+    } else if (viewScope.value === 'weekly' && filterWeek.value) {
+        const [y] = filterWeek.value.split("-W");
+        const now = new Date();
+        monthPrefix = `${monthNames[now.getMonth()]}-${y.slice(2)} `;
+    }
+    if (!monthPrefix) {
+        const now = new Date();
+        monthPrefix = `${monthNames[now.getMonth()]}-${String(now.getFullYear()).slice(2)} `;
+    }
+
     frappe.prompt({
         label: 'New Plan Name',
         fieldname: 'plan_name',
         fieldtype: 'Data',
-        reqd: 1
+        reqd: 1,
+        description: `Plan will be created as: <b>${monthPrefix}[your name]</b>`
     }, async (values) => {
-        if (!plans.value.find(p => p.name === values.plan_name)) {
-            plans.value.push({name: values.plan_name, locked: 0});
+        const fullName = monthPrefix + values.plan_name;
+        if (!plans.value.find(p => p.name === fullName)) {
+            plans.value.push({name: fullName, locked: 0});
             // Persist the new plan so it survives refresh
             frappe.call({
                 method: "production_scheduler.api.add_persistent_plan",
-                args: { plan_type: "color_chart", name: values.plan_name }
+                args: { plan_type: "color_chart", name: fullName }
             });
         }
         
-        const newPlan = values.plan_name;
+        frappe.show_alert({ message: `Created new empty Plan '${fullName}'`, indicator: 'green' });
         
-        frappe.show_alert({ message: `Created new empty Plan '${newPlan}'`, indicator: 'green' });
-        
-        selectedPlan.value = newPlan;
+        selectedPlan.value = fullName;
         fetchData();
     }, 'Create New Plan Tab', 'Create');
 }
@@ -3045,11 +3064,16 @@ async function pushToProductionBoard() {
 // ---- MOVE TO PLAN ----
 async function openMovePlanDialog() {
     // 1. Get ALL items from the current plan (rawData filtered by plan)
+    //    Exclude white orders — they stay in the current plan
     const allItems = rawData.value.filter(d => {
         const planOk = selectedPlan.value === 'Default'
             ? (!d.planName || d.planName === '' || d.planName === 'Default')
             : d.planName === selectedPlan.value;
-        return planOk;
+        if (!planOk) return false;
+        // Exclude white colors — only show color orders in move dialog
+        const colorUpper = (d.color || "").toUpperCase();
+        if (EXCLUDED_WHITES.some(ex => colorUpper.includes(ex))) return false;
+        return true;
     });
 
     if (allItems.length === 0) {
