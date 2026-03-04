@@ -3249,7 +3249,11 @@ async function openMovePlanDialog() {
                             indicator: 'orange'
                         });
                     }
-                    fetchData();
+                    // Auto-switch to target plan so moved items are immediately visible
+                    if (moved > 0) {
+                        selectedPlan.value = targetPlan;
+                    }
+                    await fetchData();
                 }
 
             } catch (e) {
