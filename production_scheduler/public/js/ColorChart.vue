@@ -36,7 +36,7 @@
         <label>Plan</label>
         <div style="display:flex; gap:4px; align-items:center;">
             <select v-model="selectedPlan" @change="fetchData">
-                <option v-for="p in plans" :key="p.name" :value="p.name">{{ p.locked ? '🔒 ' : '' }}{{ p.name }}</option>
+                <option v-for="p in visiblePlans" :key="p.name" :value="p.name">{{ p.locked ? '🔒 ' : '' }}{{ p.name }}</option>
             </select>
             <button v-if="selectedPlan" class="cc-mini-btn" @click="togglePlanLock" :title="isCurrentPlanLocked ? 'Unlock Plan' : 'Lock Plan'" style="margin-right:2px; padding: 2px 4px;font-size: 14px;">
                 {{ isCurrentPlanLocked ? '🔒' : '🔓' }}
@@ -706,6 +706,40 @@ async function togglePlanLock() {
     } catch(e) { console.error("Error toggling lock", e); }
 }
 const plans = ref(["Default"]);
+
+// Compute current month prefix for plan filtering
+const currentMonthPrefix = computed(() => {
+    const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    if (viewScope.value === 'monthly' && filterMonth.value) {
+        const [y, m] = filterMonth.value.split("-");
+        return `${monthNames[parseInt(m)-1]}-${y.slice(2)}`;
+    } else if (viewScope.value === 'daily' && filterOrderDate.value) {
+        const d = new Date(filterOrderDate.value.split(",")[0].trim());
+        if (!isNaN(d)) return `${monthNames[d.getMonth()]}-${String(d.getFullYear()).slice(2)}`;
+    } else if (viewScope.value === 'weekly' && filterWeek.value) {
+        const [y] = filterWeek.value.split("-W");
+        const now = new Date();
+        return `${monthNames[now.getMonth()]}-${y.slice(2)}`;
+    }
+    const now = new Date();
+    return `${monthNames[now.getMonth()]}-${String(now.getFullYear()).slice(2)}`;
+});
+
+// Only show plans that belong to the current month (or have no month prefix like "Default")
+const visiblePlans = computed(() => {
+    const prefix = currentMonthPrefix.value;
+    return plans.value.filter(p => {
+        // Always show Default
+        if (p.name === 'Default') return true;
+        // Show plans that start with current month prefix (e.g., "Mar-26")
+        if (p.name.startsWith(prefix + " ")) return true;
+        // Show old plans without any month prefix (legacy)
+        const hasMonthPrefix = /^[A-Z][a-z]{2}-\d{2}\s/.test(p.name);
+        if (!hasMonthPrefix) return true;
+        return false;
+    });
+});
+
 // Per-unit sort configuration
 const unitSortConfig = reactive({});
 // Pre-initialize for all units
@@ -3081,8 +3115,8 @@ async function openMovePlanDialog() {
         return;
     }
 
-    // 2. Get available target plans (excluding current, non-locked)
-    const targetPlans = plans.value
+    // 2. Get available target plans (excluding current, non-locked, current month only)
+    const targetPlans = visiblePlans.value
         .filter(p => p.name !== selectedPlan.value && !p.locked)
         .map(p => p.name);
 
@@ -3324,6 +3358,14 @@ function handleRealtimeColorUpdate(payload) {
 }
 
 async function fetchData() {
+
+  // Auto-reset plan if selected plan belongs to a different month
+  if (selectedPlan.value && selectedPlan.value !== 'Default') {
+      const hasMonthPrefix = /^[A-Z][a-z]{2}-\d{2}\s/.test(selectedPlan.value);
+      if (hasMonthPrefix && !selectedPlan.value.startsWith(currentMonthPrefix.value + " ")) {
+          selectedPlan.value = 'Default';
+      }
+  }
 
   let args = {};
   
