@@ -1602,6 +1602,7 @@ async function initSortable() {
             const { item, to, from, newIndex, oldIndex } = evt;
             const itemName = item.dataset.itemName;
             const newUnit = to.dataset.unit;
+            const oldUnit = from.dataset.unit;
             const isSameUnit = (to === from);
             if (!itemName || !newUnit) return;
 
