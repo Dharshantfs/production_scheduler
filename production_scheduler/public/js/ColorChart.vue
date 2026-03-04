@@ -291,7 +291,7 @@
     </div>
 
     <!-- Matrix Pivot View -->
-    <div v-if="viewMode === 'matrix'" class="cc-matrix-container">
+    <div v-if="viewMode === 'matrix'" class="cc-matrix-container" :key="renderKey">
         <div class="cc-matrix-scroll">
             <table class="cc-matrix-table">
                 <thead>

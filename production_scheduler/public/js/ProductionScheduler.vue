@@ -514,14 +514,19 @@ const unitStatsCache = computed(() => {
   const stats = {};
   for (const unit of units) {
     const allUnitData = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
-    const total = allUnitData.reduce((sum, d) => sum + d.qty, 0) / 1000;
-    const hiddenWhite = allUnitData
-      .filter(d => {
+    
+    // Separate into whites and colors
+    const whiteOrders = allUnitData.filter(d => {
         const colorUpper = (d.color || "").toUpperCase();
-        if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return false;
-        return !!EXCLUDED_WHITES.find(ex => colorUpper.includes(ex));
-      })
-      .reduce((sum, d) => sum + d.qty, 0) / 1000;
+        if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return false; // these are colors
+        return EXCLUDED_WHITES.some(ex => colorUpper.includes(ex));
+    });
+    
+    const colorOrders = allUnitData.filter(d => !whiteOrders.includes(d));
+
+    // Capacity should ONLY count color orders!
+    const total = colorOrders.reduce((sum, d) => sum + d.qty, 0) / 1000;
+    const hiddenWhite = whiteOrders.reduce((sum, d) => sum + d.qty, 0) / 1000;
     
     const limit = getUnitCapacityLimit(unit);
     let capacityStatus;
