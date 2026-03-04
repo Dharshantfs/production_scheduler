@@ -392,7 +392,7 @@ def generate_plan_code(date_str, unit, plan_name):
 	Generates a readable plan code: {YY}{MonthLetter}{Unit}-{PlanName}
 	e.g. 26CU1-PLAN 1
 	"""
-	if not str(date_str) or not plan_name:
+	if not str(date_str) or not plan_name or not unit or unit in ["All Units", "MAIN"]:
 		return ""
 	
 	try:
@@ -407,7 +407,7 @@ def generate_plan_code(date_str, unit, plan_name):
 		elif unit == "Unit 2": u_code = "U2"
 		elif unit == "Unit 3": u_code = "U3"
 		elif unit == "Unit 4": u_code = "U4"
-		else: u_code = "MAIN"
+		else: return ""
 
 		# Strip month prefix from plan name ("Mar-26 PLAN 1" -> "PLAN 1")
 		import re

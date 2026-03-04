@@ -798,11 +798,13 @@ const derivedPlanCode = computed(() => {
     const monthLetters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
     const monthChar = monthLetters[d.getMonth()] || "X";
     
-    let uCode = "MAIN";
+    let uCode = "";
     if (filterUnit.value === "Unit 1") uCode = "U1";
     else if (filterUnit.value === "Unit 2") uCode = "U2";
     else if (filterUnit.value === "Unit 3") uCode = "U3";
     else if (filterUnit.value === "Unit 4") uCode = "U4";
+    else return "";
+
     
     // Strip Mar-26 prefix
     const cleanPlan = selectedPlan.value.replace(/^[A-Z][a-z]{2}-\d{2}\s+/, '');
