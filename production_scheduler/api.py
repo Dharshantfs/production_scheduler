@@ -2056,6 +2056,9 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
 
 	UNIT_LIMITS = {"Unit 1": 4.4, "Unit 2": 12.0, "Unit 3": 9.0, "Unit 4": 5.5}
 
+	# Clear doctype meta cache so custom fields (custom_plan_name) are recognized
+	frappe.clear_cache(doctype="Planning sheet")
+
 	for name in item_names:
 		try:
 			item_doc = frappe.get_doc("Planning Sheet Item", name)
