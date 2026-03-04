@@ -3225,6 +3225,28 @@ async function openMovePlanDialog() {
                 const daysInView = getDaysInViewScope();
                 const isAggregateView = viewScope.value === 'monthly' || viewScope.value === 'weekly';
 
+                // Build date args from current view scope
+                let dateArgs = {};
+                if (viewScope.value === 'monthly' && filterMonth.value) {
+                    const [year, month] = filterMonth.value.split("-");
+                    const lastDay = new Date(year, month, 0).getDate();
+                    dateArgs = { start_date: `${year}-${month}-01`, end_date: `${year}-${month}-${lastDay}` };
+                } else if (viewScope.value === 'weekly' && filterWeek.value) {
+                    // Use same week calculation as fetchData
+                    const [yearStr, weekStr] = filterWeek.value.split("-W");
+                    const yr = parseInt(yearStr), wk = parseInt(weekStr);
+                    const simple = new Date(yr, 0, 1 + (wk - 1) * 7);
+                    const dow = simple.getDay();
+                    const ws = new Date(simple);
+                    if (dow <= 4) ws.setDate(simple.getDate() - simple.getDay() + 1);
+                    else ws.setDate(simple.getDate() + 8 - simple.getDay());
+                    const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                    const we = new Date(ws); we.setDate(ws.getDate() + 6);
+                    dateArgs = { start_date: fmt(ws), end_date: fmt(we) };
+                } else if (filterOrderDate.value) {
+                    dateArgs = { date: filterOrderDate.value };
+                }
+
                 const r = await frappe.call({
                     method: 'production_scheduler.api.move_items_to_plan',
                     args: {
