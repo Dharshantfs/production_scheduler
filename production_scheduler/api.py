@@ -3089,21 +3089,30 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 
 			effective_date = target_dates[0] if target_dates else str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
 
-			# --- FIND CAPACITY SLOT ACROSS MULTIPLE DATES ---
-			if len(target_dates) > 1:
-				unit = target_unit or item_doc.unit or get_preferred_unit(item_doc.custom_quality)
-				limit = HARD_LIMITS.get(unit, 999.0)
-				for check_date in target_dates:
-					load_key = (check_date, unit)
-					if load_key not in local_loads:
-						local_loads[load_key] = get_unit_load(check_date, unit, "__all__", pb_only=1)
-					
-					load = local_loads[load_key]
-					# Allow the item to slot here if we are under the limit, OR if it's the very last date fallback 
-					if (load + item_wt <= limit * 1.05) or (check_date == target_dates[-1]):
-						effective_date = check_date
-						local_loads[load_key] = load + item_wt
-						break
+			# --- FIND CAPACITY SLOT ACROSS MULTIPLE DATES (INFINITE CASCADE) ---
+			unit = target_unit or item_doc.unit or get_preferred_unit(item_doc.custom_quality)
+			limit = HARD_LIMITS.get(unit, 999.0)
+			
+			from frappe.utils import getdate, add_days
+			current_check_date = target_dates[0] if target_dates else str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
+			
+			while True:
+				load_key = (current_check_date, unit)
+				if load_key not in local_loads:
+					local_loads[load_key] = get_unit_load(current_check_date, unit, "__all__", pb_only=1)
+				
+				load = local_loads[load_key]
+				
+				# Allow placement if it fits within the limit
+				# OR if the day is completely empty but the item itself is larger than the limit (prevents infinite loop)
+				if (load + item_wt <= limit * 1.05) or (load == 0 and item_wt >= limit):
+					effective_date = current_check_date
+					local_loads[load_key] = load + item_wt
+					break
+				
+				# Otherwise, capacity is full for this date -> Cascade to the next day
+				next_d = add_days(current_check_date, 1)
+				current_check_date = next_d.strftime("%Y-%m-%d")
 			# ------------------------------------------------
 
 			party_code = parent_doc.party_code or ""
@@ -3522,24 +3531,13 @@ def auto_create_planning_sheet(doc, method=None):
             # Sheet already exists for the unlocked plan – nothing to do
             return frappe.get_doc("Planning sheet", s.name)
 
-    # 3. CREATE PLANNING SHEET (without planned date unless white order)
-    has_white = False
-    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "IVORY", "CREAM", "OFF WHITE"]
-    for it in doc.items:
-        raw_txt = (it.item_code or "") + " " + (it.item_name or "")
-        clean_txt = raw_txt.upper()
-        if any(w in clean_txt for w in whites):
-            has_white = True
-            break
-
+    # 3. CREATE PLANNING SHEET 
     generate_party_code(doc)
     ps = frappe.new_doc("Planning sheet")
     ps.sales_order = doc.name
     ps.customer = doc.customer
     ps.party_code = doc.party_code
     ps.ordered_date = doc.transaction_date
-    if has_white:
-        ps.custom_planned_date = doc.transaction_date
     ps.dod = doc.delivery_date
     ps.planning_status = "Draft"
     ps.custom_plan_name = cc_plan
@@ -3550,6 +3548,44 @@ def auto_create_planning_sheet(doc, method=None):
     ps.flags.ignore_permissions = True
     ps.insert()
     frappe.db.commit()
+    
+    # 4. AUTO-PUSH WHITE ITEMS TO PRODUCTION BOARD 
+    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "IVORY", "CREAM", "OFF WHITE"]
+    white_items_to_push = []
+    
+    for item in ps.items:
+        clean_txt = ((item.item_code or "") + " " + (item.item_name or "") + " " + (item.color or "")).upper()
+        if any(w in clean_txt for w in whites):
+            white_items_to_push.append({
+                "name": item.name,
+                "target_date": str(doc.transaction_date),
+                "target_unit": item.unit
+            })
+            
+    if white_items_to_push:
+        # Fetch the matching PB plan the same way we fetched CC plan
+        pb_plan = "Default"
+        try:
+            raw_pb = frappe.db.get_value("DefaultValue", {"defkey": "production_scheduler_production_board_plans", "parent": "__default"}, "defvalue")
+            if raw_pb:
+                parsed_pb = json.loads(raw_pb) if isinstance(raw_pb, str) else raw_pb
+                if isinstance(parsed_pb, str): parsed_pb = json.loads(parsed_pb)
+                month_prefix = ""
+                if doc.transaction_date:
+                    d = frappe.utils.getdate(doc.transaction_date)
+                    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+                    month_prefix = f"{month_names[d.month - 1]}-{str(d.year)[-2:]}"
+                for plan in parsed_pb:
+                    if int(plan.get("locked", 0)) == 0:
+                        p_name = plan.get("name", "")
+                        if month_prefix and p_name.startswith(f"{month_prefix} "):
+                            pb_plan = p_name
+                            break
+        except Exception:
+            pass
+            
+        push_items_to_pb(white_items_to_push, pb_plan)
+        
     frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{cc_plan}</b>")
     return ps
 
@@ -3611,23 +3647,12 @@ def regenerate_planning_sheet(so_name):
         return None
 
     # 2. CREATE PLANNING SHEET
-    has_white = False
-    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "IVORY", "CREAM", "OFF WHITE"]
-    for it in doc.items:
-        raw_txt = (it.item_code or "") + " " + (it.item_name or "")
-        clean_txt = raw_txt.upper()
-        if any(w in clean_txt for w in whites):
-            has_white = True
-            break
-
     generate_party_code(doc)
     ps = frappe.new_doc("Planning sheet")
     ps.sales_order = doc.name
     ps.customer = doc.customer
     ps.party_code = doc.get("party_code") or ""
     ps.ordered_date = doc.transaction_date
-    if has_white:
-        ps.custom_planned_date = doc.transaction_date
     ps.dod = doc.delivery_date
     ps.planning_status = "Draft"
     ps.custom_plan_name = cc_plan
@@ -3638,6 +3663,44 @@ def regenerate_planning_sheet(so_name):
     ps.flags.ignore_permissions = True
     ps.insert()
     frappe.db.commit()
+    
+    # 3. AUTO-PUSH WHITE ITEMS TO PRODUCTION BOARD 
+    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "IVORY", "CREAM", "OFF WHITE"]
+    white_items_to_push = []
+    
+    for item in ps.items:
+        clean_txt = ((item.item_code or "") + " " + (item.item_name or "") + " " + (item.color or "")).upper()
+        if any(w in clean_txt for w in whites):
+            white_items_to_push.append({
+                "name": item.name,
+                "target_date": str(doc.transaction_date),
+                "target_unit": item.unit
+            })
+            
+    if white_items_to_push:
+        # Fetch the matching PB plan the same way we fetched CC plan
+        pb_plan = "Default"
+        try:
+            raw_pb = frappe.db.get_value("DefaultValue", {"defkey": "production_scheduler_production_board_plans", "parent": "__default"}, "defvalue")
+            if raw_pb:
+                parsed_pb = json.loads(raw_pb) if isinstance(raw_pb, str) else raw_pb
+                if isinstance(parsed_pb, str): parsed_pb = json.loads(parsed_pb)
+                month_prefix = ""
+                if doc.transaction_date:
+                    d = frappe.utils.getdate(doc.transaction_date)
+                    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+                    month_prefix = f"{month_names[d.month - 1]}-{str(d.year)[-2:]}"
+                for plan in parsed_pb:
+                    if int(plan.get("locked", 0)) == 0:
+                        p_name = plan.get("name", "")
+                        if month_prefix and p_name.startswith(f"{month_prefix} "):
+                            pb_plan = p_name
+                            break
+        except Exception:
+            pass
+            
+        push_items_to_pb(white_items_to_push, pb_plan)
+        
     frappe.msgprint(f"✅ Regenerated Planning Sheet <b>{ps.name}</b> in unlocked plan <b>{cc_plan}</b>")
     return ps
 

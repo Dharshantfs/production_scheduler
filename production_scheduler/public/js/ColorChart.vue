@@ -3950,15 +3950,12 @@ async function openPushColorDialog(color, inputTargetDate = null) {
     const d = new frappe.ui.Dialog({
         title: `📤 Push ${color} to Production Board`,
         fields: [
-            { fieldname: "target_date", label: "Target Date", fieldtype: "Date", reqd: 1, default: dialogTargetDate,
-              onchange: () => loadCapacityPreview(d)
-            },
+            { fieldname: "target_date", label: "Target Date", fieldtype: "Date", reqd: 1, default: dialogTargetDate },
             { fieldname: "filters_info", label: "Filters", fieldtype: "HTML" },
-            { fieldname: "capacity_info", label: "", fieldtype: "HTML" },
             { fieldname: "items_info", label: "Order Selection", fieldtype: "HTML" }
         ],
         primary_action_label: "Push to Production Board",
-        primary_action: () => {
+        primary_action: async () => {
              items = getFilteredItems();
              const selected = d.calc_selected_items || [];
              if (!selected.length) { frappe.msgprint("Please select at least one order."); return; }
@@ -3966,48 +3963,27 @@ async function openPushColorDialog(color, inputTargetDate = null) {
              const targetDate = d.get_value("target_date");
              const pbPlan = "Default";
              
-             // Build payload
              const payload = selected.map(s => ({ name: s.name, target_unit: s.target_unit, target_date: targetDate }));
              
-             // Define strictly inside primary_action to avoid ReferenceError
-             const executePush = async (finalPayload) => {
-                 d.get_primary_btn().prop("disabled", true).text("Pushing...");
-                 try {
-                     const r = await frappe.call({
-                         method: "production_scheduler.api.push_items_to_pb",
-                         args: {
-                             items_data: JSON.stringify(finalPayload),
-                             pb_plan_name: pbPlan
-                         },
-                         freeze: true
-                     });
-                     if (r.message && r.message.status === 'success') {
-                         d.get_primary_btn().text("✅ Pushed").css({"background-color": "#10b981", "color": "white"});
-                         frappe.show_alert({ message: `✅ Pushed ${r.message.moved_items} order(s) to Plan "${r.message.plan_name}"`, indicator: 'green' });
-                         setTimeout(() => {
-                             d.hide();
-                             fetchData();
-                         }, 1000);
-                     } else {
-                         frappe.msgprint(r.message?.message || "Push failed");
-                         d.get_primary_btn().prop("disabled", false).text("Push to Production Board");
-                     }
-                 } catch(e) {
-                     console.error("Push Error", e);
-                     frappe.msgprint("Error pushing to Production Board.");
+             d.get_primary_btn().prop("disabled", true).text("Pushing...");
+             try {
+                 const r = await frappe.call({
+                     method: "production_scheduler.api.push_items_to_pb",
+                     args: { items_data: JSON.stringify(payload), pb_plan_name: pbPlan },
+                     freeze: true
+                 });
+                 if (r.message && r.message.status === 'success') {
+                     d.get_primary_btn().text("✅ Pushed").css({"background-color": "#10b981", "color": "white"});
+                     frappe.show_alert({ message: `✅ Pushed ${r.message.moved_items} order(s) to Plan "${r.message.plan_name}" automatically.`, indicator: 'green' });
+                     setTimeout(() => { d.hide(); fetchData(); }, 1000);
+                 } else {
+                     frappe.msgprint(r.message?.message || "Push failed");
                      d.get_primary_btn().prop("disabled", false).text("Push to Production Board");
                  }
-             };
-
-             if (d.capacityExceeded) {
-                  const nextDay = frappe.datetime.add_days(targetDate, 1);
-                  frappe.confirm(
-                      `<b>Capacity Limit Reached!</b><br>One or more selected units will exceed capacity on ${targetDate}.<br><br>Do you want to override and push to <b>${targetDate}</b> anyway?<br><br><i>Click 'Yes' to override limit, or 'No' to cancel.</i>`,
-                      () => { executePush(payload); }, // Yes = Force override
-                      () => { d.get_primary_btn().prop("disabled", false).text("Push to Production Board"); } // No = Cancel
-                  );
-             } else {
-                  executePush(payload);
+             } catch(e) {
+                 console.error("Push Error", e);
+                 frappe.msgprint("Error pushing to Production Board.");
+                 d.get_primary_btn().prop("disabled", false).text("Push to Production Board");
              }
         }
     });
@@ -4104,7 +4080,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
 
     d.set_value("items_info", renderItemRows(items));
 
-    // Track selections and trigger capacity preview
+    // Track selections
     window.updatePushSelection = () => {
         const selected = [];
         d.fields_dict.items_info.$wrapper.find('.push-chk').each(function() {
@@ -4115,7 +4091,6 @@ async function openPushColorDialog(color, inputTargetDate = null) {
             }
         });
         d.calc_selected_items = selected;
-        loadCapacityPreview(d);
     };
 
     function wireItemEvents() {
@@ -4136,137 +4111,8 @@ async function openPushColorDialog(color, inputTargetDate = null) {
         window.updatePushSelection();
     }
 
-    async function loadCapacityPreview(dialog) {
-        const date = dialog.get_value("target_date");
-        if (!date) return;
-        
-        const limits = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5 };
-        
-        try {
-            const r = await frappe.call({
-                method: "production_scheduler.api.get_color_chart_data",
-                // Remove planned_only: 1 to ensure we get White orders too
-                args: { date: date, plan_name: '__all__' }
-            });
-            const allItems = r.message || [];
-            
-            const pushLoads = {};
-            const selected = dialog.calc_selected_items || [];
-            selected.forEach(sel => {
-                const i = items.find(it => it.itemName === sel.name);
-                if (i) pushLoads[sel.target_unit] = (pushLoads[sel.target_unit] || 0) + (i.qty || 0)/1000;
-            });
-            
-            let capHtml = `<div style="display:flex; flex-direction:column; gap:6px;">`;
-            let capacityExceeded = false;
-            let unitsPrinted = 0;
-            
-            ["Unit 1", "Unit 2", "Unit 3", "Unit 4"].forEach(u => {
-                const pushWeight = pushLoads[u] || 0;
-                if (pushWeight > 0) {
-                    unitsPrinted++;
-                    const pushingNames = selected.map(s => s.name);
-                    
-                    const existingU = allItems.filter(i => {
-                        if (i.unit !== u) return false;
-                        if (pushingNames.includes(i.itemName)) return false; // don't double count
-                        
-                        const isWhite = (i.color || '').toUpperCase().includes('WHITE');
-                        // Count if it's already pushed OR if it's a White order
-                        return i.plannedDate || isWhite;
-                    });
-                    
-                    const currentLoad = existingU.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
-                    
-                    // Calculate explicitly how much of that load is White orders
-                    const whiteItems = existingU.filter(i => (i.color || '').toUpperCase().includes('WHITE'));
-                    const whiteLoad = whiteItems.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
-                    
-                    const afterPush = currentLoad + pushWeight;
-                    const limit = limits[u];
-                    const isOver = afterPush > limit;
-                    if (isOver) capacityExceeded = true;
-                    capHtml += `<div style="padding:6px 10px;border-radius:6px;border:1px solid ${isOver ? '#fda4af' : '#bbf7d0'};background:${isOver ? '#fff1f2' : '#f0fdf4'};display:flex;justify-content:space-between;align-items:center;">
-                        <div>
-                            <div style="font-weight:700;font-size:12px;color:${isOver ? '#dc2626' : '#16a34a'};">${u}: ${currentLoad.toFixed(2)} / ${limit}T</div>
-                            ${whiteLoad > 0 ? `<div style="font-size:9px;color:#64748b;margin-top:1px;">(Includes ${whiteLoad.toFixed(2)}T White)</div>` : ''}
-                            <div style="font-size:10px;color:#475569;margin-top:2px;">After push: <b>${afterPush.toFixed(2)}T</b> <span style="color:#64748b;">(+${pushWeight.toFixed(2)}T)</span></div>
-                        </div>
-                        ${isOver ? '<span style="font-size:16px;" title="Capacity Exceeded">⚠️</span>' : '<span style="font-size:16px;">✅</span>'}  
-                    </div>`;
-                }
-            });
-            
-            if (unitsPrinted === 0) capHtml += `<div style="font-size:11px;color:#64748b;font-style:italic;">Select items above to see capacity footprint.</div>`;
-            capHtml += `</div>`;
-            dialog.set_value("capacity_info", capHtml);
-            dialog.capacityExceeded = capacityExceeded;
-        } catch(e) { console.error(e); }
-    }
-    
     // Initial load - wait for DOM
     setTimeout(() => { wireItemEvents(); bindFilterEvents(); }, 200);
-
-    // Add Smart Auto-Tick button
-    d.add_custom_action('🧠 Smart Auto-Tick', async () => {
-        if (smartActive) return;
-        const btn = d.$wrapper.find('.btn-custom').last();
-        btn.text('⏳ Sequencing...');
-        btn.prop('disabled', true);
-        
-        try {
-            const allNames = items.map(i => i.itemName);
-            const targetDate = d.get_value('target_date') || frappe.datetime.get_today();
-            
-            // Detect unit from items (per-color dialog usually one unit)
-            const unitsInBatch = [...new Set(items.map(i => i.unit || 'Mixed').filter(u => u && u !== 'Mixed'))];
-            let seedQuality = null, seedColor = null;
-            if (unitsInBatch.length === 1) {
-                try {
-                    const lastRes = await frappe.call({
-                        method: 'production_scheduler.api.get_last_unit_order',
-                        args: { unit: unitsInBatch[0], date: targetDate }
-                    });
-                    if (lastRes.message) {
-                        seedQuality = lastRes.message.quality;
-                        seedColor = lastRes.message.color;
-                    }
-                } catch(e) { /* silently ignore */ }
-            }
-
-            const r = await frappe.call({
-                method: 'production_scheduler.api.get_smart_push_sequence',
-                args: { item_names: JSON.stringify(allNames), seed_quality: seedQuality, seed_color: seedColor }
-            });
-            const smartSeq = r.message || [];
-            if (smartSeq.length > 0) {
-                smartActive = true;
-                // Re-order items array according to smart sequence
-                const orderedItems = smartSeq.map(s => {
-                    const orig = items.find(i => i.itemName === s.name);
-                    return orig ? { ...orig, _phase: s.phase } : null;
-                }).filter(Boolean);
-                d.set_value("items_info", renderItemRows(orderedItems));
-                setTimeout(() => wireItemEvents(), 100);
-                btn.text('✅ Smart Sequenced');
-                frappe.show_alert({ message: '🧠 Items reordered by Smart Sequence (White → Color chain)', indicator: 'green' });
-            } else {
-                frappe.show_alert({ message: 'No sequence data returned', indicator: 'orange' });
-                btn.text('🧠 Smart Auto-Tick');
-                btn.prop('disabled', false);
-            }
-        } catch(e) {
-            console.error('Smart sequence error', e);
-            frappe.show_alert({ message: 'Smart sequence failed', indicator: 'red' });
-            btn.text('🧠 Smart Auto-Tick');
-            btn.prop('disabled', false);
-        }
-    });
-
-    setTimeout(() => {
-        const smartBtn = d.$wrapper.find('.btn-custom').last();
-        smartBtn.css({'background-color': '#10b981', 'color': 'white', 'border': 'none', 'font-weight': 'bold'});
-    }, 100);
 
     d.show();
 }
