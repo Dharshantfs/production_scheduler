@@ -3334,6 +3334,15 @@ async function fetchData() {
         itemName: d.itemName || d.item_name || d.name || ""
     }));
     
+    // ===== DEBUG: Show all plan names in loaded data =====
+    const planNames = {};
+    rawData.value.forEach(d => {
+        const pn = d.planName || "(empty/null)";
+        planNames[pn] = (planNames[pn] || 0) + 1;
+    });
+    console.log(`[CC Debug] Loaded ${rawData.value.length} items. Plan names:`, planNames, `Selected plan: "${selectedPlan.value}"`);
+    // ===================================================
+    
     // Load Custom Color Order (Sync)
     try {
         const orderRes = await frappe.call("production_scheduler.api.get_color_order");
