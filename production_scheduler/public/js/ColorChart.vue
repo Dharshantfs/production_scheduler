@@ -674,6 +674,15 @@ const isCurrentPlanLocked = computed(() => {
 function initFlatpickr() {
     if (!datePickerInput.value) return;
     
+    // Check if flatpickr library is loaded
+    if (typeof flatpickr === 'undefined') {
+        // Library not loaded yet, try loading it
+        frappe.require('https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.js', () => {
+            nextTick(() => initFlatpickr());
+        });
+        return;
+    }
+    
     // Destroy existing instance if any
     if (flatpickrInstance.value) {
         flatpickrInstance.value.destroy();
@@ -2387,11 +2396,9 @@ async function toggleViewScope() {
           filterOrderDate.value = frappe.datetime.get_today();
       }
       
-      // Re-initialize Flatpickr if returning to daily view
+      // Re-initialize Flatpickr when returning to daily view
       nextTick(() => {
-          if (!flatpickrInstance.value) {
-             initFlatpickr();
-          }
+          initFlatpickr();
       });
   }
   await fetchData();
