@@ -2196,7 +2196,7 @@ function getUnitEntries(unit) {
 }
 
 function getUnitProductionTotal(unit) {
-  return rawData.value
+  return filteredData.value
     .filter((d) => (d.unit || "Mixed") === unit)
     .reduce((sum, d) => sum + (parseFloat(d.qty) || 0), 0) / 1000;
 }
@@ -3092,7 +3092,7 @@ async function openMovePlanDialog() {
         const moveRows = sorted.map(item => {
             const hex = getHexColor(item.color);
             const wt = ((item.qty||0)/1000).toFixed(3);
-            return `<tr style="border-bottom:1px solid #f1f5f9;">
+            return `<tr class="mtp-row" data-unit="${item.unit||'Mixed'}" style="border-bottom:1px solid #f1f5f9;">
                 <td style="padding:5px 6px;text-align:center;">
                     <input type="checkbox" class="mtp-check" data-name="${item.itemName}" checked style="cursor:pointer;width:14px;height:14px;">
                 </td>
@@ -3157,6 +3157,16 @@ async function openMovePlanDialog() {
                 ${lockedItems.length>0?`<span style="background:#fef9c3;color:#b45309;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;">🔒 ${lockedItems.length} WO locked — stays in ${selectedPlan.value} (${totalLockT} T)</span>`:''}
                 <button onclick="document.querySelectorAll('.mtp-check').forEach(c=>c.checked=true)" style="font-size:10px;padding:3px 8px;cursor:pointer;border:1px solid #10b981;color:#10b981;background:#f0fdf4;border-radius:4px;margin-left:auto;">✅ All</button>
                 <button onclick="document.querySelectorAll('.mtp-check').forEach(c=>c.checked=false)" style="font-size:10px;padding:3px 8px;cursor:pointer;border:1px solid #ef4444;color:#ef4444;background:#fef2f2;border-radius:4px;">❌ None</button>
+            </div>
+
+            <!-- Unit Filter Buttons -->
+            <div style="display:flex;gap:4px;margin-bottom:8px;align-items:center;">
+                <span style="font-size:10px;color:#64748b;font-weight:600;margin-right:4px;">FILTER UNIT:</span>
+                <button class="mtp-unit-filter" data-unit="all" onclick="document.querySelectorAll('.mtp-row').forEach(r=>{r.style.display='';r.querySelector('.mtp-check').checked=true}); document.querySelectorAll('.mtp-unit-filter').forEach(b=>b.style.background='#f1f5f9'); this.style.background='#dbeafe'" style="font-size:10px;padding:3px 10px;cursor:pointer;border:1px solid #cbd5e1;border-radius:4px;background:#dbeafe;font-weight:600;">All</button>
+                ${['Unit 1','Unit 2','Unit 3','Unit 4'].map(u => {
+                    const c = u==='Unit 1'?'#3b82f6':u==='Unit 2'?'#10b981':u==='Unit 3'?'#f59e0b':'#8b5cf6';
+                    return `<button class="mtp-unit-filter" data-unit="${u}" onclick="document.querySelectorAll('.mtp-row').forEach(r=>{const ru=r.dataset.unit;if(ru==='${u}'){r.style.display='';r.querySelector('.mtp-check').checked=true}else{r.style.display='none';r.querySelector('.mtp-check').checked=false}}); document.querySelectorAll('.mtp-unit-filter').forEach(b=>b.style.background='#f1f5f9'); this.style.background='${c}22'" style="font-size:10px;padding:3px 10px;cursor:pointer;border:1px solid ${c};color:${c};border-radius:4px;background:#f1f5f9;font-weight:600;">${u}</button>`;
+                }).join('')}
             </div>
 
             <!-- Table -->

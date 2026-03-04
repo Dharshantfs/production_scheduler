@@ -1565,6 +1565,15 @@ def create_plan_name_field():
 		})
 		custom_field3.insert(ignore_permissions=True)
 	
+	# Fix: Set NULL custom_plan_name to 'Default' so plan filtering works correctly
+	if frappe.db.has_column("Planning sheet", "custom_plan_name"):
+		frappe.db.sql("""
+			UPDATE `tabPlanning sheet` 
+			SET custom_plan_name = 'Default' 
+			WHERE custom_plan_name IS NULL OR custom_plan_name = ''
+		""")
+		frappe.db.commit()
+	
 	return {"status": "success"}
 
 @frappe.whitelist()
