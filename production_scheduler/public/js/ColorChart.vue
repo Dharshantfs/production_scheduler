@@ -723,9 +723,22 @@ const currentMonthPrefix = computed(() => {
         const d = new Date(filterOrderDate.value.split(",")[0].trim());
         if (!isNaN(d)) return `${monthNames[d.getMonth()]}-${String(d.getFullYear()).slice(2)}`;
     } else if (viewScope.value === 'weekly' && filterWeek.value) {
-        const [y] = filterWeek.value.split("-W");
-        const now = new Date();
-        return `${monthNames[now.getMonth()]}-${y.slice(2)}`;
+        // Parse ISO week string like "2026-W10"
+        const parts = filterWeek.value.split("-W");
+        if (parts.length === 2) {
+            const y = parseInt(parts[0]);
+            const w = parseInt(parts[1]);
+            // Calculate date from ISO week
+            const simple = new Date(y, 0, 1 + (w - 1) * 7);
+            const dow = simple.getDay();
+            const ISOweekStart = simple;
+            if (dow <= 4)
+                ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+            else
+                ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+            
+            return `${monthNames[ISOweekStart.getMonth()]}-${String(ISOweekStart.getFullYear()).slice(2)}`;
+        }
     }
     const now = new Date();
     return `${monthNames[now.getMonth()]}-${String(now.getFullYear()).slice(2)}`;
