@@ -1610,10 +1610,12 @@ def create_plan_name_field():
 			"fieldname": "custom_plan_code",
 			"label": "Plan Code",
 			"fieldtype": "Data",
-			"read_only": 1,
+			"read_only": 0,
 			"insert_after": "custom_pb_plan_name"
 		})
 		cf4.insert(ignore_permissions=True)
+	else:
+		frappe.db.set_value('Custom Field', 'Planning sheet-custom_plan_code', 'read_only', 0)
 		
 	if not frappe.db.exists('Custom Field', 'Planning Sheet Item-custom_plan_code'):
 		cf5 = frappe.get_doc({
@@ -1622,13 +1624,33 @@ def create_plan_name_field():
 			"fieldname": "custom_plan_code",
 			"label": "Plan Code",
 			"fieldtype": "Data",
-			"read_only": 1,
+			"read_only": 0,
 			"insert_after": "color",
 			"in_list_view": 1
 		})
 		cf5.insert(ignore_permissions=True)
+	else:
+		frappe.db.set_value('Custom Field', 'Planning Sheet Item-custom_plan_code', 'read_only', 0)
 	
+	# Automatically kick off a background job to populate old sheets if they are missing codes
+	frappe.enqueue("production_scheduler.api.backfill_plan_codes", queue="short", timeout=300)
+
 	return {"status": "success"}
+
+@frappe.whitelist()
+def backfill_plan_codes():
+	"""Updates existing Planning Sheets and Items that are missing a plan code."""
+	sheets = frappe.get_all("Planning sheet", filters={"docstatus": ["<", 2]}, fields=["name"])
+	count = 0
+	for s in sheets:
+		from production_scheduler.api import update_sheet_plan_codes
+		try:
+			update_sheet_plan_codes(s.name)
+			count += 1
+		except Exception:
+			pass
+	frappe.db.commit()
+	return {"status": "success", "updated_count": count}
 
 @frappe.whitelist()
 def get_previous_production_date(date):
