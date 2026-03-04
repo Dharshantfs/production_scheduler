@@ -2979,6 +2979,8 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
 			# ------------------------------------------------
 
 			party_code = parent.party_code or ""
+			# IMPORTANT: Keep original ordered_date, only change planned_date
+			original_ordered_date = str(parent.ordered_date)
 
 			# Find or create a dedicated PB Planning Sheet for this date+party
 			cache_key = (party_code, effective_date, pb_plan_name)
@@ -2987,7 +2989,7 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
 			else:
 				existing = frappe.get_all("Planning sheet", filters={
 					"custom_pb_plan_name": pb_plan_name,
-					"ordered_date": effective_date,
+					"custom_planned_date": effective_date,
 					"party_code": party_code,
 					"docstatus": ["<", 2]
 				}, fields=["name"], limit=1)
@@ -2998,13 +3000,24 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
 					pb_sheet = frappe.new_doc("Planning sheet")
 					pb_sheet.custom_plan_name = parent.get("custom_plan_name") or "Default"
 					pb_sheet.custom_pb_plan_name = pb_plan_name
-					pb_sheet.ordered_date = effective_date
+					# CRITICAL: ordered_date stays as the ORIGINAL order date
+					pb_sheet.ordered_date = original_ordered_date
+					# planned_date is the actual production date (may be overflow)
 					pb_sheet.custom_planned_date = effective_date
 					pb_sheet.party_code = party_code
 					pb_sheet.customer = parent.customer or ""
 					pb_sheet.sales_order = parent.sales_order or ""
 					pb_sheet.insert(ignore_permissions=True)
 					pb_sheet_name = pb_sheet.name
+					# Force custom fields via SQL
+					if frappe.db.has_column("Planning sheet", "custom_pb_plan_name"):
+						frappe.db.sql("""
+							UPDATE `tabPlanning sheet`
+							SET custom_pb_plan_name = %s, custom_plan_name = %s,
+							    custom_planned_date = %s
+							WHERE name = %s
+						""", (pb_plan_name, parent.get("custom_plan_name") or "Default",
+						      effective_date, pb_sheet_name))
 
 				pb_sheet_cache[cache_key] = pb_sheet_name
 
@@ -3013,15 +3026,20 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
 				SELECT COALESCE(MAX(idx), 0) FROM `tabPlanning Sheet Item` WHERE parent = %s
 			""", (pb_sheet_name,))[0][0]
 
-			# Move item to the PB sheet
-			frappe.db.set_value("Planning Sheet Item", name, "parent", pb_sheet_name)
-			frappe.db.set_value("Planning Sheet Item", name, "parenttype", "Planning sheet")
-			frappe.db.set_value("Planning Sheet Item", name, "parentfield", "items")
-			frappe.db.set_value("Planning Sheet Item", name, "idx", max_idx + 1)
+			# Move item to the PB sheet via raw SQL (works on submitted docs)
+			frappe.db.sql("""
+				UPDATE `tabPlanning Sheet Item`
+				SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items', idx = %s
+				WHERE name = %s
+			""", (pb_sheet_name, max_idx + 1, name))
 
 			# Also set item-level planned date for consistency
 			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-				frappe.db.set_value("Planning Sheet Item", name, "custom_item_planned_date", effective_date)
+				frappe.db.sql("""
+					UPDATE `tabPlanning Sheet Item`
+					SET custom_item_planned_date = %s
+					WHERE name = %s
+				""", (effective_date, name))
 
 			updated_count += 1
 
@@ -3119,10 +3137,14 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 			# ------------------------------------------------
 
 			party_code = parent_doc.party_code or ""
+			# IMPORTANT: Keep original ordered_date, only change planned_date
+			original_ordered_date = str(parent_doc.ordered_date)
 
 			# ── Set item-level unit if user picked a different unit ──
 			if target_unit:
-				frappe.db.set_value("Planning Sheet Item", name, "unit", target_unit)
+				frappe.db.sql("""
+					UPDATE `tabPlanning Sheet Item` SET unit = %s WHERE name = %s
+				""", (target_unit, name))
 
 			# ── Find or create a dedicated PB Planning Sheet ──
 			cache_key = (party_code, effective_date, pb_plan_name)
@@ -3131,7 +3153,7 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 			else:
 				existing = frappe.get_all("Planning sheet", filters={
 					"custom_pb_plan_name": pb_plan_name,
-					"ordered_date": effective_date,
+					"custom_planned_date": effective_date,
 					"party_code": party_code,
 					"docstatus": ["<", 2]
 				}, fields=["name"], limit=1)
@@ -3142,13 +3164,23 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 					pb_sheet = frappe.new_doc("Planning sheet")
 					pb_sheet.custom_plan_name = parent_doc.get("custom_plan_name") or "Default"
 					pb_sheet.custom_pb_plan_name = pb_plan_name
-					pb_sheet.ordered_date = effective_date
+					# CRITICAL: ordered_date stays as ORIGINAL
+					pb_sheet.ordered_date = original_ordered_date
 					pb_sheet.custom_planned_date = effective_date
 					pb_sheet.party_code = party_code
 					pb_sheet.customer = parent_doc.customer or ""
 					pb_sheet.sales_order = parent_doc.sales_order or ""
 					pb_sheet.insert(ignore_permissions=True)
 					pb_sheet_name = pb_sheet.name
+					# Force custom fields via SQL
+					if frappe.db.has_column("Planning sheet", "custom_pb_plan_name"):
+						frappe.db.sql("""
+							UPDATE `tabPlanning sheet`
+							SET custom_pb_plan_name = %s, custom_plan_name = %s,
+							    custom_planned_date = %s
+							WHERE name = %s
+						""", (pb_plan_name, parent_doc.get("custom_plan_name") or "Default",
+						      effective_date, pb_sheet_name))
 
 				pb_sheet_cache[cache_key] = pb_sheet_name
 
@@ -3157,14 +3189,20 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 				SELECT COALESCE(MAX(idx), 0) FROM `tabPlanning Sheet Item` WHERE parent = %s
 			""", (pb_sheet_name,))[0][0]
 
-			# ── Move item to the PB sheet ──
-			frappe.db.set_value("Planning Sheet Item", name, "parent", pb_sheet_name)
-			frappe.db.set_value("Planning Sheet Item", name, "parenttype", "Planning sheet")
-			frappe.db.set_value("Planning Sheet Item", name, "parentfield", "items")
+			# ── Move item to the PB sheet via raw SQL ──
+			frappe.db.sql("""
+				UPDATE `tabPlanning Sheet Item`
+				SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items'
+				WHERE name = %s
+			""", (pb_sheet_name, name))
 
 			# Also set item-level planned date for consistency
 			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-				frappe.db.set_value("Planning Sheet Item", name, "custom_item_planned_date", effective_date)
+				frappe.db.sql("""
+					UPDATE `tabPlanning Sheet Item`
+					SET custom_item_planned_date = %s
+					WHERE name = %s
+				""", (effective_date, name))
 
 			# ── Update idx for sequence ordering on board ──
 			if sequence_no is not None:
