@@ -601,6 +601,9 @@ const COLOR_GROUPS = [
   { keywords: ["NAVY BLUE", "DARK BLUE"],priority: 55, hex: "#000080" },
   { keywords: ["BLUE"],                  priority: 46, hex: "#0000FF" },
 
+  // VIOLET / PURPLE (58-59)
+  { keywords: ["VIOLET", "VOILET", "PURPLE"], priority: 58, hex: "#8B00FF" },
+
   // GREENS (60-75)
   { keywords: ["MEDICAL GREEN"],         priority: 60, hex: "#00897B" },
   { keywords: ["PARROT GREEN", "LIGHT GREEN"], priority: 61, hex: "#57C84D" },
@@ -2603,14 +2606,8 @@ async function pushToProductionBoard() {
         globalColorTotals[c] = (globalColorTotals[c] || 0) + (parseFloat(i.qty) || 0) / 1000.0;
     });
 
-    // Collect item names from current view, ONLY enforcing 800kg minimum for Auto-selection
-    const allItemNames = [...new Set(items.map(d => {
-        const c = (d.color || '').trim().toUpperCase();
-        if (c && globalColorTotals[c] !== undefined && globalColorTotals[c] < 0.8) {
-            return null; // Skip colors < 800kg
-        }
-        return d.itemName;
-    }).filter(Boolean))];
+    // Collect item names from current view
+    const allItemNames = [...new Set(items.map(d => d.itemName).filter(Boolean))];
 
     if (allItemNames.length === 0) {
         frappe.msgprint('No valid items >= 800kg to push.');

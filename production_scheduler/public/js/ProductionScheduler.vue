@@ -246,6 +246,9 @@ const COLOR_GROUPS = [
   { keywords: ["NAVY BLUE", "DARK BLUE"],priority: 55, hex: "#000080" },
   { keywords: ["BLUE"],                  priority: 46, hex: "#0000FF" },
 
+  // VIOLET / PURPLE (58-59)
+  { keywords: ["VIOLET", "VOILET", "PURPLE"], priority: 58, hex: "#8B00FF" },
+
   { keywords: ["MEDICAL GREEN"],         priority: 60, hex: "#00897B" },
   { keywords: ["PARROT GREEN", "LIGHT GREEN"], priority: 61, hex: "#57C84D" },
   { keywords: ["RELIANCE GREEN"],        priority: 62, hex: "#228B22" },
