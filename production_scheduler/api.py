@@ -3421,6 +3421,30 @@ def delete_pb_plan(pb_plan_name, date=None, start_date=None, end_date=None):
 
 
 @frappe.whitelist()
+def emergency_cleanup_all_pushed_status():
+	"""
+	ONE-CLICK CLEANUP: 
+	Finds every Planning Sheet and Item that is marked as 'Pushed' 
+	and strips the flags so they appear back in the Color Chart.
+	"""
+	# 1. Clear Sheet-level flags
+	frappe.db.sql("""
+		UPDATE `tabPlanning sheet` 
+		SET custom_pb_plan_name = NULL, custom_planned_date = NULL 
+		WHERE custom_pb_plan_name IS NOT NULL AND custom_pb_plan_name != ''
+	""")
+	
+	# 2. Clear Item-level flags
+	frappe.db.sql("""
+		UPDATE `tabPlanning Sheet Item` 
+		SET custom_item_planned_date = NULL, custom_pb_plan_name = NULL
+		WHERE custom_pb_plan_name IS NOT NULL OR custom_item_planned_date IS NOT NULL
+	""")
+	
+	frappe.db.commit()
+	return {"status": "success", "message": "All orders unlocked and returned to Color Chart."}
+
+@frappe.whitelist()
 def revert_items_to_color_chart(item_names):
 	"""
 	Reverts items back to the Color Chart by clearing their Planning Sheet's custom_planned_date.
