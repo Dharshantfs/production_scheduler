@@ -2713,7 +2713,7 @@ async function pushToProductionBoard() {
 
             const dragHandle = item.pushed ? '' : `<span class="drag-handle" style="cursor:grab;color:#94a3b8;font-size:15px;padding:0 4px;user-select:none;" title="Drag to reorder">⠿</span>`;
 
-            return `${unitDivider}<tr style="background:${rowBg};border-bottom:1px solid #eee;opacity:${rowOpacity};">
+            return `${unitDivider}<tr data-seq-idx="${i}" style="background:${rowBg};border-bottom:1px solid #eee;opacity:${rowOpacity};">
                 <td style="padding:4px 2px;text-align:center;">${dragHandle}</td>
                 <td style="padding:4px 6px;text-align:center;">
                     ${actionHtml}
@@ -3099,12 +3099,18 @@ async function pushToProductionBoard() {
             tbody._sortable = new window.Sortable(tbody, {
                 animation: 150,
                 handle: '.drag-handle',
+                filter: 'tr:not([data-seq-idx])', // skip unit-header rows
                 ghostClass: 'sortable-ghost',
                 onEnd: (evt) => {
-                    const { oldIndex, newIndex } = evt;
-                    if (oldIndex === newIndex) return;
-                    const moved = currentSequence.splice(oldIndex, 1)[0];
-                    currentSequence.splice(newIndex, 0, moved);
+                    // Use data-seq-idx to get real currentSequence indices (unit headers are not seq items)
+                    const draggedRow = evt.item;
+                    const fromIdx = parseInt(draggedRow.dataset.seqIdx);
+                    // Find where the row ended up among real-data rows
+                    const allDataRows = Array.from(tbody.querySelectorAll('tr[data-seq-idx]'));
+                    const toIdx = allDataRows.indexOf(draggedRow);
+                    if (isNaN(fromIdx) || toIdx < 0 || fromIdx === toIdx) return;
+                    const moved = currentSequence.splice(fromIdx, 1)[0];
+                    currentSequence.splice(toIdx, 0, moved);
                     // Re-number sequences
                     currentSequence.forEach((item, i) => { item.sequence_no = i + 1; });
                     d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
