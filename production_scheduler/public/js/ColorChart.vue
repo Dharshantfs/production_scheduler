@@ -2652,11 +2652,33 @@ async function pushToProductionBoard() {
     }
 
     const today = frappe.datetime.get_today();
-    const fetchDates = (filterOrderDate.value || today)
-        .split(",")
-        .map(d => d.trim())
-        .filter(Boolean);
-    const defaultTargetDate = fetchDates.length ? fetchDates[fetchDates.length - 1] : today;
+    let fetchDates = [];
+    
+    if (viewScope.value === 'weekly' && filterWeek.value) {
+        const [yearStr, weekStr] = filterWeek.value.split("-W");
+        const simple = new Date(parseInt(yearStr), 0, 1 + (parseInt(weekStr) - 1) * 7);
+        const ISOweekStart = new Date(simple);
+        if (simple.getDay() <= 4) ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+        else ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+        
+        for(let i=0; i<7; i++) {
+            const d = new Date(ISOweekStart);
+            d.setDate(ISOweekStart.getDate() + i);
+            fetchDates.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`);
+        }
+    } else if (viewScope.value === 'monthly' && filterMonth.value) {
+        const [yearStr, monthStr] = filterMonth.value.split("-");
+        const year = parseInt(yearStr);
+        const month = parseInt(monthStr);
+        const lastDay = new Date(year, month, 0).getDate();
+        for(let i=1; i<=lastDay; i++) {
+            fetchDates.push(`${yearStr}-${monthStr}-${String(i).padStart(2,'0')}`);
+        }
+    } else {
+        fetchDates = (filterOrderDate.value || today).split(",").map(d => d.trim()).filter(Boolean);
+    }
+    
+    const defaultTargetDate = fetchDates.length ? fetchDates[0] : today;
 
     // State for the dialog
     let smartSequenceActive = false;

@@ -3438,9 +3438,22 @@ def revert_items_to_color_chart(item_names):
 	updated_sheets = set()
 	for name in item_names:
 		try:
+			# Clean item-level tracking explicitly
+			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+				frappe.db.sql("""
+					UPDATE `tabPlanning Sheet Item`
+					SET custom_item_planned_date = NULL, custom_plan_code = NULL
+					WHERE name = %s
+				""", (name,))
+
 			parent = frappe.db.get_value("Planning Sheet Item", name, "parent")
 			if parent and parent not in updated_sheets:
-				frappe.db.set_value("Planning sheet", parent, "custom_planned_date", None)
+				# Clean parent-level tracking
+				frappe.db.sql("""
+					UPDATE `tabPlanning sheet`
+					SET custom_planned_date = NULL, custom_pb_plan_name = NULL
+					WHERE name = %s
+				""", (parent,))
 				updated_sheets.add(parent)
 		except Exception as e:
 			frappe.log_error(f"revert error for {name}: {e}", "Revert to Color Chart")
