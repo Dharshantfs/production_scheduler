@@ -397,22 +397,20 @@
                             <div class="flex items-center">
                                 <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
                                 {{ row.color }}
-                                <button v-if="row.isPushed" 
+                                <button v-if="row.anyPushed" 
                                     @click.stop="revertColorGroup(row.color)"
-                                    style="margin-left:8px; background: #16a34a; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(22,163,74,0.3); transition: all 0.2s;"
-                                    :title="`Pushed to: ${row.pushedPlanName}. Click to revert back to Color Chart.`"
-                                    onmouseover="this.style.opacity='0.8'"
-                                    onmouseout="this.style.opacity='1'"
+                                    style="margin-left:8px; background: #059669; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(5,150,105,0.3); transition: all 0.2s;"
+                                    :title="`Partially Pushed to: ${row.pushedPlanName}. Click to revert back to Color Chart.`"
                                 >
-                                    ✅ {{ row.pushedPlanName }}
+                                    ✅ {{ row.isPushed ? 'FULL' : 'PARTIAL' }}
                                 </button>
-                                <button v-else-if="row.total >= 800" 
+                                <button v-if="!row.isPushed" 
                                     @click.stop="openPushColorDialog(row.color)"
                                     style="margin-left:8px; background: linear-gradient(135deg, #3b82f6, #2563eb); color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(37,99,235,0.3); transition: all 0.2s;"
                                     onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(37,99,235,0.4)'"
                                     onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 4px rgba(37,99,235,0.3)'"
                                 >
-                                    📤 Push
+                                    📤 Push {{ row.anyPushed ? 'REM' : '' }}
                                 </button>
                             </div>
                         </td>
@@ -564,109 +562,75 @@ import Sortable from "sortablejs";
 // Color groups for keyword-based matching
 // Check MOST SPECIFIC (multi-word) first, then SINGLE-WORD catch-all groups
 const COLOR_GROUPS = [
-  // ── MIX MARKERS (always at end, priority 199) ──────────────────
-  { keywords: ["WHITE MIX"],  priority: 199, hex: "#f0f0f0" },
-  { keywords: ["BLACK MIX"],  priority: 199, hex: "#404040" },
-  { keywords: ["COLOR MIX"],  priority: 199, hex: "#c0c0c0" },
-  { keywords: ["BEIGE MIX"],  priority: 199, hex: "#e0d5c0" },
-  
-  // ── NO COLOR (Handling Unassigned/Empty Colors) ─────────────────
-  // High priority to push to end, or 0 to push to start? 
-  // User didn't specify sort order for these, let's put them at END (999) 
-  // so they don't interrupt the refined flow.
-  { keywords: ["NO COLOR"], priority: 999, hex: "#e5e7eb" }, // Grey-200
+  // ── 1. IVORY / CREAM / OFF WHITE (Priority 1-2) ──────────────────
+  { keywords: ["BRIGHT IVORY"],          priority: 1, hex: "#FFFFF0" },
+  { keywords: ["IVORY", "OFF WHITE", "CREAM"], priority: 2, hex: "#FFFFF0" },
 
-  // ── WHITES (priority 5 — excluded by filter anyway) ─────────────
-  // IMPORTANT: multi-word phrases FIRST so "BRIGHT WHITE" matches here, not "WHITE"
+  // ── 2. WHITES (Priority 5-6) ───────────────────────────────────
   { keywords: ["BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE", "SUPER WHITE",
                "BLEACH WHITE", "OPTICAL WHITE"], priority: 5, hex: "#FFFFFF" },
-  { keywords: ["WHITE"], priority: 5, hex: "#FFFFFF" },
+  { keywords: ["WHITE"], priority: 6, hex: "#FFFFFF" },
 
-  // ── 1. IVORY / CREAM / OFF WHITE (4) — User Req: Beige -> Ivory -> White 
-  { keywords: ["IVORY", "OFF WHITE", "CREAM"], priority: 4, hex: "#FFFFF0" },
+  // ── 3. COLORS (Priority 10+) ───────────────────────────────────
+  // YELLOWS (10-12): Lemon → Yellow → Golden
+  { keywords: ["LEMON YELLOW"],          priority: 10, hex: "#FFF44F" },
+  { keywords: ["GOLDEN YELLOW"],         priority: 12, hex: "#FFD700" },
+  { keywords: ["GOLD"],                  priority: 12, hex: "#FFD700" },
+  { keywords: ["YELLOW"],               priority: 11, hex: "#FFFF00" },
 
-  // ── 2. YELLOWS (20-22): Lemon → Yellow → Golden ─────────────────
-  { keywords: ["LEMON YELLOW"],          priority: 20, hex: "#FFF44F" },
-  { keywords: ["GOLDEN YELLOW"],         priority: 22, hex: "#FFD700" }, // before YELLOW & GOLD
-  { keywords: ["GOLD"],                  priority: 22, hex: "#FFD700" }, // before YELLOW
-  { keywords: ["YELLOW"],               priority: 21, hex: "#FFFF00" },
+  // ORANGES (15-18)
+  { keywords: ["LIGHT ORANGE", "PEACH"], priority: 15, hex: "#FFD580" },
+  { keywords: ["BRIGHT ORANGE"],         priority: 18, hex: "#FF8C00" },
+  { keywords: ["ORANGE"],               priority: 17, hex: "#FFA500" },
 
-  // ── 3. ORANGES (28-31): Light → Orange → Bright → Peach ─────────
-  { keywords: ["LIGHT ORANGE"],          priority: 28, hex: "#FFD580" },
-  { keywords: ["PEACH"],                 priority: 28, hex: "#FFDAB9" },
-  { keywords: ["BRIGHT ORANGE"],         priority: 31, hex: "#FF8C00" }, // before ORANGE
-  { keywords: ["ORANGE"],               priority: 30, hex: "#FFA500" },
+  // PINKS (25-28)
+  { keywords: ["BABY PINK", "LIGHT PINK"], priority: 25, hex: "#FFB6C1" },
+  { keywords: ["ROSE", "PINK"],          priority: 26, hex: "#FFC0CB" },
+  { keywords: ["DARK PINK", "HOT PINK"], priority: 28, hex: "#FF69B4" },
 
-  // ── 4. PINKS (39-42): Baby → Light → Pink → Dark → Hot ──────────
-  { keywords: ["BABY PINK"],             priority: 39, hex: "#FFB6C1" },
-  { keywords: ["LIGHT PINK"],            priority: 39, hex: "#FFB6C1" },
-  { keywords: ["DARK PINK"],             priority: 42, hex: "#FF1493" }, // before PINK
-  { keywords: ["HOT PINK"],              priority: 42, hex: "#FF69B4" }, // before PINK
-  { keywords: ["ROSE", "PINK"],          priority: 40, hex: "#FFC0CB" },
+  // REDS (35-37)
+  { keywords: ["BRIGHT RED", "SCARLET", "CRIMSON"], priority: 35, hex: "#FF2400" },
+  { keywords: ["RED"],                   priority: 36, hex: "#FF0000" },
+  { keywords: ["MAROON", "BURGUNDY", "DARK RED"],  priority: 37, hex: "#800000" },
 
-  // ── 5. REDS (50-51) ──────────────────────────────────────────────
-  { keywords: ["BRIGHT RED"],            priority: 50, hex: "#FF2400" }, // before RED
-  { keywords: ["SCARLET", "CRIMSON"],    priority: 50, hex: "#DC143C" },
-  { keywords: ["RED"],                   priority: 50, hex: "#FF0000" },
+  // BLUES (45-55)
+  { keywords: ["SKY BLUE", "LIGHT BLUE"], priority: 45, hex: "#87CEEB" },
+  { keywords: ["ROYAL BLUE"],            priority: 46, hex: "#4169E1" },
+  { keywords: ["PEACOCK BLUE"],          priority: 47, hex: "#005F69" },
+  { keywords: ["MEDICAL BLUE"],          priority: 48, hex: "#0077B6" },
+  { keywords: ["NAVY BLUE", "DARK BLUE"],priority: 55, hex: "#000080" },
+  { keywords: ["BLUE"],                  priority: 46, hex: "#0000FF" },
 
-  // ── 6. BLUES (55-59): Sky→Light→Royal→Peacock→Medical→Navy ──────
-  // IMPORTANT: multi-word specific names BEFORE generic "BLUE"
-  { keywords: ["SKY BLUE"],              priority: 55, hex: "#87CEEB" },
-  { keywords: ["LIGHT BLUE"],            priority: 55, hex: "#ADD8E6" },
-  { keywords: ["ROYAL BLUE"],            priority: 56, hex: "#4169E1" },
-  { keywords: ["PEACOCK BLUE"],          priority: 57, hex: "#005F69" },
-  { keywords: ["MEDICAL BLUE"],          priority: 58, hex: "#0077B6" },
-  { keywords: ["NAVY BLUE", "DARK BLUE"],priority: 59, hex: "#000080" },
-  { keywords: ["BLUE"],                  priority: 56, hex: "#0000FF" }, // generic → Royal Blue level
+  // GREENS (60-75)
+  { keywords: ["MEDICAL GREEN"],         priority: 60, hex: "#00897B" },
+  { keywords: ["PARROT GREEN", "LIGHT GREEN"], priority: 61, hex: "#57C84D" },
+  { keywords: ["RELIANCE GREEN"],        priority: 62, hex: "#228B22" },
+  { keywords: ["PEACOCK GREEN"],         priority: 63, hex: "#00A693" },
+  { keywords: ["AQUA GREEN", "AQUA"],    priority: 64, hex: "#00FFFF" },
+  { keywords: ["APPLE GREEN", "LIME GREEN"], priority: 65, hex: "#32CD32" },
+  { keywords: ["MINT GREEN", "MINT"],    priority: 66, hex: "#98FF98" },
+  { keywords: ["SEA GREEN"],             priority: 67, hex: "#2E8B57" },
+  { keywords: ["GRASS GREEN"],           priority: 68, hex: "#7CFC00" },
+  { keywords: ["BOTTLE GREEN"],          priority: 69, hex: "#006A4E" },
+  { keywords: ["POTHYS GREEN"],          priority: 70, hex: "#1A5C38" },
+  { keywords: ["DARK GREEN"],            priority: 71, hex: "#006400" },
+  { keywords: ["OLIVE GREEN", "OLIVE"],  priority: 72, hex: "#808000" },
+  { keywords: ["ARMY GREEN", "ARMY"],    priority: 75, hex: "#4B5320" },
+  { keywords: ["GREEN", "KELLY GREEN"],  priority: 62, hex: "#008000" },
 
-  // ── 7. VIOLETS & PURPLES (60-61) ────────────────────────────────
-  { keywords: ["LAVENDER", "LILAC"],     priority: 60, hex: "#E6E6FA" },
-  { keywords: ["VIOLET"],               priority: 60, hex: "#EE82EE" },
-  { keywords: ["PURPLE", "MAGENTA"],     priority: 61, hex: "#800080" },
+  // GREYS (80)
+  { keywords: ["SILVER", "LIGHT GREY", "GREY", "GRAY"], priority: 80, hex: "#808080" },
 
-  // ── 8. GREENS (65-79): exact user order ──────────────────────────
-  // Medical → Parrot → Reliance → Peacock → Aqua → Apple → Mint
-  // → Sea → Grass → Bottle → Pothys → Dark → Olive → Army
-  // IMPORTANT: all specific names BEFORE generic "GREEN"
-  { keywords: ["MEDICAL GREEN"],         priority: 65, hex: "#00897B" },
-  { keywords: ["PARROT GREEN"],          priority: 66, hex: "#57C84D" },
-  { keywords: ["LIGHT GREEN"],           priority: 66, hex: "#90EE90" }, // ≈ Parrot Green
-  { keywords: ["RELIANCE GREEN"],        priority: 67, hex: "#228B22" },
-  { keywords: ["PEACOCK GREEN"],         priority: 68, hex: "#00A693" },
-  { keywords: ["AQUA GREEN", "AQUA"],    priority: 69, hex: "#00FFFF" },
-  { keywords: ["APPLE GREEN"],           priority: 70, hex: "#32CD32" },
-  { keywords: ["LIME GREEN"],            priority: 70, hex: "#32CD32" },
-  { keywords: ["MINT GREEN", "MINT"],    priority: 71, hex: "#98FF98" },
-  { keywords: ["SEA GREEN"],             priority: 72, hex: "#2E8B57" },
-  { keywords: ["GRASS GREEN"],           priority: 73, hex: "#7CFC00" },
-  { keywords: ["BOTTLE GREEN"],          priority: 74, hex: "#006A4E" },
-  { keywords: ["POTHYS GREEN"],          priority: 75, hex: "#1A5C38" },
-  { keywords: ["DARK GREEN"],            priority: 76, hex: "#006400" },
-  { keywords: ["OLIVE GREEN", "OLIVE"],  priority: 77, hex: "#808000" },
-  { keywords: ["ARMY GREEN", "ARMY"],    priority: 78, hex: "#4B5320" },
-  { keywords: ["KELLY GREEN", "GREEN"],  priority: 67, hex: "#008000" }, // generic → Reliance level
+  // BLACK (90)
+  { keywords: ["BLACK"],                 priority: 90, hex: "#000000" },
 
-  // ── 9. SILVER & GREY (80-82) ────────────────────────────────────
-  { keywords: ["SILVER", "LIGHT GREY", "LIGHT GRAY"], priority: 80, hex: "#C0C0C0" },
-  { keywords: ["DARK GREY", "DARK GRAY"],             priority: 82, hex: "#696969" },
-  { keywords: ["GREY", "GRAY"],                       priority: 81, hex: "#808080" },
+  // ── 4. BEIGES (Priority 95-96) ── Transition Rule: Run last to recover machine
+  { keywords: ["DARK BEIGE", "KHAKI", "SAND"], priority: 95, hex: "#C2B280" },
+  { keywords: ["LIGHT BEIGE", "BEIGE", "BROWN", "CHOCOLATE"], priority: 96, hex: "#F5F5DC" },
 
-  // ── 10. MAROON & BROWN (85-86) — after greens, per user spec ────
-  { keywords: ["DARK RED"],              priority: 85, hex: "#8B0000" }, // before RED match
-  { keywords: ["MAROON", "BURGUNDY"],    priority: 85, hex: "#800000" },
-  { keywords: ["DARK BROWN"],            priority: 86, hex: "#5C4033" },
-  { keywords: ["BROWN", "CHOCOLATE", "COFFEE"], priority: 86, hex: "#A52A2A" },
-
-  // ── 11. BLACK (92) — heaviest dark color ───────────────────────
-  { keywords: ["BLACK"],                 priority: 92, hex: "#000000" },
-
-  // ── 12. BEIGE (95-96) — mandatory AFTER BLACK ────────────────────
-  // Machine MUST run BEIGE after BLACK (and other heavy dark colors)
-  // to recover/transition before next cycle. BEIGE is the last step.
-  { keywords: ["DARK BEIGE"],            priority: 95, hex: "#C2B280" }, // dark beige first (bridge after black/red)
-  { keywords: ["KHAKI", "SAND"],         priority: 95, hex: "#C2B280" },
-  { keywords: ["LIGHT BEIGE"],           priority: 96, hex: "#F5F5DC" },
-  { keywords: ["BEIGE"],                 priority: 96, hex: "#F5F5DC" },
+  // ── MIX MARKERS (priority 199) ──
+  { keywords: ["WHITE MIX", "BLACK MIX", "COLOR MIX", "BEIGE MIX"], priority: 199, hex: "#c0c0c0" },
+  { keywords: ["NO COLOR"], priority: 999, hex: "#e5e7eb" },
 ];
 
 const GAP_THRESHOLD = 0; // any color priority difference triggers mix roll
@@ -989,20 +953,24 @@ const matrixData = computed(() => {
         return { color: color, cells: {}, total: 0 };
     });
 
-    // 3. Fill Cells
     const processRows = (rowArray) => {
         rowArray.forEach(row => {
             let pushedPlanNames = new Set();
             let anyPushed = false;
             let hasItems = false;
+            let totalItems = 0;
+            let pushedItems = 0;
             
             sortedGroups.forEach(group => {
                 const matchs = group.items.filter(i => i.color === row.color);
                 matchs.forEach(m => {
                     hasItems = true;
-                    if (m.plannedDate) {
+                    totalItems++;
+                    if (m.plannedDate || m.pbPlanName) {
                         anyPushed = true;
-                        pushedPlanNames.add(m.plannedDate);
+                        pushedItems++;
+                        const pDate = m.plannedDate || m.custom_item_planned_date || 'Board';
+                        pushedPlanNames.add(pDate);
                     }
                 });
                 
@@ -1013,14 +981,9 @@ const matrixData = computed(() => {
                 }
             });
             
-            // Business rule: if a color has been pushed once, block pushing again until reverted.
-            // So we show "Pushed" as soon as ANY item of the color is on the Production Board.
-            if (hasItems && anyPushed) {
-                row.isPushed = true;
-                row.pushedPlanName = Array.from(pushedPlanNames).join(', ') || 'Pushed';
-            } else {
-                row.isPushed = false;
-            }
+            row.anyPushed = anyPushed;
+            row.isPushed = (hasItems && totalItems > 0 && totalItems === pushedItems);
+            row.pushedPlanName = Array.from(pushedPlanNames).join(', ') || 'Pushed';
         });
     };
     
