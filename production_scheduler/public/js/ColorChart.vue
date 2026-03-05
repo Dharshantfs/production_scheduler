@@ -92,6 +92,9 @@
       </div>
       
       <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
+      <button class="cc-clear-btn" style="color: #dc2626; border-color: #dc2626; margin-left: 8px;" @click="emergencyReset" title="FORCE UNLOCK: Returns all stuck orders to Color Chart">
+        🚑 Emergency Reset
+      </button>
       <button class="cc-clear-btn" style="color: #6366f1; border-color: #6366f1; margin-left: 8px;" @click="showGlobalSortInfo" title="View Color Hierarchy Rules">
         🎨 Sort Info
       </button>
@@ -397,11 +400,11 @@
                                 <button v-if="row.isPushed" 
                                     @click.stop="revertColorGroup(row.color)"
                                     style="margin-left:8px; background: #16a34a; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(22,163,74,0.3); transition: all 0.2s;"
-                                    title="Click to revert all orders for this color back to Color Chart"
+                                    :title="`Pushed to: ${row.pushedPlanName}. Click to revert back to Color Chart.`"
                                     onmouseover="this.style.opacity='0.8'"
                                     onmouseout="this.style.opacity='1'"
                                 >
-                                    ✅ {{ row.pushedPlanName || 'Pushed' }}
+                                    ✅ {{ row.pushedPlanName }}
                                 </button>
                                 <button v-else-if="row.total >= 800" 
                                     @click.stop="openPushColorDialog(row.color)"
@@ -4291,6 +4294,27 @@ async function revertColorGroup(color) {
         console.error("Revert Error", e);
         frappe.msgprint("Error communicating with revert API.");
     }
+}
+
+async function emergencyReset() {
+    frappe.confirm(
+        "<b>⚠️ CRITICAL WARNING</b><br><br>This will find EVERY order currently marked as 'Pushed' and unlock them, returning them to the Color Chart.<br><br>Are you sure you want to perform a <b>FULL RESET</b>?",
+        async () => {
+            try {
+                const r = await frappe.call({
+                    method: "production_scheduler.api.emergency_cleanup_all_pushed_status",
+                    freeze: true
+                });
+                if (r.message && r.message.status === 'success') {
+                    frappe.show_alert({ message: r.message.message, indicator: 'green' });
+                    fetchData();
+                }
+            } catch (e) {
+                console.error("Reset Error", e);
+                frappe.msgprint("Error during emergency reset.");
+            }
+        }
+    );
 }
 
 // ---- PULL ORDERS FROM FUTURE ----
