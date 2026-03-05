@@ -2662,7 +2662,7 @@ async function pushToProductionBoard() {
     let smartSequenceActive = false;
     let masterSequence = allItemNames.map((n, i) => {
         const d = items.find(it => it.itemName === n) || {};
-        const isPushed = !!d.plannedDate; // If it has a plannedDate, it's already on the board
+        const isPushed = !!d.pbPlanName; // If it has a pbPlanName, it's actually on the Production Board
         return {
             name: n,
             color: d.color || '',
@@ -2908,12 +2908,13 @@ async function pushToProductionBoard() {
 
                 // Find next available date automatically (no manual dialog)
                 const getNextDate = async (unit, fromDate, wt) => {
-                    let dateObj = new Date(fromDate);
+                    let currentDate = fromDate;
                     for (let tries = 0; tries < 60; tries++) {
-                        dateObj.setDate(dateObj.getDate() + 1);
+                        currentDate = frappe.datetime.add_days(currentDate, 1);
+                        const dateObj = frappe.datetime.str_to_obj(currentDate);
                         // Skip Sundays
                         if (dateObj.getDay() === 0) continue;
-                        const dateStr = dateObj.toISOString().split('T')[0];
+                        const dateStr = frappe.datetime.obj_to_str(dateObj); // ensures YYYY-MM-DD
                         const loads = await getDayLoads(dateStr);
                         const currentLoad = loads[unit] || 0;
                         if (currentLoad + wt <= (UNIT_LIMITS[unit] || 999)) return dateStr;
@@ -4051,7 +4052,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
 
     function getFilteredItems() {
         return allForColor.filter(d => {
-            if (d.plannedDate) return false; // already pushed
+            if (d.pbPlanName) return false; // already pushed
             if (fQuality && (d.quality || "").toUpperCase().trim() !== fQuality.toUpperCase().trim()) return false;
             if (fPartyCode && (d.partyCode || "").toUpperCase().indexOf(fPartyCode.toUpperCase()) === -1) return false;
             if (fGsm && String(d.gsm || "").trim() !== String(fGsm).trim()) return false;
@@ -4061,7 +4062,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
 
     let items = getFilteredItems();
 
-    if (allForColor.filter(d => !d.plannedDate).length === 0) {
+    if (allForColor.filter(d => !d.pbPlanName).length === 0) {
         frappe.msgprint("No eligible items found. (Note: White orders are auto-allocated and do not need to be pushed manually, and already-pushed items are hidden.)");
         return;
     }
@@ -4244,7 +4245,7 @@ async function revertColorGroup(color) {
     if (!confirm(`Revert pushed items for color "${color}" back to the Color Chart?`)) return;
     
     // Find all items of this color that are pushed
-    const itemsToRevert = rawData.value.filter(d => d.color === color && d.plannedDate);
+    const itemsToRevert = rawData.value.filter(d => d.color === color && d.pbPlanName);
     
     if (itemsToRevert.length === 0) {
         frappe.msgprint(`No pushed orders found for ${color}.`);
