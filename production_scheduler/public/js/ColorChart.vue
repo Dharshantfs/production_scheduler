@@ -3021,6 +3021,50 @@ async function pushToProductionBoard() {
     d.$wrapper.find('.modal-dialog').css('max-width', '800px');
     loadGlobalCapacityPreview(d, currentSequence);
 
+    // ── AUTO-APPLY SMART SEQUENCE ON OPEN (backend drives light→dark order) ──
+    setTimeout(async () => {
+        try {
+            const itemDate = items && items.length > 0
+                ? (items[0].ordered_date || items[0].orderDate || today)
+                : today;
+            const targetDateForSeed = defaultTargetDate.trim();
+            const unpushedNames = currentSequence.filter(s => !s.pushed).map(s => s.name);
+
+            const r = await frappe.call({
+                method: 'production_scheduler.api.get_smart_push_sequence',
+                args: {
+                    item_names: JSON.stringify(unpushedNames),
+                    target_date: targetDateForSeed
+                }
+            });
+            const smartSeq = r.message || [];
+            if (smartSeq.length > 0) {
+                smartSequenceActive = true;
+                const mappedSeq = smartSeq.map((s, i) => ({
+                    name: s.name,
+                    color: s.color || '',
+                    quality: s.quality || s.custom_quality || '',
+                    gsm: s.gsm || s.gsmVal || '',
+                    unit: s.unit || s.unitKey || '',
+                    qty: s.qty || '',
+                    customer: s.customer || s.partyCode || '',
+                    phase: s.phase || '',
+                    is_seed_bridge: !!s.is_seed_bridge,
+                    sequence_no: i + 1,
+                    pushed: !!s.plannedDate,
+                    checked: !s.plannedDate  // auto-tick all unpushed
+                }));
+                const pushedItems = currentSequence.filter(s => s.pushed);
+                currentSequence = [...mappedSeq, ...pushedItems];
+                currentSequence.forEach((item, i) => { item.sequence_no = i + 1; });
+                d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
+                setTimeout(() => { wireCheckboxes(); updateCountLabel(); }, 100);
+            }
+        } catch(e) {
+            console.warn('Auto smart-sequence on open failed, keeping original order', e);
+        }
+    }, 300);
+
     function applyFilters() {
         const unitSearch = d.get_value('filter_unit') || 'All Units';
         const qualitySearch = (d.get_value('filter_quality') || "").toLowerCase();
