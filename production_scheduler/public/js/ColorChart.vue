@@ -2933,7 +2933,7 @@ async function pushToProductionBoard() {
                         const currentLoad = dayLoads[unit] || 0;
                         const after = currentLoad + wt;
 
-                        if (after <= (limit * 1.05)) {
+                        if (after <= limit) {
                             dayLoads[unit] = after;
                             unitDateMap[unit] = chosenDate;
                             itemsToMove.push({

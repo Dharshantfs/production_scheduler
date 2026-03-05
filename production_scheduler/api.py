@@ -3141,7 +3141,7 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 				
 				# Allow placement if it fits within the limit
 				# OR if the day is completely empty but the item itself is larger than the limit (prevents infinite loop)
-				if (load + item_wt <= limit * 1.05) or (load == 0 and item_wt >= limit):
+				if (load + item_wt <= limit) or (load == 0 and item_wt >= limit):
 					effective_date = current_check_date
 					local_loads[load_key] = load + item_wt
 					break
