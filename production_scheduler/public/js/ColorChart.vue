@@ -2834,8 +2834,46 @@ async function pushToProductionBoard() {
             frappe.show_alert({ message: `Pushing ${checkedItems.length} items from fetch date(s) to ${targetDate}...`, indicator: 'blue' });
 
             try {
-                // Manual overflow handling by unit:
-                // start each unit from target date, and if full ask user for the next date.
+                // ── PHASE SORT: White first → then Colors (Light→Dark) ──
+                const WHITE_COLORS_SET = new Set(["WHITE", "BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE",
+                    "SUPER WHITE", "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"]);
+                function isWhiteItem(item) {
+                    const c = (item.color || "").toUpperCase();
+                    return WHITE_COLORS_SET.has(c) || c.includes("WHITE") || c.includes("BLEACH");
+                }
+                function colorPriority(item) {
+                    const c = (item.color || "").toUpperCase();
+                    // Simple priority: white=0, yellows=20, oranges=30, pinks=40, reds=50, blues=57, greens=67, grey=80, brown=86, black=92, beige=96
+                    if (isWhiteItem({color: c})) return 0;
+                    if (c.includes("LEMON") || c.includes("GOLD")) return 22;
+                    if (c.includes("YELLOW")) return 21;
+                    if (c.includes("ORANGE")) return 30;
+                    if (c.includes("PINK") || c.includes("ROSE")) return 40;
+                    if (c.includes("RED") || c.includes("CRIMSON") || c.includes("SCARLET")) return 50;
+                    if (c.includes("SKY") || c.includes("LIGHT BLUE")) return 55;
+                    if (c.includes("BLUE") || c.includes("NAVY")) return 58;
+                    if (c.includes("PURPLE") || c.includes("VIOLET")) return 61;
+                    if (c.includes("GREEN")) return 67;
+                    if (c.includes("GREY") || c.includes("GRAY") || c.includes("SILVER")) return 80;
+                    if (c.includes("BROWN") || c.includes("MAROON")) return 85;
+                    if (c.includes("BLACK")) return 92;
+                    if (c.includes("BEIGE") || c.includes("CREAM") || c.includes("KHAKI")) return 96;
+                    return 50;
+                }
+
+                // Sort: whites first in quality order, then colors light→dark
+                const sortedItems = [...checkedItems].sort((a, b) => {
+                    const aIsWhite = isWhiteItem(a);
+                    const bIsWhite = isWhiteItem(b);
+                    if (aIsWhite && !bIsWhite) return -1;
+                    if (!aIsWhite && bIsWhite) return 1;
+                    // same phase: sort by color priority then GSM high→low
+                    const pDiff = colorPriority(a) - colorPriority(b);
+                    if (pDiff !== 0) return pDiff;
+                    return (parseFloat(b.gsm) || 0) - (parseFloat(a.gsm) || 0);
+                });
+
+                // AUTO-CASCADE: overflow to next available date automatically
                 const UNIT_LIMITS = { "Unit 1": 4.4, "Unit 2": 12.0, "Unit 3": 9.0, "Unit 4": 5.5 };
                 const unitDateMap = {};
                 const loadCache = {};
@@ -2857,8 +2895,23 @@ async function pushToProductionBoard() {
                     return loadCache[dateKey];
                 };
 
+                // Find next available date automatically (no manual dialog)
+                const getNextDate = async (unit, fromDate, wt) => {
+                    let d = new Date(fromDate);
+                    for (let tries = 0; tries < 60; tries++) {
+                        d.setDate(d.getDate() + 1);
+                        // Skip Sundays
+                        if (d.getDay() === 0) continue;
+                        const dateStr = d.toISOString().split('T')[0];
+                        const loads = await getDayLoads(dateStr);
+                        const currentLoad = loads[unit] || 0;
+                        if (currentLoad + wt <= (UNIT_LIMITS[unit] || 999)) return dateStr;
+                    }
+                    return fromDate; // fallback
+                };
+
                 let seqNo = 1;
-                for (const item of checkedItems) {
+                for (const item of sortedItems) {
                     const unit = item.unit || 'Unit 1';
                     const wt = (parseFloat(item.qty || 0) / 1000.0);
                     const limit = UNIT_LIMITS[unit] || 999.0;
@@ -2881,43 +2934,10 @@ async function pushToProductionBoard() {
                             break;
                         }
 
-                        // Ask planner to choose next date manually for overflow
-                        const suggest = await frappe.call({
-                            method: "production_scheduler.api.find_next_available_date",
-                            args: { unit, start_date: chosenDate, required_tons: wt, pb_only: 1 }
-                        });
-                        const suggestedDate = suggest?.message?.date || chosenDate;
-
-                        const nextDate = await new Promise((resolve) => {
-                            const overflowDialog = new frappe.ui.Dialog({
-                                title: 'Capacity Full',
-                                fields: [{
-                                    fieldname: 'next_date',
-                                    fieldtype: 'Date',
-                                    label: `${unit} full on ${chosenDate}. Choose next date`,
-                                    reqd: 1,
-                                    default: suggestedDate
-                                }],
-                                primary_action_label: 'Continue',
-                                primary_action: (vals) => {
-                                    const picked = (vals?.next_date || '').trim();
-                                    overflowDialog.hide();
-                                    resolve(picked);
-                                },
-                                secondary_action_label: 'Cancel',
-                                secondary_action: () => {
-                                    overflowDialog.hide();
-                                    resolve('');
-                                }
-                            });
-                            overflowDialog.show();
-                        });
-
-                        if (!nextDate) {
-                            frappe.msgprint('Push cancelled. No next date selected for overflow items.');
-                            return;
-                        }
+                        // AUTO-CASCADE: find next available date without asking user
+                        const nextDate = await getNextDate(unit, chosenDate, wt);
                         chosenDate = nextDate;
+                        unitDateMap[unit] = nextDate;
                     }
                 }
 
@@ -3123,15 +3143,13 @@ async function pushToProductionBoard() {
                         return mapped;
                     }
 
-                    const weight = parseFloat(mapped.qty || 0) / 1000;
-                    const limit = limitsMap[u] || 999;
-                    
-                    // Only tick if it perfectly fits in the aggregated multi-date capacity
-                    if ((currentLoads[u] || 0) + weight <= limit) {
-                        mapped.checked = true;
-                        currentLoads[u] = (currentLoads[u] || 0) + weight;
+                    // ── Smart Auto-Tick: tick ALL items (cascading at push time handles overflow) ──
+                    // If a specific unit is filtered in the dialog, only tick items from that unit
+                    const filterUnitValue2 = d.get_value('filter_unit') || 'All Units';
+                    if (filterUnitValue2 !== 'All Units' && (mapped.unit || 'Unit 1') !== filterUnitValue2) {
+                        mapped.checked = false;
                     } else {
-                        mapped.checked = false; // Exceeds capacity, leave unchecked
+                        mapped.checked = true; // Tick everything — cascade will place on available dates
                     }
                     
                     return mapped;
