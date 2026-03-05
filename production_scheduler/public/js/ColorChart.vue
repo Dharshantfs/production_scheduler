@@ -2881,44 +2881,8 @@ async function pushToProductionBoard() {
             frappe.show_alert({ message: `Pushing ${checkedItems.length} items from fetch date(s) to ${targetDate}...`, indicator: 'blue' });
 
             try {
-                // ── PHASE SORT: White first → then Colors (Light→Dark) ──
-                const WHITE_COLORS_SET = new Set(["WHITE", "BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE",
-                    "SUPER WHITE", "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"]);
-                function isWhiteItem(item) {
-                    const c = (item.color || "").toUpperCase();
-                    return WHITE_COLORS_SET.has(c) || c.includes("WHITE") || c.includes("BLEACH");
-                }
-                function colorPriority(item) {
-                    const c = (item.color || "").toUpperCase();
-                    // Simple priority: white=0, yellows=20, oranges=30, pinks=40, reds=50, blues=57, greens=67, grey=80, brown=86, black=92, beige=96
-                    if (isWhiteItem({color: c})) return 0;
-                    if (c.includes("LEMON") || c.includes("GOLD")) return 22;
-                    if (c.includes("YELLOW")) return 21;
-                    if (c.includes("ORANGE")) return 30;
-                    if (c.includes("PINK") || c.includes("ROSE")) return 40;
-                    if (c.includes("RED") || c.includes("CRIMSON") || c.includes("SCARLET")) return 50;
-                    if (c.includes("SKY") || c.includes("LIGHT BLUE")) return 55;
-                    if (c.includes("BLUE") || c.includes("NAVY")) return 58;
-                    if (c.includes("PURPLE") || c.includes("VIOLET")) return 61;
-                    if (c.includes("GREEN")) return 67;
-                    if (c.includes("GREY") || c.includes("GRAY") || c.includes("SILVER")) return 80;
-                    if (c.includes("BROWN") || c.includes("MAROON")) return 85;
-                    if (c.includes("BLACK")) return 92;
-                    if (c.includes("BEIGE") || c.includes("CREAM") || c.includes("KHAKI")) return 96;
-                    return 50;
-                }
-
-                // Sort: whites first in quality order, then colors light→dark
-                const sortedItems = [...checkedItems].sort((a, b) => {
-                    const aIsWhite = isWhiteItem(a);
-                    const bIsWhite = isWhiteItem(b);
-                    if (aIsWhite && !bIsWhite) return -1;
-                    if (!aIsWhite && bIsWhite) return 1;
-                    // same phase: sort by color priority then GSM high→low
-                    const pDiff = colorPriority(a) - colorPriority(b);
-                    if (pDiff !== 0) return pDiff;
-                    return (parseFloat(b.gsm) || 0) - (parseFloat(a.gsm) || 0);
-                });
+                // Use items in currentSequence order AS-IS (Smart Auto-Tick already sorted them)
+                // No frontend re-sorting — backend get_smart_push_sequence drives the order
 
                 // AUTO-CASCADE: overflow to next available date automatically
                 const UNIT_LIMITS = { "Unit 1": 4.4, "Unit 2": 12.0, "Unit 3": 9.0, "Unit 4": 5.5 };
@@ -2944,12 +2908,12 @@ async function pushToProductionBoard() {
 
                 // Find next available date automatically (no manual dialog)
                 const getNextDate = async (unit, fromDate, wt) => {
-                    let d = new Date(fromDate);
+                    let dateObj = new Date(fromDate);
                     for (let tries = 0; tries < 60; tries++) {
-                        d.setDate(d.getDate() + 1);
+                        dateObj.setDate(dateObj.getDate() + 1);
                         // Skip Sundays
-                        if (d.getDay() === 0) continue;
-                        const dateStr = d.toISOString().split('T')[0];
+                        if (dateObj.getDay() === 0) continue;
+                        const dateStr = dateObj.toISOString().split('T')[0];
                         const loads = await getDayLoads(dateStr);
                         const currentLoad = loads[unit] || 0;
                         if (currentLoad + wt <= (UNIT_LIMITS[unit] || 999)) return dateStr;
@@ -2958,7 +2922,7 @@ async function pushToProductionBoard() {
                 };
 
                 let seqNo = 1;
-                for (const item of sortedItems) {
+                for (const item of checkedItems) {
                     const unit = item.unit || 'Unit 1';
                     const wt = (parseFloat(item.qty || 0) / 1000.0);
                     const limit = UNIT_LIMITS[unit] || 999.0;
@@ -3021,49 +2985,6 @@ async function pushToProductionBoard() {
     d.$wrapper.find('.modal-dialog').css('max-width', '800px');
     loadGlobalCapacityPreview(d, currentSequence);
 
-    // ── AUTO-APPLY SMART SEQUENCE ON OPEN (backend drives light→dark order) ──
-    setTimeout(async () => {
-        try {
-            const itemDate = items && items.length > 0
-                ? (items[0].ordered_date || items[0].orderDate || today)
-                : today;
-            const targetDateForSeed = defaultTargetDate.trim();
-            const unpushedNames = currentSequence.filter(s => !s.pushed).map(s => s.name);
-
-            const r = await frappe.call({
-                method: 'production_scheduler.api.get_smart_push_sequence',
-                args: {
-                    item_names: JSON.stringify(unpushedNames),
-                    target_date: targetDateForSeed
-                }
-            });
-            const smartSeq = r.message || [];
-            if (smartSeq.length > 0) {
-                smartSequenceActive = true;
-                const mappedSeq = smartSeq.map((s, i) => ({
-                    name: s.name,
-                    color: s.color || '',
-                    quality: s.quality || s.custom_quality || '',
-                    gsm: s.gsm || s.gsmVal || '',
-                    unit: s.unit || s.unitKey || '',
-                    qty: s.qty || '',
-                    customer: s.customer || s.partyCode || '',
-                    phase: s.phase || '',
-                    is_seed_bridge: !!s.is_seed_bridge,
-                    sequence_no: i + 1,
-                    pushed: !!s.plannedDate,
-                    checked: !s.plannedDate  // auto-tick all unpushed
-                }));
-                const pushedItems = currentSequence.filter(s => s.pushed);
-                currentSequence = [...mappedSeq, ...pushedItems];
-                currentSequence.forEach((item, i) => { item.sequence_no = i + 1; });
-                d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
-                setTimeout(() => { wireCheckboxes(); updateCountLabel(); }, 100);
-            }
-        } catch(e) {
-            console.warn('Auto smart-sequence on open failed, keeping original order', e);
-        }
-    }, 300);
 
     function applyFilters() {
         const unitSearch = d.get_value('filter_unit') || 'All Units';
