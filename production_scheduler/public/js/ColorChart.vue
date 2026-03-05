@@ -492,6 +492,7 @@
                     <th class="p-2 border" style="width: 100px;">Width (Inches)</th>
                     <th class="p-2 border" style="width: 110px;">WEIGHT (Kg)</th>
                     <th class="p-2 border" style="width: 80px; text-align: center;">RECYCLE</th>
+                    <th class="p-2 border" style="width: 70px; text-align: center;">ACTIONS</th>
                 </tr>
             </thead>
             <tbody>
@@ -538,9 +539,17 @@
                             {{ mix.isRecycle ? '♻️ YES' : '⬜ No' }}
                         </button>
                     </td>
+                    <td class="p-2 border text-center" style="white-space:nowrap;">
+                        <button @click="revertMixRow(idx)" title="Revert to auto-generated values" style="background:#f0f9ff;border:1px solid #7dd3fc;color:#0369a1;padding:2px 6px;border-radius:4px;font-size:11px;margin-bottom:2px;cursor:pointer;">↺</button>
+                        <button @click="deleteMixRow(idx)" title="Delete this row" style="background:#fff1f2;border:1px solid #fca5a5;color:#dc2626;padding:2px 6px;border-radius:4px;font-size:11px;cursor:pointer;">✕</button>
+                    </td>
                 </tr>
             </tbody>
         </table>
+        <div style="margin-top:8px; display:flex; gap:8px;">
+            <button @click="addMixRow()" style="background:#f0fdf4;border:1px solid #86efac;color:#15803d;padding:4px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">+ Add Row</button>
+            <button @click="rebuildMixRolls()" style="background:#f0f9ff;border:1px solid #7dd3fc;color:#0369a1;padding:4px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Rebuild Auto</button>
+        </div>
     </div>
   </div>
 </template>
@@ -1299,6 +1308,40 @@ function toggleRecycle(mix) {
     } else {
         mix.mixName = mix._prevMixName || "GPKL - GOLD MIX";
     }
+    saveMixRolls();
+}
+
+function deleteMixRow(idx) {
+    mixRolls.value.splice(idx, 1);
+    saveMixRolls();
+}
+
+function revertMixRow(idx) {
+    // Rebuild auto-generated rows and restore this one from the fresh set
+    const raw = _buildRawMixRolls();
+    if (raw[idx]) {
+        Object.assign(mixRolls.value[idx], raw[idx]);
+    }
+    saveMixRolls();
+}
+
+function addMixRow() {
+    // Add a blank manual row at the end
+    const units = [...new Set(filteredData.value.map(d => d.unit || 'Unit 1'))];
+    const unit = units[0] || 'Unit 1';
+    mixRolls.value.push(reactive({
+        unit,
+        color1: '',
+        color2: '',
+        mixName: 'GPKL - GOLD MIX',
+        gsm: '',
+        shaft: '',
+        width: '',
+        kg: 0,
+        isRecycle: false,
+        _prevMixName: '',
+        _isManual: true
+    }));
     saveMixRolls();
 }
 
@@ -2652,7 +2695,7 @@ async function pushToProductionBoard() {
             if (smartSequenceActive && item.unit !== lastUnit) {
                 lastUnit = item.unit;
                 unitDivider = `<tr style="background:#1565c0;color:white;font-size:11px;font-weight:bold;">
-                    <td colspan="7" style="padding:4px 8px;">📦 ${item.unit || 'Mixed'}</td>
+                    <td colspan="8" style="padding:4px 8px;">📦 ${item.unit || 'Mixed'}</td>
                 </tr>`;
             }
             const bridge = item.is_seed_bridge ? ' 🔗' : '';
@@ -2668,7 +2711,10 @@ async function pushToProductionBoard() {
                 actionHtml = `<input type="checkbox" data-idx="${i}" ${checked ? 'checked' : ''} style="cursor:pointer;">`;
             }
 
+            const dragHandle = item.pushed ? '' : `<span class="drag-handle" style="cursor:grab;color:#94a3b8;font-size:15px;padding:0 4px;user-select:none;" title="Drag to reorder">⠿</span>`;
+
             return `${unitDivider}<tr style="background:${rowBg};border-bottom:1px solid #eee;opacity:${rowOpacity};">
+                <td style="padding:4px 2px;text-align:center;">${dragHandle}</td>
                 <td style="padding:4px 6px;text-align:center;">
                     ${actionHtml}
                 </td>
@@ -2686,6 +2732,7 @@ async function pushToProductionBoard() {
             <table style="width:100%;border-collapse:collapse;font-family:sans-serif;">
                 <thead style="background:#2196f3;color:white;position:sticky;top:0;z-index:1;">
                     <tr>
+                        <th style="padding:6px;width:24px;">☰</th>
                         <th style="padding:6px;width:32px;">✓</th>
                         <th style="padding:6px;">#</th>
                         <th style="padding:6px;">Color</th>
@@ -3044,6 +3091,27 @@ async function pushToProductionBoard() {
                 updateCountLabel();
             });
         });
+
+        // ── Drag-and-drop reorder using SortableJS ──
+        const tbody = container.querySelector('tbody');
+        if (tbody && window.Sortable) {
+            if (tbody._sortable) tbody._sortable.destroy();
+            tbody._sortable = new window.Sortable(tbody, {
+                animation: 150,
+                handle: '.drag-handle',
+                ghostClass: 'sortable-ghost',
+                onEnd: (evt) => {
+                    const { oldIndex, newIndex } = evt;
+                    if (oldIndex === newIndex) return;
+                    const moved = currentSequence.splice(oldIndex, 1)[0];
+                    currentSequence.splice(newIndex, 0, moved);
+                    // Re-number sequences
+                    currentSequence.forEach((item, i) => { item.sequence_no = i + 1; });
+                    d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
+                    setTimeout(() => { wireCheckboxes(); updateCountLabel(); }, 100);
+                }
+            });
+        }
     }
 
 
