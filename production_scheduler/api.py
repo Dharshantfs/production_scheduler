@@ -3110,11 +3110,10 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 			# Get item + parent sheet info
 			item_doc = frappe.get_doc("Planning Sheet Item", name)
 			parent_doc = frappe.get_doc("Planning sheet", item_doc.parent)
-			# Prevent re-pushing the same order again until it is reverted
+			# Prevent re-pushing — check ITEM-LEVEL only (not parent-level!)
+			# Parent-level check was blocking ALL items from a sheet once one was pushed
 			already_pushed = False
-			if parent_doc.get("custom_pb_plan_name"):
-				already_pushed = True
-			if not already_pushed and frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
 				if item_doc.get("custom_item_planned_date"):
 					already_pushed = True
 			if already_pushed:
