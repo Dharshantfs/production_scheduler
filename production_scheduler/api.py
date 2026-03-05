@@ -199,8 +199,7 @@ def _is_white_color(color):
 # User-defined White colors that are auto-planned on the Production Board
 WHITE_COLORS = [
     "BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE", 
-    "BLEACH WHITE", "WHITE MIX", "WHITE",
-    "IVORY", "BRIGHT IVORY", "OFF WHITE", "CREAM", "CREAM 2.0", "CREAM 3.0"
+    "BLEACH WHITE", "WHITE MIX", "WHITE"
 ]
 
 HARD_LIMITS = {
