@@ -3066,8 +3066,8 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
 	frappe.db.commit()
 	if updated_count == 0 and skipped_already_pushed:
 		return {
-			"status": "error",
-			"message": "All selected orders are already pushed to the Production Board. Revert them first to push again.",
+			"status": "success",
+			"message": "All selected orders are already pushed to the Production Board.",
 			"skipped_already_pushed": len(skipped_already_pushed),
 			"plan_name": pb_plan_name,
 		}
@@ -3259,8 +3259,8 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 	frappe.db.commit()
 	if count == 0 and skipped_already_pushed:
 		return {
-			"status": "error",
-			"message": "All selected orders are already pushed to the Production Board. Revert them first to push again.",
+			"status": "success",
+			"message": "All selected orders are already pushed to the Production Board.",
 			"skipped_already_pushed": len(skipped_already_pushed),
 			"updated_sheets": len(updated_sheets),
 			"plan_name": pb_plan_name,
