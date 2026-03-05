@@ -199,7 +199,8 @@ def _is_white_color(color):
 # User-defined White colors that are auto-planned on the Production Board
 WHITE_COLORS = [
     "BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE", 
-    "BLEACH WHITE", "WHITE MIX", "WHITE"
+    "BLEACH WHITE", "WHITE MIX", "WHITE",
+    "IVORY", "BRIGHT IVORY", "OFF WHITE", "CREAM", "CREAM 2.0", "CREAM 3.0"
 ]
 
 HARD_LIMITS = {
@@ -3224,7 +3225,7 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 
 			# ── Update idx for sequence ordering on board ──
 			if sequence_no is not None:
-				frappe.db.set_value("Planning Sheet Item", name, "idx", int(sequence_no))
+				frappe.db.set_value("Planning Sheet Item", name, "idx", max_idx + int(sequence_no))
 			else:
 				# Append to the bottom if no explicit sequence provided
 				frappe.db.set_value("Planning Sheet Item", name, "idx", max_idx + 1)

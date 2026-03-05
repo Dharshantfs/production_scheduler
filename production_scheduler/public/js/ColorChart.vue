@@ -1074,7 +1074,8 @@ const visibleUnits = computed(() =>
 
 const EXCLUDED_WHITES = [
   "WHITE", "BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE", 
-  "SUPER WHITE", "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"
+  "SUPER WHITE", "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0",
+  "IVORY", "BRIGHT IVORY", "OFF WHITE", "CREAM", "CREAM 2.0", "CREAM 3.0"
 ];
 
 // As per user request: "APART FROM THIS U CAN BRING ALL COLOR IVORY"
@@ -2610,7 +2611,7 @@ async function pushToProductionBoard() {
     const allItemNames = [...new Set(items.map(d => d.itemName).filter(Boolean))];
 
     if (allItemNames.length === 0) {
-        frappe.msgprint('No valid items >= 800kg to push.');
+        frappe.msgprint('No valid items to push.');
         return;
     }
 

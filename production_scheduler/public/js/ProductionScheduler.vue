@@ -376,7 +376,10 @@ const visibleUnits = computed(() => {
 });
 
 const NO_RULE_WHITES = ["BRIGHT WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"];
-const EXCLUDED_WHITES = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE"];
+const EXCLUDED_WHITES = [
+  "WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE",
+  "IVORY", "BRIGHT IVORY", "OFF WHITE", "CREAM", "CREAM 2.0", "CREAM 3.0"
+];
 
 // Filter data by plan + party code + status
 const filteredData = computed(() => {
@@ -795,9 +798,22 @@ function toggleUnitPriority(unit) {
   renderKey.value++;
 }
 
+function isWhite(color) {
+    if (!color) return false;
+    const c = color.toUpperCase().trim();
+    return EXCLUDED_WHITES.some(w => c === w || c.includes(w));
+}
+
 function sortItems(unit, items) {
   const config = getUnitSortConfig(unit);
   return [...items].sort((a, b) => {
+      // ── 0. STRICT WHITE PHASE PRIORITY ──
+      // White/Ivory always at top regardless of ASC/DESC direction
+      const aWhite = isWhite(a.color);
+      const bWhite = isWhite(b.color);
+      if (aWhite && !bWhite) return -1;
+      if (!aWhite && bWhite) return 1;
+
       // Manual Mode: Primary sort is idx
       if (config.mode === 'manual') {
           return (a.idx || 0) - (b.idx || 0);
@@ -812,7 +828,7 @@ function sortItems(unit, items) {
           if (diff === 0) diff = compareColor(a, b, config.color);
       }
       
-      // Default Tie-Breaker: idx (Sequence)
+      // Default Tie-Breaker: idx (Sequence from Push)
       if (diff === 0) {
           diff = (a.idx || 0) - (b.idx || 0);
       }
