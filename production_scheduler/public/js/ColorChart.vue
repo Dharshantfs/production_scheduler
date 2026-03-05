@@ -3,14 +3,13 @@
     <!-- Filter Bar -->
     <div class="cc-filters">
       <div class="cc-filter-item">
-        <label>{{ viewScope === 'daily' ? 'Order Date(s)' : (viewScope === 'weekly' ? 'Select Week' : 'Select Month') }}</label>
+        <label>{{ viewScope === 'weekly' ? 'Select Week' : 'Select Month' }}</label>
         <div style="display:flex; gap:4px;">
-            <input v-show="viewScope === 'daily'" type="text" ref="datePickerInput" placeholder="Select dates..." />
             <input v-if="viewScope === 'weekly'" type="week" v-model="filterWeek" @change="fetchData" />
             <input v-if="viewScope === 'monthly'" type="month" v-model="filterMonth" @change="fetchData" />
             
-            <button class="cc-mini-btn" @click="toggleViewScope" :title="viewScope === 'daily' ? 'Switch to Weekly View' : (viewScope === 'weekly' ? 'Switch to Monthly View' : 'Switch to Daily View')">
-                {{ viewScope === 'daily' ? '🗓️ Week' : (viewScope === 'weekly' ? '📅 Month' : '📆 Day') }}
+            <button class="cc-mini-btn" @click="toggleViewScope" :title="viewScope === 'weekly' ? 'Switch to Monthly View' : 'Switch to Weekly View'">
+                {{ viewScope === 'weekly' ? '📅 Month' : '🗓️ Week' }}
             </button>
         </div>
       </div>
@@ -145,12 +144,9 @@
                 </div>
             </div>
             <div class="cc-header-stats">
-                <span class="cc-stat-weight" :class="getUnitCapacityStatus(unit).class">
-                {{ getUnitTotal(unit).toFixed(2) }} / {{ UNIT_TONNAGE_LIMITS[unit] }}T
+                <span class="cc-stat-weight">
+                {{ getUnitTotal(unit).toFixed(2) }}T
                 </span>
-                <div v-if="getUnitCapacityStatus(unit).warning" class="text-xs text-red-600 font-bold">
-                {{ getUnitCapacityStatus(unit).warning }}
-                </div>
                 <span class="cc-stat-mix" v-if="getMixRollCount(unit) > 0">
                 ⚠️ {{ getMixRollCount(unit) }} mix{{ getMixRollCount(unit) > 1 ? 'es' : '' }}
                 ({{ getMixRollTotalWeight(unit) }} Kg)
@@ -668,7 +664,7 @@ const UNIT_TONNAGE_LIMITS = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4"
 const headerColors = { "Unit 1": "#3b82f6", "Unit 2": "#10b981", "Unit 3": "#f59e0b", "Unit 4": "#8b5cf6", "Mixed": "#64748b" };
 
 const filterOrderDate = ref(frappe.datetime.get_today());
-const viewScope = ref('daily');
+const viewScope = ref('weekly');
 const filterWeek = ref("");
 const filterMonth = ref(frappe.datetime.get_today().substring(0, 7));
 const filterPartyCode = ref("");
@@ -2454,37 +2450,23 @@ async function analyzePreviousFlow() {
   }
 }
 
-// View Scope Logic
+// View Scope Logic — only weekly and monthly
 async function toggleViewScope() {
-  if (viewScope.value === 'daily') {
-      viewScope.value = 'weekly';
-      if (!filterWeek.value) {
-          // Default to the week containing the first selected date or today
-          const baseDate = filterOrderDate.value ? filterOrderDate.value.split(',')[0].trim() : frappe.datetime.get_today();
-          const d = new Date(baseDate);
-          
-          const y = d.getFullYear();
-          const firstDayOfYear = new Date(y, 0, 1);
-          const pastDaysOfYear = (d - firstDayOfYear) / 86400000;
-          const weekNum = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
-          
-          filterWeek.value = `${y}-W${String(weekNum).padStart(2, '0')}`;
-      }
-  } else if (viewScope.value === 'weekly') {
+  if (viewScope.value === 'weekly') {
       viewScope.value = 'monthly';
       if (!filterMonth.value) {
           filterMonth.value = frappe.datetime.get_today().substring(0, 7);
       }
   } else {
-      viewScope.value = 'daily';
-      if (!filterOrderDate.value) {
-          filterOrderDate.value = frappe.datetime.get_today();
+      viewScope.value = 'weekly';
+      if (!filterWeek.value) {
+          const d = new Date();
+          const y = d.getFullYear();
+          const firstDayOfYear = new Date(y, 0, 1);
+          const pastDaysOfYear = (d - firstDayOfYear) / 86400000;
+          const weekNum = Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+          filterWeek.value = `${y}-W${String(weekNum).padStart(2, '0')}`;
       }
-      
-      // Re-initialize Flatpickr when returning to daily view
-      nextTick(() => {
-          initFlatpickr();
-      });
   }
   await fetchData();
 }
