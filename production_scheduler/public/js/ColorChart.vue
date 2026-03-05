@@ -766,12 +766,14 @@ const currentMonthPrefix = computed(() => {
 const visiblePlans = computed(() => {
     const prefix = currentMonthPrefix.value;
     return plans.value.filter(p => {
+        const pName = (p && p.name) ? p.name : (typeof p === 'string' ? p : '');
+        if (!pName) return false;
         // Always show Default
-        if (p.name === 'Default') return true;
+        if (pName === 'Default') return true;
         // Show plans that start with current month prefix (e.g., "Mar-26")
-        if (p.name.startsWith(prefix + " ")) return true;
+        if (pName.startsWith(prefix + " ")) return true;
         // Show old plans without any month prefix (legacy)
-        const hasMonthPrefix = /^[A-Z][a-z]{2}-\d{2}\s/.test(p.name);
+        const hasMonthPrefix = /^[A-Z][a-z]{2}-\d{2}\s/.test(pName);
         if (!hasMonthPrefix) return true;
         return false;
     });
