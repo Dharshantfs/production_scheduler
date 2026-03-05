@@ -2007,124 +2007,39 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 						"is_seed_bridge": is_last and (phase_idx == 0 and len(phases[1][1]) > 0),
 					})
 			else:
-				# ── Phase: Color chaining (Strict Quality-by-Quality) ──
+				# ── Phase: Color – SORT BY COLOR FIRST (light→dark), then quality within same color ──
+				# This gives: Lemon Yellow (all qualities) → Golden Yellow (all qualities) → Orange → etc.
 				remaining = list(items)
-				# Flag to enforce Beige/cream bridge immediately after a very dark batch
-				dark_bridge_pending = False
+
+				# Separate beige items — they go at the very end (buffer after dark runs)
+				beige_items = [i for i in remaining if i["colorKey"] in BEIGE_COLORS]
+				non_beige = [i for i in remaining if i["colorKey"] not in BEIGE_COLORS]
+
 				quality_order = UNIT_QUALITY_ORDER.get(unit, [])
 
-				# If no active quality, find the first quality in the unit's quality order that has items
-				if not effective_seed and remaining:
-					for q in quality_order:
-						if any(i["quality"] == q for i in remaining):
-							effective_seed = q
-							break
-					if not effective_seed:
-						effective_seed = remaining[0]["quality"]
+				def color_first_sort_key(item):
+					# Primary: COLOR light→dark order
+					c_idx = COLOR_PRIORITY.get(item["colorKey"], 9999)
+					# Secondary: quality order within same color
+					q = item["quality"]
+					q_idx = quality_order.index(q) if q in quality_order else len(quality_order)
+					# Tertiary: GSM high→low
+					return (c_idx, q_idx, -item["gsmVal"])
 
-				max_loops = len(remaining) * 2 + 5  # safety
-				loops = 0
+				sorted_colors = sorted(non_beige, key=color_first_sort_key)
+				sorted_beige = sorted(beige_items, key=color_first_sort_key)
+				full_sorted = sorted_colors + sorted_beige
 
-				while remaining and loops < max_loops:
-					loops += 1
-
-					# 1. If we just finished a very dark color, try to insert a Beige/cream buffer next
-					if dark_bridge_pending and any(i["colorKey"] in BEIGE_COLORS for i in remaining):
-						# Choose the DARKEST beige available (dark beige first to reduce mix waste)
-						beige_options = sorted(
-							{ i["colorKey"] for i in remaining if i["colorKey"] in BEIGE_COLORS },
-							key=color_sort_key,
-							reverse=True
-						)
-						chosen_color = beige_options[0]
-						dark_bridge_pending = False
-					else:
-						# 2. Anchor: Check if the current color (from board or previous color-batch) still exists in the remaining list
-						if current_seed_color and any(i["colorKey"] == current_seed_color for i in remaining):
-							chosen_color = current_seed_color
-						else:
-							# 3. Transition: Find available colors in the CURRENT effective quality (ANCHOR QUALITY)
-							qual_pool = [i for i in remaining if i["quality"] == effective_seed]
-
-							if not qual_pool:
-								# Advance to next quality in the unit's sequence that has items
-								advanced = False
-								if quality_order:
-									try:
-										qi = quality_order.index(effective_seed)
-									except ValueError:
-										qi = -1
-									search_order = quality_order[qi+1:] + quality_order[:qi+1] if qi != -1 else quality_order
-									for nq in search_order:
-										if any(i["quality"] == nq for i in remaining):
-											effective_seed = nq
-											advanced = True
-											current_seed_color = None  # Reset color seed when switching qualities
-											break
-								if not advanced:
-									effective_seed = remaining[0]["quality"]
-									current_seed_color = None
-								continue
-
-							# Colors available specifically in this "current" quality
-							# Filter out Beige colors from normal pool so they don't jump ahead of Black/Red
-							pool_colors = sorted(
-								[i["colorKey"] for i in qual_pool if i["colorKey"] not in BEIGE_COLORS], 
-								key=color_sort_key
-							)
-							
-							# If ONLY beige colors are left in this quality, allow them
-							if not pool_colors:
-								pool_colors = sorted([i["colorKey"] for i in qual_pool], key=color_sort_key)
-
-							# Pick the next color from the sorted list (based on light→dark priority)
-							if current_seed_color and current_seed_color in COLOR_PRIORITY:
-								seed_idx = COLOR_PRIORITY[current_seed_color]
-								# Find first color that is >= seed priority (so we don't jump back to light colors unless no darker ones left)
-								valid_options = [c for c in pool_colors if COLOR_PRIORITY.get(c, -1) >= seed_idx]
-								chosen_color = valid_options[0] if valid_options else pool_colors[0]
-							else:
-								chosen_color = pool_colors[0]
-
-					# 3. Batch EVERY item of 'chosen_color' across EVERY quality (Bridge logic)
-					# "must be run the pink color is all quality"
-					color_batch = sorted(
-						[i for i in remaining if i["colorKey"] == chosen_color],
-						key=lambda i: quality_sort_key(i, unit)
-					)
-
-					for i in color_batch:
-						remaining.remove(i)
-
-					for idx, item in enumerate(color_batch):
-						seq_no[0] += 1
-						is_last_in_batch = (idx == len(color_batch) - 1)
-						is_bridge = False
-						if is_last_in_batch:
-							if len(remaining) > 0:
-								is_bridge = True
-							elif phase_idx == 0 and len(phases[1][1]) > 0:
-								is_bridge = True
-						
-						sequence.append({
-							**item,
-							"sequence_no": seq_no[0],
-							"phase": "color",
-							"is_seed_bridge": is_bridge,
-						})
-
-
-					# Update seeds for the next color selection
-					current_seed_color = chosen_color
-					# If we just ran a very dark color (Black/Red family), request a Beige/cream bridge next
-					if current_seed_color in VERY_DARK_COLORS:
-						dark_bridge_pending = True
-					else:
-						dark_bridge_pending = False
-
-					# "pink is end with silver... same concept running again"
-					# Anchor the search for the NEXT color to the quality where the PREVIOUS color ended
-					effective_seed = color_batch[-1]["quality"]
+				for idx, item in enumerate(full_sorted):
+					seq_no[0] += 1
+					is_last = (idx == len(full_sorted) - 1)
+					is_bridge = not is_last and full_sorted[idx + 1]["colorKey"] != item["colorKey"]
+					sequence.append({
+						**item,
+						"sequence_no": seq_no[0],
+						"phase": "color",
+						"is_seed_bridge": is_bridge,
+					})
 
 	# Append any unsequenced (Mixed unit or edge cases)
 	sequenced_names = {i["name"] for i in sequence}
