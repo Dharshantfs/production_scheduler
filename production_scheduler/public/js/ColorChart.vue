@@ -320,12 +320,12 @@
                             </th>
                         </template>
                     </tr>
-                    <!-- Row 3: Planning Sheet (Merged by Sheet, Clickable) -->
+                    <!-- Row 3: Plan Code (Merged by Sheet, Clickable) -->
                     <tr>
-                        <th class="matrix-sticky-col">PLANNING SHEET</th>
+                        <th class="matrix-sticky-col">PLAN CODE</th>
                         <template v-for="(sh, si) in matrixData.sheetHeaders" :key="'sheet-sh-'+si">
                             <th :colspan="sh.span" class="text-center font-normal" style="font-size:10px; border-left:1px solid #cbd5e1;">
-                                <a href="javascript:void(0)" @click.stop="openForm(sh.code)" style="color:#2563eb; text-decoration:underline; cursor:pointer; font-weight:600;">{{ sh.code }}</a>
+                                <a href="javascript:void(0)" @click.stop="openForm(sh.code)" style="color:#2563eb; text-decoration:underline; cursor:pointer; font-weight:600;">{{ sh.planCode || sh.code }}</a>
                             </th>
                         </template>
                     </tr>
@@ -879,7 +879,9 @@ const matrixData = computed(() => {
         const sheetCode = d.planningSheet || "Unassigned";
         const gsm = d.gsm || "-";
         const quality = d.quality || "-";
-        const compositeKey = `${sheetCode}|${gsm}|${quality}`;
+        const unit = d.unit || "Mixed";
+        const planCode = d.custom_plan_code || d.planCode || "-";
+        const compositeKey = `${sheetCode}|${unit}|${planCode}|${gsm}|${quality}`;
         
         if (!groups[compositeKey]) {
             groups[compositeKey] = {
@@ -891,7 +893,8 @@ const matrixData = computed(() => {
                 gsm: gsm,
                 quality: quality,
                 customer: d.customer || d.partyCode || "",
-                unit: d.unit || "Mixed",
+                unit: unit,
+                planCode: planCode,
                 items: [],
                 idxSum: 0 
             };
@@ -1026,20 +1029,23 @@ const matrixData = computed(() => {
          }
     });
 
-    // Group Columns by Planning Sheet for Merged Headers (DAYS, SHEET, CODE, COLOURS)
+    // Group Columns by Plan Code for Merged Headers (DAYS, SHEET, CODE, COLOURS)
     const sheetHeaders = [];
     let lastSheetCode = null;
     let sheetSpan = 0;
     let sheetData = null;
 
     sortedGroups.forEach((g, index) => {
-        if (g.code !== lastSheetCode) {
+        // Group by the actual plan code (which differs per unit) instead of the naked sheet name
+        const groupKey = g.planCode !== "-" ? g.planCode : g.code; 
+        
+        if (groupKey !== lastSheetCode) {
             if (lastSheetCode !== null) {
                 sheetHeaders.push(sheetData);
             }
-            lastSheetCode = g.code;
+            lastSheetCode = groupKey;
             sheetSpan = 1;
-            sheetData = { code: g.code, partyCode: g.partyCode, days: g.days, customer: g.customer, span: 1 };
+            sheetData = { code: g.code, planCode: g.planCode, partyCode: g.partyCode, days: g.days, customer: g.customer, span: 1 };
         } else {
             sheetSpan++;
             sheetData.span = sheetSpan;

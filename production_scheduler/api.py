@@ -422,9 +422,6 @@ def update_sheet_plan_codes(sheet_doc):
 	Calculates and sets the `custom_plan_code` for each item, and aggregates them on the header.
 	Must be called right before saving a sheet or after manual SQL updates.
 	"""
-	if not frappe.db.has_column("Planning Sheet Item", "custom_plan_code"):
-		return
-	
 	sheet_date = sheet_doc.get("custom_planned_date") or sheet_doc.get("ordered_date")
 	# Look at PB plan if it exists, otherwise rely on CC plan
 	active_plan = sheet_doc.get("custom_pb_plan_name") or sheet_doc.get("custom_plan_name") or "Default"
@@ -440,9 +437,8 @@ def update_sheet_plan_codes(sheet_doc):
 		if code:
 			unique_codes.add(code)
 			
-	# Update parent custom field if it exists
-	if frappe.db.has_column("Planning sheet", "custom_plan_code"):
-		sheet_doc.custom_plan_code = ", ".join(sorted(unique_codes))
+	# Update parent custom field
+	sheet_doc.custom_plan_code = ", ".join(sorted(unique_codes))
 
 @frappe.whitelist()
 def update_sequence(items):
@@ -749,6 +745,14 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 		except Exception as e:
 			frappe.log_error(f"Global Sequence Fix Error: {str(e)}")
 
+	# 3. Update Plan Codes for Affected Sheets
+	for sheet_name in set([source_parent.name, item_doc.parent]):
+		if frappe.db.exists("Planning sheet", sheet_name):
+			doc_sheet = frappe.get_doc("Planning sheet", sheet_name)
+			update_sheet_plan_codes(doc_sheet)
+			frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s", (doc_sheet.custom_plan_code, doc_sheet.name))
+			for d in doc_sheet.items:
+				frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET custom_plan_code = %s WHERE name = %s", (d.custom_plan_code, d.name))
 
 @frappe.whitelist()
 def get_kanban_board(start_date, end_date):
