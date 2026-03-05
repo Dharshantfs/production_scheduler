@@ -324,8 +324,17 @@
                     <tr>
                         <th class="matrix-sticky-col">PLAN CODE</th>
                         <template v-for="(sh, si) in matrixData.sheetHeaders" :key="'sheet-sh-'+si">
+                            <th :colspan="sh.span" class="text-center font-normal" style="font-size:10px; border-left:1px solid #cbd5e1; font-weight:700; color:#1e40af;">
+                                {{ sh.planCode && sh.planCode !== '-' ? sh.planCode : '-' }}
+                            </th>
+                        </template>
+                    </tr>
+                    <!-- Row 3b: Planning Sheet ID (Merged by Sheet, Clickable) -->
+                    <tr>
+                        <th class="matrix-sticky-col">PLANNING SHEET</th>
+                        <template v-for="(sh, si) in matrixData.sheetHeaders" :key="'ps-sh-'+si">
                             <th :colspan="sh.span" class="text-center font-normal" style="font-size:10px; border-left:1px solid #cbd5e1;">
-                                <a href="javascript:void(0)" @click.stop="openForm(sh.code)" style="color:#2563eb; text-decoration:underline; cursor:pointer; font-weight:600;">{{ sh.planCode || sh.code }}</a>
+                                <a href="javascript:void(0)" @click.stop="openForm(sh.code)" style="color:#2563eb; text-decoration:underline; cursor:pointer; font-weight:600;">{{ sh.code }}</a>
                             </th>
                         </template>
                     </tr>
@@ -880,7 +889,8 @@ const matrixData = computed(() => {
         const gsm = d.gsm || "-";
         const quality = d.quality || "-";
         const unit = d.unit || "Mixed";
-        const planCode = d.custom_plan_code || d.planCode || "-";
+        // Backend returns the plan code as 'planCode' key
+        const planCode = d.planCode || "-";
         const compositeKey = `${sheetCode}|${unit}|${planCode}|${gsm}|${quality}`;
         
         if (!groups[compositeKey]) {

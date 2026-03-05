@@ -4069,3 +4069,47 @@ def debug_plan_check():
         result["march_sheets"] = march_sheets
     
     return result
+
+
+@frappe.whitelist()
+def recalculate_all_plan_codes():
+	"""
+	Bulk-recalculates and writes custom_plan_code for EVERY Planning Sheet and its items.
+	Call this once from Frappe console or a Script button to fix historical blank plan codes.
+	Returns count of sheets updated.
+	"""
+	sheets = frappe.db.sql("""
+		SELECT name FROM `tabPlanning sheet`
+		WHERE docstatus < 2
+		ORDER BY creation DESC
+	""", as_dict=True)
+	
+	updated = 0
+	failed = 0
+	
+	for row in sheets:
+		try:
+			doc = frappe.get_doc("Planning sheet", row.name)
+			update_sheet_plan_codes(doc)
+			
+			# Write the plan code to the sheet header
+			frappe.db.sql(
+				"UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s",
+				(doc.custom_plan_code, doc.name)
+			)
+			
+			# Write each item's plan code
+			for item in doc.items:
+				if item.custom_plan_code:
+					frappe.db.sql(
+						"UPDATE `tabPlanning Sheet Item` SET custom_plan_code = %s WHERE name = %s",
+						(item.custom_plan_code, item.name)
+					)
+			
+			updated += 1
+		except Exception as e:
+			frappe.log_error(f"Failed to recalculate plan code for {row.name}: {e}")
+			failed += 1
+	
+	frappe.db.commit()
+	return {"updated": updated, "failed": failed, "total": len(sheets)}
