@@ -1789,10 +1789,8 @@ WHITE_COLORS = {
 	"SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0",
 }
 
-# ── Beige / buffer colors used after very dark shades (Black / Red families) ──
+# ── Beige / buffer colors placed at very end of color sequence ─────────────
 BEIGE_COLORS = {
-	"CREAM 2.0","CREAM 3.0","CREAM 4.0","CREAM 5.0",
-	"BRIGHT IVORY","IVORY","CREAM","OFF WHITE",
 	"BEIGE 1.0","BEIGE 2.0","BEIGE 3.0","BEIGE 4.0","BEIGE 5.0",
 	"LIGHT BEIGE","DARK BEIGE","BEIGE MIX",
 }
