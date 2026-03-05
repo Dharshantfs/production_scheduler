@@ -3437,8 +3437,8 @@ def emergency_cleanup_all_pushed_status():
 	# 2. Clear Item-level flags
 	frappe.db.sql("""
 		UPDATE `tabPlanning Sheet Item` 
-		SET custom_item_planned_date = NULL, custom_pb_plan_name = NULL
-		WHERE custom_pb_plan_name IS NOT NULL OR custom_item_planned_date IS NOT NULL
+		SET custom_item_planned_date = NULL, custom_plan_code = NULL
+		WHERE custom_item_planned_date IS NOT NULL OR custom_plan_code IS NOT NULL
 	""")
 	
 	frappe.db.commit()
