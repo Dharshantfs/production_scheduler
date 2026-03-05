@@ -2949,8 +2949,12 @@ async function pushToProductionBoard() {
                 });
                 if (r.message && r.message.status === 'success') {
                     d.get_primary_btn().text('✅ Pushed').css({'background-color': '#10b981', 'color': 'white'});
+                    let dateMsg = '';
+                    if (r.message.dates && r.message.dates.length > 0) {
+                        dateMsg = ` to ${r.message.dates.join(', ')}`;
+                    }
                     frappe.show_alert({
-                        message: `✅ Pushed ${r.message.moved_items || itemsToMove.length} item(s) to Production Board`,
+                        message: `✅ Pushed ${r.message.count || itemsToMove.length} item(s)${dateMsg} to Production Board`,
                         indicator: 'green'
                     });
                     setTimeout(() => {
@@ -4083,7 +4087,14 @@ async function openPushColorDialog(color, inputTargetDate = null) {
                  });
                  if (r.message && r.message.status === 'success') {
                      d.get_primary_btn().text("✅ Pushed").css({"background-color": "#10b981", "color": "white"});
-                     frappe.show_alert({ message: `✅ Pushed ${r.message.moved_items} order(s) to Plan "${r.message.plan_name}" automatically.`, indicator: 'green' });
+                     let dateMsg = '';
+                    if (r.message.dates && r.message.dates.length > 0) {
+                        dateMsg = ` to ${r.message.dates.join(', ')}`;
+                    }
+                    frappe.show_alert({
+                        message: `✅ Pushed ${r.message.count} order(s)${dateMsg} to Plan "${r.message.plan_name || pbPlan}" automatically.`,
+                        indicator: 'green'
+                    });
                      setTimeout(() => { d.hide(); fetchData(); }, 1000);
                  } else {
                      frappe.msgprint(r.message?.message || "Push failed");

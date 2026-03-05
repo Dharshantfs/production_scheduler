@@ -1398,7 +1398,12 @@ def update_items_bulk(items, plan_name=None):
 		except Exception:
 			pass
 
-	return {"status": "success", "count": count}
+	return {
+		"status": "success",
+		"count": count,
+		"skipped": skipped_already_pushed,
+		"dates": sorted(list(effective_dates_used))
+	}
 
 @frappe.whitelist()
 def get_plans(date=None, start_date=None, end_date=None, **kwargs):
@@ -3099,6 +3104,8 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 	updated_sheets = set()
 	pb_sheet_cache = {}  # (party_code, target_date, pb_plan_name) -> pb sheet name
 	local_loads = {} # (date, unit) -> current load
+	unit_date_idx_offsets = {} # (unit, date) -> max_idx
+	effective_dates_used = set()
 
 	for item in items_data:
 		name = item.get("name") if isinstance(item, dict) else item
@@ -3221,13 +3228,31 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 					SET custom_item_planned_date = %s, custom_plan_code = %s
 					WHERE name = %s
 				""", (effective_date, new_plan_code, name))
+			effective_dates_used.add(effective_date)
 
 			# ── Update idx for sequence ordering on board ──
+			# Use a global offset for the unit/date to ensure monotonic sequence
+			# AND prevent triangular growth bug (max_idx + sequence_no inside loop)
+			idx_key = (unit, effective_date)
+			if idx_key not in unit_date_idx_offsets:
+				# Find current max idx for this unit/date across ALL sheets
+				# (Not just the new pb_sheet_name, to avoid collisions with items already on board)
+				res = frappe.db.sql("""
+					SELECT COALESCE(MAX(i.idx), 0)
+					FROM `tabPlanning Sheet Item` i
+					JOIN `tabPlanning sheet` p ON i.parent = p.name
+					WHERE i.unit = %s AND p.custom_planned_date = %s
+					  AND p.docstatus < 2
+				""", (unit, effective_date))
+				unit_date_idx_offsets[idx_key] = res[0][0] if res else 0
+
 			if sequence_no is not None:
-				frappe.db.set_value("Planning Sheet Item", name, "idx", max_idx + int(sequence_no))
+				new_idx = unit_date_idx_offsets[idx_key] + int(sequence_no)
 			else:
-				# Append to the bottom if no explicit sequence provided
-				frappe.db.set_value("Planning Sheet Item", name, "idx", max_idx + 1)
+				unit_date_idx_offsets[idx_key] += 1
+				new_idx = unit_date_idx_offsets[idx_key]
+			
+			frappe.db.set_value("Planning Sheet Item", name, "idx", new_idx)
 
 			# ── Track which original sheets were touched ──
 			updated_sheets.add(item_doc.parent)  # original parent

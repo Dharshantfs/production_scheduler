@@ -818,6 +818,15 @@ function sortItems(unit, items) {
           return (a.idx || 0) - (b.idx || 0);
       }
 
+      // --- NEW: USER SEQUENCE PRIORITY (idx) ---
+      // If items were pushed with a specific sequence (idx), respect that first!
+      // This ensures the 1..38 sequence from the dialog is maintained.
+      const aIdx = a.idx || 0;
+      const bIdx = b.idx || 0;
+      if (aIdx !== 0 && bIdx !== 0 && aIdx !== bIdx) {
+          return aIdx - bIdx;
+      }
+
       let diff = 0;
       if (config.priority === 'color') {
           diff = compareColor(a, b, config.color);
@@ -829,7 +838,7 @@ function sortItems(unit, items) {
       
       // Default Tie-Breaker: idx (Sequence from Push)
       if (diff === 0) {
-          diff = (a.idx || 0) - (b.idx || 0);
+          diff = aIdx - bIdx;
       }
       return diff;
   });
