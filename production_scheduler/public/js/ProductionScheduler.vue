@@ -167,6 +167,7 @@
                   </div>
                   <div class="cc-card-details" style="display:flex; align-items:center;">
                     {{ entry.quality }} · {{ entry.gsm }} GSM
+                    <span v-if="entry.produced_qty > 0" style="font-size:9px; padding:1px 4px; background:#f0fdf4; color:#16a34a; border-radius:3px; margin-left:4px; font-weight:bold; border:1px solid #bbf7d0;" :title="'Produced ' + entry.produced_qty + ' Kg out of ' + entry.qty + ' Kg'">✓ {{ entry.produced_qty }} Kg</span>
                     <span v-if="entry.has_wo" style="font-size:9px; padding:1px 4px; background:#dcfce7; color:#166534; border-radius:3px; margin-left:4px; font-weight:bold; border:1px solid #bbf7d0;" title="Work Order Created">WO</span>
                     <span v-else-if="entry.has_pp" style="font-size:9px; padding:1px 4px; background:#dbeafe; color:#1e40af; border-radius:3px; margin-left:4px; font-weight:bold; border:1px solid #bfdbfe;" title="Production Plan Created">PP</span>
                     <span v-else style="font-size:9px; padding:1px 4px; background:#fef3c7; color:#92400e; border-radius:3px; margin-left:4px; font-weight:bold; border:1px solid #fde68a;" title="Planning Sheet">PS</span>

@@ -1116,12 +1116,18 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		format_string_pp = ','.join(['%s'] * len(valid_pps))
 		# Check Work Order via Production Plan
 		wo_data_pp = frappe.db.sql(f"""
-			SELECT production_plan, name 
+			SELECT production_plan, name, produced_qty, qty
 			FROM `tabWork Order` 
 			WHERE production_plan IN ({format_string_pp}) AND docstatus < 2
 		""", tuple(valid_pps), as_dict=True)
 		for row in wo_data_pp:
-			pp_wo_map[row.production_plan] = row.name
+			if row.production_plan not in pp_wo_map:
+				pp_wo_map[row.production_plan] = []
+			pp_wo_map[row.production_plan].append({
+				"name": row.name,
+				"produced_qty": flt(row.produced_qty),
+				"qty": flt(row.qty)
+			})
 
 	data = []
 	for sheet in planning_sheets:
@@ -1143,11 +1149,17 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		if my_pp_name:
 			sheet_has_pp = True
 			
-		# Check WO mapping
+		# Calculate Produced Qty
+		produced_weight = 0
 		if my_pp_name and my_pp_name in pp_wo_map:
 			sheet_has_wo = True
+			# Sum produced_qty from all WOs for this PP (heuristic)
+			produced_weight = sum([w["produced_qty"] for w in pp_wo_map[my_pp_name]])
 		elif sheet.sales_order and sheet.sales_order in so_wo_map:
 			sheet_has_wo = True
+			# Fallback if we only have one WO link
+			wo_name = so_wo_map.get(sheet.sales_order)
+			produced_weight = frappe.db.get_value("Work Order", wo_name, "produced_qty") or 0
 
 		for item in items:
 			color = (item.get("color") or item.get("colour") or "").strip()
@@ -1222,6 +1234,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				"delivery_status": so_status_map.get(sheet.sales_order) or "Not Delivered",
 				"has_pp": sheet_has_pp,
 				"has_wo": sheet_has_wo,
+				"produced_qty": flt(produced_weight),
 				"salesOrderItem": item.get("sales_order_item"),
 				"isSplit": item.get("custom_is_split")
 			})
