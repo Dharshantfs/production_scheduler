@@ -2869,73 +2869,19 @@ async function pushToProductionBoard() {
                 // Use items in currentSequence order AS-IS (Smart Auto-Tick already sorted them)
                 // No frontend re-sorting — backend get_smart_push_sequence drives the order
 
-                // AUTO-CASCADE: overflow to next available date automatically
-                const UNIT_LIMITS = { "Unit 1": 4.4, "Unit 2": 12.0, "Unit 3": 9.0, "Unit 4": 5.5 };
-                const unitDateMap = {};
-                const loadCache = {};
+                // AUTO-CASCADE: The backend api.py (`push_items_to_pb`) handles infinite capacity 
+                // cascading natively and accurately. We simply send ALL checked items to it 
+                // in the user-defined sequence.
                 const itemsToMove = [];
-
-                const getDayLoads = async (dateKey) => {
-                    if (loadCache[dateKey]) return loadCache[dateKey];
-                    const cap = await frappe.call({
-                        method: "production_scheduler.api.get_multiple_dates_capacity",
-                        args: { dates: dateKey, plan_name: '__all__', pb_only: 1 }
-                    });
-                    const payload = cap.message || {};
-                    loadCache[dateKey] = {
-                        "Unit 1": payload["Unit 1"]?.total_load || 0,
-                        "Unit 2": payload["Unit 2"]?.total_load || 0,
-                        "Unit 3": payload["Unit 3"]?.total_load || 0,
-                        "Unit 4": payload["Unit 4"]?.total_load || 0
-                    };
-                    return loadCache[dateKey];
-                };
-
-                // Find next available date automatically (no manual dialog)
-                const getNextDate = async (unit, fromDate, wt) => {
-                    let currentDate = fromDate;
-                    for (let tries = 0; tries < 60; tries++) {
-                        currentDate = frappe.datetime.add_days(currentDate, 1);
-                        const dateObj = frappe.datetime.str_to_obj(currentDate);
-                        // Skip Sundays
-                        if (dateObj.getDay() === 0) continue;
-                        const dateStr = frappe.datetime.obj_to_str(dateObj); // ensures YYYY-MM-DD
-                        const loads = await getDayLoads(dateStr);
-                        const currentLoad = loads[unit] || 0;
-                        if (currentLoad + wt <= (UNIT_LIMITS[unit] || 999)) return dateStr;
-                    }
-                    return fromDate; // fallback
-                };
-
                 let seqNo = 1;
+
                 for (const item of checkedItems) {
-                    const unit = item.unit || 'Unit 1';
-                    const wt = (parseFloat(item.qty || 0) / 1000.0);
-                    const limit = UNIT_LIMITS[unit] || 999.0;
-                    let chosenDate = unitDateMap[unit] || targetDate;
-
-                    while (true) {
-                        const dayLoads = await getDayLoads(chosenDate);
-                        const currentLoad = dayLoads[unit] || 0;
-                        const after = currentLoad + wt;
-
-                        if (after <= limit) {
-                            dayLoads[unit] = after;
-                            unitDateMap[unit] = chosenDate;
-                            itemsToMove.push({
-                                name: item.name,
-                                target_date: chosenDate,
-                                target_unit: unit,
-                                sequence_no: seqNo++
-                            });
-                            break;
-                        }
-
-                        // AUTO-CASCADE: find next available date without asking user
-                        const nextDate = await getNextDate(unit, chosenDate, wt);
-                        chosenDate = nextDate;
-                        unitDateMap[unit] = nextDate;
-                    }
+                    itemsToMove.push({
+                        name: item.name,
+                        target_date: targetDate,
+                        target_unit: item.unit || 'Unit 1',
+                        sequence_no: seqNo++
+                    });
                 }
 
                 const r = await frappe.call({
