@@ -3155,7 +3155,7 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 				
 				# Otherwise, capacity is full for this date -> Cascade to the next day
 				next_d = add_days(current_check_date, 1)
-				current_check_date = next_d.strftime("%Y-%m-%d")
+				current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
 			# ------------------------------------------------
 
 			party_code = parent_doc.party_code or ""

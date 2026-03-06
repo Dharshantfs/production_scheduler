@@ -291,7 +291,7 @@ const filterStatus = ref("");
 const unitSortConfig = reactive({});
 // Pre-initialize for all units to prevent reactive loops during render
 units.forEach(u => {
-    unitSortConfig[u] = { mode: 'auto', color: 'asc', gsm: 'desc', priority: 'color' };
+    unitSortConfig[u] = { mode: 'manual', color: 'asc', gsm: 'desc', priority: 'color' };
 });
 
 const rawData = ref([]);
@@ -752,7 +752,7 @@ async function initSortable() {
 
 function getUnitSortConfig(unit) {
   if (!unitSortConfig[unit]) {
-      unitSortConfig[unit] = { mode: 'auto', color: 'asc', gsm: 'desc', priority: 'color' };
+      unitSortConfig[unit] = { mode: 'manual', color: 'asc', gsm: 'desc', priority: 'color' };
   }
   return unitSortConfig[unit];
 }
@@ -816,15 +816,6 @@ function sortItems(unit, items) {
       // Manual Mode: Primary sort is idx
       if (config.mode === 'manual') {
           return (a.idx || 0) - (b.idx || 0);
-      }
-
-      // --- NEW: USER SEQUENCE PRIORITY (idx) ---
-      // If items were pushed with a specific sequence (idx), respect that first!
-      // This ensures the 1..38 sequence from the dialog is maintained.
-      const aIdx = a.idx || 0;
-      const bIdx = b.idx || 0;
-      if (aIdx !== 0 && bIdx !== 0 && aIdx !== bIdx) {
-          return aIdx - bIdx;
       }
 
       let diff = 0;
