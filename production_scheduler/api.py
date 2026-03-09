@@ -1418,6 +1418,40 @@ def update_items_bulk(items, plan_name=None):
 		"dates": sorted(list(effective_dates_used))
 	}
 
+
+@frappe.whitelist()
+def bulk_confirm_orders(items):
+	"""
+	Confirms multiple orders from the Production Board.
+	Updates custom_production_status on the linked Sales Order to 'Confirmed'.
+	"""
+	import json
+	if isinstance(items, str):
+		items = json.loads(items)
+	
+	if not items:
+		return {"status": "error", "message": "No items selected"}
+
+	count = 0
+	for item_name in items:
+		# Planning Sheet -> Sales Order
+		parent_sheet = frappe.db.get_value("Planning Sheet Item", item_name, "parent")
+		if parent_sheet:
+			so_name = frappe.db.get_value("Planning sheet", parent_sheet, "sales_order")
+			if so_name:
+				# Set Sales Order status to Confirmed
+				frappe.db.set_value("Sales Order", so_name, "custom_production_status", "Confirmed")
+				# Update Planning Sheet status to Finalized
+				frappe.db.set_value("Planning sheet", parent_sheet, "planning_status", "Finalized")
+				count += 1
+	
+	frappe.db.commit()
+	# Trigger realtime update
+	frappe.publish_realtime("production_board_update", {"type": "confirmation"})
+	
+	return {"status": "success", "message": f"Successfully confirmed {count} orders.", "count": count}
+
+
 @frappe.whitelist()
 def get_plans(date=None, start_date=None, end_date=None, **kwargs):
 	"""Get unique plan names for a date or date range."""

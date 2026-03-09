@@ -3850,10 +3850,26 @@ watch(viewScope, async (newVal) => {
 watch(filterMonth, async () => {
     updateUrlParams();
     await fetchData();
+    // Try to auto-select a plan that matches the new month
+    if (plans.value && plans.value.length > 0) {
+        const matchingPlan = plans.value.find(p => p.name.includes(filterMonth.value));
+        if (matchingPlan) selectedPlan.value = matchingPlan.name;
+        else selectedPlan.value = "Default";
+    }
 });
 watch(filterWeek, async () => {
     updateUrlParams();
     await fetchData();
+    // Try to auto-select a plan that matches the new week (e.g. contains "W11")
+    if (plans.value && plans.value.length > 0) {
+        const parts = filterWeek.value.split("-W");
+        if (parts.length === 2) {
+            const wNo = parts[1];
+            const matchingPlan = plans.value.find(p => p.name.includes(`W${wNo}`));
+            if (matchingPlan) selectedPlan.value = matchingPlan.name;
+            else selectedPlan.value = "Default";
+        }
+    }
 });
 
 onMounted(async () => {

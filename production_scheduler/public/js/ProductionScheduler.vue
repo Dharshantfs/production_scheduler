@@ -77,6 +77,9 @@
 
       <div v-if="hasSelection" class="cc-bulk-bar">
         <span class="cc-bulk-label">{{ selectedItems.length }} selected</span>
+        <button class="cc-clear-btn" style="background-color: #059669; color: white; border: none;" @click="bulkConfirm" title="Confirm selected orders (Sends to Confirmed Orders page)">
+          ✅ Bulk Confirm
+        </button>
         <button class="cc-clear-btn" @click="openBulkMoveDialog" title="Move selected orders to another unit/date">
           ⇄ Move Selected
         </button>
@@ -1674,6 +1677,14 @@ watch(filterOrderDate, updateUrlParams);
 watch(filterUnit, updateUrlParams);
 watch(filterStatus, updateUrlParams);
 watch(viewScope, updateUrlParams);
+watch(filterWeek, () => {
+    updateUrlParams();
+    fetchData();
+});
+watch(filterMonth, () => {
+    updateUrlParams();
+    fetchData();
+});
 
 const datePickerInput = ref(null);
 let flatpickrInst = null;
@@ -1841,6 +1852,44 @@ async function openBulkMoveDialog() {
   });
 
   d.show();
+}
+
+async function bulkConfirm() {
+  if (!selectedItems.value.length) {
+    frappe.msgprint("Please select at least one order to confirm.");
+    return;
+  }
+
+  frappe.confirm(
+    `Are you sure you want to confirm <b>${selectedItems.value.length}</b> orders? <br><small>This will move them to the Confirmed Orders page.</small>`,
+    async () => {
+      try {
+        isLoading.value = true;
+        const r = await frappe.call({
+          method: "production_scheduler.api.bulk_confirm_orders",
+          args: { items: selectedItems.value },
+          freeze: true,
+          freeze_message: "Confirming Orders..."
+        });
+
+        if (r.message && r.message.status === "success") {
+          frappe.show_alert({
+            message: r.message.message,
+            indicator: "green",
+          });
+          selectedItems.value = [];
+          await fetchData();
+        } else {
+          frappe.msgprint(r.message ? r.message.message : "Failed to confirm orders.");
+        }
+      } catch (e) {
+        console.error("Bulk confirm failed", e);
+        frappe.msgprint("Error confirming orders.");
+      } finally {
+        isLoading.value = false;
+      }
+    }
+  );
 }
 </script>
 
