@@ -759,8 +759,10 @@ const visiblePlans = computed(() => {
 
         const pUpper = pName.toUpperCase();
         
-        // Scalability: If the plan starts with the current month (e.g. MARCH), it should be selectable.
-        if (pUpper.startsWith(monthPart + " ") || pUpper.startsWith(monthPart + "-")) return true;
+        // Robust Month/Week Matching:
+        // Use 3-letter abbreviation (MAR) to match both "MARCH" and "MAR-26"
+        const pMonth = pUpper.split(/[\s-]/)[0];
+        if (pMonth === monthPart || pMonth === monthPart.slice(0, 3)) return true;
 
         // Custom plans with no month prefix (e.g. "Urgent Plan")
         const hasAnyMonthPrefix = /^[A-Z]+[-\s]\d{2}\s/i.test(pName) || /^[A-Z]{3,}\s/i.test(pName);
@@ -3499,12 +3501,13 @@ async function fetchData() {
   // Auto-reset plan if selected plan belongs to a different month
   if (selectedPlan.value && selectedPlan.value !== 'Default') {
       const pNameUpper = selectedPlan.value.toUpperCase();
-      const currentPrefix = currentMonthPrefix.value; // e.g., MARCH W11 26
+      const currentPrefix = currentMonthPrefix.value; // MARCH W11 26
       const monthPart = currentPrefix.split(" ")[0]; // MARCH
       let isValid = false;
 
-      // Scalability: If it starts with the current month, it's valid regardless of week/prefix
-      if (pNameUpper.startsWith(monthPart + " ") || pNameUpper.startsWith(monthPart + "-")) {
+      // Robust Matching: Use 3rd letter abbreviation (MAR) to match both "MARCH" and "MAR-26" / "MARCH-26"
+      const pMonth = pNameUpper.split(/[\s-]/)[0];
+      if (pMonth === monthPart || pMonth === monthPart.slice(0, 3)) {
           isValid = true;
       } else {
           // Custom plans with no month prefix
