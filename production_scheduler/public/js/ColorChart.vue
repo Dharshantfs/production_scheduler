@@ -753,8 +753,8 @@ const currentMonthPrefix = computed(() => {
 
 // Only show plans that belong to the current month (or have no month prefix like "Default")
 const visiblePlans = computed(() => {
-    const exactPrefix = currentMonthPrefix.value;
-    const baseMonthPrefix = exactPrefix.includes(" W") ? exactPrefix.split(" W")[0] : exactPrefix;
+    const exactPrefix = currentMonthPrefix.value; // MARCH-26 W10
+    const mShort = exactPrefix.slice(0, 3).toUpperCase(); // MAR
 
     return plans.value.filter(p => {
         const pName = (p && p.name) ? p.name : (typeof p === 'string' ? p : '');
@@ -763,12 +763,16 @@ const visiblePlans = computed(() => {
 
         const pUpper = pName.toUpperCase();
         if (viewScope.value === 'weekly') {
+            // Check exact week: "MARCH-26 W10" or "MAR-26 W10" or "MARCH W10"
             if (pUpper.startsWith(exactPrefix + " ")) return true;
-            // Show plans starting with Month prefix (e.g. MARCH-26) but WITHOUT any week part (e.g. "MARCH-26 W11")
-            if (pUpper.startsWith(baseMonthPrefix + " ") && !pUpper.includes(" W")) return true;
+            
+            // If it's a legacy month plan (no week), check month match: "MARCH-26", "MAR-26"
+            if (pUpper.startsWith(mShort) && !pUpper.includes(" W")) return true;
+            
             return false;
         } else {
-            if (pUpper.startsWith(baseMonthPrefix + " ")) return true;
+            // General month match: "MARCH-26", "MAR-26"
+            if (pUpper.startsWith(mShort)) return true;
         }
 
         const hasAnyMonthPrefix = /^[A-Z]+-\d{2}\s/i.test(pName);
@@ -3508,15 +3512,15 @@ async function fetchData() {
   // Auto-reset plan if selected plan belongs to a different month
   if (selectedPlan.value && selectedPlan.value !== 'Default') {
       const pNameUpper = selectedPlan.value.toUpperCase();
-      const exactPrefix = currentMonthPrefix.value; // Already CAPS in computed
-      const baseMonthPrefix = exactPrefix.includes(" W") ? exactPrefix.split(" W")[0] : exactPrefix;
+      const exactPrefix = currentMonthPrefix.value; // MARCH-26 W11
+      const mShort = exactPrefix.slice(0, 3).toUpperCase(); // MAR
       let isValid = false;
 
       if (viewScope.value === 'weekly') {
           if (pNameUpper.startsWith(exactPrefix + " ")) isValid = true;
-          else if (pNameUpper.startsWith(baseMonthPrefix + " ") && !pNameUpper.includes(" W")) isValid = true; 
+          else if (pNameUpper.startsWith(mShort) && !pNameUpper.includes(" W")) isValid = true; 
       } else {
-          if (pNameUpper.startsWith(baseMonthPrefix + " ")) isValid = true;
+          if (pNameUpper.startsWith(mShort)) isValid = true;
       }
 
       const hasAnyMonthPrefix = /^[A-Z]+-\d{2}\s/i.test(pNameUpper);
