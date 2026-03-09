@@ -744,7 +744,7 @@ const currentMonthPrefix = computed(() => {
             else
                 ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
             
-            return `${monthNames[ISOweekStart.getMonth()]}-${String(ISOweekStart.getFullYear()).slice(2)}`;
+            return `${monthNames[ISOweekStart.getMonth()]}-${String(ISOweekStart.getFullYear()).slice(2)} Week ${w}`;
         }
     }
     const now = new Date();
