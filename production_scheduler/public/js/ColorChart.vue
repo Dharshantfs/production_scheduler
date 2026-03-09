@@ -753,27 +753,25 @@ const currentMonthPrefix = computed(() => {
 
 // Only show plans that belong to the current month (or have no month prefix like "Default")
 const visiblePlans = computed(() => {
-    let prefix = currentMonthPrefix.value;
-    
-    // In weekly view, the prefix is "Mar-26 Week 10". 
-    // We want to extract just "Mar-26" to also match older plans from the same month (e.g. "Mar-26 PLAN 1").
-    if (viewScope.value === 'weekly') {
-        const parts = prefix.split(" ");
-        if (parts.length > 0) {
-            prefix = parts[0]; // Gets "Mar-26"
-        }
-    }
+    const exactPrefix = currentMonthPrefix.value;
+    const baseMonthPrefix = exactPrefix.split(" ")[0];
 
     return plans.value.filter(p => {
         const pName = (p && p.name) ? p.name : (typeof p === 'string' ? p : '');
         if (!pName) return false;
-        // Always show Default
         if (pName === 'Default') return true;
-        // Show plans that start with current month prefix (e.g., "Mar-26")
-        if (pName.startsWith(prefix + " ")) return true;
-        // Show old plans without any month prefix (legacy)
+
+        if (viewScope.value === 'weekly') {
+            if (pName.startsWith(exactPrefix + " ")) return true;
+            if (pName.startsWith(baseMonthPrefix + " ") && !pName.includes(" Week ")) return true;
+            return false;
+        } else {
+            if (pName.startsWith(baseMonthPrefix + " ")) return true;
+        }
+
         const hasMonthPrefix = /^[A-Z][a-z]{2}-\d{2}\s/.test(pName);
         if (!hasMonthPrefix) return true;
+
         return false;
     });
 });
@@ -3507,8 +3505,22 @@ async function fetchData() {
 
   // Auto-reset plan if selected plan belongs to a different month
   if (selectedPlan.value && selectedPlan.value !== 'Default') {
-      const hasMonthPrefix = /^[A-Z][a-z]{2}-\d{2}\s/.test(selectedPlan.value);
-      if (hasMonthPrefix && !selectedPlan.value.startsWith(currentMonthPrefix.value + " ")) {
+      const pName = selectedPlan.value;
+      const exactPrefix = currentMonthPrefix.value;
+      const baseMonthPrefix = exactPrefix.split(" ")[0];
+      let isValid = false;
+
+      if (viewScope.value === 'weekly') {
+          if (pName.startsWith(exactPrefix + " ")) isValid = true;
+          else if (pName.startsWith(baseMonthPrefix + " ") && !pName.includes(" Week ")) isValid = true;
+      } else {
+          if (pName.startsWith(baseMonthPrefix + " ")) isValid = true;
+      }
+
+      const hasMonthPrefix = /^[A-Z][a-z]{2}-\d{2}\s/.test(pName);
+      if (!hasMonthPrefix) isValid = true;
+
+      if (!isValid) {
           selectedPlan.value = 'Default';
       }
   }
