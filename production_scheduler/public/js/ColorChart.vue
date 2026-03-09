@@ -753,8 +753,8 @@ const currentMonthPrefix = computed(() => {
 
 // Only show plans that belong to the current month (or have no month prefix like "Default")
 const visiblePlans = computed(() => {
-    const exactPrefix = currentMonthPrefix.value; // MARCH-26 W10
-    const mShort = exactPrefix.slice(0, 3).toUpperCase(); // MAR
+    const exactPrefix = currentMonthPrefix.value; // e.g., "MARCH-26 W10"
+    const mShort = exactPrefix.slice(0, 3).toUpperCase(); // "MAR"
 
     return plans.value.filter(p => {
         const pName = (p && p.name) ? p.name : (typeof p === 'string' ? p : '');
@@ -763,22 +763,26 @@ const visiblePlans = computed(() => {
 
         const pUpper = pName.toUpperCase();
         
-        // Scalability Fix: If it has NO month prefix (e.g., custom name like "Urgent Plan"), show it always
-        const hasAnyMonthPrefix = /^[A-Z]+-\d{2}\s/i.test(pName);
+        // If it has NO month prefix (e.g., "Manual Plan"), show it always
+        const hasAnyMonthPrefix = /^[A-Z]+[-\s]\d{2}\s/i.test(pName) || /^[A-Z]{3,}\s/i.test(pName);
         if (!hasAnyMonthPrefix) return true;
 
-        // Otherwise, it has a month prefix. Check if it matches CURRENT Month/Week.
+        // Verify it matches CURRENT Month/Week.
         if (viewScope.value === 'weekly') {
-            // Check exact week prefix (MARCH-26 W10 or MARCH-26 Week 10)
-            if (pUpper.startsWith(exactPrefix + " ") || pUpper.startsWith(exactPrefix.replace(" W", " WEEK ") + " ")) return true;
+            const weekId = exactPrefix.split(" ").pop(); // "W10"
+            const altWeekId = weekId.replace("W", "WEEK "); // "WEEK 10"
             
-            // Show monthly plans (March) only if they have NO week identifier (neither " W" nor " WEEK")
-            const hasWeekId = pUpper.includes(" W") || pUpper.includes(" WEEK ");
-            if (pUpper.startsWith(mShort) && !hasWeekId) return true;
+            // 1. Matches exact week (MARCH-26 W10 OR MARCH-26 WEEK 10)
+            const isExactWeek = pUpper.includes(weekId) || pUpper.includes(altWeekId);
+            if (pUpper.startsWith(mShort) && isExactWeek) return true;
+            
+            // 2. Matches month but has NO week identifier (neither "W" nor "WEEK")
+            const hasAnyWeekId = pUpper.includes(" W") || pUpper.includes(" WEEK");
+            if (pUpper.startsWith(mShort) && !hasAnyWeekId) return true;
             
             return false;
         } else {
-            // General month match (Mar-26 or MARCH-26)
+            // Monthly/Daily: Just match the month prefix
             if (pUpper.startsWith(mShort)) return true;
         }
 
@@ -3516,18 +3520,20 @@ async function fetchData() {
   // Auto-reset plan if selected plan belongs to a different month
   if (selectedPlan.value && selectedPlan.value !== 'Default') {
       const pNameUpper = selectedPlan.value.toUpperCase();
-      const exactPrefix = currentMonthPrefix.value; // MARCH-26 W11
+      const exactPrefix = currentMonthPrefix.value; // e.g., MARCH-26 W11
       const mShort = exactPrefix.slice(0, 3).toUpperCase(); // MAR
       let isValid = false;
 
-      const hasAnyMonthPrefix = /^[A-Z]+-\d{2}\s/i.test(pNameUpper);
+      const hasAnyMonthPrefix = /^[A-Z]+[-\s]\d{2}\s/i.test(pNameUpper) || /^[A-Z]{3,}\s/i.test(pNameUpper);
       if (!hasAnyMonthPrefix) {
           isValid = true;
       } else {
-          // It has a month prefix. Verify it belongs to CURRENT scope.
           if (viewScope.value === 'weekly') {
-              if (pNameUpper.startsWith(exactPrefix + " ") || pNameUpper.startsWith(exactPrefix.replace(" W", " WEEK ") + " ")) isValid = true;
-              else if (pNameUpper.startsWith(mShort) && !pNameUpper.includes(" W") && !pNameUpper.includes(" WEEK ")) isValid = true; 
+              const weekId = exactPrefix.split(" ").pop(); // W11
+              const altWeekId = weekId.replace("W", "WEEK "); 
+              
+              if (pNameUpper.startsWith(mShort) && (pNameUpper.includes(weekId) || pNameUpper.includes(altWeekId))) isValid = true;
+              else if (pNameUpper.startsWith(mShort) && !pNameUpper.includes(" W") && !pNameUpper.includes(" WEEK")) isValid = true; 
           } else {
               if (pNameUpper.startsWith(mShort)) isValid = true;
           }
