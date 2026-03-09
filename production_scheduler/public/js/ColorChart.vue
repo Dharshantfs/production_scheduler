@@ -762,21 +762,25 @@ const visiblePlans = computed(() => {
         if (pName === 'Default') return true;
 
         const pUpper = pName.toUpperCase();
+        
+        // Scalability Fix: If it has NO month prefix (e.g., custom name like "Urgent Plan"), show it always
+        const hasAnyMonthPrefix = /^[A-Z]+-\d{2}\s/i.test(pName);
+        if (!hasAnyMonthPrefix) return true;
+
+        // Otherwise, it has a month prefix. Check if it matches CURRENT Month/Week.
         if (viewScope.value === 'weekly') {
-            // Check exact week: "MARCH-26 W10" or "MAR-26 W10" or "MARCH W10"
-            if (pUpper.startsWith(exactPrefix + " ")) return true;
+            // Check exact week prefix (MARCH-26 W10 or MARCH-26 Week 10)
+            if (pUpper.startsWith(exactPrefix + " ") || pUpper.startsWith(exactPrefix.replace(" W", " WEEK ") + " ")) return true;
             
-            // If it's a legacy month plan (no week), check month match: "MARCH-26", "MAR-26"
-            if (pUpper.startsWith(mShort) && !pUpper.includes(" W")) return true;
+            // Show monthly plans (March) only if they have NO week identifier (neither " W" nor " WEEK")
+            const hasWeekId = pUpper.includes(" W") || pUpper.includes(" WEEK ");
+            if (pUpper.startsWith(mShort) && !hasWeekId) return true;
             
             return false;
         } else {
-            // General month match: "MARCH-26", "MAR-26"
+            // General month match (Mar-26 or MARCH-26)
             if (pUpper.startsWith(mShort)) return true;
         }
-
-        const hasAnyMonthPrefix = /^[A-Z]+-\d{2}\s/i.test(pName);
-        if (!hasAnyMonthPrefix) return true;
 
         return false;
     });
@@ -3516,15 +3520,18 @@ async function fetchData() {
       const mShort = exactPrefix.slice(0, 3).toUpperCase(); // MAR
       let isValid = false;
 
-      if (viewScope.value === 'weekly') {
-          if (pNameUpper.startsWith(exactPrefix + " ")) isValid = true;
-          else if (pNameUpper.startsWith(mShort) && !pNameUpper.includes(" W")) isValid = true; 
-      } else {
-          if (pNameUpper.startsWith(mShort)) isValid = true;
-      }
-
       const hasAnyMonthPrefix = /^[A-Z]+-\d{2}\s/i.test(pNameUpper);
-      if (!hasAnyMonthPrefix) isValid = true;
+      if (!hasAnyMonthPrefix) {
+          isValid = true;
+      } else {
+          // It has a month prefix. Verify it belongs to CURRENT scope.
+          if (viewScope.value === 'weekly') {
+              if (pNameUpper.startsWith(exactPrefix + " ") || pNameUpper.startsWith(exactPrefix.replace(" W", " WEEK ") + " ")) isValid = true;
+              else if (pNameUpper.startsWith(mShort) && !pNameUpper.includes(" W") && !pNameUpper.includes(" WEEK ")) isValid = true; 
+          } else {
+              if (pNameUpper.startsWith(mShort)) isValid = true;
+          }
+      }
 
       if (!isValid) {
           selectedPlan.value = 'Default';
