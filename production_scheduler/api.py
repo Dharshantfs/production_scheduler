@@ -409,9 +409,9 @@ def generate_plan_code(date_str, unit, plan_name):
 		elif unit == "Unit 4": u_code = "U4"
 		else: return ""
 
-		# Strip Month and Week prefix (e.g., "MARCH-26 W10 PLAN 1" -> "PLAN 1")
+		# Strip Month/Week prefix (e.g., "MARCH W10 26 PLAN 1" -> "PLAN 1")
 		import re
-		clean_plan = re.sub(r'(?i)^[A-Z]+-\d{2}(\s+W\d+)?\s+', '', plan_name)
+		clean_plan = re.sub(r'(?i)^([A-Z]+[-\s]\d{2}|[A-Z]+(\s+W\d+)?(\s+\d{2})?)\s+', '', plan_name).strip()
 		
 		return f"{yy}{month_char}{u_code}-{clean_plan}"
 	except Exception:

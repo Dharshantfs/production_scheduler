@@ -725,36 +725,32 @@ const currentMonthPrefix = computed(() => {
     const monthNames = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
     if (viewScope.value === 'monthly' && filterMonth.value) {
         const [y, m] = filterMonth.value.split("-");
-        return `${monthNames[parseInt(m)-1]}-${y.slice(2)}`;
+        return `${monthNames[parseInt(m)-1]} ${y.slice(2)}`;
     } else if (viewScope.value === 'daily' && filterOrderDate.value) {
         const d = new Date(filterOrderDate.value.split(",")[0].trim());
-        if (!isNaN(d)) return `${monthNames[d.getMonth()]}-${String(d.getFullYear()).slice(2)}`;
+        if (!isNaN(d)) return `${monthNames[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`;
     } else if (viewScope.value === 'weekly' && filterWeek.value) {
-        // Parse ISO week string like "2026-W10"
         const parts = filterWeek.value.split("-W");
         if (parts.length === 2) {
             const y = parseInt(parts[0]);
             const w = parseInt(parts[1]);
-            // Calculate date from ISO week
             const simple = new Date(y, 0, 1 + (w - 1) * 7);
             const dow = simple.getDay();
             const ISOweekStart = simple;
-            if (dow <= 4)
-                ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
-            else
-                ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+            if (dow <= 4) ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+            else ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
             
-            return `${monthNames[ISOweekStart.getMonth()]}-${String(ISOweekStart.getFullYear()).slice(2)} W${w}`;
+            return `${monthNames[ISOweekStart.getMonth()]} W${w} ${String(ISOweekStart.getFullYear()).slice(2)}`;
         }
     }
     const now = new Date();
-    return `${monthNames[now.getMonth()]}-${String(now.getFullYear()).slice(2)}`;
+    return `${monthNames[now.getMonth()]} ${String(now.getFullYear()).slice(2)}`;
 });
 
 // Only show plans that belong to the current month (or have no month prefix like "Default")
 const visiblePlans = computed(() => {
-    const exactPrefix = currentMonthPrefix.value; // e.g., "MARCH-26 W10"
-    const mShort = exactPrefix.slice(0, 3).toUpperCase(); // "MAR"
+    const fullPrefix = currentMonthPrefix.value; // MARCH W10 26
+    const monthPart = fullPrefix.split(" ")[0]; // MARCH
 
     return plans.value.filter(p => {
         const pName = (p && p.name) ? p.name : (typeof p === 'string' ? p : '');
@@ -763,28 +759,12 @@ const visiblePlans = computed(() => {
 
         const pUpper = pName.toUpperCase();
         
-        // If it has NO month prefix (e.g., "Manual Plan"), show it always
+        // Scalability: If the plan starts with the current month (e.g. MARCH), it should be selectable.
+        if (pUpper.startsWith(monthPart + " ") || pUpper.startsWith(monthPart + "-")) return true;
+
+        // Custom plans with no month prefix (e.g. "Urgent Plan")
         const hasAnyMonthPrefix = /^[A-Z]+[-\s]\d{2}\s/i.test(pName) || /^[A-Z]{3,}\s/i.test(pName);
         if (!hasAnyMonthPrefix) return true;
-
-        // Verify it matches CURRENT Month/Week.
-        if (viewScope.value === 'weekly') {
-            const weekId = exactPrefix.split(" ").pop(); // "W10"
-            const altWeekId = weekId.replace("W", "WEEK "); // "WEEK 10"
-            
-            // 1. Matches exact week (MARCH-26 W10 OR MARCH-26 WEEK 10)
-            const isExactWeek = pUpper.includes(weekId) || pUpper.includes(altWeekId);
-            if (pUpper.startsWith(mShort) && isExactWeek) return true;
-            
-            // 2. Matches month but has NO week identifier (neither "W" nor "WEEK")
-            const hasAnyWeekId = pUpper.includes(" W") || pUpper.includes(" WEEK");
-            if (pUpper.startsWith(mShort) && !hasAnyWeekId) return true;
-            
-            return false;
-        } else {
-            // Monthly/Daily: Just match the month prefix
-            if (pUpper.startsWith(mShort)) return true;
-        }
 
         return false;
     });
@@ -828,8 +808,8 @@ const derivedPlanCode = computed(() => {
     else return "";
 
     
-    // Strip Month and Week prefix (e.g., "MARCH-26 W10 PLAN 1" -> "PLAN 1")
-    const cleanPlan = selectedPlan.value.replace(/^[A-Z]+-\d{2}(\s+W\d+)?\s+/i, '');
+    // Strip Month/Week prefix (e.g., "MARCH W10 26 PLAN 1" -> "PLAN 1" or "Mar-26 PLAN 1" -> "PLAN 1")
+    const cleanPlan = selectedPlan.value.replace(/^([A-Z]+[-\s]\d{2}|[A-Z]+(\s+W\d+)?(\s+\d{2})?)\s+/i, '');
     
     return `${yy}${monthChar}${uCode}-${cleanPlan}`;
 });
@@ -2594,28 +2574,27 @@ function createNewPlan() {
     let monthPrefix = "";
     if (viewScope.value === 'monthly' && filterMonth.value) {
         const [y, m] = filterMonth.value.split("-");
-        monthPrefix = `${monthNames[parseInt(m)-1]}-${y.slice(2)} `;
+        monthPrefix = `${monthNames[parseInt(m)-1]} ${y.slice(2)} `;
     } else if (viewScope.value === 'daily' && filterOrderDate.value) {
         const d = new Date(filterOrderDate.value.split(",")[0].trim());
-        if (!isNaN(d)) monthPrefix = `${monthNames[d.getMonth()]}-${String(d.getFullYear()).slice(2)} `;
+        if (!isNaN(d)) monthPrefix = `${monthNames[d.getMonth()]} ${String(d.getFullYear()).slice(2)} `;
     } else if (viewScope.value === 'weekly' && filterWeek.value) {
         const parts = filterWeek.value.split("-W");
         if (parts.length === 2) {
             const y = parts[0];
             const w = parts[1];
-            // Calculate actual month for this week's start
             const simple = new Date(parseInt(y), 0, 1 + (parseInt(w) - 1) * 7);
             const dow = simple.getDay();
             const ISOweekStart = simple;
             if (dow <= 4) ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
             else ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
             
-            monthPrefix = `${monthNames[ISOweekStart.getMonth()]}-${y.slice(2)} W${w} `;
+            monthPrefix = `${monthNames[ISOweekStart.getMonth()]} W${w} ${y.slice(2)} `;
         }
     }
     if (!monthPrefix) {
         const now = new Date();
-        monthPrefix = `${monthNames[now.getMonth()]}-${String(now.getFullYear()).slice(2)} `;
+        monthPrefix = `${monthNames[now.getMonth()]} ${String(now.getFullYear()).slice(2)} `;
     }
 
     frappe.prompt({
@@ -3520,23 +3499,17 @@ async function fetchData() {
   // Auto-reset plan if selected plan belongs to a different month
   if (selectedPlan.value && selectedPlan.value !== 'Default') {
       const pNameUpper = selectedPlan.value.toUpperCase();
-      const exactPrefix = currentMonthPrefix.value; // e.g., MARCH-26 W11
-      const mShort = exactPrefix.slice(0, 3).toUpperCase(); // MAR
+      const currentPrefix = currentMonthPrefix.value; // e.g., MARCH W11 26
+      const monthPart = currentPrefix.split(" ")[0]; // MARCH
       let isValid = false;
 
-      const hasAnyMonthPrefix = /^[A-Z]+[-\s]\d{2}\s/i.test(pNameUpper) || /^[A-Z]{3,}\s/i.test(pNameUpper);
-      if (!hasAnyMonthPrefix) {
+      // Scalability: If it starts with the current month, it's valid regardless of week/prefix
+      if (pNameUpper.startsWith(monthPart + " ") || pNameUpper.startsWith(monthPart + "-")) {
           isValid = true;
       } else {
-          if (viewScope.value === 'weekly') {
-              const weekId = exactPrefix.split(" ").pop(); // W11
-              const altWeekId = weekId.replace("W", "WEEK "); 
-              
-              if (pNameUpper.startsWith(mShort) && (pNameUpper.includes(weekId) || pNameUpper.includes(altWeekId))) isValid = true;
-              else if (pNameUpper.startsWith(mShort) && !pNameUpper.includes(" W") && !pNameUpper.includes(" WEEK")) isValid = true; 
-          } else {
-              if (pNameUpper.startsWith(mShort)) isValid = true;
-          }
+          // Custom plans with no month prefix
+          const hasAnyMonthPrefix = /^[A-Z]+[-\s]\d{2}\s/i.test(pNameUpper) || /^[A-Z]{3,}\s/i.test(pNameUpper);
+          if (!hasAnyMonthPrefix) isValid = true;
       }
 
       if (!isValid) {
