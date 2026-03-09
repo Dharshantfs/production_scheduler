@@ -397,7 +397,7 @@
                             <div class="flex items-center">
                                 <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
                                 {{ row.color }}
-                                <button v-if="row.anyPushed" 
+                                <button v-if="row.anyPushed || row.isPushed" 
                                     @click.stop="revertColorGroup(row.color)"
                                     style="margin-left:8px; background: #059669; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(5,150,105,0.3); transition: all 0.2s;"
                                     :title="`Partially Pushed to: ${row.pushedPlanName}. Click to revert back to Color Chart.`"
@@ -410,7 +410,7 @@
                                     onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(37,99,235,0.4)'"
                                     onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 4px rgba(37,99,235,0.3)'"
                                 >
-                                    📤 Push {{ row.anyPushed ? 'REM' : '' }}
+                                    📤 Push {{ (row.anyPushed || row.isPushed) ? 'REM' : '' }}
                                 </button>
                             </div>
                         </td>
@@ -753,7 +753,17 @@ const currentMonthPrefix = computed(() => {
 
 // Only show plans that belong to the current month (or have no month prefix like "Default")
 const visiblePlans = computed(() => {
-    const prefix = currentMonthPrefix.value;
+    let prefix = currentMonthPrefix.value;
+    
+    // In weekly view, the prefix is "Mar-26 Week 10". 
+    // We want to extract just "Mar-26" to also match older plans from the same month (e.g. "Mar-26 PLAN 1").
+    if (viewScope.value === 'weekly') {
+        const parts = prefix.split(" ");
+        if (parts.length > 0) {
+            prefix = parts[0]; // Gets "Mar-26"
+        }
+    }
+
     return plans.value.filter(p => {
         const pName = (p && p.name) ? p.name : (typeof p === 'string' ? p : '');
         if (!pName) return false;
