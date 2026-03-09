@@ -487,18 +487,19 @@
                     <th class="p-2 border" style="width: 80px;">UNIT</th>
                     <th class="p-2 border" style="width: 130px;">COLOR 1</th>
                     <th class="p-2 border" style="width: 130px;">COLOR 2</th>
-                    <th class="p-2 border" style="width: 170px;">MIX NAME</th>
-                    <th class="p-2 border" style="width: 70px;">GSM</th>
+                    <th class="p-2 border" style="width: 150px;">MIX NAME</th>
+                    <th class="p-2 border" style="width: 120px;">QUALITY</th>
+                    <th class="p-2 border" style="width: 120px;">COLOR</th>
+                    <th class="p-2 border" style="width: 60px;">GSM</th>
                     <th class="p-2 border" style="width: 140px;">SHAFT DETAILS</th>
-                    <th class="p-2 border" style="width: 100px;">Width (Inches)</th>
-                    <th class="p-2 border" style="width: 110px;">WEIGHT (Kg)</th>
+                    <th class="p-2 border" style="width: 100px;">WEIGHT (Kg)</th>
                     <th class="p-2 border" style="width: 80px; text-align: center;">RECYCLE</th>
-                    <th class="p-2 border" style="width: 70px; text-align: center;">ACTIONS</th>
+                    <th class="p-2 border" style="width: 90px; text-align: center;">ACTIONS</th>
                 </tr>
             </thead>
             <tbody>
                 <tr v-for="(mix, idx) in mixRolls" :key="idx" class="border-b hover:bg-gray-50" :style="mix.isRecycle ? 'background-color: #fef3c7;' : ''">
-                    <td class="p-2 border font-bold text-gray-700">{{ mix.unit }}</td>
+                    <td class="p-2 border font-bold text-gray-700 text-center">{{ mix.unit }}</td>
                     <!-- COLOR 1 with background badge -->
                     <td class="p-2 border">
                         <span class="mix-color-badge" :style="getMixColorBadgeStyle(mix.color1)">{{ mix.color1 }}</span>
@@ -507,28 +508,40 @@
                     <td class="p-2 border">
                         <span class="mix-color-badge" :style="getMixColorBadgeStyle(mix.color2)">{{ mix.color2 }}</span>
                     </td>
-                    <!-- RECYCLE row: merge MIX NAME + GSM + SHAFT + WIDTH + WEIGHT into one cell -->
+                    <!-- RECYCLE row: merge MIX NAME + QUALITY + COLOR + GSM + SHAFT + WEIGHT into one cell -->
                     <template v-if="mix.isRecycle">
-                        <td class="p-2 border text-center font-bold" colspan="5" style="background: #fef3c7; font-size: 15px; letter-spacing: 2px; color: #92400e;">
+                        <td class="p-2 border text-center font-bold" colspan="6" style="background: #fef3c7; font-size: 15px; letter-spacing: 2px; color: #92400e;">
                             ♻️ RECYCLE
                         </td>
                     </template>
                     <!-- Normal row: show all fields -->
                     <template v-else>
                         <td class="p-2 border">
-                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 font-bold uppercase text-gray-800" style="font-size: 13px;" v-model="mix.mixName" @input="debouncedSaveMixRolls()" />
+                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 font-bold uppercase text-gray-800" style="font-size: 12px;" v-model="mix.mixName" @input="debouncedSaveMixRolls()" />
                         </td>
                         <td class="p-2 border">
-                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.gsm" @input="debouncedSaveMixRolls()" />
+                            <select class="w-full border p-1 rounded font-bold text-gray-700" style="font-size: 12px;" v-model="mix.quality" @change="debouncedSaveMixRolls()">
+                                <option value="Virgin Mix">Virgin Mix</option>
+                                <option value="Eco Spl Mix">Eco Spl Mix</option>
+                                <option value="Deluxe Mix">Deluxe Mix</option>
+                            </select>
                         </td>
                         <td class="p-2 border">
-                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.shaft" @input="debouncedSaveMixRolls()" />
+                            <select class="w-full border p-1 rounded font-bold text-gray-700" style="font-size: 12px;" v-model="mix.clType" @change="debouncedSaveMixRolls()">
+                                <option value="Color Mix">Color Mix</option>
+                                <option value="Beige Mix">Beige Mix</option>
+                                <option value="White Mix">White Mix</option>
+                                <option value="Black Mix">Black Mix</option>
+                            </select>
                         </td>
                         <td class="p-2 border">
-                            <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 13px;" v-model="mix.width" @input="debouncedSaveMixRolls()" />
+                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" v-model="mix.gsm" @input="debouncedSaveMixRolls()" />
+                        </td>
+                        <td class="p-2 border">
+                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" placeholder="30 + 30..." v-model="mix.shaft" @input="debouncedSaveMixRolls()" />
                         </td>
                         <td class="p-2 border text-center">
-                            <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-right font-mono font-bold" style="font-size: 13px;" placeholder="0.0" v-model="mix.kg" @input="debouncedSaveMixRolls()" />
+                            <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-right font-mono font-bold" style="font-size: 12px;" placeholder="0.0" v-model="mix.kg" @input="debouncedSaveMixRolls()" />
                         </td>
                     </template>
                     <td class="p-2 border text-center">
@@ -541,6 +554,7 @@
                         </button>
                     </td>
                     <td class="p-2 border text-center" style="white-space:nowrap;">
+                        <button v-if="!mix.isRecycle" @click="createMixWO(mix)" class="bg-blue-600 text-white px-2 py-1 rounded text-[10px] font-bold mb-1 block w-full hover:bg-blue-700">CREATE WO</button>
                         <button @click="revertMixRow(idx)" title="Revert to auto-generated values" style="background:#f0f9ff;border:1px solid #7dd3fc;color:#0369a1;padding:2px 6px;border-radius:4px;font-size:11px;margin-bottom:2px;cursor:pointer;">↺</button>
                         <button @click="deleteMixRow(idx)" title="Delete this row" style="background:#fff1f2;border:1px solid #fca5a5;color:#dc2626;padding:2px 6px;border-radius:4px;font-size:11px;cursor:pointer;">✕</button>
                     </td>
@@ -792,8 +806,8 @@ const derivedPlanCode = computed(() => {
     else return "";
 
     
-    // Strip Mar-26 prefix
-    const cleanPlan = selectedPlan.value.replace(/^[A-Z][a-z]{2}-\d{2}\s+/, '');
+    // Strip Month and Week prefix (e.g., "Mar-26 Week 10 PLAN 1" -> "PLAN 1")
+    const cleanPlan = selectedPlan.value.replace(/^[A-Z][a-z]{2}-\d{2}(\s+Week\s+\d+)?\s+/, '');
     
     return `${yy}${monthChar}${uCode}-${cleanPlan}`;
 });
@@ -935,16 +949,8 @@ const matrixData = computed(() => {
         else allColors.add(d.color);
     });
     
-    let sortedColors = [];
-    if (customRowOrder.value.length > 0) {
-        const customSet = new Set(customRowOrder.value);
-        const presentColors = Array.from(allColors);
-        const ordered = customRowOrder.value.filter(c => allColors.has(c));
-        const others = presentColors.filter(c => !customSet.has(c)).sort((a,b) => compareColor({color: a}, {color: b}, 'asc'));
-        sortedColors = [...ordered, ...others];
-    } else {
-        sortedColors = Array.from(allColors).sort((a,b) => compareColor({color: a}, {color: b}, 'asc'));
-    }
+    // Always sort by Light to Dark default (ignore manual customRowOrder as per user request for strict sorting)
+    let sortedColors = Array.from(allColors).sort((a,b) => compareColor({color: a}, {color: b}, 'asc'));
 
     const rows = sortedColors.map(color => {
         return { color: color, cells: {}, total: 0 };
@@ -1174,14 +1180,18 @@ function _buildRawMixRolls() {
                 if (q && q !== "RECYCLE") mixName = `GPKL - ${q} MIX`;
                 else if (!q) mixName = "COLOURMIX";
 
+                const quality = q.includes("ECO") ? "Eco Spl Mix" : q.includes("DELUXE") ? "Deluxe Mix" : "Virgin Mix";
+                const clType = getMixColorType(cur.color, next.color);
+
                 results.push({
                     unit: unit,
                     color1: (cur.color || "").toUpperCase(),
                     color2: (next.color || "").toUpperCase(),
                     mixName: mixName,
+                    quality: quality,
+                    clType: clType,
                     gsm: cur.gsm || next.gsm || "",
                     shaft: "",
-                    width: cur.width || next.width || "",
                     kg: "",
                     isRecycle: false,
                     _prevMixName: mixName
@@ -1228,9 +1238,10 @@ async function rebuildMixRolls() {
         const s = savedMap[key];
         if (s) {
             row.mixName = s.isRecycle ? "RECYCLE" : (s.mixName || row.mixName);
+            row.quality = s.quality || row.quality || "Virgin Mix";
+            row.clType = s.clType || row.clType || "Color Mix";
             row.gsm = s.gsm || row.gsm;
             row.shaft = s.shaft || "";
-            row.width = s.width || row.width;
             row.kg = s.kg || "";
             row.isRecycle = !!s.isRecycle;
             row._prevMixName = s._prevMixName || row._prevMixName;
@@ -1249,9 +1260,10 @@ function saveMixRolls() {
         color1: m.color1,
         color2: m.color2,
         mixName: m.mixName,
+        quality: m.quality,
+        clType: m.clType,
         gsm: m.gsm,
         shaft: m.shaft,
-        width: m.width,
         kg: m.kg,
         isRecycle: m.isRecycle,
         _prevMixName: m._prevMixName
@@ -1303,15 +1315,61 @@ function addMixRow() {
         color1: '',
         color2: '',
         mixName: 'GPKL - GOLD MIX',
+        quality: 'Virgin Mix',
+        clType: 'Color Mix',
         gsm: '',
         shaft: '',
-        width: '',
         kg: 0,
         isRecycle: false,
         _prevMixName: '',
         _isManual: true
     }));
     saveMixRolls();
+}
+
+function getMixColorType(c1, c2) {
+    const p1 = getColorPriority(c1);
+    const p2 = getColorPriority(c2);
+    if (p1 <= 6 && p2 <= 6) return "White Mix";
+    if (p1 === 90 && p2 === 90) return "Black Mix";
+    if ((p1 >= 95 && p1 <= 96) || (p2 >= 95 && p2 <= 96)) return "Beige Mix";
+    return "Color Mix";
+}
+
+async function createMixWO(mix) {
+    if (!mix.kg || parseFloat(mix.kg) <= 0) {
+        frappe.msgprint("Please enter a valid Weight (Kg) to create a Work Order.");
+        return;
+    }
+    
+    frappe.confirm(`Create a Work Order for <b>${mix.mixName}</b> (${mix.kg} Kg)?`, async () => {
+        try {
+            const dateKey = getMixRollDateKey();
+            const r = await frappe.call({
+                method: "production_scheduler.api.create_mix_wo",
+                args: {
+                    unit: mix.unit,
+                    mix_name: mix.mixName,
+                    quality: mix.quality,
+                    cl_type: mix.clType,
+                    gsm: mix.gsm,
+                    shaft: mix.shaft,
+                    kg: mix.kg,
+                    date_key: dateKey
+                }
+            });
+            
+            if (r.message) {
+                frappe.show_alert({
+                    message: `✅ Work Order Created: <a href="/app/work-order/${r.message}" target="_blank"><b>${r.message}</b></a>`,
+                    indicator: 'green'
+                }, 7);
+            }
+        } catch (e) {
+             console.error("WO Creation failed", e);
+             frappe.msgprint("Failed to create Work Order. Check Error Log.");
+        }
+    });
 }
 
 // Watch filteredData changes → rebuild mix rolls with saved state
@@ -2519,9 +2577,19 @@ function createNewPlan() {
         const d = new Date(filterOrderDate.value.split(",")[0].trim());
         if (!isNaN(d)) monthPrefix = `${monthNames[d.getMonth()]}-${String(d.getFullYear()).slice(2)} `;
     } else if (viewScope.value === 'weekly' && filterWeek.value) {
-        const [y] = filterWeek.value.split("-W");
-        const now = new Date();
-        monthPrefix = `${monthNames[now.getMonth()]}-${y.slice(2)} `;
+        const parts = filterWeek.value.split("-W");
+        if (parts.length === 2) {
+            const y = parts[0];
+            const w = parts[1];
+            // Calculate actual month for this week's start
+            const simple = new Date(parseInt(y), 0, 1 + (parseInt(w) - 1) * 7);
+            const dow = simple.getDay();
+            const ISOweekStart = simple;
+            if (dow <= 4) ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+            else ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+            
+            monthPrefix = `${monthNames[ISOweekStart.getMonth()]}-${y.slice(2)} Week ${w} `;
+        }
     }
     if (!monthPrefix) {
         const now = new Date();

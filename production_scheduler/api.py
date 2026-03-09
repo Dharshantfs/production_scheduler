@@ -409,9 +409,9 @@ def generate_plan_code(date_str, unit, plan_name):
 		elif unit == "Unit 4": u_code = "U4"
 		else: return ""
 
-		# Strip month prefix from plan name ("Mar-26 PLAN 1" -> "PLAN 1")
+		# Strip Month and Week prefix (e.g., "Mar-26 Week 10 PLAN 1" -> "PLAN 1")
 		import re
-		clean_plan = re.sub(r'^[A-Z][a-z]{2}-\d{2}\s+', '', plan_name)
+		clean_plan = re.sub(r'^[A-Z][a-z]{2}-\d{2}(\s+Week\s+\d+)?\s+', '', plan_name)
 		
 		return f"{yy}{month_char}{u_code}-{clean_plan}"
 	except Exception:
@@ -4114,3 +4114,61 @@ def recalculate_all_plan_codes():
 	
 	frappe.db.commit()
 	return {"updated": updated, "failed": failed, "total": len(sheets)}
+
+@frappe.whitelist()
+def create_mix_wo(unit, mix_name, quality, cl_type, gsm, shaft, kg, date_key):
+    """
+    Creates a Work Order for a Mix Roll manually entered in Color Chart.
+    """
+    # 1. Determine Production Item
+    # Strategy: Match quality + gsm or use generic mix item
+    possible_names = [
+        f"{quality} {gsm} GSM",
+        f"{quality} {gsm}",
+        f"MIX-{quality}-{gsm}".replace(" ", "-").upper(),
+        mix_name
+    ]
+    
+    item_code = None
+    for name in possible_names:
+        item_code = frappe.db.get_value("Item", {"item_name": name}, "name") or \
+                    frappe.db.get_value("Item", {"name": name}, "name")
+        if item_code: break
+        
+    if not item_code:
+        # Fallback to generic "MIX" or throw helpful error
+        item_code = frappe.db.get_value("Item", {"item_name": "MIX ROLL"}, "name")
+        
+    if not item_code:
+         frappe.throw(f"Mix Item not found. Please create an item named '{quality} {gsm} GSM' first.")
+
+    # 2. Create the Work Order
+    wo = frappe.new_doc("Work Order")
+    wo.production_item = item_code
+    wo.qty = flt(kg)
+    
+    # Defaults
+    company = frappe.defaults.get_user_default("Company") or frappe.db.get_single_value("Global Defaults", "default_company")
+    if not company: company = frappe.get_all("Company", limit=1)[0].name
+    wo.company = company
+    
+    wo.wip_warehouse = frappe.db.get_value("Stock Settings", None, "default_wip_warehouse")
+    wo.fg_warehouse = frappe.db.get_value("Stock Settings", None, "default_fg_warehouse")
+    
+    # Try to set custom fields if they exist
+    meta = frappe.get_meta("Work Order")
+    fields = [f.fieldname for f in meta.fields]
+    
+    if "custom_unit" in fields:
+        wo.custom_unit = unit
+    if "custom_shaft_details" in fields:
+        wo.custom_shaft_details = shaft
+    if "custom_mix_roll_date" in fields:
+        wo.custom_mix_roll_date = date_key
+    if "custom_is_mix_roll" in fields:
+        wo.custom_is_mix_roll = 1
+
+    wo.insert()
+    frappe.db.commit()
+    
+    return wo.name
