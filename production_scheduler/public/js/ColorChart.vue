@@ -3840,8 +3840,21 @@ watch(viewMode, async () => {
     await nextTick();
     initSortable();
 });
-watch(viewScope, updateUrlParams);
-watch(filterMonth, updateUrlParams);
+watch(viewScope, async (newVal) => {
+    updateUrlParams();
+    if (newVal === 'daily') {
+        initFlatpickr();
+    }
+    await fetchData();
+});
+watch(filterMonth, async () => {
+    updateUrlParams();
+    await fetchData();
+});
+watch(filterWeek, async () => {
+    updateUrlParams();
+    await fetchData();
+});
 
 onMounted(async () => {
   // 1. Read URL Params
@@ -3858,7 +3871,18 @@ onMounted(async () => {
   if (viewParam && ['kanban', 'matrix'].includes(viewParam)) viewMode.value = viewParam;
   if (scopeParam && ['daily', 'weekly', 'monthly'].includes(scopeParam)) viewScope.value = scopeParam;
   if (monthParam) filterMonth.value = monthParam;
-  if (weekParam) filterWeek.value = weekParam;
+  if (weekParam) {
+      filterWeek.value = weekParam;
+  } else {
+      // Default to current ISO week (e.g. 2026-W11)
+      const now = new Date();
+      const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      const dayNum = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+      filterWeek.value = `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+  }
   
   if (dateParam) {
       filterOrderDate.value = dateParam;
