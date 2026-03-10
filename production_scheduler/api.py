@@ -4208,6 +4208,16 @@ def create_mix_item(quality, cl_type, gsm, width_inch):
         item.stock_uom = "Kg"
         item.is_stock_item = 1
         
+        item.valuation_method = "FIFO"
+        
+        # 5% GST Logic: Try to find a 5% GST template
+        tax_template = frappe.db.get_value("Item Tax Template", {"name": ["like", "%GST 5%"]}, "name")
+        if tax_template:
+            item.append("taxes", {
+                "item_tax_template": tax_template,
+                "tax_category": "" # Default
+            })
+        
         # Try to set quality/color in custom fields if they exist
         meta = frappe.get_meta("Item")
         fields = [f.fieldname for f in meta.fields]
@@ -4230,10 +4240,17 @@ def create_mix_stock_entry(item_code, qty, unit, date_key):
         
     se = frappe.new_doc("Stock Entry")
     se.stock_entry_type = "Material Receipt"
+    
+    # Target Warehouse: Finished Goods - IZT
+    target_warehouse = "Finished Goods - IZT"
+    # Fallback check
+    if not frappe.db.exists("Warehouse", target_warehouse):
+        target_warehouse = frappe.db.get_value("Stock Settings", None, "default_fg_warehouse") or "Finished Goods - P"
+
     se.append("items", {
         "item_code": item_code,
         "qty": flt(qty),
-        "t_warehouse": frappe.db.get_value("Stock Settings", None, "default_fg_warehouse") or "Finished Goods - P",
+        "t_warehouse": target_warehouse,
         "uom": "Kg",
         "stock_uom": "Kg",
         "conversion_factor": 1
