@@ -563,7 +563,9 @@
                             <button @click="createMixItem(mix)" class="px-2 py-1 rounded text-[10px] font-bold text-white transition-all" :style="(!mix.gsm || !mix.shaft) ? 'background-color: #a5b4fc; cursor: not-allowed;' : 'background-color: #4f46e5; cursor: pointer;'">
                                 {{ mix.item_code ? 'UPDATE ITEMS' : 'CREATE ITEMS' }}
                             </button>
-                            <button @click="createMixStockEntry(mix)" class="px-2 py-1 rounded text-[10px] font-bold text-white transition-all" :style="(!mix.item_code || !mix.kg || parseFloat(mix.kg) <= 0) ? 'background-color: #6ee7b7; cursor: not-allowed;' : 'background-color: #059669; cursor: pointer;'">
+                            <button @click="createMixStockEntry(mix)" 
+                                    class="px-2 py-1 rounded text-[10px] font-bold text-white transition-all shadow-sm" 
+                                    :style="(!mix.item_code) ? 'background-color: #94a3b8; cursor: not-allowed; opacity: 0.6;' : 'background-color: #059669; cursor: pointer; opacity: 1;'">
                                 STOCK ENTRY
                             </button>
                         </div>
@@ -1393,12 +1395,15 @@ async function createMixItem(mix) {
 }
 
 async function createMixStockEntry(mix) {
-    if (!mix.item_code || !mix.kg || parseFloat(mix.kg) <= 0) {
-        frappe.msgprint("Please ensure Items are created and Weight (Kg) is entered.");
+    console.log("createMixStockEntry triggered", mix);
+    if (!mix.item_code) {
+        frappe.msgprint("Please ensure Items are created (Click CREATE/UPDATE ITEMS) before Stock Entry.");
         return;
     }
     
-    frappe.confirm(`Create a Stock Entry for <b>${mix.item_code}</b> totaling ${mix.kg} Kg?`, async () => {
+    const weight = parseFloat(String(mix.kg).replace(',', '.')) || 0;
+    const weightLabel = weight > 0 ? `${weight} Kg` : "0 Kg (Draft)";
+    frappe.confirm(`Create a Stock Entry for <b>${mix.item_code}</b> totaling ${weightLabel}?`, async () => {
         try {
             const dateKey = getMixRollDateKey();
             const r = await frappe.call({

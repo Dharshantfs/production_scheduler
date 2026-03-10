@@ -4055,7 +4055,7 @@ def save_mix_roll_data(date_key, entries):
 
 @frappe.whitelist()
 def get_mix_roll_data(date_key):
-    """Load saved mix roll entries for a given date key."""
+    """Load saved mix roll entries and sync weight/status from linked Stock Entries."""
     try:
         frappe.db.sql("SELECT 1 FROM `tabMix Roll Store` LIMIT 1")
     except Exception:
@@ -4064,9 +4064,39 @@ def get_mix_roll_data(date_key):
     rows = frappe.db.sql(
         "SELECT data FROM `tabMix Roll Store` WHERE date_key = %s", date_key
     )
-    if rows and rows[0][0]:
-        return json.loads(rows[0][0])
-    return []
+    if not (rows and rows[0][0]):
+        return []
+
+    entries = json.loads(rows[0][0])
+    updated = False
+    
+    # Sync weight from Stock Entries if we have a reference
+    for m in entries:
+        se_name = m.get("stock_entry")
+        if se_name:
+            # Check status and produced weight
+            # 0=Draft, 1=Submitted, 2=Cancelled
+            se_status = frappe.db.get_value("Stock Entry", se_name, "docstatus")
+            
+            # Sum of FG items in this Stock Entry
+            se_qty = frappe.db.sql("""
+                select sum(qty) from `tabStock Entry Detail` 
+                where parent = %s and is_finished_item = 1
+            """, se_name)[0][0] or 0.0
+            
+            # If submitted and weight matches, update Kg in Color Chart
+            if se_status == 1 and flt(m.get("kg")) != flt(se_qty):
+                m["kg"] = flt(se_qty)
+                updated = True
+            
+            if se_status == 1 and not m.get("_submitted"):
+                m["_submitted"] = True
+                updated = True
+
+    if updated:
+        save_mix_roll_data(date_key, json.dumps(entries))
+
+    return entries
 
 
 @frappe.whitelist()
@@ -4165,7 +4195,6 @@ def get_master_code(doctype, name, possible_fields):
     except Exception:
         return "000"
 
-@frappe.whitelist()
 def get_mix_item_details(quality, cl_type, gsm, shaft):
     """
     Parses 'shaft' for widths (e.g. '32+30') and generates details for EACH width.
@@ -4208,6 +4237,41 @@ def get_mix_item_details(quality, cl_type, gsm, shaft):
         })
     
     return results
+
+def get_mix_batch_roll(item_code, unit_code):
+    """
+    Calculates the next Series and Roll for a Mix Item based on the \ format.
+    Format: MMUYYSeries\Roll (e.g. 032261\1)
+    """
+    today_str = frappe.utils.today()
+    month_str = today_str[5:7]
+    year_str = today_str[2:4]
+    
+    prefix = f"{month_str}{unit_code}{year_str}"
+    
+    # Search for the latest batch for this item/unit/today
+    # We look for ANY batch that starts with prefix and has the \ separator
+    latest_batch = frappe.db.sql("""
+        select batch_id from `tabBatch`
+        where item = %s and batch_id like %s
+        order by creation desc limit 1
+    """, (item_code, f"{prefix}%"))
+    
+    if latest_batch:
+        full_id = latest_batch[0][0]
+        if "\\" in full_id:
+            try:
+                series_part, roll_part = full_id.split("\\")
+                return f"{series_part}\\{int(roll_part) + 1}"
+            except:
+                return f"{full_id}\\1"
+        else:
+            # Found a batch but no \ (maybe legacy or from another system)
+            # We treat the entire thing as the series and start roll 1
+            return f"{full_id}\\1"
+    else:
+        # No batch found today? Start at Series 1, Roll 1
+        return f"{prefix}1\\1"
 
 @frappe.whitelist()
 def create_mix_item(quality, cl_type, gsm, shaft):
@@ -4264,28 +4328,40 @@ def create_mix_item(quality, cl_type, gsm, shaft):
 
 @frappe.whitelist()
 def create_mix_stock_entry(item_codes, qty, unit, date_key):
-    """Creates a Material Receipt. If multiple item_codes, splits qty equally."""
+    """Creates a Material Receipt. If qty is empty/0, created as DRAFT."""
     if isinstance(item_codes, str):
         item_codes = [c.strip() for c in item_codes.split(",") if c.strip()]
     
     if not item_codes:
         frappe.throw("No Item Codes provided for Stock Entry.")
 
+    qty = flt(qty)
+    is_draft = (qty <= 0)
+
     se = frappe.new_doc("Stock Entry")
     se.stock_entry_type = "Material Receipt"
     
     target_warehouse = "Finished Goods - JSB-1ZT"
     if not frappe.db.exists("Warehouse", target_warehouse):
-        target_warehouse = "Finished Goods - IZT" # Fallback
+        target_warehouse = "Finished Goods - IZT" 
     if not frappe.db.exists("Warehouse", target_warehouse):
         target_warehouse = frappe.db.get_value("Stock Settings", None, "default_fg_warehouse") or "Finished Goods - P"
 
-    split_qty = flt(qty) / len(item_codes)
+    # Unit Code (Last digit)
+    try:
+        u_code = str(unit).strip()[-1]
+        if not u_code.isdigit(): u_code = "1"
+    except: u_code = "1"
+
+    split_qty = qty / len(item_codes) if len(item_codes) > 0 else 0
 
     for code in item_codes:
         item_name = frappe.db.get_value("Item", code, "item_name")
         if not item_name:
             frappe.throw(f"Item {code} does not exist.")
+            
+        # Generate Batch Number with \ separator
+        batch_no = get_mix_batch_roll(code, u_code)
             
         se.append("items", {
             "item_code": code,
@@ -4293,7 +4369,8 @@ def create_mix_stock_entry(item_codes, qty, unit, date_key):
             "t_warehouse": target_warehouse,
             "uom": "Kg",
             "stock_uom": "Kg",
-            "conversion_factor": 1
+            "conversion_factor": 1,
+            "batch_no": batch_no
         })
     
     meta = frappe.get_meta("Stock Entry")
@@ -4303,10 +4380,41 @@ def create_mix_stock_entry(item_codes, qty, unit, date_key):
     if "custom_mix_roll_date" in fields: se.custom_mix_roll_date = date_key
     
     se.insert(ignore_permissions=True)
-    se.submit()
+    
+    if not is_draft:
+        se.submit()
+    
     frappe.db.commit()
     
+    # Store SE reference in Mix Roll Store to allow weight sync later
+    _sync_mix_roll_se_reference(date_key, item_codes, se.name)
+    
     return se.name
+
+def _sync_mix_roll_se_reference(date_key, item_codes, se_name):
+    """Internal helper to attach Stock Entry name to the persistent mix roll row."""
+    rows = frappe.db.sql(
+        "SELECT data FROM `tabMix Roll Store` WHERE date_key = %s", date_key
+    )
+    if not (rows and rows[0][0]): return
+    
+    try:
+        entries = json.loads(rows[0][0])
+        codes_str = ", ".join(item_codes)
+        found = False
+        for m in entries:
+            # Match by item code string
+            if m.get("item_code") == codes_str:
+                m["stock_entry"] = se_name
+                found = True
+        
+        if found:
+            frappe.db.sql(
+                "UPDATE `tabMix Roll Store` SET data = %s WHERE date_key = %s",
+                (json.dumps(entries), date_key)
+            )
+            frappe.db.commit()
+    except: pass
     
     # Custom fields
     meta = frappe.get_meta("Stock Entry")
