@@ -4150,6 +4150,21 @@ def recalculate_all_plan_codes():
 	return {"updated": updated, "failed": failed, "total": len(sheets)}
 
 @frappe.whitelist()
+def get_master_code(doctype, name, possible_fields):
+    """Checks metadata and fetches the first existing code field."""
+    if not name: return "000"
+    try:
+        # Use get_meta to safely check field existence before querying
+        meta = frappe.get_meta(doctype)
+        valid_fields = [f.fieldname for f in meta.fields]
+        for f in possible_fields:
+            if f in valid_fields:
+                val = frappe.db.get_value(doctype, name, f)
+                if val: return str(val)
+        return "000"
+    except Exception:
+        return "000"
+
 @frappe.whitelist()
 def get_mix_item_details(quality, cl_type, gsm, shaft):
     """
@@ -4164,14 +4179,12 @@ def get_mix_item_details(quality, cl_type, gsm, shaft):
 
     results = []
     
-    # 1. Fetch Codes from Masters
-    qual_code = frappe.db.get_value("Quality Master", quality, "custom_quality_code") or \
-                frappe.db.get_value("Quality Master", quality, "quality_code") or \
-                frappe.db.get_value("Quality Master", quality, "code") or "000"
+    # 1. Fetch Codes from Masters with safety fallback
+    qual_code = get_master_code("Quality Master", quality, 
+                               ["custom_quality_code", "quality_code", "short_code", "code"])
     
-    color_code = frappe.db.get_value("Colour Master", cl_type, "custom_color_code") or \
-                 frappe.db.get_value("Colour Master", cl_type, "color_code") or \
-                 frappe.db.get_value("Colour Master", cl_type, "code") or "000"
+    color_code = get_master_code("Colour Master", cl_type, 
+                                ["custom_color_code", "color_code", "short_code", "colour_code", "code"])
 
     qual_code = str(qual_code).zfill(3)[:3]
     color_code = str(color_code).zfill(3)[:3]
