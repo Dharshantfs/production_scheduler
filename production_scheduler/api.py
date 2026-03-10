@@ -4390,6 +4390,27 @@ def create_mix_spr(date_key, mix_data):
         row.manual_items = json.dumps(item_codes)
 
     doc.insert(ignore_permissions=True)
+    
+    # NEW: Sync the spr_name back to the Mix Roll Store so the Color Chart knows it's linked
+    try:
+        store_data = frappe.db.get_value("Mix Roll Store", {"date_key": date_key}, "data")
+        if store_data:
+            entries = json.loads(store_data)
+            updated = False
+            for mix in mix_data:
+                # Find the matching entry in the store to link them
+                for entry in entries:
+                    if entry.get("item_code") == mix.get("item_code") and entry.get("shaft") == mix.get("shaft"):
+                        if not entry.get("spr_name"):
+                            entry["spr_name"] = doc.name
+                            updated = True
+            
+            if updated:
+                frappe.db.set_value("Mix Roll Store", {"date_key": date_key}, "data", json.dumps(entries))
+                frappe.db.commit()
+    except Exception:
+        pass
+
     return doc.name
 
 def get_current_shift():
