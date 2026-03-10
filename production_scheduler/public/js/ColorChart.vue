@@ -539,7 +539,10 @@
                             </select>
                         </td>
                         <td class="p-2 border">
-                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" placeholder="30 + 30..." v-model="mix.shaft" @input="debouncedSaveMixRolls()" />
+                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" v-model="mix.gsm" @input="debouncedSaveMixRolls()" />
+                        </td>
+                        <td class="p-2 border">
+                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" placeholder="32 + 30..." v-model="mix.shaft" @input="debouncedSaveMixRolls()" />
                         </td>
                         <td class="p-2 border text-center">
                             <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-right font-mono font-bold" style="font-size: 12px;" placeholder="0.0" v-model="mix.kg" @input="debouncedSaveMixRolls()" />
