@@ -4365,8 +4365,9 @@ def create_mix_spr(date_key, mix_data):
         # but SPR also has its own items grid
         row.is_manual = 1
         
-        # Store items in custom field if needed, but let's just use JSON list in manual_items
-        row.manual_items = json.dumps([mix.get("item_code")])
+        # Split item_code if it contains commas (for combinations)
+        item_codes = [x.strip() for x in str(mix.get("item_code")).split(",") if x.strip()]
+        row.manual_items = json.dumps(item_codes)
 
     doc.insert(ignore_permissions=True)
     return doc.name
