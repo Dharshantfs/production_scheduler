@@ -1395,36 +1395,35 @@ async function createMixItem(mix) {
 }
 
 async function createMixStockEntry(mix) {
-    console.log("createMixStockEntry triggered", mix);
     if (!mix.item_code) {
         frappe.msgprint("Please ensure Items are created (Click CREATE/UPDATE ITEMS) before Stock Entry.");
         return;
     }
     
-    const weight = parseFloat(String(mix.kg).replace(',', '.')) || 0;
-    const weightLabel = weight > 0 ? `${weight} Kg` : "0 Kg (Draft)";
-    frappe.confirm(`Create a Stock Entry for <b>${mix.item_code}</b> totaling ${weightLabel}?`, async () => {
+    frappe.confirm(`Create a <b>Shaft Production Run</b> for <b>${mix.item_code}</b>? This will redirect you to finalize roll entries.`, async () => {
         try {
             const dateKey = getMixRollDateKey();
+            // We pass the single mix as an array for the API
             const r = await frappe.call({
-                method: "production_scheduler.api.create_mix_stock_entry",
+                method: "production_scheduler.api.create_mix_spr",
                 args: {
-                    item_codes: mix.item_code, // Comma separated string works on backend
-                    qty: mix.kg,
-                    unit: mix.unit,
-                    date_key: dateKey
+                    date_key: dateKey,
+                    mix_data: [mix]
                 }
             });
             
             if (r.message) {
                 frappe.show_alert({
-                    message: `✅ Stock Entry Created: <a href="/app/stock-entry/${r.message}" target="_blank"><b>${r.message}</b></a>`,
+                    message: `✅ Shaft Production Run Created: ${r.message}. Redirecting...`,
                     indicator: 'green'
-                }, 7);
+                }, 3);
+                
+                // Redirect to the new form
+                frappe.set_route('Form', 'Shaft Production Run', r.message);
             }
         } catch (e) {
-             console.error("Stock Entry failed", e);
-             frappe.msgprint("Failed to create Stock Entry. Check Error Log.");
+             console.error("SPR Creation failed", e);
+             frappe.msgprint("Failed to create Shaft Production Run. Check Error Log.");
         }
     });
 }

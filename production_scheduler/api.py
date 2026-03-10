@@ -4327,6 +4327,59 @@ def create_mix_item(quality, cl_type, gsm, shaft):
     return items_details
 
 @frappe.whitelist()
+def create_mix_spr(date_key, mix_data):
+    """
+    Creates a new Shaft Production Run document for Mix Rolls and returns its name.
+    """
+    if isinstance(mix_data, str):
+        mix_data = json.loads(mix_data)
+        
+    doc = frappe.new_doc("Shaft Production Run")
+    doc.run_date = frappe.utils.today()
+    doc.shift = get_current_shift()
+    doc.is_mix_roll = 1
+    doc.status = "Draft"
+    
+    # Map Mix data to Shaft Jobs
+    for i, mix in enumerate(mix_data):
+        # We need the Item Code
+        if not mix.get("item_code"):
+            continue
+            
+        row = doc.append("shaft_jobs", {})
+        row.job_id = str(i + 1)
+        row.gsm = mix.get("gsm")
+        row.quality = mix.get("quality")
+        row.color = mix.get("cl_type")
+        
+        # widths: e.g. "32+30" -> combination "32 + 30"
+        widths = re.findall(r'\d+', str(mix.get("shaft")))
+        row.combination = " + ".join(widths)
+        
+        # total width
+        row.total_width = sum(flt(w) for w in widths)
+        row.meter_roll_mtrs = 800 # Default
+        row.no_of_shafts = len(widths)
+        
+        # is_manual = 1 to allow weight syncing later if needed, 
+        # but SPR also has its own items grid
+        row.is_manual = 1
+        
+        # Store items in custom field if needed, but let's just use JSON list in manual_items
+        row.manual_items = json.dumps([mix.get("item_code")])
+
+    doc.insert(ignore_permissions=True)
+    return doc.name
+
+def get_current_shift():
+    """Returns 'Day Shift' (08-20) or 'Night Shift' (20-08)."""
+    current_hour = frappe.utils.now_datetime().hour
+    if 8 <= current_hour < 20:
+        return "Day Shift"
+    else:
+        return "Night Shift"
+
+@frappe.whitelist()
 def create_mix_stock_entry(item_codes, qty, unit, date_key):
     """Creates a Material Receipt. If qty is empty/0, created as DRAFT."""
     if isinstance(item_codes, str):
