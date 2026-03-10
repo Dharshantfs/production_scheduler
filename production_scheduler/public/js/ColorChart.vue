@@ -517,7 +517,7 @@
                     <!-- Normal row: show all fields -->
                     <template v-else>
                         <td class="p-2 border">
-                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 font-bold uppercase text-gray-800" style="font-size: 12px;" v-model="mix.mixName" @input="debouncedSaveMixRolls()" />
+                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 font-bold uppercase text-gray-800" style="font-size: 12px;" v-model="mix.mixName" :disabled="mix._submitted" @input="debouncedSaveMixRolls()" />
                             <!-- CODE display removed as per instruction -->
                             <!-- <div v-if="mix.item_code" class="text-[9px] text-blue-600 mt-1 font-mono break-all">
                                 <b>CODE:</b> {{ mix.item_code }}
@@ -525,14 +525,14 @@
                             </div> -->
                         </td>
                         <td class="p-2 border">
-                            <select class="w-full border p-1 rounded font-bold text-gray-700" style="font-size: 12px;" v-model="mix.quality" @change="debouncedSaveMixRolls()">
+                            <select class="w-full border p-1 rounded font-bold text-gray-700" style="font-size: 12px;" v-model="mix.quality" :disabled="mix._submitted" @change="debouncedSaveMixRolls()">
                                 <option value="Virgin Mix">Virgin Mix</option>
                                 <option value="Eco Mix">Eco Mix</option>
                                 <option value="Deluxe Mix">Deluxe Mix</option>
                             </select>
                         </td>
                         <td class="p-2 border">
-                            <select class="w-full border p-1 rounded font-bold text-gray-700" style="font-size: 12px;" v-model="mix.clType" @change="debouncedSaveMixRolls()">
+                            <select class="w-full border p-1 rounded font-bold text-gray-700" style="font-size: 12px;" v-model="mix.clType" :disabled="mix._submitted" @change="debouncedSaveMixRolls()">
                                 <option value="Color Mix">Color Mix</option>
                                 <option value="Beige Mix">Beige Mix</option>
                                 <option value="White Mix">White Mix</option>
@@ -540,10 +540,10 @@
                             </select>
                         </td>
                         <td class="p-2 border">
-                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" v-model="mix.gsm" @input="debouncedSaveMixRolls()" />
+                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" v-model="mix.gsm" :disabled="mix._submitted" @input="debouncedSaveMixRolls()" />
                         </td>
                         <td class="p-2 border">
-                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" placeholder="32 + 30..." v-model="mix.shaft" @input="debouncedSaveMixRolls()" />
+                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" placeholder="32 + 30..." v-model="mix.shaft" :disabled="mix._submitted" @input="debouncedSaveMixRolls()" />
                         </td>
                         <td class="p-2 border text-center">
                         <input 
@@ -577,8 +577,8 @@
                             <button @click="createMixStockEntry(mix)" 
                                     class="px-2 py-1 rounded text-[10px] font-bold text-white transition-all shadow-sm" 
                                     :disabled="mix._submitted"
-                                    :style="(mix._submitted || !mix.item_code) ? 'background-color: #94a3b8; cursor: not-allowed; opacity: 0.6;' : 'background-color: #059669; cursor: pointer; opacity: 1;'">
-                                {{ mix._submitted ? 'SUBMITTED' : 'STOCK ENTRY' }}
+                                    :style="(mix._submitted) ? 'background-color: #94a3b8; cursor: not-allowed; opacity: 0.6;' : (mix.spr_name ? 'background-color: #3b82f6;' : 'background-color: #059669;')">
+                                {{ mix._submitted ? 'SUBMITTED' : (mix.spr_name ? 'OPEN SPR' : 'STOCK ENTRY') }}
                             </button>
                         </div>
                         <div class="flex gap-1 justify-center mt-1">
@@ -1407,6 +1407,12 @@ async function createMixItem(mix) {
 }
 
 async function createMixStockEntry(mix) {
+    // If SPR already exists, just redirect to it
+    if (mix.spr_name) {
+        frappe.set_route('Form', 'Shaft Production Run', mix.spr_name);
+        return;
+    }
+
     if (!mix.item_code) {
         frappe.msgprint("Please ensure Items are created (Click CREATE/UPDATE ITEMS) before Stock Entry.");
         return;
@@ -1425,6 +1431,9 @@ async function createMixStockEntry(mix) {
             });
             
             if (r.message) {
+                // Instantly update local state to reflect the link
+                mix.spr_name = r.message;
+                
                 frappe.show_alert({
                     message: `✅ Shaft Production Run Created: ${r.message}. Redirecting...`,
                     indicator: 'green'
@@ -1432,6 +1441,7 @@ async function createMixStockEntry(mix) {
                 
                 // Redirect to the new form
                 frappe.set_route('Form', 'Shaft Production Run', r.message);
+                saveMixRolls();
             }
         } catch (e) {
              console.error("SPR Creation failed", e);

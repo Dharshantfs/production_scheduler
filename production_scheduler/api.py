@@ -1,4 +1,4 @@
-﻿import frappe
+import frappe
 from frappe import _
 from frappe.utils import getdate, flt, cint
 import json
@@ -4205,6 +4205,8 @@ def get_master_code(doctype, name, possible_fields):
     """Checks metadata and fetches the first existing code field."""
     if not name: return "000"
     try:
+        if not frappe.db.exists("DocType", doctype):
+            return "000"
         # Use get_meta to safely check field existence before querying
         meta = frappe.get_meta(doctype)
         valid_fields = [f.fieldname for f in meta.fields]
@@ -4232,7 +4234,7 @@ def get_mix_item_details(quality, cl_type, gsm, shaft):
     qual_code = get_master_code("Quality Master", quality, 
                                ["custom_quality_code", "quality_code", "short_code", "code"])
     
-    color_code = get_master_code("Colour Master", cl_type, 
+    color_code = get_master_code("Color Master", cl_type, 
                                 ["custom_color_code", "color_code", "short_code", "colour_code", "code"])
 
     qual_code = str(qual_code).zfill(3)[:3]
@@ -4260,8 +4262,8 @@ def get_mix_item_details(quality, cl_type, gsm, shaft):
 
 def get_mix_batch_roll(item_code, unit_code):
     """
-    Calculates the next Series and Roll for a Mix Item based on the \ format.
-    Format: MMUYYSeries\Roll (e.g. 032261\1)
+    Calculates the next Series and Roll for a Mix Item based on the / format.
+    Format: MMUYYSeries/Roll (e.g. 032261/1)
     """
     today_str = frappe.utils.today()
     month_str = today_str[5:7]
@@ -4270,7 +4272,7 @@ def get_mix_batch_roll(item_code, unit_code):
     prefix = f"{month_str}{unit_code}{year_str}"
     
     # Search for the latest batch for this item/unit/today
-    # We look for ANY batch that starts with prefix and has the \ separator
+    # We look for ANY batch that starts with prefix and has the / separator
     latest_batch = frappe.db.sql("""
         select batch_id from `tabBatch`
         where item = %s and batch_id like %s
@@ -4279,19 +4281,19 @@ def get_mix_batch_roll(item_code, unit_code):
     
     if latest_batch:
         full_id = latest_batch[0][0]
-        if "\\" in full_id:
+        if "/" in full_id:
             try:
-                series_part, roll_part = full_id.split("\\")
-                return f"{series_part}\\{int(roll_part) + 1}"
+                series_part, roll_part = full_id.split("/")
+                return f"{series_part}/{int(roll_part) + 1}"
             except:
-                return f"{full_id}\\1"
+                return f"{full_id}/1"
         else:
-            # Found a batch but no \ (maybe legacy or from another system)
+            # Found a batch but no / (maybe legacy or from another system)
             # We treat the entire thing as the series and start roll 1
-            return f"{full_id}\\1"
+            return f"{full_id}/1"
     else:
         # No batch found today? Start at Series 1, Roll 1
-        return f"{prefix}1\\1"
+        return f"{prefix}1/1"
 
 @frappe.whitelist()
 def create_mix_item(quality, cl_type, gsm, shaft):
