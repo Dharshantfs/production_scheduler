@@ -4236,12 +4236,12 @@ def create_mix_item(quality, cl_type, gsm, shaft):
             if "custom_gsm" in fields: item.custom_gsm = gsm
             if "custom_width_inch" in fields: item.custom_width_inch = details["width_inch"]
             
-            # HSN Logic based on GSM
+            # HSN Logic based on GSM (CORRECTED)
             hsn_code = None
             gsm_val = flt(gsm)
-            if 15 <= gsm_val <= 24: hsn_code = "5603100"
-            elif 25 <= gsm_val <= 70: hsn_code = "5603200"
-            elif 71 <= gsm_val <= 150: hsn_code = "5603300"
+            if 15 <= gsm_val <= 24: hsn_code = "56031100"
+            elif 25 <= gsm_val <= 70: hsn_code = "56031200"
+            elif 71 <= gsm_val <= 150: hsn_code = "56031300"
             
             if hsn_code:
                 if "gst_hsn_code" in fields: item.gst_hsn_code = hsn_code
