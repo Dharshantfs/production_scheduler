@@ -4234,7 +4234,7 @@ def get_mix_item_details(quality, cl_type, gsm, shaft):
     qual_code = get_master_code("Quality Master", quality, 
                                ["custom_quality_code", "quality_code", "short_code", "code"])
     
-    color_code = get_master_code("Color Master", cl_type, 
+    color_code = get_master_code("Colour Master", cl_type, 
                                 ["custom_color_code", "color_code", "short_code", "colour_code", "code"])
 
     qual_code = str(qual_code).zfill(3)[:3]
