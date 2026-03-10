@@ -491,7 +491,6 @@
                     <th class="p-2 border" style="width: 120px;">QUALITY</th>
                     <th class="p-2 border" style="width: 120px;">COLOR</th>
                     <th class="p-2 border" style="width: 60px;">GSM</th>
-                    <th class="p-2 border" style="width: 80px;">WIDTH (")</th>
                     <th class="p-2 border" style="width: 140px;">SHAFT DETAILS</th>
                     <th class="p-2 border" style="width: 100px;">WEIGHT (Kg)</th>
                     <th class="p-2 border" style="width: 80px; text-align: center;">RECYCLE</th>
@@ -540,12 +539,6 @@
                             </select>
                         </td>
                         <td class="p-2 border">
-                            <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" v-model="mix.gsm" @input="debouncedSaveMixRolls()" />
-                        </td>
-                        <td class="p-2 border">
-                            <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" v-model="mix.width_inch" @input="debouncedSaveMixRolls()" />
-                        </td>
-                        <td class="p-2 border">
                             <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" placeholder="30 + 30..." v-model="mix.shaft" @input="debouncedSaveMixRolls()" />
                         </td>
                         <td class="p-2 border text-center">
@@ -563,8 +556,8 @@
                     </td>
                     <td class="p-2 border text-center" style="white-space:nowrap;">
                         <div v-if="!mix.isRecycle" class="flex flex-col gap-1">
-                            <button @click="createMixItem(mix)" class="px-2 py-1 rounded text-[10px] font-bold text-white transition-all" :style="(!mix.gsm || !mix.width_inch) ? 'background-color: #a5b4fc; cursor: not-allowed;' : 'background-color: #4f46e5; cursor: pointer;'">
-                                {{ mix.item_code ? 'UPDATE ITEM' : 'CREATE ITEM' }}
+                            <button @click="createMixItem(mix)" class="px-2 py-1 rounded text-[10px] font-bold text-white transition-all" :style="(!mix.gsm || !mix.shaft) ? 'background-color: #a5b4fc; cursor: not-allowed;' : 'background-color: #4f46e5; cursor: pointer;'">
+                                {{ mix.item_code ? 'UPDATE ITEMS' : 'CREATE ITEMS' }}
                             </button>
                             <button @click="createMixStockEntry(mix)" class="px-2 py-1 rounded text-[10px] font-bold text-white transition-all" :style="(!mix.item_code || !mix.kg || parseFloat(mix.kg) <= 0) ? 'background-color: #6ee7b7; cursor: not-allowed;' : 'background-color: #059669; cursor: pointer;'">
                                 STOCK ENTRY
@@ -1212,7 +1205,6 @@ function _buildRawMixRolls() {
                     quality: quality,
                     clType: clType,
                     gsm: cur.gsm || next.gsm || "",
-                    width_inch: cur.width_inch || next.width_inch || "",
                     shaft: "",
                     kg: "",
                     item_code: "",
@@ -1265,7 +1257,6 @@ async function rebuildMixRolls() {
             row.quality = s.quality || row.quality || "Virgin Mix";
             row.clType = s.clType || row.clType || "Color Mix";
             row.gsm = s.gsm || row.gsm;
-            row.width_inch = s.width_inch || row.width_inch || "";
             row.shaft = s.shaft || "";
             row.kg = s.kg || "";
             row.item_code = s.item_code || "";
@@ -1290,7 +1281,6 @@ function saveMixRolls() {
         quality: m.quality,
         clType: m.clType,
         gsm: m.gsm,
-        width_inch: m.width_inch,
         shaft: m.shaft,
         kg: m.kg,
         item_code: m.item_code,
@@ -1348,7 +1338,6 @@ function addMixRow() {
         quality: 'Virgin Mix',
         clType: 'Color Mix',
         gsm: '',
-        width_inch: '',
         shaft: '',
         kg: 0,
         item_code: '',
@@ -1370,8 +1359,8 @@ function getMixColorType(c1, c2) {
 }
 
 async function createMixItem(mix) {
-    if (!mix.gsm || !mix.width_inch) {
-        frappe.msgprint("Please enter GSM and Width (Inch) to generate Item Code.");
+    if (!mix.gsm || !mix.shaft) {
+        frappe.msgprint("Please enter GSM and Shaft Details (Widths like 32+30) to generate Items.");
         return;
     }
     
@@ -1382,35 +1371,36 @@ async function createMixItem(mix) {
                 quality: mix.quality,
                 cl_type: mix.clType,
                 gsm: mix.gsm,
-                width_inch: mix.width_inch
+                shaft: mix.shaft
             }
         });
         
-        if (r.message) {
-            mix.item_code = r.message.item_code;
-            mix.item_name = r.message.item_name;
-            frappe.show_alert({ message: `✅ Item Code Generated: ${mix.item_code}`, indicator: 'green' });
+        if (r.message && Array.isArray(r.message)) {
+            // Store multiple codes/names as strings
+            mix.item_code = r.message.map(m => m.item_code).join(", ");
+            mix.item_name = r.message.map(m => m.item_name).join(" | ");
+            frappe.show_alert({ message: `✅ Generated ${r.message.length} Item(s)`, indicator: 'green' });
             saveMixRolls();
         }
     } catch (e) {
         console.error("Item Creation failed", e);
-        frappe.msgprint("Failed to create Item. Check Error Log.");
+        frappe.msgprint("Failed to create Item(s). Check Error Log.");
     }
 }
 
 async function createMixStockEntry(mix) {
     if (!mix.item_code || !mix.kg || parseFloat(mix.kg) <= 0) {
-        frappe.msgprint("Please ensure Item Code is generated and Weight (Kg) is entered.");
+        frappe.msgprint("Please ensure Items are created and Weight (Kg) is entered.");
         return;
     }
     
-    frappe.confirm(`Create a Stock Entry (Material Receipt) for <b>${mix.item_code}</b> (${mix.kg} Kg)?`, async () => {
+    frappe.confirm(`Create a Stock Entry for <b>${mix.item_code}</b> totaling ${mix.kg} Kg?`, async () => {
         try {
             const dateKey = getMixRollDateKey();
             const r = await frappe.call({
                 method: "production_scheduler.api.create_mix_stock_entry",
                 args: {
-                    item_code: mix.item_code,
+                    item_codes: mix.item_code, // Comma separated string works on backend
                     qty: mix.kg,
                     unit: mix.unit,
                     date_key: dateKey
