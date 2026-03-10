@@ -4165,13 +4165,13 @@ def get_mix_item_details(quality, cl_type, gsm, shaft):
     results = []
     
     # 1. Fetch Codes from Masters
-    qual_code = frappe.db.get_value("Quality", quality, "custom_quality_code") or \
-                frappe.db.get_value("Quality", quality, "quality_code") or \
-                frappe.db.get_value("Quality", quality, "code") or "000"
+    qual_code = frappe.db.get_value("Quality Master", quality, "custom_quality_code") or \
+                frappe.db.get_value("Quality Master", quality, "quality_code") or \
+                frappe.db.get_value("Quality Master", quality, "code") or "000"
     
-    color_code = frappe.db.get_value("Color", cl_type, "custom_color_code") or \
-                 frappe.db.get_value("Color", cl_type, "color_code") or \
-                 frappe.db.get_value("Color", cl_type, "code") or "000"
+    color_code = frappe.db.get_value("Colour Master", cl_type, "custom_color_code") or \
+                 frappe.db.get_value("Colour Master", cl_type, "color_code") or \
+                 frappe.db.get_value("Colour Master", cl_type, "code") or "000"
 
     qual_code = str(qual_code).zfill(3)[:3]
     color_code = str(color_code).zfill(3)[:3]
