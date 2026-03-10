@@ -518,10 +518,11 @@
                     <template v-else>
                         <td class="p-2 border">
                             <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 font-bold uppercase text-gray-800" style="font-size: 12px;" v-model="mix.mixName" @input="debouncedSaveMixRolls()" />
-                            <div v-if="mix.item_code" class="text-[9px] text-blue-600 mt-1 font-mono break-all">
+                            <!-- CODE display removed as per instruction -->
+                            <!-- <div v-if="mix.item_code" class="text-[9px] text-blue-600 mt-1 font-mono break-all">
                                 <b>CODE:</b> {{ mix.item_code }}
                                 <div class="text-gray-500 font-sans uppercase">{{ mix.item_name }}</div>
-                            </div>
+                            </div> -->
                         </td>
                         <td class="p-2 border">
                             <select class="w-full border p-1 rounded font-bold text-gray-700" style="font-size: 12px;" v-model="mix.quality" @change="debouncedSaveMixRolls()">

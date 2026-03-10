@@ -4222,8 +4222,18 @@ def create_mix_item(quality, cl_type, gsm, shaft):
             item.item_name = details["item_name"]
             item.item_group = "Products"
             item.stock_uom = "Kg"
+            item.sales_uom = "Kg"
+            item.weight_uom = "Kg"
             item.is_stock_item = 1
             item.valuation_method = "FIFO"
+            item.has_batch_no = 1
+            item.default_material_request_type = "Material Transfer"
+            
+            # Set Default Warehouse in Item Defaults table
+            item.append("item_defaults", {
+                "company": frappe.defaults.get_global_default("company") or "Jayashree Spun Bond",
+                "default_warehouse": "Finished Goods - JSB-1ZT"
+            })
             
             tax_template = frappe.db.get_value("Item Tax Template", {"name": ["like", "%GST 5%"]}, "name")
             if tax_template:
@@ -4264,7 +4274,9 @@ def create_mix_stock_entry(item_codes, qty, unit, date_key):
     se = frappe.new_doc("Stock Entry")
     se.stock_entry_type = "Material Receipt"
     
-    target_warehouse = "Finished Goods - IZT"
+    target_warehouse = "Finished Goods - JSB-1ZT"
+    if not frappe.db.exists("Warehouse", target_warehouse):
+        target_warehouse = "Finished Goods - IZT" # Fallback
     if not frappe.db.exists("Warehouse", target_warehouse):
         target_warehouse = frappe.db.get_value("Stock Settings", None, "default_fg_warehouse") or "Finished Goods - P"
 
