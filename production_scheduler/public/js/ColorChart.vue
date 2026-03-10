@@ -563,10 +563,10 @@
                     </td>
                     <td class="p-2 border text-center" style="white-space:nowrap;">
                         <div v-if="!mix.isRecycle" class="flex flex-col gap-1">
-                            <button @click="createMixItem(mix)" class="bg-indigo-600 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-indigo-700" :disabled="!mix.gsm || !mix.width_inch">
+                            <button @click="createMixItem(mix)" class="px-2 py-1 rounded text-[10px] font-bold text-white transition-all" :style="(!mix.gsm || !mix.width_inch) ? 'background-color: #a5b4fc; cursor: not-allowed;' : 'background-color: #4f46e5; cursor: pointer;'">
                                 {{ mix.item_code ? 'UPDATE ITEM' : 'CREATE ITEM' }}
                             </button>
-                            <button @click="createMixStockEntry(mix)" class="bg-emerald-600 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-emerald-700" :disabled="!mix.item_code || !mix.kg">
+                            <button @click="createMixStockEntry(mix)" class="px-2 py-1 rounded text-[10px] font-bold text-white transition-all" :style="(!mix.item_code || !mix.kg || parseFloat(mix.kg) <= 0) ? 'background-color: #6ee7b7; cursor: not-allowed;' : 'background-color: #059669; cursor: pointer;'">
                                 STOCK ENTRY
                             </button>
                         </div>
@@ -1201,7 +1201,7 @@ function _buildRawMixRolls() {
                 if (q && q !== "RECYCLE") mixName = `GPKL - ${q} MIX`;
                 else if (!q) mixName = "COLOURMIX";
 
-                const quality = q.includes("ECO") ? "Eco Mix" : q.includes("DELUXE") ? "Deluxe Mix" : "Virgin Mix";
+                const quality = (q.includes("ECO") || q.includes("ECO SPECIAL")) ? "Eco Mix" : q.includes("DELUXE") ? "Deluxe Mix" : "Virgin Mix";
                 const clType = getMixColorType(cur.color, next.color);
 
                 results.push({
