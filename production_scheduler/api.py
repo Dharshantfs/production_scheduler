@@ -4071,11 +4071,13 @@ def get_mix_roll_data(date_key):
     entries = json.loads(rows[0][0])
     updated = False
     
-    # Sync weight from Stock Entries if we have a reference
+    # Sync weight from Stock Entries or SPRs if we have a reference
     for m in entries:
         se_name = m.get("stock_entry")
+        spr_name = m.get("spr_name")
+        
+        # 1. Sync from Stock Entry (legacy/direct SE flow)
         if se_name:
-            # Check status and produced weight
             # 0=Draft, 1=Submitted, 2=Cancelled
             se_status = frappe.db.get_value("Stock Entry", se_name, "docstatus")
             
@@ -4093,6 +4095,24 @@ def get_mix_roll_data(date_key):
             if se_status == 1 and not m.get("_submitted"):
                 m["_submitted"] = True
                 updated = True
+
+        # 2. Sync from Shaft Production Run (New flow)
+        if spr_name:
+            res = frappe.db.get_value("Shaft Production Run", spr_name, ["docstatus", "total_produced_weight"], as_dict=True)
+            if res:
+                if res.docstatus == 1:
+                    if not m.get("_submitted"):
+                        m["_submitted"] = True
+                        updated = True
+                    # Sync weight if submitted
+                    if flt(m.get("kg")) != flt(res.total_produced_weight):
+                        m["kg"] = flt(res.total_produced_weight)
+                        updated = True
+                elif res.docstatus == 0:
+                     # Even if not submitted, sync the current draft weight to the chart
+                     if flt(m.get("kg")) != flt(res.total_produced_weight):
+                        m["kg"] = flt(res.total_produced_weight)
+                        updated = True
 
     if updated:
         save_mix_roll_data(date_key, json.dumps(entries))

@@ -546,7 +546,15 @@
                             <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" placeholder="32 + 30..." v-model="mix.shaft" @input="debouncedSaveMixRolls()" />
                         </td>
                         <td class="p-2 border text-center">
-                            <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-right font-mono font-bold" style="font-size: 12px;" placeholder="0.0" v-model="mix.kg" @input="debouncedSaveMixRolls()" />
+                        <input 
+                            type="number" 
+                            class="w-full border p-1 rounded outline-none focus:border-blue-500 text-right font-mono font-bold" 
+                            style="font-size: 12px;" 
+                            placeholder="0.0" 
+                            v-model="mix.kg" 
+                            :disabled="mix._submitted"
+                            @input="debouncedSaveMixRolls()" 
+                        />
                         </td>
                     </template>
                     <td class="p-2 border text-center">
@@ -560,13 +568,17 @@
                     </td>
                     <td class="p-2 border text-center" style="white-space:nowrap;">
                         <div v-if="!mix.isRecycle" class="flex flex-col gap-1">
-                            <button @click="createMixItem(mix)" class="px-2 py-1 rounded text-[10px] font-bold text-white transition-all" :style="(!mix.gsm || !mix.shaft) ? 'background-color: #a5b4fc; cursor: not-allowed;' : 'background-color: #4f46e5; cursor: pointer;'">
+                            <button @click="createMixItem(mix)" 
+                                    class="px-2 py-1 rounded text-[10px] font-bold text-white transition-all" 
+                                    :disabled="mix._submitted"
+                                    :style="(mix._submitted || !mix.gsm || !mix.shaft) ? 'background-color: #a5b4fc; cursor: not-allowed;' : 'background-color: #4f46e5; cursor: pointer;'">
                                 {{ mix.item_code ? 'UPDATE ITEMS' : 'CREATE ITEMS' }}
                             </button>
                             <button @click="createMixStockEntry(mix)" 
                                     class="px-2 py-1 rounded text-[10px] font-bold text-white transition-all shadow-sm" 
-                                    :style="(!mix.item_code) ? 'background-color: #94a3b8; cursor: not-allowed; opacity: 0.6;' : 'background-color: #059669; cursor: pointer; opacity: 1;'">
-                                STOCK ENTRY
+                                    :disabled="mix._submitted"
+                                    :style="(mix._submitted || !mix.item_code) ? 'background-color: #94a3b8; cursor: not-allowed; opacity: 0.6;' : 'background-color: #059669; cursor: pointer; opacity: 1;'">
+                                {{ mix._submitted ? 'SUBMITTED' : 'STOCK ENTRY' }}
                             </button>
                         </div>
                         <div class="flex gap-1 justify-center mt-1">
@@ -1429,7 +1441,10 @@ async function createMixStockEntry(mix) {
 }
 
 async function createMixWO(mix) {
-    // Legacy function - re-routing to Stock Entry flow if called
+    if (mix._submitted) {
+        frappe.msgprint("This row has already been submitted and cannot be modified.");
+        return;
+    }
     createMixStockEntry(mix);
 }
 
