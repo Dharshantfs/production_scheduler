@@ -2,6 +2,7 @@
 from frappe import _
 from frappe.utils import getdate, flt, cint
 import json
+import re
 
 def generate_party_code(doc):
     """One Sales Order = One Party Code.
@@ -4200,7 +4201,6 @@ def get_mix_item_details(quality, cl_type, gsm, shaft):
     Parses 'shaft' for widths (e.g. '32+30') and generates details for EACH width.
     Returns a list of dicts.
     """
-    import re
     # Extract all numbers from shaft string (e.g. "32+30" -> ["32", "30"])
     widths = re.findall(r'\d+', str(shaft))
     if not widths:
