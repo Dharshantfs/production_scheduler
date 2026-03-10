@@ -1,6 +1,6 @@
 {
     "charts": [],
-    "content": "[{\"id\":\"production_board_shortcut\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Production Board\",\"shortcut_type\":\"Page\",\"shortcut_url\":\"production-board\",\"label\":\"Production Board\"}},{\"id\":\"color_chart_shortcut\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Color Chart\",\"shortcut_type\":\"Page\",\"shortcut_url\":\"color-chart\",\"label\":\"Color Chart\"}},{\"id\":\"confirmed_order_shortcut\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Confirmed Order\",\"shortcut_type\":\"Page\",\"shortcut_url\":\"confirmed-order\",\"label\":\"Confirmed Order\"}}]",
+    "content": "[{\"id\":\"confirmed_order_shortcut\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Confirmed Order\",\"shortcut_type\":\"Page\",\"shortcut_url\":\"confirmed-order\",\"label\":\"Confirmed Order\"}},{\"id\":\"production_board_shortcut\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Production Board\",\"shortcut_type\":\"Page\",\"shortcut_url\":\"production-board\",\"label\":\"Production Board\"}},{\"id\":\"color_chart_shortcut\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Color Chart\",\"shortcut_type\":\"Page\",\"shortcut_url\":\"color-chart\",\"label\":\"Color Chart\"}}]",
     "creation": "2026-02-13 12:00:00.000000",
     "custom_blocks": [],
     "docstatus": 0,
@@ -12,6 +12,15 @@
     "is_hidden": 0,
     "label": "Production Scheduler",
     "links": [
+        {
+            "description": "Confirmed Order",
+            "icon": "tick",
+            "label": "Confirmed Order",
+            "link_to": "confirmed-order",
+            "link_type": "Page",
+            "onboard": 1,
+            "type": "Link"
+        },
         {
             "description": "Production Board",
             "icon": "gantt",
@@ -38,15 +47,6 @@
             "link_type": "DocType",
             "onboard": 1,
             "type": "Link"
-        },
-        {
-            "description": "Confirmed Order",
-            "icon": "tick",
-            "label": "Confirmed Order",
-            "link_to": "confirmed-order",
-            "link_type": "Page",
-            "onboard": 1,
-            "type": "Link"
         }
     ],
     "modified": "2026-02-14 11:00:00.000000",
@@ -62,6 +62,11 @@
     "sequence_id": 30,
     "shortcuts": [
         {
+            "label": "Confirmed Order",
+            "link_to": "confirmed-order",
+            "type": "Page"
+        },
+        {
             "label": "Production Board",
             "link_to": "production-board",
             "type": "Page"
@@ -69,11 +74,6 @@
         {
             "label": "Color Chart",
             "link_to": "color-chart",
-            "type": "Page"
-        },
-        {
-            "label": "Confirmed Order",
-            "link_to": "confirmed-order",
             "type": "Page"
         }
     ],

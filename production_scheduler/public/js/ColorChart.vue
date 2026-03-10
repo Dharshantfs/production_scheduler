@@ -491,10 +491,11 @@
                     <th class="p-2 border" style="width: 120px;">QUALITY</th>
                     <th class="p-2 border" style="width: 120px;">COLOR</th>
                     <th class="p-2 border" style="width: 60px;">GSM</th>
+                    <th class="p-2 border" style="width: 80px;">WIDTH (")</th>
                     <th class="p-2 border" style="width: 140px;">SHAFT DETAILS</th>
                     <th class="p-2 border" style="width: 100px;">WEIGHT (Kg)</th>
                     <th class="p-2 border" style="width: 80px; text-align: center;">RECYCLE</th>
-                    <th class="p-2 border" style="width: 90px; text-align: center;">ACTIONS</th>
+                    <th class="p-2 border" style="width: 120px; text-align: center;">ACTIONS</th>
                 </tr>
             </thead>
             <tbody>
@@ -518,11 +519,15 @@
                     <template v-else>
                         <td class="p-2 border">
                             <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 font-bold uppercase text-gray-800" style="font-size: 12px;" v-model="mix.mixName" @input="debouncedSaveMixRolls()" />
+                            <div v-if="mix.item_code" class="text-[9px] text-blue-600 mt-1 font-mono break-all">
+                                <b>CODE:</b> {{ mix.item_code }}
+                                <div class="text-gray-500 font-sans uppercase">{{ mix.item_name }}</div>
+                            </div>
                         </td>
                         <td class="p-2 border">
                             <select class="w-full border p-1 rounded font-bold text-gray-700" style="font-size: 12px;" v-model="mix.quality" @change="debouncedSaveMixRolls()">
                                 <option value="Virgin Mix">Virgin Mix</option>
-                                <option value="Eco Spl Mix">Eco Spl Mix</option>
+                                <option value="Eco Mix">Eco Mix</option>
                                 <option value="Deluxe Mix">Deluxe Mix</option>
                             </select>
                         </td>
@@ -536,6 +541,9 @@
                         </td>
                         <td class="p-2 border">
                             <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" v-model="mix.gsm" @input="debouncedSaveMixRolls()" />
+                        </td>
+                        <td class="p-2 border">
+                            <input type="number" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" v-model="mix.width_inch" @input="debouncedSaveMixRolls()" />
                         </td>
                         <td class="p-2 border">
                             <input type="text" class="w-full border p-1 rounded outline-none focus:border-blue-500 text-center font-bold text-gray-700" style="font-size: 12px;" placeholder="30 + 30..." v-model="mix.shaft" @input="debouncedSaveMixRolls()" />
@@ -554,9 +562,18 @@
                         </button>
                     </td>
                     <td class="p-2 border text-center" style="white-space:nowrap;">
-                        <button v-if="!mix.isRecycle" @click="createMixWO(mix)" class="bg-blue-600 text-white px-2 py-1 rounded text-[10px] font-bold mb-1 block w-full hover:bg-blue-700">CREATE WO</button>
-                        <button @click="revertMixRow(idx)" title="Revert to auto-generated values" style="background:#f0f9ff;border:1px solid #7dd3fc;color:#0369a1;padding:2px 6px;border-radius:4px;font-size:11px;margin-bottom:2px;cursor:pointer;">↺</button>
-                        <button @click="deleteMixRow(idx)" title="Delete this row" style="background:#fff1f2;border:1px solid #fca5a5;color:#dc2626;padding:2px 6px;border-radius:4px;font-size:11px;cursor:pointer;">✕</button>
+                        <div v-if="!mix.isRecycle" class="flex flex-col gap-1">
+                            <button @click="createMixItem(mix)" class="bg-indigo-600 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-indigo-700" :disabled="!mix.gsm || !mix.width_inch">
+                                {{ mix.item_code ? 'UPDATE ITEM' : 'CREATE ITEM' }}
+                            </button>
+                            <button @click="createMixStockEntry(mix)" class="bg-emerald-600 text-white px-2 py-1 rounded text-[10px] font-bold hover:bg-emerald-700" :disabled="!mix.item_code || !mix.kg">
+                                STOCK ENTRY
+                            </button>
+                        </div>
+                        <div class="flex gap-1 justify-center mt-1">
+                            <button @click="revertMixRow(idx)" title="Revert to auto-generated values" style="background:#f0f9ff;border:1px solid #7dd3fc;color:#0369a1;padding:2px 6px;border-radius:4px;font-size:11px;cursor:pointer;">↺</button>
+                            <button @click="deleteMixRow(idx)" title="Delete this row" style="background:#fff1f2;border:1px solid #fca5a5;color:#dc2626;padding:2px 6px;border-radius:4px;font-size:11px;cursor:pointer;">✕</button>
+                        </div>
                     </td>
                 </tr>
             </tbody>
@@ -1184,7 +1201,7 @@ function _buildRawMixRolls() {
                 if (q && q !== "RECYCLE") mixName = `GPKL - ${q} MIX`;
                 else if (!q) mixName = "COLOURMIX";
 
-                const quality = q.includes("ECO") ? "Eco Spl Mix" : q.includes("DELUXE") ? "Deluxe Mix" : "Virgin Mix";
+                const quality = q.includes("ECO") ? "Eco Mix" : q.includes("DELUXE") ? "Deluxe Mix" : "Virgin Mix";
                 const clType = getMixColorType(cur.color, next.color);
 
                 results.push({
@@ -1195,8 +1212,11 @@ function _buildRawMixRolls() {
                     quality: quality,
                     clType: clType,
                     gsm: cur.gsm || next.gsm || "",
+                    width_inch: cur.width_inch || next.width_inch || "",
                     shaft: "",
                     kg: "",
+                    item_code: "",
+                    item_name: "",
                     isRecycle: false,
                     _prevMixName: mixName
                 });
@@ -1245,8 +1265,11 @@ async function rebuildMixRolls() {
             row.quality = s.quality || row.quality || "Virgin Mix";
             row.clType = s.clType || row.clType || "Color Mix";
             row.gsm = s.gsm || row.gsm;
+            row.width_inch = s.width_inch || row.width_inch || "";
             row.shaft = s.shaft || "";
             row.kg = s.kg || "";
+            row.item_code = s.item_code || "";
+            row.item_name = s.item_name || "";
             row.isRecycle = !!s.isRecycle;
             row._prevMixName = s._prevMixName || row._prevMixName;
         }
@@ -1267,8 +1290,11 @@ function saveMixRolls() {
         quality: m.quality,
         clType: m.clType,
         gsm: m.gsm,
+        width_inch: m.width_inch,
         shaft: m.shaft,
         kg: m.kg,
+        item_code: m.item_code,
+        item_name: m.item_name,
         isRecycle: m.isRecycle,
         _prevMixName: m._prevMixName
     }));
@@ -1322,8 +1348,11 @@ function addMixRow() {
         quality: 'Virgin Mix',
         clType: 'Color Mix',
         gsm: '',
+        width_inch: '',
         shaft: '',
         kg: 0,
+        item_code: '',
+        item_name: '',
         isRecycle: false,
         _prevMixName: '',
         _isManual: true
@@ -1340,40 +1369,70 @@ function getMixColorType(c1, c2) {
     return "Color Mix";
 }
 
-async function createMixWO(mix) {
-    if (!mix.kg || parseFloat(mix.kg) <= 0) {
-        frappe.msgprint("Please enter a valid Weight (Kg) to create a Work Order.");
+async function createMixItem(mix) {
+    if (!mix.gsm || !mix.width_inch) {
+        frappe.msgprint("Please enter GSM and Width (Inch) to generate Item Code.");
         return;
     }
     
-    frappe.confirm(`Create a Work Order for <b>${mix.mixName}</b> (${mix.kg} Kg)?`, async () => {
+    try {
+        const r = await frappe.call({
+            method: "production_scheduler.api.create_mix_item",
+            args: {
+                quality: mix.quality,
+                cl_type: mix.clType,
+                gsm: mix.gsm,
+                width_inch: mix.width_inch
+            }
+        });
+        
+        if (r.message) {
+            mix.item_code = r.message.item_code;
+            mix.item_name = r.message.item_name;
+            frappe.show_alert({ message: `✅ Item Code Generated: ${mix.item_code}`, indicator: 'green' });
+            saveMixRolls();
+        }
+    } catch (e) {
+        console.error("Item Creation failed", e);
+        frappe.msgprint("Failed to create Item. Check Error Log.");
+    }
+}
+
+async function createMixStockEntry(mix) {
+    if (!mix.item_code || !mix.kg || parseFloat(mix.kg) <= 0) {
+        frappe.msgprint("Please ensure Item Code is generated and Weight (Kg) is entered.");
+        return;
+    }
+    
+    frappe.confirm(`Create a Stock Entry (Material Receipt) for <b>${mix.item_code}</b> (${mix.kg} Kg)?`, async () => {
         try {
             const dateKey = getMixRollDateKey();
             const r = await frappe.call({
-                method: "production_scheduler.api.create_mix_wo",
+                method: "production_scheduler.api.create_mix_stock_entry",
                 args: {
+                    item_code: mix.item_code,
+                    qty: mix.kg,
                     unit: mix.unit,
-                    mix_name: mix.mixName,
-                    quality: mix.quality,
-                    cl_type: mix.clType,
-                    gsm: mix.gsm,
-                    shaft: mix.shaft,
-                    kg: mix.kg,
                     date_key: dateKey
                 }
             });
             
             if (r.message) {
                 frappe.show_alert({
-                    message: `✅ Work Order Created: <a href="/app/work-order/${r.message}" target="_blank"><b>${r.message}</b></a>`,
+                    message: `✅ Stock Entry Created: <a href="/app/stock-entry/${r.message}" target="_blank"><b>${r.message}</b></a>`,
                     indicator: 'green'
                 }, 7);
             }
         } catch (e) {
-             console.error("WO Creation failed", e);
-             frappe.msgprint("Failed to create Work Order. Check Error Log.");
+             console.error("Stock Entry failed", e);
+             frappe.msgprint("Failed to create Stock Entry. Check Error Log.");
         }
     });
+}
+
+async function createMixWO(mix) {
+    // Legacy function - re-routing to Stock Entry flow if called
+    createMixStockEntry(mix);
 }
 
 // Watch filteredData changes → rebuild mix rolls with saved state

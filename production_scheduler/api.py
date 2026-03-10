@@ -4150,59 +4150,145 @@ def recalculate_all_plan_codes():
 	return {"updated": updated, "failed": failed, "total": len(sheets)}
 
 @frappe.whitelist()
-def create_mix_wo(unit, mix_name, quality, cl_type, gsm, shaft, kg, date_key):
+def get_mix_item_details(quality, cl_type, gsm, width_inch):
     """
-    Creates a Work Order for a Mix Roll manually entered in Color Chart.
+    Generates 16-digit Item Code and Name based on masters.
+    Code: 100 + QualCode(3) + ColorCode(3) + GSM(3) + WidthMM(4)
+    """
+    # 1. Fetch Codes from Masters
+    # Check if fields are named 'custom_code' or 'quality_code' etc.
+    # We will try common fieldnames.
+    qual_code = frappe.db.get_value("Quality", quality, "custom_quality_code") or \
+                frappe.db.get_value("Quality", quality, "quality_code") or \
+                frappe.db.get_value("Quality", quality, "code") or "000"
+    
+    color_code = frappe.db.get_value("Color", cl_type, "custom_color_code") or \
+                 frappe.db.get_value("Color", cl_type, "color_code") or \
+                 frappe.db.get_value("Color", cl_type, "code") or "000"
+
+    # Normalize to 3 digits
+    qual_code = str(qual_code).zfill(3)[:3]
+    color_code = str(color_code).zfill(3)[:3]
+    
+    # 2. GSM (3 digits)
+    gsm_str = str(int(flt(gsm))).zfill(3)[:3]
+    
+    # 3. Width Logic
+    # Inch -> MM -> Round to nearest 5 -> 4 digits
+    mm_raw = flt(width_inch) * 25.4
+    mm_int = int(mm_raw)
+    mm_final = round(mm_int / 5.0) * 5
+    width_mm_str = str(int(mm_final)).zfill(4)[:4]
+    
+    item_code = f"100{qual_code}{color_code}{gsm_str}{width_mm_str}"
+    
+    # 4. Item Name
+    # NON WOVEN FABRIC VIRGIN MIX WHITE MIX 30 GSM W - 33'' ( 840 MM )
+    item_name = f"NON WOVEN FABRIC {quality.upper()} {cl_type.upper()} {gsm_str.lstrip('0')} GSM W - {width_inch}'' ( {mm_final} MM )"
+    
+    return {
+        "item_code": item_code,
+        "item_name": item_name,
+        "quality_code": qual_code,
+        "color_code": color_code,
+        "width_mm": mm_final
+    }
+
+@frappe.whitelist()
+def create_mix_item(quality, cl_type, gsm, width_inch):
+    """Creates the Item if it doesn't exist."""
+    details = get_mix_item_details(quality, cl_type, gsm, width_inch)
+    item_code = details["item_code"]
+    
+    if not frappe.db.exists("Item", item_code):
+        item = frappe.new_doc("Item")
+        item.item_code = item_code
+        item.item_name = details["item_name"]
+        item.item_group = "Products" # Generic default
+        item.stock_uom = "Kg"
+        item.is_stock_item = 1
+        
+        # Try to set quality/color in custom fields if they exist
+        meta = frappe.get_meta("Item")
+        fields = [f.fieldname for f in meta.fields]
+        if "custom_quality" in fields: item.custom_quality = quality
+        if "custom_color" in fields: item.custom_color = cl_type
+        if "custom_gsm" in fields: item.custom_gsm = gsm
+        if "custom_width_inch" in fields: item.custom_width_inch = width_inch
+        
+        item.insert(ignore_permissions=True)
+        frappe.db.commit()
+    
+    return details
+
+@frappe.whitelist()
+def create_mix_stock_entry(item_code, qty, unit, date_key):
+    """Creates a Material Receipt Stock Entry."""
+    item_name = frappe.db.get_value("Item", item_code, "item_name")
+    if not item_name:
+        frappe.throw(f"Item {item_code} does not exist.")
+        
+    se = frappe.new_doc("Stock Entry")
+    se.stock_entry_type = "Material Receipt"
+    se.append("items", {
+        "item_code": item_code,
+        "qty": flt(qty),
+        "t_warehouse": frappe.db.get_value("Stock Settings", None, "default_fg_warehouse") or "Finished Goods - P",
+        "uom": "Kg",
+        "stock_uom": "Kg",
+        "conversion_factor": 1
+    })
+    
+    # Custom fields
+    meta = frappe.get_meta("Stock Entry")
+    fields = [f.fieldname for f in meta.fields]
+    if "custom_unit" in fields: se.custom_unit = unit
+    if "custom_is_mix_roll" in fields: se.custom_is_mix_roll = 1
+    if "custom_mix_roll_date" in fields: se.custom_mix_roll_date = date_key
+    
+    se.insert(ignore_permissions=True)
+    se.submit()
+    frappe.db.commit()
+    
+    return se.name
+
+@frappe.whitelist()
+def create_mix_wo(unit, mix_name, quality, cl_type, gsm, shaft, kg, date_key):
+    """LEGACY: Re-routed to Stock Entry in new flow, but kept for compatibility."""
+    # The new flow uses create_mix_item then create_mix_stock_entry.
+    # We'll just leave this as is for now or point it to a warning.
+    return create_mix_wo_old(unit, mix_name, quality, cl_type, gsm, shaft, kg, date_key)
+
+def create_mix_wo_old(unit, mix_name, quality, gsm, shaft, kg, date_key):
+    """
+    Old Logic: Creates a Work Order for a Mix Roll manually entered in Color Chart.
     """
     # 1. Determine Production Item
-    # Strategy: Match quality + gsm or use generic mix item
-    possible_names = [
-        f"{quality} {gsm} GSM",
-        f"{quality} {gsm}",
-        f"MIX-{quality}-{gsm}".replace(" ", "-").upper(),
-        mix_name
-    ]
-    
+    possible_names = [f"{quality} {gsm} GSM", f"{quality} {gsm}", f"MIX-{quality}-{gsm}".replace(" ", "-").upper(), mix_name]
     item_code = None
     for name in possible_names:
-        item_code = frappe.db.get_value("Item", {"item_name": name}, "name") or \
-                    frappe.db.get_value("Item", {"name": name}, "name")
+        item_code = frappe.db.get_value("Item", {"item_name": name}, "name") or frappe.db.get_value("Item", {"name": name}, "name")
         if item_code: break
-        
-    if not item_code:
-        # Fallback to generic "MIX" or throw helpful error
-        item_code = frappe.db.get_value("Item", {"item_name": "MIX ROLL"}, "name")
-        
-    if not item_code:
-         frappe.throw(f"Mix Item not found. Please create an item named '{quality} {gsm} GSM' first.")
+    if not item_code: item_code = frappe.db.get_value("Item", {"item_name": "MIX ROLL"}, "name")
+    if not item_code: frappe.throw(f"Mix Item not found.")
 
     # 2. Create the Work Order
     wo = frappe.new_doc("Work Order")
     wo.production_item = item_code
     wo.qty = flt(kg)
-    
-    # Defaults
     company = frappe.defaults.get_user_default("Company") or frappe.db.get_single_value("Global Defaults", "default_company")
     if not company: company = frappe.get_all("Company", limit=1)[0].name
     wo.company = company
-    
     wo.wip_warehouse = frappe.db.get_value("Stock Settings", None, "default_wip_warehouse")
     wo.fg_warehouse = frappe.db.get_value("Stock Settings", None, "default_fg_warehouse")
     
-    # Try to set custom fields if they exist
     meta = frappe.get_meta("Work Order")
     fields = [f.fieldname for f in meta.fields]
-    
-    if "custom_unit" in fields:
-        wo.custom_unit = unit
-    if "custom_shaft_details" in fields:
-        wo.custom_shaft_details = shaft
-    if "custom_mix_roll_date" in fields:
-        wo.custom_mix_roll_date = date_key
-    if "custom_is_mix_roll" in fields:
-        wo.custom_is_mix_roll = 1
+    if "custom_unit" in fields: wo.custom_unit = unit
+    if "custom_shaft_details" in fields: wo.custom_shaft_details = shaft
+    if "custom_mix_roll_date" in fields: wo.custom_mix_roll_date = date_key
+    if "custom_is_mix_roll" in fields: wo.custom_is_mix_roll = 1
 
     wo.insert()
     frappe.db.commit()
-    
     return wo.name
