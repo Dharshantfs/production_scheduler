@@ -4340,10 +4340,6 @@ def create_mix_spr(date_key, mix_data):
     doc.is_mix_roll = 1
     doc.status = "Draft"
     
-    # Set unit from the first mix entry if available
-    if mix_data and len(mix_data) > 0:
-        doc.custom_unit = mix_data[0].get("unit")
-    
     # Map Mix data to Shaft Jobs
     for i, mix in enumerate(mix_data):
         # We need the Item Code
