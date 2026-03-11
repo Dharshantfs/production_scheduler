@@ -71,7 +71,10 @@
         🔄
       </button>
       
-      <button class="cc-clear-btn" style="margin-left:auto; background-color: #3b82f6; color: white; border: none;" @click="goToPlan" title="View Production Plan (Table)">
+      <button class="cc-clear-btn" style="margin-left:auto; background-color: #10b981; color: white; border: none; margin-right: 8px;" @click="goToConfirmedOrders" title="View Confirmed Orders Page">
+          ✅ Confirmed Orders
+      </button>
+      <button class="cc-clear-btn" style="background-color: #3b82f6; color: white; border: none;" @click="goToPlan" title="View Production Plan (Table)">
           📅 View Table
       </button>
 
@@ -359,6 +362,10 @@ function goToPlan() {
     if (viewScope.value === 'monthly') query.month = filterMonth.value;
     query.scope = viewScope.value;
     frappe.set_route("production-table", query);
+}
+
+function goToConfirmedOrders() {
+    frappe.set_route("confirmed-order");
 }
 
 function toggleViewScope() {

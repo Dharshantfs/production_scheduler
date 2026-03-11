@@ -112,6 +112,8 @@
       </button>
       <button v-if="isAdmin" class="cc-clear-btn" style="color: #dc2626; border-color: #dc2626; margin-left: 8px;" @click="openRescueDialog" title="Rescue lost or stuck orders">
         🚑 Rescue Orders
+      <button class="cc-clear-btn" style="background-color: #10b981; color: white; border: none; margin-left: auto;" @click="goToConfirmedOrders" title="View Confirmed Orders Page">
+          ✅ Confirmed Orders
       </button>
     </div>
 
@@ -4415,6 +4417,10 @@ async function openPushColorDialog(color, inputTargetDate = null) {
     setTimeout(() => { wireItemEvents(); bindFilterEvents(); }, 200);
 
     d.show();
+}
+
+async function goToConfirmedOrders() {
+    frappe.set_route("confirmed-order");
 }
 
 async function revertColorGroup(color) {
