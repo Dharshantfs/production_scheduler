@@ -576,9 +576,8 @@
                             </button>
                             <button @click="createMixStockEntry(mix)" 
                                     class="px-2 py-1 rounded text-[10px] font-bold text-white transition-all shadow-sm" 
-                                    :disabled="mix._submitted"
-                                    :style="(mix._submitted) ? 'background-color: #94a3b8; cursor: not-allowed; opacity: 0.6;' : (mix.spr_name ? 'background-color: #3b82f6;' : 'background-color: #059669;')">
-                                {{ mix._submitted ? 'SUBMITTED' : (mix.spr_name ? 'OPEN SPR' : 'STOCK ENTRY') }}
+                                    :style="(mix._submitted) ? 'background-color: #64748b; cursor: pointer;' : (mix.spr_name ? 'background-color: #3b82f6;' : 'background-color: #059669;')">
+                                {{ mix._submitted ? 'SUBMITTED (OPEN)' : (mix.spr_name ? 'OPEN SPR' : 'STOCK ENTRY') }}
                             </button>
                         </div>
                         <div class="flex gap-1 justify-center mt-1">
@@ -1419,6 +1418,17 @@ async function createMixStockEntry(mix) {
     // If SPR already exists, just redirect to it
     if (mix.spr_name) {
         frappe.set_route('Form', 'Shaft Production Run', mix.spr_name);
+        return;
+    }
+    
+    // Legacy support for direct stock entry
+    if (mix.stock_entry) {
+        frappe.set_route('Form', 'Stock Entry', mix.stock_entry);
+        return;
+    }
+
+    if (mix._submitted) {
+        frappe.msgprint("This entry is already submitted but no linked document was found.");
         return;
     }
 
