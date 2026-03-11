@@ -4373,7 +4373,7 @@ def create_mix_spr(date_key, mix_data):
         row.job_id = str(i + 1)
         row.gsm = mix.get("gsm")
         row.quality = mix.get("quality")
-        row.color = mix.get("cl_type")
+        row.color = mix.get("cl_type") or mix.get("clType")
         
         # widths: e.g. "32+30" -> combination "32 + 30"
         widths = re.findall(r'\d+', str(mix.get("shaft")))

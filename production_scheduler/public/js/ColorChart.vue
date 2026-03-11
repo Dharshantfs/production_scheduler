@@ -1418,15 +1418,23 @@ async function createMixStockEntry(mix) {
         return;
     }
     
+    if (!mix.gsm || !mix.shaft) {
+        frappe.msgprint("Please ensure GSM and Combination (Shaft) are filled before creating SPR.");
+        return;
+    }
+    
     frappe.confirm(`Create a <b>Shaft Production Run</b> for <b>${mix.item_code}</b>? This will redirect you to finalize roll entries.`, async () => {
         try {
             const dateKey = getMixRollDateKey();
+            // Ensure cl_type is present for the API
+            const mixDataPayload = { ...mix, cl_type: mix.cl_type || mix.clType };
+            
             // We pass the single mix as an array for the API
             const r = await frappe.call({
                 method: "production_scheduler.api.create_mix_spr",
                 args: {
                     date_key: dateKey,
-                    mix_data: [mix]
+                    mix_data: [mixDataPayload]
                 }
             });
             
