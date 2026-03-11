@@ -272,6 +272,30 @@ def _has_planned_date_column():
 			_planned_date_col_exists = False
 	return _planned_date_col_exists
 
+_approval_status_col_exists = None
+def _has_approval_status_column():
+	"""Check if custom_approval_status column exists on Planning sheet table."""
+	global _approval_status_col_exists
+	if _approval_status_col_exists is None:
+		try:
+			frappe.db.sql("SELECT custom_approval_status FROM `tabPlanning sheet` LIMIT 1")
+			_approval_status_col_exists = True
+		except Exception:
+			_approval_status_col_exists = False
+	return _approval_status_col_exists
+
+_draft_fields_exist = None
+def _has_draft_fields():
+	"""Check if custom_draft_planned_date/idx columns exist."""
+	global _draft_fields_exist
+	if _draft_fields_exist is None:
+		try:
+			frappe.db.sql("SELECT custom_draft_planned_date FROM `tabPlanning sheet` LIMIT 1")
+			_draft_fields_exist = True
+		except Exception:
+			_draft_fields_exist = False
+	return _draft_fields_exist
+
 def _effective_date_expr(alias="p"):
 	"""Returns SQL expression for effective date."""
 	if _has_planned_date_column():
@@ -1045,15 +1069,24 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	if cint(planned_only) and _has_planned_date_column():
 		plan_condition += " AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
 	
-	# Build SELECT fields — include custom_planned_date only if column exists
-	extra_fields = ", p.custom_planned_date" if _has_planned_date_column() else ""
+	# Build SELECT fields — include columns only if they exist
+	fields = ["p.name", "p.customer", "p.party_code", "c.customer_name as party_name", "p.dod", "p.ordered_date", 
+			  "p.planning_status", "p.docstatus", "p.sales_order", "p.custom_plan_name", "p.custom_pb_plan_name"]
+	
+	if _has_planned_date_column():
+		fields.append("p.custom_planned_date")
+	
+	if _has_approval_status_column():
+		fields.append("p.custom_approval_status")
+		
+	if _has_draft_fields():
+		fields.append("p.custom_draft_planned_date")
+		fields.append("p.custom_draft_idx")
+		
+	fields_str = ", ".join(fields)
 	
 	planning_sheets = frappe.db.sql(f"""
-		SELECT p.name, p.customer, p.party_code, c.customer_name as party_name, p.dod, p.ordered_date, 
-			p.planning_status, p.docstatus, p.sales_order, p.custom_plan_name, p.custom_pb_plan_name,
-			p.custom_approval_status
-			{extra_fields},
-			{eff} as effective_date
+		SELECT {fields_str}, {eff} as effective_date
 		FROM `tabPlanning sheet` p
 		LEFT JOIN `tabCustomer` c ON p.customer = c.name
 		WHERE {date_condition} AND p.docstatus < 2
@@ -4583,12 +4616,16 @@ def create_mix_wo_old(unit, mix_name, quality, gsm, shaft, kg, date_key):
 
 @frappe.whitelist()
 def send_to_approval(planning_sheet_name):
-    frappe.db.set_value("Planning sheet", planning_sheet_name, "custom_approval_status", "Pending Approval")
-    frappe.db.commit()
-    return {"status": "success", "message": f"Planning Sheet {planning_sheet_name} sent for approval."}
+	if not _has_approval_status_column():
+		frappe.throw(_("Approval status column is missing. Please run 'bench migrate' to update the database schema."))
+	frappe.db.set_value("Planning sheet", planning_sheet_name, "custom_approval_status", "Pending Approval")
+	frappe.db.commit()
+	return {"status": "success", "message": f"Planning Sheet {planning_sheet_name} sent for approval."}
 
 @frappe.whitelist()
 def approve_planning_sheet(planning_sheet_name):
-    frappe.db.set_value("Planning sheet", planning_sheet_name, "custom_approval_status", "Approved")
-    frappe.db.commit()
-    return {"status": "success", "message": f"Planning Sheet {planning_sheet_name} approved."}
+	if not _has_approval_status_column():
+		frappe.throw(_("Approval status column is missing. Please run 'bench migrate' to update the database schema."))
+	frappe.db.set_value("Planning sheet", planning_sheet_name, "custom_approval_status", "Approved")
+	frappe.db.commit()
+	return {"status": "success", "message": f"Planning Sheet {planning_sheet_name} approved."}
