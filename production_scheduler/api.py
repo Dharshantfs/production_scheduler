@@ -1049,12 +1049,13 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	extra_fields = ", p.custom_planned_date" if _has_planned_date_column() else ""
 	
 	planning_sheets = frappe.db.sql(f"""
-		SELECT p.name, p.customer, p.party_code, p.party_name, p.dod, p.ordered_date, 
+		SELECT p.name, p.customer, p.party_code, c.customer_name as party_name, p.dod, p.ordered_date, 
 			p.planning_status, p.docstatus, p.sales_order, p.custom_plan_name, p.custom_pb_plan_name,
 			p.custom_approval_status
 			{extra_fields},
 			{eff} as effective_date
 		FROM `tabPlanning sheet` p
+		LEFT JOIN `tabCustomer` c ON p.customer = c.name
 		WHERE {date_condition} AND p.docstatus < 2
 		{plan_condition}
 		ORDER BY {eff} ASC, p.creation ASC
