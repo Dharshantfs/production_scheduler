@@ -4118,6 +4118,12 @@ def get_mix_roll_data(date_key):
                     if m.get("_submitted"):
                         m["_submitted"] = False
                         updated = True
+            else:
+                # SPR was DELETED. Clear the link so the Color Chart row unlocks and is available again.
+                m["spr_name"] = None
+                m["_submitted"] = False
+                m["kg"] = 0.0
+                updated = True
 
     if updated:
         save_mix_roll_data(date_key, json.dumps(entries))
