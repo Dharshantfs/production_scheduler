@@ -117,7 +117,7 @@
             </div>
           </div>
             <span class="cc-stat-weight" :class="getUnitCapacityStatus(unit).class">
-              {{ getUnitTotal(unit).toFixed(2) }} / {{ getUnitCapacityLimit(unit) }}T
+              {{ getUnitTotal(unit).toFixed(2) }} / {{ Number(getUnitCapacityLimit(unit).toFixed(2)) }}{{ getCapacityLabel() }}
               <span v-if="getHiddenWhiteTotal(unit) > 0" style="font-size:10px; font-weight:700; color:#475569; display:block;">
                  (Inc. {{ getHiddenWhiteTotal(unit).toFixed(2) }}T White)
               </span>
@@ -532,6 +532,12 @@ function getUnitCapacityLimit(unit) {
     if (dailyLimit === 999) return 999;
     
     return dailyLimit * getDaysInViewScope();
+}
+
+function getCapacityLabel() {
+    if (viewScope.value === 'weekly') return 'TPW';
+    if (viewScope.value === 'monthly') return 'TPM';
+    return 'TPD';
 }
 
 // ── Cached unit statistics (computed once per data change, not per render) ──
