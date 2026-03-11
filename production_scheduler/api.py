@@ -4312,6 +4312,7 @@ def create_mix_item(quality, cl_type, gsm, shaft):
             item.weight_uom = "Kg"
             item.is_stock_item = 1
             item.valuation_method = "FIFO"
+            item.valuation_rate = 100
             item.has_batch_no = 1
             item.default_material_request_type = "Material Transfer"
             
