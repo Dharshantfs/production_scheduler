@@ -1281,6 +1281,8 @@ async function rebuildMixRolls() {
             row.item_name = s.item_name || "";
             row.isRecycle = !!s.isRecycle;
             row._prevMixName = s._prevMixName || row._prevMixName;
+            row.spr_name = s.spr_name || "";
+            row._submitted = !!s._submitted;
         }
         return reactive(row);
     });
@@ -1304,7 +1306,9 @@ function saveMixRolls() {
         item_code: m.item_code,
         item_name: m.item_name,
         isRecycle: m.isRecycle,
-        _prevMixName: m._prevMixName
+        _prevMixName: m._prevMixName,
+        spr_name: m.spr_name,
+        _submitted: m._submitted
     }));
 
     frappe.call({

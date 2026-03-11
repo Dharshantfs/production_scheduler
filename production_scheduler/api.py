@@ -4113,6 +4113,11 @@ def get_mix_roll_data(date_key):
                      if flt(m.get("kg")) != flt(res.total_produced_weight):
                         m["kg"] = flt(res.total_produced_weight)
                         updated = True
+                elif res.docstatus == 2:
+                    # If cancelled, unlock the row
+                    if m.get("_submitted"):
+                        m["_submitted"] = False
+                        updated = True
 
     if updated:
         save_mix_roll_data(date_key, json.dumps(entries))
@@ -4396,9 +4401,9 @@ def create_mix_spr(date_key, mix_data):
     
     # NEW: Sync the spr_name back to the Mix Roll Store so the Color Chart knows it's linked
     try:
-        store_data = frappe.db.get_value("Mix Roll Store", {"date_key": date_key}, "data")
-        if store_data:
-            entries = json.loads(store_data)
+        rows = frappe.db.sql("SELECT data FROM `mix_roll_store_data` WHERE date_key = %s", date_key)
+        if rows and rows[0][0]:
+            entries = json.loads(rows[0][0])
             updated = False
             for mix in mix_data:
                 # Find the matching entry in the store to link them
@@ -4409,7 +4414,7 @@ def create_mix_spr(date_key, mix_data):
                             updated = True
             
             if updated:
-                frappe.db.set_value("Mix Roll Store", {"date_key": date_key}, "data", json.dumps(entries))
+                frappe.db.sql("UPDATE `mix_roll_store_data` SET data = %s WHERE date_key = %s", (json.dumps(entries), date_key))
                 frappe.db.commit()
     except Exception:
         pass
@@ -4490,13 +4495,10 @@ def create_mix_stock_entry(item_codes, qty, unit, date_key):
     return se.name
 
 def _sync_mix_roll_se_reference(date_key, item_codes, se_name):
-    """Internal helper to attach Stock Entry name to the persistent mix roll row."""
-    rows = frappe.db.sql(
-        "SELECT data FROM `tabMix Roll Store` WHERE date_key = %s", date_key
-    )
-    if not (rows and rows[0][0]): return
-    
     try:
+        rows = frappe.db.sql("SELECT data FROM `mix_roll_store_data` WHERE date_key = %s", date_key)
+        if not (rows and rows[0][0]): return
+        
         entries = json.loads(rows[0][0])
         codes_str = ", ".join(item_codes)
         found = False
@@ -4512,20 +4514,10 @@ def _sync_mix_roll_se_reference(date_key, item_codes, se_name):
                 (json.dumps(entries), date_key)
             )
             frappe.db.commit()
-    except: pass
+    except Exception:
+        pass
     
-    # Custom fields
-    meta = frappe.get_meta("Stock Entry")
-    fields = [f.fieldname for f in meta.fields]
-    if "custom_unit" in fields: se.custom_unit = unit
-    if "custom_is_mix_roll" in fields: se.custom_is_mix_roll = 1
-    if "custom_mix_roll_date" in fields: se.custom_mix_roll_date = date_key
-    
-    se.insert(ignore_permissions=True)
-    se.submit()
-    frappe.db.commit()
-    
-    return se.name
+    return se_name
 
 @frappe.whitelist()
 def create_mix_wo(unit, mix_name, quality, cl_type, gsm, shaft, kg, date_key):
