@@ -10,12 +10,12 @@
     "icon": "tick",
     "idx": 0,
     "is_hidden": 0,
-    "label": "Confirmed Order",
+    "label": "Confirmed Order List",
     "links": [],
     "modified": "2026-03-11 12:00:00.000000",
     "modified_by": "Administrator",
     "module": "Production Scheduler",
-    "name": "Confirmed Order",
+    "name": "Confirmed Order List",
     "number_cards": [],
     "owner": "Administrator",
     "parent_page": "",
@@ -30,5 +30,5 @@
             "type": "Page"
         }
     ],
-    "title": "Confirmed Order"
+    "title": "Confirmed Order List"
 }
