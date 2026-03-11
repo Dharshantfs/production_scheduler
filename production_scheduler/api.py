@@ -4022,7 +4022,7 @@ def save_mix_roll_data(date_key, entries):
     # Use a simple SQL table to store mix roll data
     # Create table if not exists
     frappe.db.sql("""
-        CREATE TABLE IF NOT EXISTS `tabMix Roll Store` (
+        CREATE TABLE IF NOT EXISTS `mix_roll_store_data` (
             `name` VARCHAR(140) PRIMARY KEY,
             `date_key` VARCHAR(50) NOT NULL,
             `data` LONGTEXT,
@@ -4032,21 +4032,21 @@ def save_mix_roll_data(date_key, entries):
     """)
 
     existing = frappe.db.sql(
-        "SELECT name FROM `tabMix Roll Store` WHERE date_key = %s", date_key
+        "SELECT name FROM `mix_roll_store_data` WHERE date_key = %s", date_key
     )
 
     data_json = json.dumps(entries, ensure_ascii=False)
 
     if existing:
         frappe.db.sql(
-            "UPDATE `tabMix Roll Store` SET data = %s, modified = NOW() WHERE date_key = %s",
+            "UPDATE `mix_roll_store_data` SET data = %s, modified = NOW() WHERE date_key = %s",
             (data_json, date_key)
         )
     else:
         import hashlib
         name = hashlib.md5(date_key.encode()).hexdigest()[:10]
         frappe.db.sql(
-            "INSERT INTO `tabMix Roll Store` (name, date_key, data, modified) VALUES (%s, %s, %s, NOW())",
+            "INSERT INTO `mix_roll_store_data` (name, date_key, data, modified) VALUES (%s, %s, %s, NOW())",
             (name, date_key, data_json)
         )
 
@@ -4058,12 +4058,12 @@ def save_mix_roll_data(date_key, entries):
 def get_mix_roll_data(date_key):
     """Load saved mix roll entries and sync weight/status from linked Stock Entries."""
     try:
-        frappe.db.sql("SELECT 1 FROM `tabMix Roll Store` LIMIT 1")
+        frappe.db.sql("SELECT 1 FROM `mix_roll_store_data` LIMIT 1")
     except Exception:
         return []
 
     rows = frappe.db.sql(
-        "SELECT data FROM `tabMix Roll Store` WHERE date_key = %s", date_key
+        "SELECT data FROM `mix_roll_store_data` WHERE date_key = %s", date_key
     )
     if not (rows and rows[0][0]):
         return []
@@ -4507,7 +4507,7 @@ def _sync_mix_roll_se_reference(date_key, item_codes, se_name):
         
         if found:
             frappe.db.sql(
-                "UPDATE `tabMix Roll Store` SET data = %s WHERE date_key = %s",
+                "UPDATE `mix_roll_store_data` SET data = %s WHERE date_key = %s",
                 (json.dumps(entries), date_key)
             )
             frappe.db.commit()
