@@ -4368,6 +4368,10 @@ def create_mix_spr(date_key, mix_data):
     doc.is_mix_roll = 1
     doc.status = "Draft"
     
+    # NEW: Sync Mix Name to Order Code header if available
+    if mix_data and len(mix_data) > 0:
+        doc.custom_order_code = mix_data[0].get("mixName")
+    
     # Map Mix data to Shaft Jobs
     for i, mix in enumerate(mix_data):
         # We need the Item Code
@@ -4379,6 +4383,7 @@ def create_mix_spr(date_key, mix_data):
         row.gsm = mix.get("gsm")
         row.quality = mix.get("quality")
         row.color = mix.get("cl_type") or mix.get("clType")
+        row.party_code = mix.get("mixName") # NEW: Sync to Job Order Code
         
         # widths: e.g. "32+30" -> combination "32 + 30"
         widths = re.findall(r'\d+', str(mix.get("shaft")))
