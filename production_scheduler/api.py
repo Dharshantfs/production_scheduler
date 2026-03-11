@@ -1049,8 +1049,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	extra_fields = ", p.custom_planned_date" if _has_planned_date_column() else ""
 	
 	planning_sheets = frappe.db.sql(f"""
-		SELECT p.name, p.customer, p.party_code, p.dod, p.ordered_date, 
-			p.planning_status, p.docstatus, p.sales_order, p.custom_plan_name, p.custom_pb_plan_name
+		SELECT p.name, p.customer, p.party_code, p.party_name, p.dod, p.ordered_date, 
+			p.planning_status, p.docstatus, p.sales_order, p.custom_plan_name, p.custom_pb_plan_name,
+			p.custom_approval_status
 			{extra_fields},
 			{eff} as effective_date
 		FROM `tabPlanning sheet` p
@@ -4578,3 +4579,15 @@ def create_mix_wo_old(unit, mix_name, quality, gsm, shaft, kg, date_key):
     wo.insert()
     frappe.db.commit()
     return wo.name
+
+@frappe.whitelist()
+def send_to_approval(planning_sheet_name):
+    frappe.db.set_value("Planning sheet", planning_sheet_name, "custom_approval_status", "Pending Approval")
+    frappe.db.commit()
+    return {"status": "success", "message": f"Planning Sheet {planning_sheet_name} sent for approval."}
+
+@frappe.whitelist()
+def approve_planning_sheet(planning_sheet_name):
+    frappe.db.set_value("Planning sheet", planning_sheet_name, "custom_approval_status", "Approved")
+    frappe.db.commit()
+    return {"status": "success", "message": f"Planning Sheet {planning_sheet_name} approved."}

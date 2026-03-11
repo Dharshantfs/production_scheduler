@@ -112,6 +112,7 @@
       </button>
       <button v-if="isAdmin" class="cc-clear-btn" style="color: #dc2626; border-color: #dc2626; margin-left: 8px;" @click="openRescueDialog" title="Rescue lost or stuck orders">
         🚑 Rescue Orders
+      </button>
       <button class="cc-clear-btn" style="background-color: #10b981; color: white; border: none; margin-left: auto;" @click="goToConfirmedOrders" title="View Confirmed Orders Page">
           ✅ Confirmed Orders
       </button>
@@ -2837,7 +2838,11 @@ async function pushToProductionBoard() {
             gsm: d.gsm || '',
             unit: d.unit || '',
             qty: d.qty || '',
-            customer: d.customer || d.partyCode || '',
+            customer: d.customer || '',
+            partyCode: d.partyCode || '',
+            partyName: d.partyName || '',
+            approvalStatus: d.approvalStatus || 'Draft',
+            planningSheet: d.planningSheet || '',
             phase: '',
             is_seed_bridge: false,
             pushed: isPushed,
@@ -2845,6 +2850,11 @@ async function pushToProductionBoard() {
         };
     });
     
+    // Determine overall approval state (assume consensus for now if multiple sheets)
+    const distinctStatuses = [...new Set(masterSequence.map(s => s.approvalStatus))];
+    const overallStatus = distinctStatuses.includes('Approved') ? 'Approved' : (distinctStatuses.includes('Pending Approval') ? 'Pending Approval' : 'Draft');
+    const canApprove = frappe.user.has_role('Production Manager') || frappe.user.has_role('System Manager');
+
     // Sort initial sequence
     masterSequence.forEach((item, i) => { item.sequence_no = i + 1; });
     let currentSequence = [...masterSequence];
@@ -2859,10 +2869,13 @@ async function pushToProductionBoard() {
         let lastUnit = null;
         const rows = seq.map((item, i) => {
             let unitDivider = '';
-            if (smartSequenceActive && item.unit !== lastUnit) {
+            if (item.unit !== lastUnit) {
                 lastUnit = item.unit;
-                unitDivider = `<tr style="background:#1565c0;color:white;font-size:11px;font-weight:bold;">
-                    <td colspan="8" style="padding:4px 8px;">📦 ${item.unit || 'Mixed'}</td>
+                unitDivider = `<tr style="background:#f1f5f9;color:#1e293b;font-size:11px;font-weight:700;border-bottom:1px solid #e2e8f0;">
+                    <td colspan="10" style="padding:4px 12px;display:flex;align-items:center;gap:6px;">
+                        <span style="font-size:14px;">📦</span> 
+                        <span style="letter-spacing:0.05em;text-transform:uppercase;">${item.unit || 'Mixed'}</span>
+                    </td>
                 </tr>`;
             }
             const bridge = item.is_seed_bridge ? ' 🔗' : '';
@@ -2873,41 +2886,54 @@ async function pushToProductionBoard() {
             
             let actionHtml = '';
             if (item.pushed) {
-                actionHtml = `<span style="font-size:10px;background:#e2e8f0;color:#475569;padding:2px 4px;border-radius:4px;font-weight:bold;">Pushed</span>`;
+                actionHtml = `<span style="font-size:10px;background:#e2e8f0;color:#475569;padding:2px 6px;border-radius:4px;font-weight:bold;">Pushed</span>`;
             } else {
-                actionHtml = `<input type="checkbox" data-idx="${i}" ${checked ? 'checked' : ''} style="cursor:pointer;">`;
+                actionHtml = `<input type="checkbox" data-idx="${i}" ${checked ? 'checked' : ''} style="cursor:pointer;width:16px;height:16px;accent-color:#2563eb;">`;
             }
 
-            const dragHandle = item.pushed ? '' : `<span class="drag-handle" style="cursor:grab;color:#94a3b8;font-size:15px;padding:0 4px;user-select:none;" title="Drag to reorder">⠿</span>`;
+            const dragHandle = item.pushed ? '' : `<span class="drag-handle" style="cursor:grab;color:#94a3b8;font-size:16px;padding:0 8px;user-select:none;display:flex;align-items:center;" title="Drag to reorder">⠿</span>`;
+            
+            const statusBadge = item.approvalStatus === 'Approved' 
+                ? '<span style="color:#16a34a;background:#f0fdf4;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;">APPROVED</span>'
+                : (item.approvalStatus === 'Pending Approval' 
+                    ? '<span style="color:#ca8a04;background:#fefce8;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;">PENDING</span>'
+                    : '<span style="color:#64748b;background:#f1f5f9;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;">DRAFT</span>');
 
-            return `${unitDivider}<tr data-seq-idx="${i}" style="background:${rowBg};border-bottom:1px solid #eee;opacity:${rowOpacity};">
-                <td style="padding:4px 2px;text-align:center;">${dragHandle}</td>
-                <td style="padding:4px 6px;text-align:center;">
+            const partyInfo = `
+                <div style="font-size:11px;font-weight:600;color:#1e293b;">${item.partyName || '—'}</div>
+                <div style="font-size:9px;color:#64748b;">${item.partyCode} | ${item.customer}</div>
+            `;
+
+            return `${unitDivider}<tr data-seq-idx="${i}" style="background:${rowBg};border-bottom:1px solid #f1f5f9;opacity:${rowOpacity};">
+                <td style="padding:6px 0;text-align:center;">${dragHandle}</td>
+                <td style="padding:6px;text-align:center;">
                     ${actionHtml}
                 </td>
-                <td style="padding:4px 6px;font-weight:bold;color:#555;font-size:12px;">${item.sequence_no}${bridge}</td>
-                <td style="padding:4px 6px;font-size:12px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${item.color}">${item.color || '—'}</td>
-                <td style="padding:4px 6px;font-size:12px;">${item.quality || '—'}</td>
-                <td style="padding:4px 6px;font-size:12px;">${item.gsm || '—'}</td>
-                <td style="padding:4px 6px;font-size:12px;">${item.unit || '—'}</td>
-                <td style="padding:4px 6px;font-size:12px;color:#666;">${item.customer || '—'}</td>
-                <td style="padding:4px 6px;font-size:12px;text-align:right;font-weight:bold;">${qty_str}</td>
+                <td style="padding:6px;font-weight:bold;color:#64748b;font-size:11px;text-align:center;">${item.sequence_no}${bridge}</td>
+                <td style="padding:6px;font-size:12px;font-weight:700;color:#1e293b;">${item.color || '—'}</td>
+                <td style="padding:6px;font-size:11px;color:#475569;">${item.quality || '—'}</td>
+                <td style="padding:6px;font-size:11px;color:#475569;text-align:center;">${item.gsm || '—'}</td>
+                <td style="padding:6px;font-size:11px;color:#475569;">${item.unit || '—'}</td>
+                <td style="padding:6px;">${partyInfo}</td>
+                <td style="padding:6px;text-align:center;">${statusBadge}</td>
+                <td style="padding:6px;font-size:11px;text-align:right;font-weight:700;color:#1e293b;">${qty_str}</td>
             </tr>`;
         }).join('');
 
-        return `<div style="max-height:380px;overflow-y:auto;border:1px solid #ddd;border-radius:4px;">
-            <table style="width:100%;border-collapse:collapse;font-family:sans-serif;">
-                <thead style="background:#2196f3;color:white;position:sticky;top:0;z-index:1;">
+        return `<div style="max-height:420px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:12px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.02);">
+            <table style="width:100%;border-collapse:collapse;font-family:'Inter',sans-serif;">
+                <thead style="background:#f8fafc;color:#64748b;position:sticky;top:0;z-index:2;border-bottom:2px solid #e2e8f0;">
                     <tr>
-                        <th style="padding:6px;width:24px;">☰</th>
-                        <th style="padding:6px;width:32px;">✓</th>
-                        <th style="padding:6px;">#</th>
-                        <th style="padding:6px;">Color</th>
-                        <th style="padding:6px;">Quality</th>
-                        <th style="padding:6px;">GSM</th>
-                        <th style="padding:6px;">Unit</th>
-                        <th style="padding:6px;">Party</th>
-                        <th style="padding:6px;text-align:right;">Qty</th>
+                        <th style="padding:8px 6px;width:32px;text-align:center;">☰</th>
+                        <th style="padding:8px 6px;width:36px;text-align:center;"><input type="checkbox" id="mtp-check-all" style="cursor:pointer;width:16px;height:16px;accent-color:#2563eb;"></th>
+                        <th style="padding:8px 6px;width:34px;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">#</th>
+                        <th style="padding:8px 6px;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;text-align:left;">Color</th>
+                        <th style="padding:8px 6px;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;text-align:left;">Quality</th>
+                        <th style="padding:8px 6px;width:50px;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">GSM</th>
+                        <th style="padding:8px 6px;width:60px;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;text-align:left;">Unit</th>
+                        <th style="padding:8px 6px;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;text-align:left;">Party / Customer</th>
+                        <th style="padding:8px 6px;width:80px;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">Status</th>
+                        <th style="padding:8px 6px;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;text-align:right;">Qty</th>
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>
@@ -2917,19 +2943,30 @@ async function pushToProductionBoard() {
 
     function buildDialogHtml(seq) {
         const total = seq.filter(i => i.checked !== false).length;
-        return `
-        <div style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
-            <div>
-                <span style="font-size:13px;color:#333;font-weight:600;"><span id="seq-count-label">${total}</span></span> <span style="font-size:12px;color:#666;">item(s) selected</span>
+        
+        const statusSummary = `
+            <div style="display:flex;gap:12px;align-items:center;">
+                <div style="background:#f1f5f9;padding:6px 12px;border-radius:20px;display:flex;align-items:center;gap:8px;">
+                    <span style="width:8px;height:8px;border-radius:50%;background:${overallStatus === 'Approved' ? '#16a34a' : (overallStatus === 'Pending Approval' ? '#ca8a04' : '#64748b')}"></span>
+                    <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Sheet Status: ${overallStatus}</span>
+                </div>
+                <div>
+                    <span style="font-size:14px;color:#1e293b;font-weight:700;"><span id="seq-count-label">${total}</span></span> <span style="font-size:11px;color:#64748b;font-weight:500;">item(s) selected</span>
+                </div>
             </div>
-            ${smartSequenceActive ? '<span style="font-size:11px;color:#1b5e20;background:#e8f5e9;padding:4px 8px;border-radius:12px;">✅ Sequenced by white → color chain</span>' : ''}
+        `;
+
+        return `
+        <div style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;background:#fff;padding:4px 0;">
+            ${statusSummary}
+            ${smartSequenceActive ? '<span style="font-size:10px;color:#166534;background:#dcfce7;padding:5px 12px;border-radius:20px;font-weight:600;display:flex;align-items:center;gap:4px;">✨ Smart Sequenced</span>' : ''}
         </div>
         ${renderTable(seq)}`;
     }
     async function loadGlobalCapacityPreview(dialog, seq) {
         const checkedItems = seq.filter(i => i.checked !== false);
         if (!checkedItems.length) {
-            dialog.set_value("global_capacity_info", `<div style="font-size:11px;color:#64748b;font-style:italic;">Select items above to see capacity footprint.</div>`);
+            dialog.set_value("global_capacity_info", `<div style="font-size:11px;color:#64748b;font-style:italic;padding:12px;text-align:center;background:#f8fafc;border-radius:8px;border:1px dashed #cbd5e1;">Select items above to see capacity footprint.</div>`);
             dialog.capacityExceeded = false;
             return;
         }
@@ -2939,7 +2976,7 @@ async function pushToProductionBoard() {
         let filterUnitValue = 'All Units';
         try { filterUnitValue = dialog.get_value('filter_unit') || 'All Units'; } catch(e) {}
 
-        let capHtml = `<div style="display:flex; flex-direction:column; gap:6px;">`;
+        let capHtml = `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:10px; margin-top:4px;">`;
         let capacityExceeded = false;
 
         try {
@@ -2972,32 +3009,33 @@ async function pushToProductionBoard() {
                 pushLoads[u] = (pushLoads[u] || 0) + (parseFloat(sel.qty || 0) / 1000);
             });
 
-            capHtml += `<div style="font-size:11px;font-weight:600;margin-top:4px;">Target Date: ${targetDate}</div>`;
-
             ["Unit 1", "Unit 2", "Unit 3", "Unit 4"].forEach(u => {
                 if (filterUnitValue !== 'All Units' && u !== filterUnitValue) return;
                 
                 const pushWeight = pushLoads[u] || 0;
+                const unitCap = capacities[u] || { total_limit: 0, total_load: 0 };
+                const currentLoad = unitCap.total_load;
+                const limit = unitCap.total_limit;
+                const afterPush = currentLoad + pushWeight;
+                const isOver = afterPush > limit;
+                
+                if (isOver) capacityExceeded = true;
                 
                 if (pushWeight > 0 || filterUnitValue === u) {
-                    const unitCap = capacities[u] || { total_limit: 0, total_load: 0 };
-                    const currentLoad = unitCap.total_load;
-                    const limit = unitCap.total_limit;
-                    
-                    const whiteItems = allItems.filter(i => i.unit === u && (i.color || '').toUpperCase().includes('WHITE'));
-                    const whiteLoad = whiteItems.reduce((s, i) => s + (parseFloat(i.qty || 0)), 0) / 1000;
-                    
-                    const afterPush = currentLoad + pushWeight;
-                    const isOver = afterPush > limit;
-                    if (isOver) capacityExceeded = true;
-                    
-                    capHtml += `<div style="padding:6px 10px;border-radius:6px;border:1px solid ${isOver ? '#fda4af' : '#bbf7d0'};background:${isOver ? '#fff1f2' : '#f0fdf4'};display:flex;justify-content:space-between;align-items:center;">
-                        <div>
-                            <div style="font-weight:700;font-size:12px;color:${isOver ? '#dc2626' : '#16a34a'};">${u}: ${currentLoad.toFixed(2)} / ${limit.toFixed(2)}T</div>
-                            ${whiteLoad > 0 ? `<div style="font-size:9px;color:#64748b;margin-top:1px;">(Includes ${whiteLoad.toFixed(2)}T White)</div>` : ''}
-                            <div style="font-size:10px;color:#475569;margin-top:2px;">After push: <b>${afterPush.toFixed(2)}T</b> <span style="color:${pushWeight > 0 ? '#64748b' : 'transparent'};">(+${pushWeight.toFixed(2)}T)</span></div>
+                    capHtml += `
+                    <div style="padding:10px;border-radius:12px;border:1px solid ${isOver ? '#fecaca' : '#e2e8f0'};background:${isOver ? '#fef2f2' : '#fff'};box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                            <span style="font-weight:700;font-size:11px;color:${isOver ? '#dc2626' : '#64748b'};text-transform:uppercase;">${u}</span>
+                            <span style="font-size:14px;">${isOver ? '⚠️' : '✅'}</span>
                         </div>
-                        ${isOver ? '<span style="font-size:16px;" title="Capacity Exceeded">⚠️</span>' : '<span style="font-size:16px;">✅</span>'}  
+                        <div style="font-size:14px;font-weight:800;color:${isOver ? '#b91c1c' : '#1e293b'};">${afterPush.toFixed(2)} / ${limit.toFixed(0)}T</div>
+                        <div style="height:4px;background:#f1f5f9;border-radius:2px;margin:8px 0;overflow:hidden;">
+                            <div style="height:100%;width:${Math.min((afterPush/limit)*100, 100)}%;background:${isOver ? '#ef4444' : '#10b981'};"></div>
+                        </div>
+                        <div style="font-size:9px;color:#94a3b8;display:flex;justify-content:space-between;">
+                            <span>Current: ${currentLoad.toFixed(1)}T</span>
+                            <span style="color:${pushWeight > 0 ? (isOver ? '#ef4444' : '#059669') : '#94a3b8'};font-weight:700;">+${pushWeight.toFixed(2)}T</span>
+                        </div>
                     </div>`;
                 }
             });
@@ -3035,8 +3073,41 @@ async function pushToProductionBoard() {
             { fieldtype: 'Section Break', label: 'Capacity Preview' },
             { fieldname: 'global_capacity_info', fieldtype: 'HTML', label: '' }
         ],
-        primary_action_label: 'Push',
+        primary_action_label: overallStatus === 'Approved' ? 'Push to Board' : (overallStatus === 'Pending Approval' ? (canApprove ? 'Approve' : 'Waiting for Approval') : 'Send to Approval'),
         primary_action: async (values) => {
+            if (overallStatus === 'Draft') {
+                const sheetNames = [...new Set(currentSequence.map(s => s.planningSheet))].filter(Boolean);
+                for (const sName of sheetNames) {
+                    await frappe.call({
+                        method: 'production_scheduler.api.send_to_approval',
+                        args: { planning_sheet_name: sName }
+                    });
+                }
+                frappe.show_alert({ message: 'Sent for approval', indicator: 'orange' });
+                d.hide();
+                fetchData();
+                return;
+            }
+
+            if (overallStatus === 'Pending Approval') {
+                if (!canApprove) {
+                    frappe.msgprint('Only Managers can approve planning sheets.');
+                    return;
+                }
+                const sheetNames = [...new Set(currentSequence.map(s => s.planningSheet))].filter(Boolean);
+                for (const sName of sheetNames) {
+                    await frappe.call({
+                        method: 'production_scheduler.api.approve_planning_sheet',
+                        args: { planning_sheet_name: sName }
+                    });
+                }
+                frappe.show_alert({ message: 'Approved successfully', indicator: 'green' });
+                d.hide();
+                fetchData();
+                return;
+            }
+
+            // PUSH LOGIC (Only if overallStatus is Approved)
             const pbPlanName = 'Default';
             const targetDate = (values.target_date || defaultTargetDate || today).trim();
             const fetchDatesValue = values.fetch_dates || fetchDates.join(",");
@@ -3048,12 +3119,6 @@ async function pushToProductionBoard() {
             frappe.show_alert({ message: `Pushing ${checkedItems.length} items from fetch date(s) to ${targetDate}...`, indicator: 'blue' });
 
             try {
-                // Use items in currentSequence order AS-IS (Smart Auto-Tick already sorted them)
-                // No frontend re-sorting — backend get_smart_push_sequence drives the order
-
-                // AUTO-CASCADE: The backend api.py (`push_items_to_pb`) handles infinite capacity 
-                // cascading natively and accurately. We simply send ALL checked items to it 
-                // in the user-defined sequence.
                 const itemsToMove = [];
                 let seqNo = 1;
 
@@ -3076,7 +3141,7 @@ async function pushToProductionBoard() {
                     }
                 });
                 if (r.message && r.message.status === 'success') {
-                    d.get_primary_btn().text('✅ Pushed').css({'background-color': '#10b981', 'color': 'white'});
+                    d.get_primary_btn().text('✅ Pushed').css({'background-color': '#059669', 'color': 'white'});
                     let dateMsg = '';
                     if (r.message.dates && r.message.dates.length > 0) {
                         dateMsg = ` to ${r.message.dates.join(', ')}`;
@@ -3100,7 +3165,25 @@ async function pushToProductionBoard() {
     });
 
     d.show();
-    d.$wrapper.find('.modal-dialog').css('max-width', '800px');
+    d.$wrapper.find('.modal-dialog').css('max-width', '1000px');
+    d.$wrapper.find('.modal-content').css({'border-radius': '16px', 'border': 'none', 'box-shadow': '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)'});
+    d.$wrapper.find('.modal-header').css({'background': '#fff', 'border-bottom': '1px solid #f1f5f9', 'border-radius': '16px 16px 0 0', 'padding': '16px 24px'});
+    d.$wrapper.find('.modal-title').css({'font-weight': '800', 'color': '#111827', 'font-size': '18px'});
+    
+    // Style Primary Button
+    const pBtn = d.get_primary_btn();
+    if (overallStatus === 'Approved') {
+        pBtn.css({'background-color': '#2563eb', 'border': 'none', 'font-weight': '700', 'padding': '8px 24px', 'border-radius': '8px', 'box-shadow': '0 4px 6px -1px rgba(37, 99, 235, 0.2)'});
+    } else if (overallStatus === 'Pending Approval') {
+        if (canApprove) {
+           pBtn.css({'background-color': '#ca8a04', 'border': 'none', 'font-weight': '700', 'padding': '8px 24px', 'border-radius': '8px', 'box-shadow': '0 4px 6px -1px rgba(202, 138, 4, 0.2)'});
+        } else {
+           pBtn.prop('disabled', true).css({'background-color': '#e2e8f0', 'color': '#94a3b8', 'border': 'none', 'font-weight': '700'});
+        }
+    } else {
+        pBtn.css({'background-color': '#d97706', 'border': 'none', 'font-weight': '700', 'padding': '8px 24px', 'border-radius': '8px', 'box-shadow': '0 4px 6px -1px rgba(217, 119, 6, 0.2)'});
+    }
+
     loadGlobalCapacityPreview(d, currentSequence);
 
 
@@ -3117,7 +3200,7 @@ async function pushToProductionBoard() {
 
             const matchQ = qualitySearch ? item.quality.toLowerCase().includes(qualitySearch) : false;
             const matchC = colorSearch ? item.color.toLowerCase().includes(colorSearch) : false;
-            const matchP = partySearch ? item.customer.toLowerCase().includes(partySearch) : false;
+            const matchP = partySearch ? (item.partyCode.toLowerCase().includes(partySearch) || item.partyName.toLowerCase().includes(partySearch) || item.customer.toLowerCase().includes(partySearch)) : false;
 
             const hasAnySearch = qualitySearch || colorSearch || partySearch;
             if (!hasAnySearch) return true;
@@ -3154,7 +3237,7 @@ async function pushToProductionBoard() {
         if (!wrapperEl) return;
         const container = wrapperEl.querySelector('.frappe-control[data-fieldname="sequence_html"]') || wrapperEl;
         
-        const mainCheckbox = container.querySelector('thead input[type=checkbox]');
+        const mainCheckbox = container.querySelector('#mtp-check-all');
         if (mainCheckbox) {
             mainCheckbox.addEventListener('change', function() {
                 const isChecked = this.checked;
@@ -3185,16 +3268,13 @@ async function pushToProductionBoard() {
                 filter: 'tr:not([data-seq-idx])', // skip unit-header rows
                 ghostClass: 'sortable-ghost',
                 onEnd: (evt) => {
-                    // Use data-seq-idx to get real currentSequence indices (unit headers are not seq items)
                     const draggedRow = evt.item;
                     const fromIdx = parseInt(draggedRow.dataset.seqIdx);
-                    // Find where the row ended up among real-data rows
                     const allDataRows = Array.from(tbody.querySelectorAll('tr[data-seq-idx]'));
                     const toIdx = allDataRows.indexOf(draggedRow);
                     if (isNaN(fromIdx) || toIdx < 0 || fromIdx === toIdx) return;
                     const moved = currentSequence.splice(fromIdx, 1)[0];
                     currentSequence.splice(toIdx, 0, moved);
-                    // Re-number sequences
                     currentSequence.forEach((item, i) => { item.sequence_no = i + 1; });
                     d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
                     setTimeout(() => { wireCheckboxes(); updateCountLabel(); }, 100);
@@ -3697,6 +3777,8 @@ async function fetchData() {
         plannedDate: d.plannedDate || d.planned_date || "",
         // Ensure stable keys even if backend varies
         partyCode: d.partyCode || d.party_code || "",
+        partyName: d.party_name || d.partyName || "",
+        approvalStatus: d.custom_approval_status || d.approvalStatus || "Draft",
         itemName: d.itemName || d.item_name || d.name || ""
     }));
     
