@@ -4249,7 +4249,7 @@ def get_mix_item_details(quality, cl_type, gsm, shaft):
         width_mm_str = str(int(mm_final)).zfill(4)[:4]
         
         item_code = f"100{qual_code}{color_code}{gsm_str}{width_mm_str}"
-        item_name = f"NON WOVEN FABRIC {quality.upper()} {cl_type.upper()} {gsm_str.lstrip('0')} GSM W - {w_inch}'' ( {mm_final} MM )"
+        item_name = f"NON WOVEN FABRIC {quality.upper()} {cl_type.upper()} {gsm_str.lstrip('0')} GSM W - {w_inch}\" ( {mm_final} MM )"
         
         results.append({
             "item_code": item_code,
