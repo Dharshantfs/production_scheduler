@@ -3212,7 +3212,7 @@ async function pushToProductionBoard() {
                            '📤 Request Arrangement Approval'),
         primary_action: async (values) => {
             const targetDate = (values.target_date || defaultTargetDate || today).trim();
-            const currentStatus = d.overallStatus || overallStatus;
+            const currentStatus = dialogOverallStatus || d.overallStatus || overallStatus;
 
             if (currentStatus === 'Draft' && !canApprove) {
                 const unitsToRequest = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
@@ -3259,7 +3259,9 @@ async function pushToProductionBoard() {
             const checkedItems = currentSequence.filter(i => i.checked !== false);
             if (checkedItems.length === 0) { frappe.msgprint('No items selected.'); return; }
 
-            d.hide();
+            const pBtn = d.get_primary_btn();
+            pBtn.prop('disabled', true).text('⏳ Pushing...');
+            
             frappe.show_alert({ message: `Pushing ${checkedItems.length} items from fetch date(s) to ${targetDate}...`, indicator: 'blue' });
 
             try {
@@ -3285,7 +3287,7 @@ async function pushToProductionBoard() {
                     }
                 });
                 if (r.message && r.message.status === 'success') {
-                    d.get_primary_btn().text('✅ Pushed').css({'background-color': '#059669', 'color': 'white'});
+                    pBtn.text('✅ Pushed').css({'background-color': '#059669', 'color': 'white'});
                     let dateMsg = '';
                     if (r.message.dates && r.message.dates.length > 0) {
                         dateMsg = ` to ${r.message.dates.join(', ')}`;
@@ -3297,8 +3299,9 @@ async function pushToProductionBoard() {
                     setTimeout(() => {
                         d.hide();
                         fetchData();
-                    }, 1000);
+                    }, 1500);
                 } else {
+                    pBtn.prop('disabled', false).text('🚀 Push to Board');
                     frappe.msgprint(r.message?.message || 'Push failed.');
                 }
             } catch (e) {
@@ -3344,6 +3347,7 @@ async function pushToProductionBoard() {
         }
         
         d.set_df_property('sequence_html', 'options', buildDialogHtml(currentSequence, newOverallStatus));
+        setTimeout(() => { wireCheckboxes(); updateCountLabel(); }, 50);
         
         const label = newOverallStatus === 'Approved' ? '🚀 Push to Board' : 
                      ((newOverallStatus === 'Pending Approval' || (newOverallStatus === 'Draft' && canApprove)) ? 
