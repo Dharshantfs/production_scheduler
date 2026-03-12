@@ -148,11 +148,27 @@
                     ℹ️
                 </button>
                 </div>
+                <div class="cc-header-status-badge" :class="sequenceStatuses[unit] ? sequenceStatuses[unit].toLowerCase().replace(' ', '-') : 'draft'">
+                    {{ sequenceStatuses[unit] || 'Draft' }}
+                </div>
             </div>
             <div class="cc-header-stats">
-                <span class="cc-stat-weight">
-                {{ getUnitTotal(unit).toFixed(2) }}T
-                </span>
+                <div style="display:flex; flex-direction:column; align-items:flex-end;">
+                    <span class="cc-stat-weight">
+                    {{ getUnitTotal(unit).toFixed(2) }}T
+                    </span>
+                    <!-- Approval Actions -->
+                    <div class="cc-approval-actions" v-if="viewMode === 'kanban' && filterOrderDate && !filterOrderDate.includes(',')">
+                        <button v-if="(!sequenceStatuses[unit] || sequenceStatuses[unit] === 'Draft') && getUnitEntries(unit).length > 0" 
+                                class="cc-approve-btn request" @click.stop="requestApproval(unit)">
+                            📤 Request Approval
+                        </button>
+                        <button v-if="sequenceStatuses[unit] === 'Pending Approval' && currentUserRoles.includes('Manufacturing Manager')" 
+                                class="cc-approve-btn approve" @click.stop="approveSequence(unit)">
+                            ✅ Approve
+                        </button>
+                    </div>
+                </div>
                 <span class="cc-stat-mix" v-if="getMixRollCount(unit) > 0">
                 ⚠️ {{ getMixRollCount(unit) }} mix{{ getMixRollCount(unit) > 1 ? 'es' : '' }}
                 ({{ getMixRollTotalWeight(unit) }} Kg)
@@ -853,6 +869,8 @@ units.forEach(u => {
     unitSortConfig[u] = { mode: 'auto', color: 'asc', gsm: 'desc', priority: 'color' };
 });
 const viewMode = ref('matrix'); // 'kanban' | 'matrix'
+const sequenceStatuses = reactive({}); // { "Unit 1": "Draft", ... }
+const currentUserRoles = ref(frappe.boot.user_roles || []);
 const rawData = ref([]);
 const columnRefs = ref(null);
 const monthlyCellRefs = ref(null);
@@ -1911,6 +1929,10 @@ async function initSortable() {
                     getUnitSortConfig(newUnit).mode = 'manual';
                     if (!isSameUnit) getUnitSortConfig(oldUnit).mode = 'manual';
                     
+                    // Persist the full sequence to Color Sequence Approval
+                    await persistSequence(newUnit);
+                    if (!isSameUnit) await persistSequence(oldUnit);
+                    
                     if (res.message && res.message.status === 'overflow') {
                          const showOverflowDialog = (overflowData, moveDate, moveUnit) => {
                              const avail = overflowData.available;
@@ -2458,6 +2480,16 @@ function toggleUnitPriority(unit) {
 function sortItems(unit, items) {
   const config = getUnitSortConfig(unit);
   if (config.mode === 'manual') {
+      // If we have a saved sequence from the Color Sequence Approval DocType, use it
+      if (config.savedSequence && config.savedSequence.length) {
+          const seqMap = {};
+          config.savedSequence.forEach((name, i) => seqMap[name] = i);
+          return [...items].sort((a, b) => {
+              const idxA = seqMap[a.itemName] !== undefined ? seqMap[a.itemName] : 9999 + (a.idx || 0);
+              const idxB = seqMap[b.itemName] !== undefined ? seqMap[b.itemName] : 9999 + (b.idx || 0);
+              return idxA - idxB;
+          });
+      }
       return [...items].sort((a, b) => (a.idx || 0) - (b.idx || 0));
   }
   return [...items].sort((a, b) => {
@@ -2540,6 +2572,71 @@ function getMixRollTotalWeight(unit) {
 
 function toggleDirection() {
   direction.value = direction.value === "asc" ? "desc" : "asc";
+}
+
+async function persistSequence(unit) {
+    if (!filterOrderDate.value || filterOrderDate.value.includes(",") || viewMode.value !== 'kanban') return;
+    
+    // Get current item names in the column after the drop
+    const items = getUnitEntries(unit).filter(e => e.type === "order");
+    const itemNames = items.map(i => i.itemName);
+    
+    try {
+        await frappe.call({
+            method: "production_scheduler.api.save_color_sequence",
+            args: {
+                date: filterOrderDate.value,
+                unit: unit,
+                sequence_data: itemNames
+            }
+        });
+        // Reset status to Draft if it was Approved but then re-ordered? 
+        // Or keep it? User said "after re order drag and drop the arrangement we and approved"
+        // Usually, if you re-order an approved sequence, it should probably go back to Draft.
+        if (sequenceStatuses[unit] === 'Approved') {
+            sequenceStatuses[unit] = 'Draft';
+        }
+    } catch(e) {
+        console.error("Failed to persist sequence", e);
+    }
+}
+
+async function requestApproval(unit) {
+    if (!filterOrderDate.value || !unit) return;
+    try {
+        // Save sequence first
+        const items = getUnitEntries(unit).map(i => i.itemName);
+        await frappe.call({
+            method: "production_scheduler.api.save_color_sequence",
+            args: { date: filterOrderDate.value, unit: unit, sequence_data: items }
+        });
+
+        await frappe.call({
+            method: "production_scheduler.api.request_sequence_approval",
+            args: { date: filterOrderDate.value, unit: unit }
+        });
+        sequenceStatuses[unit] = 'Pending Approval';
+        frappe.show_alert(`Approval requested for ${unit}`, 2);
+    } catch(e) { console.error(e); }
+}
+
+async function approveSequence(unit) {
+    if (!filterOrderDate.value || !unit) return;
+    try {
+        // Save sequence first
+        const items = getUnitEntries(unit).map(i => i.itemName);
+        await frappe.call({
+            method: "production_scheduler.api.save_color_sequence",
+            args: { date: filterOrderDate.value, unit: unit, sequence_data: items }
+        });
+
+        await frappe.call({
+            method: "production_scheduler.api.approve_sequence",
+            args: { date: filterOrderDate.value, unit: unit }
+        });
+        sequenceStatuses[unit] = 'Approved';
+        frappe.show_alert(`${unit} Sequence Approved`, 2);
+    } catch(e) { console.error(e); }
 }
 
 function openForm(name) {
@@ -2850,10 +2947,14 @@ async function pushToProductionBoard() {
         };
     });
     
-    // Determine overall approval state (assume consensus for now if multiple sheets)
-    const distinctStatuses = [...new Set(masterSequence.map(s => s.approvalStatus))];
-    const overallStatus = distinctStatuses.includes('Approved') ? 'Approved' : (distinctStatuses.includes('Pending Approval') ? 'Pending Approval' : 'Draft');
-    const canApprove = frappe.user.has_role('Production Manager') || frappe.user.has_role('System Manager');
+    // Determine overall arrangement approval state
+    const relevantUnits = [...new Set(masterSequence.map(s => s.unit || 'Unit 1'))];
+    const unitStatuses = relevantUnits.map(u => sequenceStatuses[u] || 'Draft');
+    const overallStatus = unitStatuses.every(s => s === 'Approved') ? 'Approved' : 
+                         (unitStatuses.some(s => s === 'Pending Approval' || s === 'Draft') ? 
+                          (unitStatuses.some(s => s === 'Draft') ? 'Draft' : 'Pending Approval') : 'Approved');
+
+    const canApprove = frappe.user.has_role('Manufacturing Manager') || frappe.user.has_role('System Manager');
 
     // Sort initial sequence
     masterSequence.forEach((item, i) => { item.sequence_no = i + 1; });
@@ -2948,7 +3049,7 @@ async function pushToProductionBoard() {
             <div style="display:flex;gap:12px;align-items:center;">
                 <div style="background:#f1f5f9;padding:6px 12px;border-radius:20px;display:flex;align-items:center;gap:8px;">
                     <span style="width:8px;height:8px;border-radius:50%;background:${overallStatus === 'Approved' ? '#16a34a' : (overallStatus === 'Pending Approval' ? '#ca8a04' : '#64748b')}"></span>
-                    <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Sheet Status: ${overallStatus}</span>
+                    <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Arrangement Status: ${overallStatus}</span>
                 </div>
                 <div>
                     <span style="font-size:14px;color:#1e293b;font-weight:700;"><span id="seq-count-label">${total}</span></span> <span style="font-size:11px;color:#64748b;font-weight:500;">item(s) selected</span>
@@ -3073,39 +3174,46 @@ async function pushToProductionBoard() {
             { fieldtype: 'Section Break', label: 'Capacity Preview' },
             { fieldname: 'global_capacity_info', fieldtype: 'HTML', label: '' }
         ],
-        primary_action_label: overallStatus === 'Approved' ? 'Push to Board' : (overallStatus === 'Pending Approval' ? (canApprove ? 'Approve' : 'Waiting for Approval') : 'Send to Approval'),
+        primary_action_label: overallStatus === 'Approved' ? '🚀 Push to Board' : (overallStatus === 'Pending Approval' ? (canApprove ? '✅ Approve Arrangement' : '⏳ Waiting for Approval') : '📤 Request Arrangement Approval'),
         primary_action: async (values) => {
             if (overallStatus === 'Draft') {
-                const sheetNames = [...new Set(currentSequence.map(s => s.planningSheet))].filter(Boolean);
-                for (const sName of sheetNames) {
+                const unitsToRequest = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
+                for (const u of unitsToRequest) {
+                    // Save explicitly before requesting approval
+                    const unitItems = currentSequence.filter(s => (s.unit || 'Unit 1') === u).map(s => s.name);
                     await frappe.call({
-                        method: 'production_scheduler.api.send_to_approval',
-                        args: { planning_sheet_name: sName }
+                        method: "production_scheduler.api.save_color_sequence",
+                        args: { date: defaultTargetDate, unit: u, sequence_data: unitItems }
+                    });
+                    
+                    await frappe.call({
+                        method: "production_scheduler.api.request_sequence_approval",
+                        args: { date: defaultTargetDate, unit: u }
                     });
                 }
-                frappe.show_alert({ message: 'Sent for approval', indicator: 'orange' });
+                frappe.show_alert({ message: 'Arrangement approval requested', indicator: 'orange' });
                 d.hide();
                 fetchData();
+                return;
+            }
+            if (overallStatus === 'Pending Approval' && canApprove) {
+                const unitsToApprove = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
+                for (const u of unitsToApprove) {
+                    await frappe.call({
+                        method: "production_scheduler.api.approve_sequence",
+                        args: { date: defaultTargetDate, unit: u }
+                    });
+                }
+                frappe.show_alert({ message: 'Arrangement Approved', indicator: 'green' });
+                d.hide();
+                fetchData();
+                return;
+            }
+            if (overallStatus !== 'Approved') {
+                frappe.msgprint(__('The color arrangement must be Approved before pushing.'));
                 return;
             }
 
-            if (overallStatus === 'Pending Approval') {
-                if (!canApprove) {
-                    frappe.msgprint('Only Managers can approve planning sheets.');
-                    return;
-                }
-                const sheetNames = [...new Set(currentSequence.map(s => s.planningSheet))].filter(Boolean);
-                for (const sName of sheetNames) {
-                    await frappe.call({
-                        method: 'production_scheduler.api.approve_planning_sheet',
-                        args: { planning_sheet_name: sName }
-                    });
-                }
-                frappe.show_alert({ message: 'Approved successfully', indicator: 'green' });
-                d.hide();
-                fetchData();
-                return;
-            }
 
             // PUSH LOGIC (Only if overallStatus is Approved)
             const pbPlanName = 'Default';
@@ -3766,6 +3874,26 @@ async function fetchData() {
       method: "production_scheduler.api.get_color_chart_data",
       args: args,
     });
+    
+    // Fetch Sequence Statuses for each unit
+    if (viewMode.value === 'kanban' && filterOrderDate.value && !filterOrderDate.value.includes(",")) {
+        for (const unit of units) {
+            const seqRes = await frappe.call({
+                method: "production_scheduler.api.get_color_sequence",
+                args: { date: filterOrderDate.value, unit: unit }
+            });
+            if (seqRes.message) {
+                sequenceStatuses[unit] = seqRes.message.status;
+                // If we have a saved sequence, we can store it in a temporary lookup
+                // to help sortItems later if mode is 'manual'
+                if (seqRes.message.sequence && seqRes.message.sequence.length) {
+                    unitSortConfig[unit].savedSequence = seqRes.message.sequence;
+                } else {
+                    unitSortConfig[unit].savedSequence = null;
+                }
+            }
+        }
+    }
     
     // Normalize API fields for consistent UI behavior across views
     rawData.value = (r.message || []).map(d => ({
@@ -5013,6 +5141,38 @@ function updateRescueSelection(d) {
   font-weight: 600;
   color: #f59e0b;
 }
+
+.cc-header-status-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-top: 4px;
+    display: inline-block;
+}
+.cc-header-status-badge.draft { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+.cc-header-status-badge.pending-approval { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+.cc-header-status-badge.approved { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+
+.cc-approval-actions {
+    margin-top: 4px;
+    display: flex;
+    gap: 4px;
+}
+.cc-approve-btn {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+.cc-approve-btn.request { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
+.cc-approve-btn.request:hover { background: #dbeafe; }
+.cc-approve-btn.approve { background: #10b981; color: white; }
+.cc-approve-btn.approve:hover { background: #059669; }
 
 .cc-col-body {
   padding: 10px;

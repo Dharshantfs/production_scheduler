@@ -872,8 +872,62 @@ def get_kanban_board(start_date, end_date):
 # I will use `multi_replace_file_content`.
 
 # ... (get_color_chart_data etc are below 164)
+# Sequence Management Functions for Color Chart Approval
 
+@frappe.whitelist()
+def get_color_sequence(date, unit):
+	"""Retrieves the saved sequence and status for a unit on a given date."""
+	name = f"CSA-{unit}-{date}"
+	if frappe.db.exists("Color Sequence Approval", name):
+		doc = frappe.get_doc("Color Sequence Approval", name)
+		return {
+			"sequence": json.loads(doc.sequence_data) if doc.sequence_data else [],
+			"status": doc.status
+		}
+	return {"sequence": [], "status": "Draft"}
 
+@frappe.whitelist()
+def save_color_sequence(date, unit, sequence_data):
+	"""Saves the color arrangement (list of Planning Sheet Item names)."""
+	name = f"CSA-{unit}-{date}"
+	if not frappe.db.exists("Color Sequence Approval", name):
+		doc = frappe.new_doc("Color Sequence Approval")
+		doc.date = date
+		doc.unit = unit
+		doc.status = "Draft"
+	else:
+		doc = frappe.get_doc("Color Sequence Approval", name)
+	
+	if isinstance(sequence_data, str):
+		doc.sequence_data = sequence_data
+	else:
+		doc.sequence_data = json.dumps(sequence_data)
+		
+	doc.save()
+	frappe.db.commit()
+	return {"status": "success"}
+
+@frappe.whitelist()
+def request_sequence_approval(date, unit):
+	"""Users call this to move sequence to 'Pending Approval'."""
+	name = f"CSA-{unit}-{date}"
+	if not frappe.db.exists("Color Sequence Approval", name):
+		frappe.throw(_("Please save the sequence before requesting approval."))
+	
+	frappe.db.set_value("Color Sequence Approval", name, "status", "Pending Approval")
+	frappe.db.commit()
+	return {"status": "success"}
+
+@frappe.whitelist()
+def approve_sequence(date, unit):
+	"""Managers call this to approve the sequence."""
+	name = f"CSA-{unit}-{date}"
+	if not frappe.db.exists("Color Sequence Approval", name):
+		frappe.throw(_("Sequence record not found."))
+	
+	frappe.db.set_value("Color Sequence Approval", name, "status", "Approved")
+	frappe.db.commit()
+	return {"status": "success"}
 
 @frappe.whitelist()
 def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=None, mode=None, planned_only=0):
