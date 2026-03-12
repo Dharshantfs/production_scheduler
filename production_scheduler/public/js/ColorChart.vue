@@ -2969,6 +2969,8 @@ async function pushToProductionBoard() {
                          (unitStatuses.some(s => s === 'Pending Approval' || s === 'Draft') ? 
                           (unitStatuses.some(s => s === 'Draft') ? 'Draft' : 'Pending Approval') : 'Approved');
 
+    let dialogOverallStatus = overallStatus;
+
     const canApprove = frappe.user.has_role('Manufacturing Manager') || frappe.user.has_role('System Manager') || frappe.user.has_role('Administrator') || frappe.session.user === 'Administrator';
 
     // Sort initial sequence
@@ -3059,7 +3061,7 @@ async function pushToProductionBoard() {
 
     function buildDialogHtml(seq, statusOverride = null) {
         const total = seq.filter(i => i.checked !== false).length;
-        const currentStatus = statusOverride || (typeof d !== 'undefined' && d?.overallStatus) || overallStatus;
+        const currentStatus = statusOverride || dialogOverallStatus;
         
         const statusSummary = `
             <div style="display:flex;gap:12px;align-items:center;">
@@ -3309,6 +3311,7 @@ async function pushToProductionBoard() {
                                 (unitStatuses.some(s => s === 'Pending Approval' || s === 'Draft') ? 
                                  (unitStatuses.some(s => s === 'Draft') ? 'Draft' : 'Pending Approval') : 'Approved');
 
+        dialogOverallStatus = newOverallStatus;
         d.overallStatus = newOverallStatus;
         
         d.set_df_property('sequence_html', 'options', buildDialogHtml(currentSequence, newOverallStatus));
