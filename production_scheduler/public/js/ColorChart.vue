@@ -2954,7 +2954,7 @@ async function pushToProductionBoard() {
                          (unitStatuses.some(s => s === 'Pending Approval' || s === 'Draft') ? 
                           (unitStatuses.some(s => s === 'Draft') ? 'Draft' : 'Pending Approval') : 'Approved');
 
-    const canApprove = frappe.user.has_role('Manufacturing Manager') || frappe.user.has_role('System Manager');
+    const canApprove = frappe.user.has_role('Manufacturing Manager') || frappe.user.has_role('System Manager') || frappe.user.has_role('Administrator') || frappe.session.user === 'Administrator';
 
     // Sort initial sequence
     masterSequence.forEach((item, i) => { item.sequence_no = i + 1; });
