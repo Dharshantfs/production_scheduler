@@ -3055,8 +3055,8 @@ async function pushToProductionBoard() {
         const statusSummary = `
             <div style="display:flex;gap:12px;align-items:center;">
                 <div style="background:#f1f5f9;padding:6px 12px;border-radius:20px;display:flex;align-items:center;gap:8px;">
-                    <span style="width:8px;height:8px;border-radius:50%;background:${overallStatus === 'Approved' ? '#16a34a' : (overallStatus === 'Pending Approval' ? '#ca8a04' : '#64748b')}"></span>
-                    <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Arrangement Status: ${overallStatus}</span>
+                    <span style="width:8px;height:8px;border-radius:50%;background:${(d?.overallStatus || overallStatus) === 'Approved' ? '#16a34a' : ((d?.overallStatus || overallStatus) === 'Pending Approval' ? '#ca8a04' : '#64748b')}"></span>
+                    <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Arrangement Status: ${d?.overallStatus || overallStatus}</span>
                 </div>
                 <div>
                     <span style="font-size:14px;color:#1e293b;font-weight:700;"><span id="seq-count-label">${total}</span></span> <span style="font-size:11px;color:#64748b;font-weight:500;">item(s) selected</span>
@@ -3186,18 +3186,21 @@ async function pushToProductionBoard() {
                            (canApprove ? '✅ Approve Arrangement' : '⏳ Waiting for Approval') : 
                            '📤 Request Arrangement Approval'),
         primary_action: async (values) => {
-            if (overallStatus === 'Draft' && !canApprove) {
+            const targetDate = (values.target_date || defaultTargetDate || today).trim();
+            const currentStatus = d.overallStatus || overallStatus;
+
+            if (currentStatus === 'Draft' && !canApprove) {
                 const unitsToRequest = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
                 for (const u of unitsToRequest) {
                     const unitItems = currentSequence.filter(s => (s.unit || 'Unit 1') === u).map(s => s.name);
                     await frappe.call({
                         method: "production_scheduler.api.save_color_sequence",
-                        args: { date: defaultTargetDate, unit: u, sequence_data: unitItems, plan_name: selectedPlan.value }
+                        args: { date: targetDate, unit: u, sequence_data: unitItems, plan_name: selectedPlan.value }
                     });
                     
                     await frappe.call({
                         method: "production_scheduler.api.request_sequence_approval",
-                        args: { date: defaultTargetDate, unit: u, plan_name: selectedPlan.value }
+                        args: { date: targetDate, unit: u, plan_name: selectedPlan.value }
                     });
                 }
                 frappe.show_alert({ message: 'Arrangement approval requested', indicator: 'orange' });
@@ -3205,12 +3208,12 @@ async function pushToProductionBoard() {
                 fetchData();
                 return;
             }
-            if ((overallStatus === 'Pending Approval' || (overallStatus === 'Draft' && canApprove)) && canApprove) {
+            if ((currentStatus === 'Pending Approval' || (currentStatus === 'Draft' && canApprove)) && canApprove) {
                 const unitsToApprove = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
                 for (const u of unitsToApprove) {
                     await frappe.call({
                         method: "production_scheduler.api.approve_sequence",
-                        args: { date: defaultTargetDate, unit: u, plan_name: selectedPlan.value }
+                        args: { date: targetDate, unit: u, plan_name: selectedPlan.value }
                     });
                 }
                 frappe.show_alert({ message: 'Arrangement Approved', indicator: 'green' });
@@ -3218,7 +3221,7 @@ async function pushToProductionBoard() {
                 fetchData();
                 return;
             }
-            if (overallStatus !== 'Approved') {
+            if (currentStatus !== 'Approved') {
                 frappe.msgprint(__('The color arrangement must be Approved before pushing.'));
                 return;
             }
@@ -3226,7 +3229,6 @@ async function pushToProductionBoard() {
 
             // PUSH LOGIC (Only if overallStatus is Approved)
             const pbPlanName = 'Default';
-            const targetDate = (values.target_date || defaultTargetDate || today).trim();
             const fetchDatesValue = values.fetch_dates || fetchDates.join(",");
 
             const checkedItems = currentSequence.filter(i => i.checked !== false);
@@ -3281,7 +3283,43 @@ async function pushToProductionBoard() {
         }
     });
 
+    const updateDialogStatus = async (newTargetDate) => {
+        if (!newTargetDate) return;
+        const relevantUnits = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
+        const unitStatuses = [];
+        
+        for (const u of relevantUnits) {
+            const res = await frappe.call({
+                method: "production_scheduler.api.get_color_sequence",
+                args: { date: newTargetDate, unit: u, plan_name: selectedPlan.value }
+            });
+            unitStatuses.push(res.message?.status || 'Draft');
+        }
+
+        const newOverallStatus = unitStatuses.every(s => s === 'Approved') ? 'Approved' : 
+                                (unitStatuses.some(s => s === 'Pending Approval' || s === 'Draft') ? 
+                                 (unitStatuses.some(s => s === 'Draft') ? 'Draft' : 'Pending Approval') : 'Approved');
+
+        d.overallStatus = newOverallStatus;
+        
+        d.set_df_property('sequence_html', 'options', buildDialogHtml(currentSequence));
+        
+        const label = newOverallStatus === 'Approved' ? '🚀 Push to Board' : 
+                     ((newOverallStatus === 'Pending Approval' || (newOverallStatus === 'Draft' && canApprove)) ? 
+                      (canApprove ? '✅ Approve Arrangement' : '⏳ Waiting for Approval') : 
+                      '📤 Request Arrangement Approval');
+        
+        d.set_primary_action_label(label);
+    };
+
+    d.fields_dict.target_date.df.onchange = () => {
+        const val = d.get_value('target_date');
+        updateDialogStatus(val);
+    };
+
+    d.overallStatus = overallStatus; 
     d.show();
+    updateDialogStatus(d.get_value('target_date'));
     d.$wrapper.find('.modal-dialog').css('max-width', '1000px');
     d.$wrapper.find('.modal-content').css({'border-radius': '16px', 'border': 'none', 'box-shadow': '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)'});
     d.$wrapper.find('.modal-header').css({'background': '#fff', 'border-bottom': '1px solid #f1f5f9', 'border-radius': '16px 16px 0 0', 'padding': '16px 24px'});
