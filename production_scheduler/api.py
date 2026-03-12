@@ -882,9 +882,11 @@ def get_color_sequence(date, unit, plan_name="Default"):
 		doc = frappe.get_doc("Color Sequence Approval", name)
 		return {
 			"sequence": json.loads(doc.sequence_data) if doc.sequence_data else [],
-			"status": doc.status
+			"status": doc.status,
+			"modified": doc.modified,
+			"modified_by": doc.modified_by
 		}
-	return {"sequence": [], "status": "Draft"}
+	return {"sequence": [], "status": "Draft", "modified": None, "modified_by": None}
 
 @frappe.whitelist()
 def save_color_sequence(date, unit, sequence_data, plan_name="Default"):
@@ -915,7 +917,7 @@ def request_sequence_approval(date, unit, plan_name="Default"):
 	if not frappe.db.exists("Color Sequence Approval", name):
 		frappe.throw(_("Please save the sequence before requesting approval."))
 	
-	frappe.db.set_value("Color Sequence Approval", name, "status", "Pending Approval")
+	frappe.db.set_value("Color Sequence Approval", name, "status", "Pending Approval", update_modified=True)
 	frappe.db.commit()
 	return {"status": "success"}
 
@@ -926,7 +928,7 @@ def approve_sequence(date, unit, plan_name="Default"):
 	if not frappe.db.exists("Color Sequence Approval", name):
 		frappe.throw(_("Sequence record not found."))
 	
-	frappe.db.set_value("Color Sequence Approval", name, "status", "Approved")
+	frappe.db.set_value("Color Sequence Approval", name, "status", "Approved", update_modified=True)
 	frappe.db.commit()
 	return {"status": "success"}
 

@@ -3067,7 +3067,21 @@ async function pushToProductionBoard() {
             <div style="display:flex;gap:12px;align-items:center;">
                 <div style="background:#f1f5f9;padding:6px 12px;border-radius:20px;display:flex;align-items:center;gap:8px;">
                     <span style="width:8px;height:8px;border-radius:50%;background:${currentStatus === 'Approved' ? '#16a34a' : (currentStatus === 'Pending Approval' ? '#ca8a04' : '#64748b')}"></span>
-                    <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Arrangement Status: ${currentStatus}</span>
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Arrangement Status: ${currentStatus}</span>
+                        ${currentStatus === 'Approved' && typeof d !== 'undefined' && d?.approvalMeta ? `
+                            <div style="font-size:9px; color:#16a34a; margin-top:1px;">
+                                <i class="fa fa-check-circle"></i> Approved by <b>${d.approvalMeta.modified_by}</b> on ${frappe.datetime.str_to_user(d.approvalMeta.modified.split(' ')[0])}
+                            </div>
+                        ` : (typeof d !== 'undefined' && d?.pendingUnits?.length > 0 ? `
+                            <div style="font-size:9px; color:#ca8a04; margin-top:1px;">
+                                <i class="fa fa-info-circle"></i> Pending approval for: <b>${d.pendingUnits.join(', ')}</b>
+                            </div>
+                        ` : '')}
+                    </div>
+                </div>
+                <div style="cursor:pointer; color:#2563eb; font-size:12px;" onclick="window.refreshPushStatus()" title="Refresh Status">
+                    <i class="fa fa-refresh"></i>
                 </div>
                 <div>
                     <span style="font-size:14px;color:#1e293b;font-weight:700;"><span id="seq-count-label">${total}</span></span> <span style="font-size:11px;color:#64748b;font-weight:500;">item(s) selected</span>
@@ -3298,13 +3312,22 @@ async function pushToProductionBoard() {
         if (!newTargetDate) return;
         const relevantUnits = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
         const unitStatuses = [];
+        d.approvalMeta = null;
+        d.pendingUnits = [];
         
         for (const u of relevantUnits) {
             const res = await frappe.call({
                 method: "production_scheduler.api.get_color_sequence",
                 args: { date: newTargetDate, unit: u, plan_name: selectedPlan.value }
             });
-            unitStatuses.push(res.message?.status || 'Draft');
+            const msg = res.message || {};
+            unitStatuses.push(msg.status || 'Draft');
+            if (msg.status === 'Approved' && !d.approvalMeta) {
+                d.approvalMeta = { modified_by: msg.modified_by, modified: msg.modified };
+            }
+            if (msg.status !== 'Approved') {
+                d.pendingUnits.push(u);
+            }
         }
 
         const newOverallStatus = unitStatuses.every(s => s === 'Approved') ? 'Approved' : 
@@ -3313,6 +3336,12 @@ async function pushToProductionBoard() {
 
         dialogOverallStatus = newOverallStatus;
         d.overallStatus = newOverallStatus;
+        
+        // Store metadata if available
+        if (unitStatuses.length > 0) {
+            // Pick first unit's meta as proxy for simplicity, or we could aggregate
+            // But since all units must be approved for overall 'Approved', any is fine.
+        }
         
         d.set_df_property('sequence_html', 'options', buildDialogHtml(currentSequence, newOverallStatus));
         
@@ -3388,6 +3417,7 @@ async function pushToProductionBoard() {
         d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
         wireCheckboxes();
         updateCountLabel();
+        updateDialogStatus(d.get_value('target_date'));
     }
 
     // Attach keyup events to inputs for real-time filtering
@@ -3589,6 +3619,9 @@ async function pushToProductionBoard() {
     }, 100);
 
     setTimeout(() => { wireCheckboxes(); }, 300);
+
+    // Global helper for refresh button in dialog
+    window.refreshPushStatus = () => updateDialogStatus(d.get_value('target_date'));
 }
 
 

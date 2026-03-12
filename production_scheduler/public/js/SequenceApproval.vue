@@ -59,10 +59,16 @@
               <span class="text-info font-weight-bold">
                 <i class="fa fa-user-circle mr-1"></i>Requested By: {{ selectedApproval.owner }}
               </span>
+              <span v-if="isDirty" class="ml-3 badge badge-warning animate-pulse" style="font-size: 11px; padding: 4px 8px;">
+                ⚠️ Unsaved Changes
+              </span>
             </p>
           </div>
-          <div class="editor-actions">
-            <button class="btn btn-primary btn-lg" @click="saveAndApprove" :disabled="isSaving">
+          <div class="editor-actions" style="display:flex; gap:10px;">
+            <button class="btn btn-secondary btn-lg" @click="saveSequence" :disabled="isSaving || items.length === 0">
+              <i class="fa fa-save mr-1"></i> Save Arrangement
+            </button>
+            <button class="btn btn-primary btn-lg" @click="saveAndApprove" :disabled="isSaving || items.length === 0">
               {{ isSaving ? 'Processing...' : '✅ Approve Arrangement' }}
             </button>
           </div>
@@ -126,6 +132,7 @@ const items = ref([]);
 const dragContainer = ref(null);
 let sortableInstance = null;
 
+const isDirty = ref(false);
 const totalWeight = computed(() => {
   return items.value.reduce((sum, item) => sum + (parseFloat(item.qty) || 0), 0);
 });
@@ -154,6 +161,14 @@ async function fetchApprovals() {
 }
 
 async function selectApproval(app) {
+  if (isDirty.value) {
+    const confirm = await new Promise(resolve => {
+        frappe.confirm('You have unsaved changes. Are you sure you want to switch and lose them?', () => resolve(true), () => resolve(false));
+    });
+    if (!confirm) return;
+  }
+  
+  isDirty.value = false;
   selectedApproval.value = app;
   const itemNames = JSON.parse(app.sequence_data || "[]");
   
@@ -177,6 +192,32 @@ async function selectApproval(app) {
   }
 }
 
+async function saveSequence() {
+  if (!selectedApproval.value) return;
+  isSaving.value = true;
+  try {
+    const currentItemNames = items.value.map(i => i.name);
+    await frappe.call({
+      method: "production_scheduler.api.save_color_sequence",
+      args: {
+        date: selectedApproval.value.date,
+        unit: selectedApproval.value.unit,
+        plan_name: selectedApproval.value.plan_name,
+        sequence_data: currentItemNames
+      }
+    });
+    isDirty.value = false;
+    frappe.show_alert({ message: 'Arrangement Saved', indicator: 'green' });
+    // Refresh the sidebar to update timestamps
+    await fetchApprovals();
+  } catch (e) {
+    console.error(e);
+    frappe.msgprint("Error saving sequence.");
+  } finally {
+    isSaving.value = false;
+  }
+}
+
 function initSortable() {
     if (sortableInstance) sortableInstance.destroy();
     
@@ -192,9 +233,7 @@ function initSortable() {
                                      .map(el => el.dataset.id);
                 const reorderedItems = newOrder.map(name => items.value.find(i => i.name === name));
                 items.value = reorderedItems;
-                
-                // Track that sequence was changed (optional: can show "Unsaved Changes" if we want a separate save button)
-                // For now, we save on Approve.
+                isDirty.value = true;
             }
         });
     }
@@ -248,6 +287,13 @@ function formatDate(dateStr) {
 function formatQty(qty) {
   return parseFloat(qty || 0).toLocaleString();
 }
+
+window.addEventListener('beforeunload', (e) => {
+  if (isDirty.value) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
 
 onMounted(fetchApprovals);
 </script>
