@@ -2970,6 +2970,8 @@ async function pushToProductionBoard() {
                           (unitStatuses.some(s => s === 'Draft') ? 'Draft' : 'Pending Approval') : 'Approved');
 
     let dialogOverallStatus = overallStatus;
+    let dialogApprovalMeta = null;
+    let dialogPendingUnits = [];
 
     const canApprove = frappe.user.has_role('Manufacturing Manager') || frappe.user.has_role('System Manager') || frappe.user.has_role('Administrator') || frappe.session.user === 'Administrator';
 
@@ -3069,13 +3071,13 @@ async function pushToProductionBoard() {
                     <span style="width:8px;height:8px;border-radius:50%;background:${currentStatus === 'Approved' ? '#16a34a' : (currentStatus === 'Pending Approval' ? '#ca8a04' : '#64748b')}"></span>
                     <div style="display:flex; flex-direction:column;">
                         <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Arrangement Status: ${currentStatus}</span>
-                        ${currentStatus === 'Approved' && typeof d !== 'undefined' && d?.approvalMeta ? `
+                        ${currentStatus === 'Approved' && dialogApprovalMeta ? `
                             <div style="font-size:9px; color:#16a34a; margin-top:1px;">
-                                <i class="fa fa-check-circle"></i> Approved by <b>${d.approvalMeta.modified_by}</b> on ${frappe.datetime.str_to_user(d.approvalMeta.modified.split(' ')[0])}
+                                <i class="fa fa-check-circle"></i> Approved by <b>${dialogApprovalMeta.modified_by}</b> on ${frappe.datetime.str_to_user(dialogApprovalMeta.modified.split(' ')[0])}
                             </div>
-                        ` : (typeof d !== 'undefined' && d?.pendingUnits?.length > 0 ? `
+                        ` : (dialogPendingUnits.length > 0 ? `
                             <div style="font-size:9px; color:#ca8a04; margin-top:1px;">
-                                <i class="fa fa-info-circle"></i> Pending approval for: <b>${d.pendingUnits.join(', ')}</b>
+                                <i class="fa fa-info-circle"></i> Pending approval for: <b>${dialogPendingUnits.join(', ')}</b>
                             </div>
                         ` : '')}
                     </div>
@@ -3315,8 +3317,8 @@ async function pushToProductionBoard() {
         if (!newTargetDate) return;
         const relevantUnits = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
         const unitStatuses = [];
-        d.approvalMeta = null;
-        d.pendingUnits = [];
+        dialogApprovalMeta = null;
+        dialogPendingUnits = [];
         
         for (const u of relevantUnits) {
             const res = await frappe.call({
@@ -3325,11 +3327,11 @@ async function pushToProductionBoard() {
             });
             const msg = res.message || {};
             unitStatuses.push(msg.status || 'Draft');
-            if (msg.status === 'Approved' && !d.approvalMeta) {
-                d.approvalMeta = { modified_by: msg.modified_by, modified: msg.modified };
+            if (msg.status === 'Approved' && !dialogApprovalMeta) {
+                dialogApprovalMeta = { modified_by: msg.modified_by, modified: msg.modified };
             }
             if (msg.status !== 'Approved') {
-                d.pendingUnits.push(u);
+                dialogPendingUnits.push(u);
             }
         }
 
