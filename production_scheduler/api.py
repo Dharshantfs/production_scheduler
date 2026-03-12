@@ -875,9 +875,9 @@ def get_kanban_board(start_date, end_date):
 # Sequence Management Functions for Color Chart Approval
 
 @frappe.whitelist()
-def get_color_sequence(date, unit):
-	"""Retrieves the saved sequence and status for a unit on a given date."""
-	name = f"CSA-{unit}-{date}"
+def get_color_sequence(date, unit, plan_name="Default"):
+	"""Retrieves the saved sequence and status for a unit/plan on a given date."""
+	name = f"CSA-{plan_name}-{unit}-{date}"
 	if frappe.db.exists("Color Sequence Approval", name):
 		doc = frappe.get_doc("Color Sequence Approval", name)
 		return {
@@ -887,13 +887,14 @@ def get_color_sequence(date, unit):
 	return {"sequence": [], "status": "Draft"}
 
 @frappe.whitelist()
-def save_color_sequence(date, unit, sequence_data):
+def save_color_sequence(date, unit, sequence_data, plan_name="Default"):
 	"""Saves the color arrangement (list of Planning Sheet Item names)."""
-	name = f"CSA-{unit}-{date}"
+	name = f"CSA-{plan_name}-{unit}-{date}"
 	if not frappe.db.exists("Color Sequence Approval", name):
 		doc = frappe.new_doc("Color Sequence Approval")
 		doc.date = date
 		doc.unit = unit
+		doc.plan_name = plan_name
 		doc.status = "Draft"
 	else:
 		doc = frappe.get_doc("Color Sequence Approval", name)
@@ -908,9 +909,9 @@ def save_color_sequence(date, unit, sequence_data):
 	return {"status": "success"}
 
 @frappe.whitelist()
-def request_sequence_approval(date, unit):
+def request_sequence_approval(date, unit, plan_name="Default"):
 	"""Users call this to move sequence to 'Pending Approval'."""
-	name = f"CSA-{unit}-{date}"
+	name = f"CSA-{plan_name}-{unit}-{date}"
 	if not frappe.db.exists("Color Sequence Approval", name):
 		frappe.throw(_("Please save the sequence before requesting approval."))
 	
@@ -919,15 +920,24 @@ def request_sequence_approval(date, unit):
 	return {"status": "success"}
 
 @frappe.whitelist()
-def approve_sequence(date, unit):
+def approve_sequence(date, unit, plan_name="Default"):
 	"""Managers call this to approve the sequence."""
-	name = f"CSA-{unit}-{date}"
+	name = f"CSA-{plan_name}-{unit}-{date}"
 	if not frappe.db.exists("Color Sequence Approval", name):
 		frappe.throw(_("Sequence record not found."))
 	
 	frappe.db.set_value("Color Sequence Approval", name, "status", "Approved")
 	frappe.db.commit()
 	return {"status": "success"}
+
+@frappe.whitelist()
+def get_pending_approvals():
+	"""Returns all Color Sequence Approvals that are 'Pending Approval' or 'Draft'."""
+	return frappe.get_all("Color Sequence Approval", 
+		filters={"status": ["in", ["Pending Approval", "Draft"]]},
+		fields=["name", "date", "unit", "status", "plan_name", "sequence_data", "modified", "owner"],
+		order_by="modified desc"
+	)
 
 @frappe.whitelist()
 def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=None, mode=None, planned_only=0):

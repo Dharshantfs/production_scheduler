@@ -116,6 +116,9 @@
       <button class="cc-clear-btn" style="background-color: #10b981; color: white; border: none; margin-left: auto;" @click="goToConfirmedOrders" title="View Confirmed Orders Page">
           ✅ Confirmed Orders
       </button>
+      <button v-if="isAdmin" class="cc-clear-btn" style="background-color: #f59e0b; color: white; border: none; margin-left: 8px;" @click="goToSequenceApprovals" title="View Sequence Approval Dashboard">
+          📋 Approval Dashboard
+      </button>
     </div>
 
     <!-- Kanban View -->
@@ -2587,7 +2590,8 @@ async function persistSequence(unit) {
             args: {
                 date: filterOrderDate.value,
                 unit: unit,
-                sequence_data: itemNames
+                sequence_data: itemNames,
+                plan_name: selectedPlan.value
             }
         });
         // Reset status to Draft if it was Approved but then re-ordered? 
@@ -2608,12 +2612,12 @@ async function requestApproval(unit) {
         const items = getUnitEntries(unit).map(i => i.itemName);
         await frappe.call({
             method: "production_scheduler.api.save_color_sequence",
-            args: { date: filterOrderDate.value, unit: unit, sequence_data: items }
+            args: { date: filterOrderDate.value, unit: unit, sequence_data: items, plan_name: selectedPlan.value }
         });
 
         await frappe.call({
             method: "production_scheduler.api.request_sequence_approval",
-            args: { date: filterOrderDate.value, unit: unit }
+            args: { date: filterOrderDate.value, unit: unit, plan_name: selectedPlan.value }
         });
         sequenceStatuses[unit] = 'Pending Approval';
         frappe.show_alert(`Approval requested for ${unit}`, 2);
@@ -2627,12 +2631,12 @@ async function approveSequence(unit) {
         const items = getUnitEntries(unit).map(i => i.itemName);
         await frappe.call({
             method: "production_scheduler.api.save_color_sequence",
-            args: { date: filterOrderDate.value, unit: unit, sequence_data: items }
+            args: { date: filterOrderDate.value, unit: unit, sequence_data: items, plan_name: selectedPlan.value }
         });
 
         await frappe.call({
             method: "production_scheduler.api.approve_sequence",
-            args: { date: filterOrderDate.value, unit: unit }
+            args: { date: filterOrderDate.value, unit: unit, plan_name: selectedPlan.value }
         });
         sequenceStatuses[unit] = 'Approved';
         frappe.show_alert(`${unit} Sequence Approved`, 2);
@@ -3182,16 +3186,14 @@ async function pushToProductionBoard() {
             if (overallStatus === 'Draft' && !canApprove) {
                 const unitsToRequest = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
                 for (const u of unitsToRequest) {
-                    // Save explicitly before requesting approval
-                    const unitItems = currentSequence.filter(s => (s.unit || 'Unit 1') === u).map(s => s.name);
                     await frappe.call({
                         method: "production_scheduler.api.save_color_sequence",
-                        args: { date: defaultTargetDate, unit: u, sequence_data: unitItems }
+                        args: { date: defaultTargetDate, unit: u, sequence_data: unitItems, plan_name: selectedPlan.value }
                     });
                     
                     await frappe.call({
                         method: "production_scheduler.api.request_sequence_approval",
-                        args: { date: defaultTargetDate, unit: u }
+                        args: { date: defaultTargetDate, unit: u, plan_name: selectedPlan.value }
                     });
                 }
                 frappe.show_alert({ message: 'Arrangement approval requested', indicator: 'orange' });
@@ -3204,7 +3206,7 @@ async function pushToProductionBoard() {
                 for (const u of unitsToApprove) {
                     await frappe.call({
                         method: "production_scheduler.api.approve_sequence",
-                        args: { date: defaultTargetDate, unit: u }
+                        args: { date: defaultTargetDate, unit: u, plan_name: selectedPlan.value }
                     });
                 }
                 frappe.show_alert({ message: 'Arrangement Approved', indicator: 'green' });
@@ -3886,7 +3888,7 @@ async function fetchData() {
         for (const unit of units) {
             const seqRes = await frappe.call({
                 method: "production_scheduler.api.get_color_sequence",
-                args: { date: statusDate, unit: unit }
+                args: { date: statusDate, unit: unit, plan_name: selectedPlan.value }
             });
             if (seqRes.message) {
                 sequenceStatuses[unit] = seqRes.message.status;
@@ -4637,6 +4639,10 @@ async function openPushColorDialog(color, inputTargetDate = null) {
 
 async function goToConfirmedOrders() {
     frappe.set_route("confirmed-order");
+}
+
+async function goToSequenceApprovals() {
+    frappe.set_route("sequence-approval");
 }
 
 async function revertColorGroup(color) {

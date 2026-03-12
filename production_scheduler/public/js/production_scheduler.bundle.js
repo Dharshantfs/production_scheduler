@@ -20,6 +20,7 @@ production_scheduler.ColorChartController = class {
 
 import ConfirmedOrder from "./ConfirmedOrder.vue";
 import ProductionTable from "./ProductionTable.vue";
+import SequenceApproval from "./SequenceApproval.vue";
 
 production_scheduler.ConfirmedOrderController = class {
     constructor(wrapper) {
@@ -31,6 +32,13 @@ production_scheduler.ConfirmedOrderController = class {
 production_scheduler.ProductionTableController = class {
     constructor(wrapper) {
         const app = createApp(ProductionTable);
+        app.mount(wrapper);
+    }
+};
+
+production_scheduler.SequenceApprovalController = class {
+    constructor(wrapper) {
+        const app = createApp(SequenceApproval);
         app.mount(wrapper);
     }
 };

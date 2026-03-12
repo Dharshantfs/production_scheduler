@@ -40,6 +40,15 @@
             "type": "Link"
         },
         {
+            "description": "Sequence Approval",
+            "icon": "list",
+            "label": "Sequence Approval",
+            "link_to": "sequence-approval",
+            "link_type": "Page",
+            "onboard": 1,
+            "type": "Link"
+        },
+        {
             "description": "Planning Sheet List",
             "icon": "list",
             "label": "Planning sheet",
@@ -49,7 +58,7 @@
             "type": "Link"
         }
     ],
-    "modified": "2026-02-14 11:00:00.000000",
+    "modified": "2026-03-12 12:44:00.000000",
     "modified_by": "Administrator",
     "module": "Production Scheduler",
     "name": "Production Scheduler",
@@ -74,6 +83,11 @@
         {
             "label": "Color Chart",
             "link_to": "color-chart",
+            "type": "Page"
+        },
+        {
+            "label": "Sequence Approval",
+            "link_to": "sequence-approval",
             "type": "Page"
         }
     ],
