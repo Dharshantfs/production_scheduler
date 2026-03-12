@@ -1777,6 +1777,22 @@ def create_plan_name_field():
 		cf5.insert(ignore_permissions=True)
 	else:
 		frappe.db.set_value('Custom Field', 'Planning Sheet Item-custom_plan_code', 'read_only', 0)
+
+	# Create Approval Status custom field on Planning Sheet
+	if not frappe.db.exists('Custom Field', 'Planning sheet-custom_approval_status'):
+		cf6 = frappe.get_doc({
+			"doctype": "Custom Field",
+			"dt": "Planning sheet",
+			"fieldname": "custom_approval_status",
+			"label": "Approval Status",
+			"fieldtype": "Select",
+			"options": "Draft\nPending Approval\nApproved",
+			"default": "Draft",
+			"insert_after": "planning_status"
+		})
+		cf6.insert(ignore_permissions=True)
+	
+	frappe.db.commit()
 	
 	# Automatically kick off a background job to populate old sheets if they are missing codes
 	frappe.enqueue("production_scheduler.api.backfill_plan_codes", queue="short", timeout=300)
@@ -3520,9 +3536,11 @@ def revert_items_from_pb(item_names):
 @frappe.whitelist()
 def sync_custom_fields():
 	"""
-	Creates the custom_item_planned_date field on Planning Sheet Item if it doesn't exist.
+	Creates the custom_item_planned_date field on Planning Sheet Item and other key fields.
 	Run this once from the browser console.
 	"""
+	create_plan_name_field()
+
 	# Check if custom field exists
 	if not frappe.db.exists("Custom Field", {"dt": "Planning Sheet Item", "fieldname": "custom_item_planned_date"}):
 		doc = frappe.get_doc({
@@ -3535,8 +3553,8 @@ def sync_custom_fields():
 		})
 		doc.insert(ignore_permissions=True)
 		frappe.db.commit()
-		return "Field custom_item_planned_date created."
-	return "Field custom_item_planned_date already exists."
+		return "Custom fields synced successfully."
+	return "Custom fields already synced."
 
 
 @frappe.whitelist()
