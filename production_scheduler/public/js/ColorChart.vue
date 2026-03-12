@@ -92,7 +92,7 @@
       </div>
       
       <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
-      <button class="cc-clear-btn" style="color: #dc2626; border-color: #dc2626; margin-left: 8px;" @click="emergencyReset" title="FORCE UNLOCK: Returns all stuck orders to Color Chart">
+      <button v-if="isAdmin" class="cc-clear-btn" style="color: #dc2626; border-color: #dc2626; margin-left: 8px;" @click="emergencyReset" title="FORCE UNLOCK: Returns all stuck orders to Color Chart">
         🚑 Emergency Reset
       </button>
       <button class="cc-clear-btn" style="color: #6366f1; border-color: #6366f1; margin-left: 8px;" @click="showGlobalSortInfo" title="View Color Hierarchy Rules">
@@ -116,7 +116,7 @@
       <button class="cc-clear-btn" style="background-color: #10b981; color: white; border: none; margin-left: auto;" @click="goToConfirmedOrders" title="View Confirmed Orders Page">
           ✅ Confirmed Orders
       </button>
-      <button v-if="isAdmin" class="cc-clear-btn" style="background-color: #f59e0b; color: white; border: none; margin-left: 8px;" @click="goToSequenceApprovals" title="View Sequence Approval Dashboard">
+      <button v-if="canAccessDashboard" class="cc-clear-btn" style="background-color: #f59e0b; color: white; border: none; margin-left: 8px;" @click="goToSequenceApprovals" title="View Sequence Approval Dashboard">
           📋 Approval Dashboard
       </button>
     </div>
@@ -876,7 +876,15 @@ units.forEach(u => {
 });
 const viewMode = ref('matrix'); // 'kanban' | 'matrix'
 const sequenceStatuses = reactive({}); // { "Unit 1": "Draft", ... }
-const currentUserRoles = ref(frappe.boot.user_roles || []);
+const currentUserRoles = computed(() => frappe.boot.user.roles || []);
+const isAdmin = computed(() => {
+    const roles = currentUserRoles.value;
+    return roles.includes('System Manager') || roles.includes('Administrator');
+});
+const canAccessDashboard = computed(() => {
+    const roles = currentUserRoles.value;
+    return isAdmin.value || roles.includes('Manufacturing Manager');
+});
 const rawData = ref([]);
 const columnRefs = ref(null);
 const monthlyCellRefs = ref(null);
@@ -4913,10 +4921,7 @@ function updateSelection(d) {
 }
 
 // ---- ADMIN RESCUE ----
-const isAdmin = computed(() => {
-    const roles = frappe.boot.user.roles || [];
-    return roles.includes('System Manager') || roles.includes('Administrator');
-});
+// (isAdmin is now defined near the top of the script section)
 
 function openRescueDialog() {
     const d = new frappe.ui.Dialog({
