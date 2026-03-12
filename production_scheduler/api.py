@@ -940,6 +940,20 @@ def get_pending_approvals():
 	)
 
 @frappe.whitelist()
+def get_items_by_name(names):
+	"""Returns item details for a list of Planning Sheet Item names."""
+	if isinstance(names, str):
+		names = json.loads(names)
+	if not names:
+		return []
+	
+	return frappe.db.sql(f"""
+		SELECT name, color, custom_quality as quality, qty
+		FROM `tabPlanning Sheet Item`
+		WHERE name IN %s
+	""", (names,), as_dict=True)
+
+@frappe.whitelist()
 def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=None, mode=None, planned_only=0):
 	from frappe.utils import getdate
 	

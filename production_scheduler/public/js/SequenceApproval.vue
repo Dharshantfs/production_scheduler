@@ -143,11 +143,9 @@ async function selectApproval(app) {
   
   if (itemNames.length > 0) {
     const r = await frappe.call({
-      method: "frappe.client.get_list",
+      method: "production_scheduler.api.get_items_by_name",
       args: {
-        doctype: "Planning Sheet Item",
-        filters: { name: ["in", itemNames] },
-        fields: ["name", "color", "custom_quality as quality", "qty"]
+        names: itemNames
       }
     });
     const fetchedItems = r.message || [];
