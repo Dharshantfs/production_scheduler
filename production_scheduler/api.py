@@ -948,7 +948,7 @@ def get_items_by_name(names):
 		return []
 	
 	return frappe.db.sql(f"""
-		SELECT name, color, custom_quality as quality, qty
+		SELECT name, color, custom_quality as quality, qty, party_code
 		FROM `tabPlanning Sheet Item`
 		WHERE name IN %s
 	""", (names,), as_dict=True)

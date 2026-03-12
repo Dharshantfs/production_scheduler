@@ -77,6 +77,7 @@
           <div class="list-header">
             <div class="col-drag"></div>
             <div class="col-idx">#</div>
+            <div class="col-party">Party Code</div>
             <div class="col-color">Color</div>
             <div class="col-quality">Quality</div>
             <div class="col-qty text-right">Qty (Kg)</div>
@@ -85,10 +86,15 @@
             <div v-for="(item, index) in items" :key="item.name" class="sequence-item" :data-id="item.name">
               <div class="col-drag draggable-handle">⠿</div>
               <div class="col-idx">{{ index + 1 }}</div>
-              <div class="col-color"><b>{{ item.color }}</b></div>
+              <div class="col-party"><b>{{ item.party_code }}</b></div>
+              <div class="col-color">{{ item.color }}</div>
               <div class="col-quality">{{ item.quality }}</div>
               <div class="col-qty text-right font-weight-bold">{{ formatQty(item.qty) }}</div>
             </div>
+          </div>
+          <div class="list-footer" v-if="items.length > 0">
+            <div class="col-total-label">Total Weight</div>
+            <div class="col-total-val text-right">{{ formatQty(totalWeight) }} Kg</div>
           </div>
         </div>
       </div>
@@ -104,7 +110,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue';
+import { ref, computed, onMounted, nextTick } from 'vue';
 
 const approvals = ref([]);
 const loading = ref(false);
@@ -113,6 +119,10 @@ const selectedApproval = ref(null);
 const items = ref([]);
 const dragContainer = ref(null);
 let sortableInstance = null;
+
+const totalWeight = computed(() => {
+  return items.value.reduce((sum, item) => sum + (parseFloat(item.qty) || 0), 0);
+});
 
 async function fetchApprovals() {
   loading.value = true;
@@ -345,6 +355,28 @@ onMounted(fetchApprovals);
     white-space: nowrap;
 }
 
+.list-footer {
+  display: flex;
+  padding: 16px 0;
+  border-top: 2px solid #0f172a;
+  margin-top: 8px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.col-total-label {
+    flex: 1;
+    padding-left: 80px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.col-total-val {
+    width: 120px;
+    font-size: 16px;
+}
+
 .status-badge {
   padding: 2px 8px;
   border-radius: 20px;
@@ -424,9 +456,10 @@ onMounted(fetchApprovals);
 .col-drag { width: 40px; text-align: center; color: #cbd5e1; cursor: grab; font-size: 18px; }
 .col-drag:active { cursor: grabbing; }
 .col-idx { width: 40px; text-align: center; color: #94a3b8; font-weight: 700; font-size: 12px; }
+.col-party { width: 120px; color: #1e40af; font-weight: 700; }
 .col-color { flex: 2; color: #0f172a; }
 .col-quality { flex: 2; color: #64748b; font-size: 13px; }
-.col-qty { flex: 1; color: #0f172a; }
+.col-qty { width: 100px; color: #0f172a; }
 
 .ghost-item { opacity: 0.4; background: #eff6ff !important; border: 1px dashed #3b82f6; }
 .chosen-item { background: #f8fafc; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }

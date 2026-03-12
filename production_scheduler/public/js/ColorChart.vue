@@ -135,6 +135,9 @@
             <div class="cc-col-header" :style="{ borderTopColor: headerColors[unit] }">
             <div class="cc-header-top">
                 <span class="cc-col-title">{{ unit === 'Mixed' ? 'Unassigned' : unit }}</span>
+                <span v-if="unit !== 'Mixed' && sequenceStatuses[unit]" :class="['cc-status-badge', sequenceStatuses[unit].toLowerCase().replace(' ', '-')]">
+                  {{ sequenceStatuses[unit] }}
+                </span>
                 <!-- Sort Controls -->
                 <div class="cc-unit-controls">
                 <span style="font-size:10px; color:#64748b; margin-right:4px;">{{ getSortLabel(unit) }}</span>
@@ -5128,6 +5131,42 @@ function updateRescueSelection(d) {
 .cc-mini-btn:hover {
   background: #f7fafc;
   border-color: #cbd5e0;
+}
+
+.cc-status-badge {
+  font-size: 8px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  margin-left: 6px;
+  letter-spacing: 0.05em;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.cc-status-badge.draft {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.cc-status-badge.pending-approval {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  animation: pulse 2s infinite;
+}
+
+.cc-status-badge.approved {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #6ee7b7;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.02); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 .cc-col-title {
