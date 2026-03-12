@@ -2887,7 +2887,8 @@ function deletePlan() {
 // ---- PUSH TO PRODUCTION BOARD ----
 async function pushToProductionBoard() {
     // Collect all items (we will mark the pushed ones visually instead of hiding them)
-    const items = filteredData.value || [];
+    // Collect all items from rawData (ignore main page filters)
+    const items = rawData.value || [];
     if (items.length === 0) {
         frappe.msgprint('No orders visible to push. Apply filters first.');
         return;
@@ -3212,9 +3213,10 @@ async function pushToProductionBoard() {
             { fieldname: 'global_capacity_info', fieldtype: 'HTML', label: '' }
         ],
         primary_action_label: overallStatus === 'Approved' ? '🚀 Push to Board' : 
+                          (overallStatus === 'Rejected' ? '📤 Re-submit for Approval' :
                           ((overallStatus === 'Pending Approval' || (overallStatus === 'Draft' && canApprove)) ? 
                            (canApprove ? '✅ Approve Arrangement' : '⏳ Waiting for Approval') : 
-                           '📤 Request Arrangement Approval'),
+                           '📤 Request Arrangement Approval')),
         primary_action: async (values) => {
             const targetDate = (values.target_date || defaultTargetDate || today).trim();
             const currentStatus = dialogOverallStatus || d.overallStatus || overallStatus;
@@ -3395,9 +3397,10 @@ async function pushToProductionBoard() {
         setTimeout(() => { wireCheckboxes(); updateCountLabel(); }, 50);
         
         const label = newOverallStatus === 'Approved' ? '🚀 Push to Board' : 
+                     (newOverallStatus === 'Rejected' ? '📤 Re-submit for Approval' :
                      ((newOverallStatus === 'Pending Approval' || (newOverallStatus === 'Draft' && canApprove)) ? 
                       (canApprove ? '✅ Approve Arrangement' : '⏳ Waiting for Approval') : 
-                      '📤 Request Arrangement Approval');
+                      '📤 Request Arrangement Approval'));
         
         const $btn = d.get_primary_btn();
         $btn.text(label);
@@ -3493,7 +3496,7 @@ async function pushToProductionBoard() {
         // Re-number
         currentSequence.forEach((item, i) => { item.sequence_no = i + 1; });
 
-        d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
+        d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence, dialogOverallStatus));
         wireCheckboxes();
         updateCountLabel();
         updateDialogStatus(d.get_value('target_date'));

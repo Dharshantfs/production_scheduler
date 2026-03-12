@@ -42,7 +42,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Draft\nPending Approval\nApproved",
+   "options": "Draft\nPending Approval\nApproved\nRejected",
    "read_only": 1
   },
   {
