@@ -3012,7 +3012,7 @@ async function pushToProductionBoard() {
                 actionHtml = `<input type="checkbox" data-idx="${i}" ${checked ? 'checked' : ''} style="cursor:pointer;width:16px;height:16px;accent-color:#2563eb;">`;
             }
 
-            const dragHandle = item.pushed ? '' : `<span class="drag-handle" style="cursor:grab;color:#94a3b8;font-size:16px;padding:0 8px;user-select:none;display:flex;align-items:center;" title="Drag to reorder">⠿</span>`;
+            const dragHandle = (item.pushed || currentOverallStatus === 'Approved') ? '' : `<span class="drag-handle" style="cursor:grab;color:#94a3b8;font-size:16px;padding:0 8px;user-select:none;display:flex;align-items:center;" title="Drag to reorder">⠿</span>`;
             
             const statusBadge = item.approvalStatus === 'Approved' 
                 ? '<span style="color:#16a34a;background:#f0fdf4;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;">APPROVED</span>'
@@ -3336,8 +3336,16 @@ async function pushToProductionBoard() {
                 args: { date: newTargetDate, unit: u, plan_name: selectedPlan.value }
             });
             const msg = res.message || {};
-            unitStatuses.push(msg.status || 'Draft');
+            const st = msg.status || 'Draft';
+            unitStatuses.push(st);
             
+            // Sync individual row statuses for this unit
+            currentSequence.forEach(it => {
+                if ((it.unit || 'Unit 1') === u) {
+                    it.approvalStatus = st;
+                }
+            });
+
             // Capture sequence data for re-sorting reflection
             if (msg.sequence_data) {
                 try {
@@ -3396,11 +3404,19 @@ async function pushToProductionBoard() {
         
         // Update button colors based on status
         if (newOverallStatus === 'Approved') {
-            $btn.css({'background-color': '#2563eb', 'border-color': '#1d4ed8', 'color': 'white'});
+            $btn.css({'background-color': '#16a34a', 'border-color': '#15803d', 'color': 'white'});
         } else if (newOverallStatus === 'Rejected') {
             $btn.css({'background-color': '#dc2626', 'border-color': '#b91c1c', 'color': 'white'});
         } else {
             $btn.css({'background-color': '', 'border-color': '', 'color': ''});
+        }
+
+        // Restrict Smart Auto-Tick if already Approved
+        const $smartBtn = d.$wrapper.find('.btn-custom').filter((i, el) => $(el).text().includes('Smart Auto-Tick'));
+        if (newOverallStatus === 'Approved') {
+            $smartBtn.prop('disabled', true).css('opacity', '0.5').attr('title', 'Arrangement is approved and locked.');
+        } else {
+            $smartBtn.prop('disabled', false).css('opacity', '1').attr('title', '');
         }
     };
 
@@ -3410,8 +3426,20 @@ async function pushToProductionBoard() {
     };
 
     d.overallStatus = overallStatus; 
+    
+    // Global hook for the refresh icon in buildDialogHtml
+    window.refreshPushStatus = () => {
+        const val = d.get_value('target_date');
+        updateDialogStatus(val);
+    };
+    
     d.show();
     updateDialogStatus(d.get_value('target_date'));
+    
+    d.on_hide = () => {
+        window.refreshPushStatus = null;
+    };
+
     d.$wrapper.find('.modal-dialog').css('max-width', '1000px');
     d.$wrapper.find('.modal-content').css({'border-radius': '16px', 'border': 'none', 'box-shadow': '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)'});
     d.$wrapper.find('.modal-header').css({'background': '#fff', 'border-bottom': '1px solid #f1f5f9', 'border-radius': '16px 16px 0 0', 'padding': '16px 24px'});
@@ -3510,6 +3538,8 @@ async function pushToProductionBoard() {
         const tbody = container.querySelector('tbody');
         if (tbody && window.Sortable) {
             if (tbody._sortable) tbody._sortable.destroy();
+            if (dialogOverallStatus === 'Approved') return; // Lock reordering for Approved arrangements
+            
             tbody._sortable = new window.Sortable(tbody, {
                 animation: 150,
                 handle: '.drag-handle',
@@ -3524,7 +3554,7 @@ async function pushToProductionBoard() {
                     const moved = currentSequence.splice(fromIdx, 1)[0];
                     currentSequence.splice(toIdx, 0, moved);
                     currentSequence.forEach((item, i) => { item.sequence_no = i + 1; });
-                    d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
+                    d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence, dialogOverallStatus));
                     setTimeout(() => { wireCheckboxes(); updateCountLabel(); }, 100);
                 }
             });
