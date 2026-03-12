@@ -92,7 +92,9 @@
             <div class="col-qty text-right">Qty (Kg)</div>
           </div>
           <div class="draggable-container" ref="dragContainer">
-            <div v-for="(item, index) in items" :key="item.name" class="sequence-item" :data-id="item.name">
+            <div v-for="(item, index) in items" :key="item.name" 
+                 class="sequence-item" :class="{ 'is-pushed': item.custom_item_planned_date }"
+                 :data-id="item.name">
               <div class="col-drag draggable-handle">⠿</div>
               <div class="col-idx">{{ index + 1 }}</div>
               <div class="col-party">
@@ -103,7 +105,12 @@
                 <b>{{ item.color }}</b>
                 <div class="sub-text text-muted">{{ item.customer || '' }}</div>
               </div>
-              <div class="col-quality">{{ item.quality }}</div>
+              <div class="col-quality">
+                {{ item.quality }}
+                <div v-if="item.custom_item_planned_date" class="mt-1">
+                   <span class="badge badge-secondary" style="font-size: 8px; background: #e2e8f0; color: #475569;">Pushed on {{ formatDate(item.custom_item_planned_date) }}</span>
+                </div>
+              </div>
               <div class="col-qty text-right font-weight-bold">{{ formatQty(item.qty) }}</div>
             </div>
           </div>
@@ -183,19 +190,12 @@ async function selectApproval(app) {
       }
     });
     const fetchedItems = r.message || [];
-    // Sort items according to the saved sequence AND filter out those already pushed
+    // Sort items according to the saved sequence
     const sortedItems = itemNames.map(name => fetchedItems.find(i => i.name === name)).filter(Boolean);
-    items.value = sortedItems.filter(it => !it.custom_item_planned_date);
-
-    // Warn if items were hidden
-    const pushedCount = sortedItems.length - items.value.length;
-    if (pushedCount > 0) {
-      frappe.show_alert({ 
-        message: `${pushedCount} already pushed item(s) hidden from this arrangement.`, 
-        indicator: 'blue' 
-      });
-    }
     
+    // We NO LONGER filter out pushed items, we show them grayed out instead
+    items.value = sortedItems;
+
     // Initialize Sortable after DOM update
     nextTick(() => {
         initSortable();
@@ -577,4 +577,13 @@ onMounted(fetchApprovals);
 
 .empty-icon { font-size: 56px; margin-bottom: 16px; opacity: 0.5; }
 .text-right { text-align: right; }
+.sequence-item.is-pushed {
+  opacity: 0.6;
+  background-color: #f8fafc;
+  border-style: dashed;
+}
+
+.sequence-item.is-pushed .draggable-handle {
+  display: none;
+}
 </style>

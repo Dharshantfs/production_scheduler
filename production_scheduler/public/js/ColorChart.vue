@@ -3328,6 +3328,8 @@ async function pushToProductionBoard() {
         dialogApprovalMeta = null;
         dialogPendingUnits = [];
         
+        let combinedSequenceData = [];
+        
         for (const u of relevantUnits) {
             const res = await frappe.call({
                 method: "production_scheduler.api.get_color_sequence",
@@ -3335,12 +3337,36 @@ async function pushToProductionBoard() {
             });
             const msg = res.message || {};
             unitStatuses.push(msg.status || 'Draft');
+            
+            // Capture sequence data for re-sorting reflection
+            if (msg.sequence_data) {
+                try {
+                    const names = JSON.parse(msg.sequence_data);
+                    combinedSequenceData = combinedSequenceData.concat(names);
+                } catch(e) {}
+            }
+
             if ((msg.status === 'Approved' || msg.status === 'Rejected') && !dialogApprovalMeta) {
                 dialogApprovalMeta = { modified_by: msg.modified_by, modified: msg.modified };
             }
             if (msg.status !== 'Approved') {
                 dialogPendingUnits.push(u);
             }
+        }
+
+        // Re-sort currentSequence if we have sequence_data from the approval record(s)
+        if (combinedSequenceData.length > 0) {
+            const sorted = [];
+            // Follow the order in combinedSequenceData, then add any missing items at the end
+            combinedSequenceData.forEach(name => {
+                const item = currentSequence.find(i => i.name === name);
+                if (item) sorted.push(item);
+            });
+            currentSequence.forEach(item => {
+                if (!sorted.find(i => i.name === item.name)) sorted.push(item);
+            });
+            currentSequence = sorted;
+            currentSequence.forEach((item, i) => { item.sequence_no = i + 1; });
         }
 
         const newOverallStatus = unitStatuses.some(s => s === 'Rejected') ? 'Rejected' :
@@ -3365,7 +3391,17 @@ async function pushToProductionBoard() {
                       (canApprove ? '✅ Approve Arrangement' : '⏳ Waiting for Approval') : 
                       '📤 Request Arrangement Approval');
         
-        d.set_primary_action_label(label);
+        const $btn = d.get_primary_btn();
+        $btn.text(label);
+        
+        // Update button colors based on status
+        if (newOverallStatus === 'Approved') {
+            $btn.css({'background-color': '#2563eb', 'border-color': '#1d4ed8', 'color': 'white'});
+        } else if (newOverallStatus === 'Rejected') {
+            $btn.css({'background-color': '#dc2626', 'border-color': '#b91c1c', 'color': 'white'});
+        } else {
+            $btn.css({'background-color': '', 'border-color': '', 'color': ''});
+        }
     };
 
     d.fields_dict.target_date.df.onchange = () => {
