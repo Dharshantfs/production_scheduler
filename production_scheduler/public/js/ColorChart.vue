@@ -3057,14 +3057,15 @@ async function pushToProductionBoard() {
         </div>`;
     }
 
-    function buildDialogHtml(seq) {
+    function buildDialogHtml(seq, statusOverride = null) {
         const total = seq.filter(i => i.checked !== false).length;
+        const currentStatus = statusOverride || (typeof d !== 'undefined' && d?.overallStatus) || overallStatus;
         
         const statusSummary = `
             <div style="display:flex;gap:12px;align-items:center;">
                 <div style="background:#f1f5f9;padding:6px 12px;border-radius:20px;display:flex;align-items:center;gap:8px;">
-                    <span style="width:8px;height:8px;border-radius:50%;background:${(d?.overallStatus || overallStatus) === 'Approved' ? '#16a34a' : ((d?.overallStatus || overallStatus) === 'Pending Approval' ? '#ca8a04' : '#64748b')}"></span>
-                    <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Arrangement Status: ${d?.overallStatus || overallStatus}</span>
+                    <span style="width:8px;height:8px;border-radius:50%;background:${currentStatus === 'Approved' ? '#16a34a' : (currentStatus === 'Pending Approval' ? '#ca8a04' : '#64748b')}"></span>
+                    <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Arrangement Status: ${currentStatus}</span>
                 </div>
                 <div>
                     <span style="font-size:14px;color:#1e293b;font-weight:700;"><span id="seq-count-label">${total}</span></span> <span style="font-size:11px;color:#64748b;font-weight:500;">item(s) selected</span>
@@ -3310,7 +3311,7 @@ async function pushToProductionBoard() {
 
         d.overallStatus = newOverallStatus;
         
-        d.set_df_property('sequence_html', 'options', buildDialogHtml(currentSequence));
+        d.set_df_property('sequence_html', 'options', buildDialogHtml(currentSequence, newOverallStatus));
         
         const label = newOverallStatus === 'Approved' ? '🚀 Push to Board' : 
                      ((newOverallStatus === 'Pending Approval' || (newOverallStatus === 'Draft' && canApprove)) ? 
