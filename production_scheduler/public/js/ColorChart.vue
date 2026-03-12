@@ -2986,7 +2986,7 @@ async function pushToProductionBoard() {
         return '#f5f5f5';
     }
 
-    function renderTable(seq) {
+    function renderTable(seq, currentArrangementStatus = null) {
         let lastUnit = null;
         const rows = seq.map((item, i) => {
             let unitDivider = '';
@@ -3012,7 +3012,7 @@ async function pushToProductionBoard() {
                 actionHtml = `<input type="checkbox" data-idx="${i}" ${checked ? 'checked' : ''} style="cursor:pointer;width:16px;height:16px;accent-color:#2563eb;">`;
             }
 
-            const dragHandle = (item.pushed || currentOverallStatus === 'Approved') ? '' : `<span class="drag-handle" style="cursor:grab;color:#94a3b8;font-size:16px;padding:0 8px;user-select:none;display:flex;align-items:center;" title="Drag to reorder">⠿</span>`;
+            const dragHandle = (item.pushed || currentArrangementStatus === 'Approved') ? '' : `<span class="drag-handle" style="cursor:grab;color:#94a3b8;font-size:16px;padding:0 8px;user-select:none;display:flex;align-items:center;" title="Drag to reorder">⠿</span>`;
             
             const statusBadge = item.approvalStatus === 'Approved' 
                 ? '<span style="color:#16a34a;background:#f0fdf4;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;">APPROVED</span>'
@@ -3099,7 +3099,7 @@ async function pushToProductionBoard() {
             ${statusSummary}
             ${smartSequenceActive ? '<span style="font-size:10px;color:#166534;background:#dcfce7;padding:5px 12px;border-radius:20px;font-weight:600;display:flex;align-items:center;gap:4px;">✨ Smart Sequenced</span>' : ''}
         </div>
-        ${renderTable(seq)}`;
+        ${renderTable(seq, currentStatus)}`;
     }
     async function loadGlobalCapacityPreview(dialog, seq) {
         const checkedItems = seq.filter(i => i.checked !== false && !i.pushed);
@@ -3206,7 +3206,7 @@ async function pushToProductionBoard() {
             {
                 fieldname: 'sequence_html',
                 fieldtype: 'HTML',
-                options: buildDialogHtml(currentSequence)
+                options: buildDialogHtml(currentSequence, overallStatus)
             },
             { fieldtype: 'Section Break', label: 'Capacity Preview' },
             { fieldname: 'global_capacity_info', fieldtype: 'HTML', label: '' }

@@ -945,11 +945,11 @@ def reject_sequence(date, unit, plan_name="Default"):
 
 @frappe.whitelist()
 def get_pending_approvals():
-	"""Returns all Color Sequence Approvals that are 'Pending Approval' or 'Draft'."""
+	"""Returns color sequence arrangements for history and approval dashboard."""
 	return frappe.get_all("Color Sequence Approval", 
-		filters={"status": ["in", ["Pending Approval", "Draft"]]},
 		fields=["name", "date", "unit", "status", "plan_name", "sequence_data", "modified", "owner"],
-		order_by="modified desc"
+		order_by="modified desc",
+		limit=100
 	)
 
 @frappe.whitelist()

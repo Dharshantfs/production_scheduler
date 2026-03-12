@@ -27,7 +27,7 @@
       <!-- Sidebar: List of pending items -->
       <div class="approval-sidebar">
         <div class="sidebar-header">
-          <span class="badge badge-pill badge-info">{{ approvals.length }} Pending</span>
+          <span class="badge badge-pill badge-info" style="background:#f1f5f9; color:#475569;">{{ approvals.length }} Total</span>
         </div>
         <div 
           v-for="app in approvals" 
@@ -485,6 +485,8 @@ onMounted(fetchApprovals);
 
 .status-badge.pending-approval { background: #fefce8; color: #854d0e; border: 1px solid #fef08a; }
 .status-badge.draft { background: #f8fafc; color: #475569; border: 1px solid #e2e8f0; }
+.status-badge.approved { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+.status-badge.rejected { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
 
 .approval-editor {
   flex: 1;
