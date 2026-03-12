@@ -55,7 +55,7 @@
           <div>
             <h3>{{ selectedApproval.plan_name }} | {{ selectedApproval.unit }}</h3>
             <p class="mb-0 text-muted">
-              {{ formatDate(selectedApproval.date) }} • 
+              <span class="font-weight-bold" style="color: #64748b;">Target Push Date:</span> {{ formatDate(selectedApproval.date) }} • 
               <span class="text-info font-weight-bold">
                 <i class="fa fa-user-circle mr-1"></i>Requested By: {{ selectedApproval.owner }}
               </span>
@@ -86,8 +86,14 @@
             <div v-for="(item, index) in items" :key="item.name" class="sequence-item" :data-id="item.name">
               <div class="col-drag draggable-handle">⠿</div>
               <div class="col-idx">{{ index + 1 }}</div>
-              <div class="col-party"><b>{{ item.party_code }}</b></div>
-              <div class="col-color">{{ item.color }}</div>
+              <div class="col-party">
+                <b>{{ item.party_code }}</b>
+                <div class="sub-text text-muted">{{ item.sales_order || '' }}</div>
+              </div>
+              <div class="col-color">
+                <b>{{ item.color }}</b>
+                <div class="sub-text text-muted">{{ item.customer || '' }}</div>
+              </div>
               <div class="col-quality">{{ item.quality }}</div>
               <div class="col-qty text-right font-weight-bold">{{ formatQty(item.qty) }}</div>
             </div>
@@ -375,6 +381,12 @@ onMounted(fetchApprovals);
 .col-total-val {
     width: 120px;
     font-size: 16px;
+}
+
+.sub-text {
+    font-size: 10px;
+    font-weight: 500;
+    margin-top: 2px;
 }
 
 .status-badge {

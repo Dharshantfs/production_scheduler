@@ -948,9 +948,12 @@ def get_items_by_name(names):
 		return []
 	
 	return frappe.db.sql(f"""
-		SELECT name, color, custom_quality as quality, qty, party_code
-		FROM `tabPlanning Sheet Item`
-		WHERE name IN %s
+		SELECT 
+			i.name, i.color, i.custom_quality as quality, i.qty, i.party_code,
+			p.customer, p.sales_order
+		FROM `tabPlanning Sheet Item` i
+		JOIN `tabPlanning sheet` p ON i.parent = p.name
+		WHERE i.name IN %s
 	""", (names,), as_dict=True)
 
 @frappe.whitelist()
