@@ -3174,9 +3174,12 @@ async function pushToProductionBoard() {
             { fieldtype: 'Section Break', label: 'Capacity Preview' },
             { fieldname: 'global_capacity_info', fieldtype: 'HTML', label: '' }
         ],
-        primary_action_label: overallStatus === 'Approved' ? '🚀 Push to Board' : (overallStatus === 'Pending Approval' ? (canApprove ? '✅ Approve Arrangement' : '⏳ Waiting for Approval') : '📤 Request Arrangement Approval'),
+        primary_action_label: overallStatus === 'Approved' ? '🚀 Push to Board' : 
+                          ((overallStatus === 'Pending Approval' || (overallStatus === 'Draft' && canApprove)) ? 
+                           (canApprove ? '✅ Approve Arrangement' : '⏳ Waiting for Approval') : 
+                           '📤 Request Arrangement Approval'),
         primary_action: async (values) => {
-            if (overallStatus === 'Draft') {
+            if (overallStatus === 'Draft' && !canApprove) {
                 const unitsToRequest = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
                 for (const u of unitsToRequest) {
                     // Save explicitly before requesting approval
@@ -3196,7 +3199,7 @@ async function pushToProductionBoard() {
                 fetchData();
                 return;
             }
-            if (overallStatus === 'Pending Approval' && canApprove) {
+            if ((overallStatus === 'Pending Approval' || (overallStatus === 'Draft' && canApprove)) && canApprove) {
                 const unitsToApprove = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
                 for (const u of unitsToApprove) {
                     await frappe.call({
@@ -3876,11 +3879,14 @@ async function fetchData() {
     });
     
     // Fetch Sequence Statuses for each unit
-    if (viewMode.value === 'kanban' && filterOrderDate.value && !filterOrderDate.value.includes(",")) {
+    // Fetch for the primary date in view, or the selected filter date
+    const statusDate = filterOrderDate.value ? (filterOrderDate.value.includes(",") ? filterOrderDate.value.split(",")[0] : filterOrderDate.value) : args.start_date;
+
+    if (statusDate) {
         for (const unit of units) {
             const seqRes = await frappe.call({
                 method: "production_scheduler.api.get_color_sequence",
-                args: { date: filterOrderDate.value, unit: unit }
+                args: { date: statusDate, unit: unit }
             });
             if (seqRes.message) {
                 sequenceStatuses[unit] = seqRes.message.status;
