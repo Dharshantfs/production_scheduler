@@ -949,7 +949,7 @@ def get_items_by_name(names):
 	
 	return frappe.db.sql(f"""
 		SELECT 
-			i.name, i.color, i.custom_quality as quality, i.qty, i.party_code,
+			i.name, i.color, i.custom_quality as quality, i.qty, p.party_code,
 			p.customer, p.sales_order
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
