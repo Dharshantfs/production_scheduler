@@ -3186,6 +3186,7 @@ async function pushToProductionBoard() {
             if (overallStatus === 'Draft' && !canApprove) {
                 const unitsToRequest = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
                 for (const u of unitsToRequest) {
+                    const unitItems = currentSequence.filter(s => (s.unit || 'Unit 1') === u).map(s => s.name);
                     await frappe.call({
                         method: "production_scheduler.api.save_color_sequence",
                         args: { date: defaultTargetDate, unit: u, sequence_data: unitItems, plan_name: selectedPlan.value }

@@ -145,7 +145,7 @@ async function selectApproval(app) {
     const r = await frappe.call({
       method: "frappe.client.get_list",
       args: {
-        doctype: "Planning sheet Item",
+        doctype: "Planning Sheet Item",
         filters: { name: ["in", itemNames] },
         fields: ["name", "color", "custom_quality as quality", "qty"]
       }
