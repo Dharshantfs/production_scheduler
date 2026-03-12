@@ -933,6 +933,17 @@ def approve_sequence(date, unit, plan_name="Default"):
 	return {"status": "success"}
 
 @frappe.whitelist()
+def reject_sequence(date, unit, plan_name="Default"):
+	"""Managers call this to reject the sequence."""
+	name = f"CSA-{plan_name}-{unit}-{date}"
+	if not frappe.db.exists("Color Sequence Approval", name):
+		frappe.throw(_("Sequence record not found."))
+	
+	frappe.db.set_value("Color Sequence Approval", name, "status", "Rejected", update_modified=True)
+	frappe.db.commit()
+	return {"status": "success"}
+
+@frappe.whitelist()
 def get_pending_approvals():
 	"""Returns all Color Sequence Approvals that are 'Pending Approval' or 'Draft'."""
 	return frappe.get_all("Color Sequence Approval", 
@@ -952,7 +963,7 @@ def get_items_by_name(names):
 	return frappe.db.sql(f"""
 		SELECT 
 			i.name, i.color, i.custom_quality as quality, i.qty, p.party_code,
-			p.customer, p.sales_order
+			p.customer, p.sales_order, i.custom_item_planned_date, i.custom_plan_code
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
 		WHERE i.name IN %s

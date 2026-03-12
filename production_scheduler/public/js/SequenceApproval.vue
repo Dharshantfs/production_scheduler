@@ -71,6 +71,9 @@
             <button class="btn btn-primary btn-lg" @click="saveAndApprove" :disabled="isSaving || items.length === 0">
               {{ isSaving ? 'Processing...' : '✅ Approve Arrangement' }}
             </button>
+            <button class="btn btn-danger btn-lg" @click="rejectSequence" :disabled="isSaving || items.length === 0">
+              <i class="fa fa-times mr-1"></i> Reject Arrangement
+            </button>
           </div>
         </div>
 
@@ -180,8 +183,18 @@ async function selectApproval(app) {
       }
     });
     const fetchedItems = r.message || [];
-    // Sort items according to the saved sequence
-    items.value = itemNames.map(name => fetchedItems.find(i => i.name === name)).filter(Boolean);
+    // Sort items according to the saved sequence AND filter out those already pushed
+    const sortedItems = itemNames.map(name => fetchedItems.find(i => i.name === name)).filter(Boolean);
+    items.value = sortedItems.filter(it => !it.custom_item_planned_date);
+
+    // Warn if items were hidden
+    const pushedCount = sortedItems.length - items.value.length;
+    if (pushedCount > 0) {
+      frappe.show_alert({ 
+        message: `${pushedCount} already pushed item(s) hidden from this arrangement.`, 
+        indicator: 'blue' 
+      });
+    }
     
     // Initialize Sortable after DOM update
     nextTick(() => {
@@ -273,6 +286,33 @@ async function saveAndApprove() {
     } catch (e) {
       console.error(e);
       frappe.msgprint("Error during approval process.");
+    } finally {
+      isSaving.value = false;
+    }
+  });
+}
+
+async function rejectSequence() {
+  if (!selectedApproval.value) return;
+  
+  frappe.confirm('Are you sure you want to REJECT this arrangement? This will notify the planner.', async () => {
+    isSaving.value = true;
+    try {
+      await frappe.call({
+        method: "production_scheduler.api.reject_sequence",
+        args: {
+          date: selectedApproval.value.date,
+          unit: selectedApproval.value.unit,
+          plan_name: selectedApproval.value.plan_name
+        }
+      });
+      frappe.show_alert({ message: 'Arrangement Rejected', indicator: 'red' });
+      selectedApproval.value = null;
+      items.value = [];
+      await fetchApprovals();
+    } catch (e) {
+      console.error(e);
+      frappe.msgprint("Error rejecting sequence.");
     } finally {
       isSaving.value = false;
     }

@@ -2965,9 +2965,10 @@ async function pushToProductionBoard() {
     // Determine overall arrangement approval state
     const relevantUnits = [...new Set(masterSequence.map(s => s.unit || 'Unit 1'))];
     const unitStatuses = relevantUnits.map(u => sequenceStatuses[u] || 'Draft');
-    const overallStatus = unitStatuses.every(s => s === 'Approved') ? 'Approved' : 
-                         (unitStatuses.some(s => s === 'Pending Approval' || s === 'Draft') ? 
-                          (unitStatuses.some(s => s === 'Draft') ? 'Draft' : 'Pending Approval') : 'Approved');
+    const overallStatus = unitStatuses.some(s => s === 'Rejected') ? 'Rejected' :
+                         (unitStatuses.every(s => s === 'Approved') ? 'Approved' : 
+                          (unitStatuses.some(s => s === 'Pending Approval' || s === 'Draft') ? 
+                           (unitStatuses.some(s => s === 'Draft') ? 'Draft' : 'Pending Approval') : 'Approved'));
 
     let dialogOverallStatus = overallStatus;
     let dialogApprovalMeta = null;
@@ -3017,7 +3018,9 @@ async function pushToProductionBoard() {
                 ? '<span style="color:#16a34a;background:#f0fdf4;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;">APPROVED</span>'
                 : (item.approvalStatus === 'Pending Approval' 
                     ? '<span style="color:#ca8a04;background:#fefce8;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;">PENDING</span>'
-                    : '<span style="color:#64748b;background:#f1f5f9;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;">DRAFT</span>');
+                    : (item.approvalStatus === 'Rejected'
+                        ? '<span style="color:#dc2626;background:#fef2f2;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;">REJECTED</span>'
+                        : '<span style="color:#64748b;background:#f1f5f9;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;">DRAFT</span>'));
 
             const partyInfo = `
                 <div style="font-size:11px;font-weight:600;color:#1e293b;">${item.partyName || '—'}</div>
@@ -3068,7 +3071,7 @@ async function pushToProductionBoard() {
         const statusSummary = `
             <div style="display:flex;gap:12px;align-items:center;">
                 <div style="background:#f1f5f9;padding:6px 12px;border-radius:20px;display:flex;align-items:center;gap:8px;">
-                    <span style="width:8px;height:8px;border-radius:50%;background:${currentStatus === 'Approved' ? '#16a34a' : (currentStatus === 'Pending Approval' ? '#ca8a04' : '#64748b')}"></span>
+                    <span style="width:8px;height:8px;border-radius:50%;background:${currentStatus === 'Approved' ? '#16a34a' : (currentStatus === 'Rejected' ? '#dc2626' : (currentStatus === 'Pending Approval' ? '#ca8a04' : '#64748b'))}"></span>
                     <div style="display:flex; flex-direction:column;">
                         <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Arrangement Status: ${currentStatus}</span>
                         ${currentStatus === 'Approved' && dialogApprovalMeta ? `
@@ -3099,7 +3102,7 @@ async function pushToProductionBoard() {
         ${renderTable(seq)}`;
     }
     async function loadGlobalCapacityPreview(dialog, seq) {
-        const checkedItems = seq.filter(i => i.checked !== false);
+        const checkedItems = seq.filter(i => i.checked !== false && !i.pushed);
         if (!checkedItems.length) {
             dialog.set_value("global_capacity_info", `<div style="font-size:11px;color:#64748b;font-style:italic;padding:12px;text-align:center;background:#f8fafc;border-radius:8px;border:1px dashed #cbd5e1;">Select items above to see capacity footprint.</div>`);
             dialog.capacityExceeded = false;
@@ -3216,10 +3219,15 @@ async function pushToProductionBoard() {
             const targetDate = (values.target_date || defaultTargetDate || today).trim();
             const currentStatus = dialogOverallStatus || d.overallStatus || overallStatus;
 
-            if (currentStatus === 'Draft' && !canApprove) {
-                const unitsToRequest = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
+            if (currentStatus === 'Draft' || currentStatus === 'Rejected') {
+                const pendingItems = currentSequence.filter(s => !s.pushed);
+                if (pendingItems.length === 0) {
+                    frappe.msgprint('No pending items to request approval for.');
+                    return;
+                }
+                const unitsToRequest = [...new Set(pendingItems.map(s => s.unit || 'Unit 1'))];
                 for (const u of unitsToRequest) {
-                    const unitItems = currentSequence.filter(s => (s.unit || 'Unit 1') === u).map(s => s.name);
+                    const unitItems = pendingItems.filter(s => (s.unit || 'Unit 1') === u).map(s => s.name);
                     await frappe.call({
                         method: "production_scheduler.api.save_color_sequence",
                         args: { date: targetDate, unit: u, sequence_data: unitItems, plan_name: selectedPlan.value }
@@ -3327,7 +3335,7 @@ async function pushToProductionBoard() {
             });
             const msg = res.message || {};
             unitStatuses.push(msg.status || 'Draft');
-            if (msg.status === 'Approved' && !dialogApprovalMeta) {
+            if ((msg.status === 'Approved' || msg.status === 'Rejected') && !dialogApprovalMeta) {
                 dialogApprovalMeta = { modified_by: msg.modified_by, modified: msg.modified };
             }
             if (msg.status !== 'Approved') {
@@ -3335,9 +3343,10 @@ async function pushToProductionBoard() {
             }
         }
 
-        const newOverallStatus = unitStatuses.every(s => s === 'Approved') ? 'Approved' : 
-                                (unitStatuses.some(s => s === 'Pending Approval' || s === 'Draft') ? 
-                                 (unitStatuses.some(s => s === 'Draft') ? 'Draft' : 'Pending Approval') : 'Approved');
+        const newOverallStatus = unitStatuses.some(s => s === 'Rejected') ? 'Rejected' :
+                                (unitStatuses.every(s => s === 'Approved') ? 'Approved' : 
+                                 (unitStatuses.some(s => s === 'Pending Approval' || s === 'Draft') ? 
+                                  (unitStatuses.some(s => s === 'Draft') ? 'Draft' : 'Pending Approval') : 'Approved'));
 
         dialogOverallStatus = newOverallStatus;
         d.overallStatus = newOverallStatus;
