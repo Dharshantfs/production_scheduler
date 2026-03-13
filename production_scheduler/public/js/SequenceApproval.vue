@@ -56,7 +56,7 @@
             <h3>{{ selectedApproval.plan_name }} | {{ selectedApproval.unit }}</h3>
             <p class="mb-0 text-muted" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
               <span class="font-weight-bold" style="color: #64748b;">Target Push Date:</span> 
-              <input type="date" v-model="editableDate" class="form-control form-control-sm date-input-edit" @change="handleDateChange" /> • 
+              <input type="date" v-model="editableDate" class="form-control form-control-sm date-input-edit" @change="handleDateChange" :disabled="selectedApproval.status === 'Approved' || selectedApproval.status === 'Rejected'" /> • 
               <span class="text-info font-weight-bold">
                 <i class="fa fa-user-circle mr-1"></i>Requested By: {{ selectedApproval.owner }}
               </span>
@@ -65,16 +65,24 @@
               </span>
             </p>
           </div>
-          <div class="editor-actions" style="display:flex; gap:10px;">
-            <button class="btn btn-secondary btn-lg" @click="saveSequence" :disabled="isSaving || items.length === 0">
-              <i class="fa fa-save mr-1"></i> Save Arrangement
-            </button>
-            <button class="btn btn-primary btn-lg" @click="saveAndApprove" :disabled="isSaving || items.length === 0">
-              {{ isSaving ? 'Processing...' : '✅ Approve Arrangement' }}
-            </button>
-            <button class="btn btn-danger btn-lg" @click="rejectSequence" :disabled="isSaving || items.length === 0">
-              <i class="fa fa-times mr-1"></i> Reject Arrangement
-            </button>
+          <div class="editor-actions" style="display:flex; gap:10px; align-items: center;">
+            <template v-if="selectedApproval.status !== 'Approved' && selectedApproval.status !== 'Rejected'">
+              <button class="btn btn-secondary btn-lg" @click="saveSequence" :disabled="isSaving || items.length === 0">
+                <i class="fa fa-save mr-1"></i> Save Arrangement
+              </button>
+              <button class="btn btn-primary btn-lg" @click="saveAndApprove" :disabled="isSaving || items.length === 0">
+                {{ isSaving ? 'Processing...' : '✅ Approve Arrangement' }}
+              </button>
+              <button class="btn btn-danger btn-lg" @click="rejectSequence" :disabled="isSaving || items.length === 0">
+                <i class="fa fa-times mr-1"></i> Reject Arrangement
+              </button>
+            </template>
+            <div v-else class="status-indicator">
+              <span :class="['status-badge-lg', selectedApproval.status.toLowerCase().replace(' ', '-')]">
+                <i :class="['fa', selectedApproval.status === 'Approved' ? 'fa-check-circle' : 'fa-times-circle', 'mr-2']"></i>
+                {{ selectedApproval.status.toUpperCase() }}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -269,12 +277,14 @@ function initSortable() {
     if (sortableInstance) sortableInstance.destroy();
     
     if (dragContainer.value) {
-        sortableInstance = new Sortable(dragContainer.value, {
-            animation: 150,
-            handle: '.draggable-handle',
-            ghostClass: 'ghost-item',
-            chosenClass: 'chosen-item',
-            onEnd: () => {
+      const isLocked = selectedApproval.value.status === 'Approved' || selectedApproval.value.status === 'Rejected';
+      sortableInstance = new Sortable(dragContainer.value, {
+          animation: 150,
+          handle: '.draggable-handle',
+          ghostClass: 'ghost-item',
+          chosenClass: 'chosen-item',
+          disabled: isLocked,
+          onEnd: () => {
                 // Update local items array based on new DOM order
                 const newOrder = Array.from(dragContainer.value.querySelectorAll('.sequence-item'))
                                      .map(el => el.dataset.id);
@@ -547,6 +557,20 @@ onMounted(fetchApprovals);
 .status-badge.approved { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
 .status-badge.rejected { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
 
+.status-badge-lg {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.status-badge-lg.approved { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+.status-badge-lg.rejected { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+
 .approval-editor {
   flex: 1;
   background: white;
@@ -644,7 +668,8 @@ onMounted(fetchApprovals);
   border-style: dashed;
 }
 
-.sequence-item.is-pushed .draggable-handle {
+.sequence-item.is-pushed .draggable-handle,
+.status-badge-lg + .sequence-list .draggable-handle {
   display: none;
 }
 </style>
