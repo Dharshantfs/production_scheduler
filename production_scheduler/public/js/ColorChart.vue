@@ -3104,11 +3104,15 @@ async function pushToProductionBoard() {
     function buildDialogHtml(seq, statusOverride = null) {
         const total = seq.filter(i => i.checked !== false).length;
         const currentStatus = statusOverride || dialogOverallStatus;
-        const fetchDates = d.get_value('fetch_dates') ? d.get_value('fetch_dates').split(',').map(s => s.trim()) : [];
-        const targetDate = d.get_value('target_date');
-        const isDateMismatch = targetDate && !fetchDates.some(fd => fd === targetDate);
+        
+        // Safety check: 'd' might be accessed during initialization
+        const hasD = (typeof d !== 'undefined' && d && d.get_value);
+        const activeFetchDates = hasD ? (d.get_value('fetch_dates') ? d.get_value('fetch_dates').split(',').map(s => s.trim()) : []) : fetchDates;
+        const activeTargetDate = hasD ? d.get_value('target_date') : defaultTargetDate;
+        
+        const isDateMismatch = activeTargetDate && !activeFetchDates.some(fd => fd === activeTargetDate);
 
-        const smartSeedsHtml = (smartSequenceActive && d.smartSeeds) ? `
+        const smartSeedsHtml = (smartSequenceActive && hasD && d.smartSeeds) ? `
             <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
                 ${Object.entries(d.smartSeeds).map(([unit, seed]) => `
                     <div style="background:#f8fafc; border:1px solid #e2e8f0; padding:4px 10px; border-radius:12px; font-size:10px; display:flex; align-items:center; gap:6px;">
@@ -3125,7 +3129,7 @@ async function pushToProductionBoard() {
                 <div style="background:#f1f5f9;padding:6px 12px;border-radius:20px;display:flex;align-items:center;gap:8px;">
                     <span style="width:8px;height:8px;border-radius:50%;background:${currentStatus === 'Approved' ? '#16a34a' : (currentStatus === 'Rejected' ? '#dc2626' : (currentStatus === 'Pending Approval' ? '#ca8a04' : '#64748b'))}"></span>
                     <div style="display:flex; flex-direction:column;">
-                        <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Arrangement for ${targetDate}: ${currentStatus}</span>
+                        <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Arrangement for ${activeTargetDate}: ${currentStatus}</span>
                         ${currentStatus === 'Approved' && dialogApprovalMeta ? `
                             <div style="font-size:9px; color:#16a34a; margin-top:1px;">
                                 <i class="fa fa-check-circle"></i> Approved by ${dialogApprovalMeta.modified_by} on ${frappe.datetime.str_to_user(dialogApprovalMeta.modified.split(' ')[0])}
@@ -3139,7 +3143,7 @@ async function pushToProductionBoard() {
                 </div>
                 ${isDateMismatch ? `
                     <div style="background:#fff7ed; border:1px solid #ffedd5; padding:4px 10px; border-radius:20px; color:#c2410c; font-size:10px; font-weight:700; display:flex; align-items:center; gap:5px;">
-                        <i class="fa fa-exchange"></i> Cross-Date: ${fetchDates.join(",")} ➔ ${targetDate}
+                        <i class="fa fa-exchange"></i> Cross-Date: ${activeFetchDates.join(",")} ➔ ${activeTargetDate}
                     </div>
                 ` : ''}
                 <div style="cursor:pointer; color:#2563eb; font-size:12px; margin-left: auto;" onclick="window.refreshPushStatus()" title="Refresh Status">
@@ -3149,12 +3153,12 @@ async function pushToProductionBoard() {
                     <span style="font-size:14px;color:#1e293b;font-weight:700;"><span id="seq-count-label">${total}</span></span> <span style="font-size:11px;color:#64748b;font-weight:500;">item(s) selected</span>
                 </div>
             </div>
-            ${d.arrangementMismatch ? `
+            ${(hasD && d.arrangementMismatch) ? `
                 <div style="background:#fff1f2; border:1px solid #ffe4e6; padding:8px 12px; border-radius:12px; color:#be123c; font-size:10px; font-weight:700; display:flex; align-items:center; gap:8px; margin-top:10px;">
                     <i class="fa fa-exclamation-triangle" style="font-size:14px;"></i>
                     <div>
                         <div style="text-transform:uppercase; letter-spacing:0.02em;">Data Integrity Warning</div>
-                        <div style="font-weight:500; opacity:0.9; margin-top:2px;">The saved arrangement for <b>${targetDate}</b> contains different items than what is shown below.</div>
+                        <div style="font-weight:500; opacity:0.9; margin-top:2px;">The saved arrangement for <b>${activeTargetDate}</b> contains different items than what is shown below.</div>
                     </div>
                 </div>
             ` : ''}
