@@ -3168,9 +3168,12 @@ async function pushToProductionBoard() {
         `;
 
         return `
-        <div style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;background:#fff;padding:4px 0;">
-            ${statusSummary}
-            ${smartSequenceActive ? '<span style="font-size:10px;color:#166534;background:#dcfce7;padding:5px 12px;border-radius:20px;font-weight:600;display:flex;align-items:center;gap:4px;">✨ Smart Sequenced</span>' : ''}
+        <div style="margin-bottom:12px;display:flex;flex-direction:column;background:#fff;padding:4px 0;">
+            <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+                ${statusSummary}
+                ${smartSequenceActive ? '<span style="font-size:10px;color:#166534;background:#dcfce7;padding:5px 12px;border-radius:20px;font-weight:600;display:flex;align-items:center;gap:4px;">✨ Smart Sequenced</span>' : ''}
+            </div>
+            ${smartSeedsHtml}
         </div>
         ${renderTable(seq, currentStatus)}`;
     }
@@ -3773,22 +3776,8 @@ async function pushToProductionBoard() {
                     return mapped;
                 });
 
-                // ✅ RE-SORT: If a manual arrangement exists, maintain that order for the Smart sequence
-                mappedSeq.sort((a, b) => {
-                    const unitA = a.unit || 'Unit 1';
-                    const unitB = b.unit || 'Unit 1';
-                    if (unitA !== unitB) return unitA.localeCompare(unitB);
-
-                    const saved = unitSortConfig[unitA]?.savedSequence;
-                    if (saved && saved.length) {
-                        const idxA = saved.indexOf(a.name);
-                        const idxB = saved.indexOf(b.name);
-                        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-                        if (idxA !== -1) return -1;
-                        if (idxB !== -1) return 1;
-                    }
-                    return 0; // Keep smart order within units if no manual record
-                });
+                // ✅ SMART ORDER PRESERVED: We no longer re-sort by savedSequence here 
+                // because the user explicitly requested a "Smart" sequence from the backend.
                 
                 // Smart sequence only returns un-pushed items now, so we must add the pushed items back
                 // to the bottom of the list so they remain visible in the UI table.
