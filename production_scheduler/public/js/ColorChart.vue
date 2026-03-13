@@ -3178,41 +3178,64 @@ async function pushToProductionBoard() {
                 capacities[u].total_load += (parseFloat(i.qty || 0) / 1000);
             });
 
-            const pushLoads = {};
+            const pushLoadsByDate = {}; // (date) -> { unit -> weight }
+            
             checkedItems.forEach(sel => {
                 const u = sel.unit || 'Unit 1';
-                pushLoads[u] = (pushLoads[u] || 0) + (parseFloat(sel.qty || 0) / 1000);
+                const limit = UNIT_LIMITS[u] || 999;
+                const itemWt = (parseFloat(sel.qty || 0) / 1000);
+                
+                let checkDate = targetDate;
+                while (true) {
+                    if (!pushLoadsByDate[checkDate]) pushLoadsByDate[checkDate] = {};
+                    if (!pushLoadsByDate[checkDate][u]) {
+                        // For the first time we check a date, initialize with current board load
+                        const boardLoad = capacities[u] ? (checkDate === targetDate ? capacities[u].total_load : 0) : 0;
+                        // Note: For days beyond targetDate, we'd ideally fetch real load, 
+                        // but for preview simplicity, we'll assume they are empty or just show target day footprint.
+                        pushLoadsByDate[checkDate][u] = boardLoad;
+                    }
+                    
+                    const currentDayLoad = pushLoadsByDate[checkDate][u];
+                    if (currentDayLoad + itemWt <= limit || currentDayLoad === 0) {
+                        pushLoadsByDate[checkDate][u] += itemWt;
+                        break;
+                    }
+                    // Cascade to next day
+                    const dObj = new Date(checkDate);
+                    dObj.setDate(dObj.getDate() + 1);
+                    checkDate = dObj.toISOString().split('T')[0];
+                }
             });
 
-            ["Unit 1", "Unit 2", "Unit 3", "Unit 4"].forEach(u => {
-                if (filterUnitValue !== 'All Units' && u !== filterUnitValue) return;
-                
-                const pushWeight = pushLoads[u] || 0;
-                const unitCap = capacities[u] || { total_limit: 0, total_load: 0 };
-                const currentLoad = unitCap.total_load;
-                const limit = unitCap.total_limit;
-                const afterPush = currentLoad + pushWeight;
-                const isOver = afterPush > limit;
-                
-                if (isOver) capacityExceeded = true;
-                
-                if (pushWeight > 0 || filterUnitValue === u) {
+            const uniqueDates = Object.keys(pushLoadsByDate).sort();
+            
+            uniqueDates.forEach(d => {
+                const dayLoads = pushLoadsByDate[d];
+                Object.keys(dayLoads).forEach(u => {
+                    if (filterUnitValue !== 'All Units' && u !== filterUnitValue) return;
+                    
+                    const limit = UNIT_LIMITS[u] || 999;
+                    const totalDayLoad = dayLoads[u];
+                    const isOver = totalDayLoad > limit;
+                    
+                    if (isOver) capacityExceeded = true;
+                    
                     capHtml += `
-                    <div style="padding:10px;border-radius:12px;border:1px solid ${isOver ? '#fecaca' : '#e2e8f0'};background:${isOver ? '#fef2f2' : '#fff'};box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+                    <div style="padding:10px;border-radius:12px;border:1px solid ${isOver ? '#fecaca' : '#e2e8f0'};background:${isOver ? '#fef2f2' : (d === targetDate ? '#fff' : '#f8fafc')};box-shadow:0 1px 2px rgba(0,0,0,0.05);">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                            <span style="font-weight:700;font-size:11px;color:${isOver ? '#dc2626' : '#64748b'};text-transform:uppercase;">${u}</span>
-                            <span style="font-size:14px;">${isOver ? '⚠️' : '✅'}</span>
+                            <span style="font-weight:700;font-size:10px;color:${isOver ? '#dc2626' : '#64748b'};text-transform:uppercase;">${u} ${d === targetDate ? '' : '('+d+')'}</span>
+                            <span style="font-size:12px;">${isOver ? '⚠️' : '✅'}</span>
                         </div>
-                        <div style="font-size:14px;font-weight:800;color:${isOver ? '#b91c1c' : '#1e293b'};">${afterPush.toFixed(2)} / ${limit.toFixed(0)}T</div>
+                        <div style="font-size:13px;font-weight:800;color:${isOver ? '#b91c1c' : '#1e293b'};">${totalDayLoad.toFixed(2)} / ${limit.toFixed(1)}T</div>
                         <div style="height:4px;background:#f1f5f9;border-radius:2px;margin:8px 0;overflow:hidden;">
-                            <div style="height:100%;width:${Math.min((afterPush/limit)*100, 100)}%;background:${isOver ? '#ef4444' : '#10b981'};"></div>
+                            <div style="height:100%;width:${Math.min((totalDayLoad/limit)*100, 100)}%;background:${isOver ? '#ef4444' : '#10b981'};"></div>
                         </div>
-                        <div style="font-size:9px;color:#94a3b8;display:flex;justify-content:space-between;">
-                            <span>Current: ${currentLoad.toFixed(1)}T</span>
-                            <span style="color:${pushWeight > 0 ? (isOver ? '#ef4444' : '#059669') : '#94a3b8'};font-weight:700;">+${pushWeight.toFixed(2)}T</span>
+                        <div style="font-size:8px;color:#94a3b8;text-align:center;">
+                            ${d === targetDate ? 'Start Day' : 'Cascaded Day'}
                         </div>
                     </div>`;
-                }
+                });
             });
         } catch(e) { console.error('Error fetching global capacity', e); }
 
@@ -3336,12 +3359,17 @@ async function pushToProductionBoard() {
                 });
                 if (r.message && r.message.status === 'success') {
                     pBtn.text('✅ Pushed').css({'background-color': '#059669', 'color': 'white'});
+                    
+                    const pushedCount = r.message.count || r.message.moved_items || itemsToMove.length;
                     let dateMsg = '';
                     if (r.message.dates && r.message.dates.length > 0) {
                         dateMsg = ` to ${r.message.dates.join(', ')}`;
+                    } else {
+                        dateMsg = ` to ${targetDate}`;
                     }
+
                     frappe.show_alert({
-                        message: `✅ Pushed ${r.message.count || itemsToMove.length} item(s)${dateMsg} to Production Board`,
+                        message: `✅ Pushed ${pushedCount} item(s)${dateMsg} to Production Board`,
                         indicator: 'green'
                     });
                     setTimeout(() => {

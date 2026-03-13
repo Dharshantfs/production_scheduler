@@ -3491,17 +3491,13 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 		)
 
 	frappe.db.commit()
-	if count == 0 and skipped_already_pushed:
-		return {
-			"status": "success",
-			"message": "All selected orders are already pushed to the Production Board.",
-			"skipped_already_pushed": len(skipped_already_pushed),
-			"updated_sheets": len(updated_sheets),
-			"plan_name": pb_plan_name,
-		}
+	
+	# Return detailed results to the frontend
 	return {
 		"status": "success",
-		"moved_items": count,
+		"count": count, # moved items
+		"moved_items": count, # legacy alias
+		"dates": sorted(list(effective_dates_used)),
 		"skipped_already_pushed": len(skipped_already_pushed),
 		"updated_sheets": len(updated_sheets),
 		"plan_name": pb_plan_name,
