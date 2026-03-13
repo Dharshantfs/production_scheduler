@@ -2274,7 +2274,17 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 			seq_no[0] += 1
 			sequence.append({**item, "sequence_no": seq_no[0], "phase": "unassigned", "is_seed_bridge": False})
 
-	return sequence
+	# Collect seeds for UI feedback
+	unit_seeds = {}
+	for unit in ["Unit 1","Unit 2","Unit 3","Unit 4","Mixed"]:
+		last = get_last_unit_order(unit, target_date)
+		if last:
+			unit_seeds[unit] = {"color": last["color"], "quality": last["quality"]}
+
+	return {
+		"sequence": sequence,
+		"seeds": unit_seeds
+	}
 
 @frappe.whitelist()
 def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_date=None, days_in_view=1, force_move=0):
