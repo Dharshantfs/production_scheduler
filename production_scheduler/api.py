@@ -2105,7 +2105,7 @@ def get_last_unit_order(unit, date=None):
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
 		WHERE i.unit = %s
 		  AND p.custom_planned_date <= %s
-		  AND p.docstatus < 2
+		  AND p.docstatus == 1
 		ORDER BY p.custom_planned_date DESC, p.modified DESC, i.idx DESC
 		LIMIT 1
 	""", (unit, target_date), as_dict=True)
