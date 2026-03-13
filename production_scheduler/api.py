@@ -2076,19 +2076,21 @@ def get_last_unit_order(unit, date=None):
 	"""
 	Returns the last pushed order on the Production Board for a given unit.
 	Used by Smart Auto-Tick to determine the seed quality/color for chaining.
+	Looks at the target date first, then looks back at ANY previous date for that unit.
 	"""
 	target_date = getdate(date) if date else getdate(frappe.utils.today())
-	# Get all planning sheet items on this unit with custom_planned_date set (pushed)
+	# Get all planning sheet items on this unit with custom_planned_date <= target_date
 	rows = frappe.db.sql("""
-		SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, p.name as sheet
+		SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, p.custom_planned_date as date
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
 		WHERE i.unit = %s
-		  AND p.custom_planned_date = %s
+		  AND p.custom_planned_date <= %s
 		  AND p.docstatus < 2
-		ORDER BY i.idx DESC
+		ORDER BY p.custom_planned_date DESC, i.idx DESC
 		LIMIT 1
 	""", (unit, target_date), as_dict=True)
+	
 	if not rows:
 		return None
 	r = rows[0]
@@ -2097,6 +2099,7 @@ def get_last_unit_order(unit, date=None):
 		"quality": (r.quality or "").upper().strip(),
 		"gsm": r.gsm,
 		"is_white": (r.color or "").upper().strip() in WHITE_COLORS,
+		"date": r.date
 	}
 
 @frappe.whitelist()
@@ -2219,17 +2222,15 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 						"is_seed_bridge": is_last and (phase_idx == 0 and len(phases[1][1]) > 0),
 					})
 			else:
-				# ── Phase: Color – SORT BY COLOR FIRST (light→dark), then quality within same color ──
-				# This gives: Lemon Yellow (all qualities) → Golden Yellow (all qualities) → Orange → etc.
+				# ── Phase: Color – PARTITION BY SEED (continuation vs wrap-around) ──
 				remaining = list(items)
-
-				# Separate beige items — they go at the very end (buffer after dark runs)
 				beige_items = [i for i in remaining if i["colorKey"] in BEIGE_COLORS]
 				non_beige = [i for i in remaining if i["colorKey"] not in BEIGE_COLORS]
-
+				
 				quality_order = UNIT_QUALITY_ORDER.get(unit, [])
+				seed_idx = COLOR_PRIORITY.get(current_seed_color, -1) if current_seed_color else -1
 
-				def color_first_sort_key(item):
+				def color_sort_key(item):
 					# Primary: COLOR light→dark order
 					c_idx = COLOR_PRIORITY.get(item["colorKey"], 9999)
 					# Secondary: quality order within same color
@@ -2238,9 +2239,22 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 					# Tertiary: GSM high→low
 					return (c_idx, q_idx, -item["gsmVal"])
 
-				sorted_colors = sorted(non_beige, key=color_first_sort_key)
-				sorted_beige = sorted(beige_items, key=color_first_sort_key)
-				full_sorted = sorted_colors + sorted_beige
+				# Partition non-beige colors based on seed position
+				# If we have a seed, items lighter than seed are "next run", others are "continuation"
+				continuation = []
+				next_run = []
+				for item in non_beige:
+					c_idx = COLOR_PRIORITY.get(item["colorKey"], 9999)
+					if seed_idx != -1 and c_idx < seed_idx:
+						next_run.append(item)
+					else:
+						continuation.append(item)
+				
+				continuation.sort(key=color_sort_key)
+				next_run.sort(key=color_sort_key)
+				sorted_beige = sorted(beige_items, key=color_sort_key)
+				
+				full_sorted = continuation + next_run + sorted_beige
 
 				for idx, item in enumerate(full_sorted):
 					seq_no[0] += 1
