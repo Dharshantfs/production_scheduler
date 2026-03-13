@@ -906,11 +906,15 @@ const matrixData = computed(() => {
     // baseData = only the selected plan's items (for columns)
     const baseData = rawData.value.filter(d => {
         // ---- PLAN FILTER (columns show only selected plan) ----
-        if (selectedPlan.value && selectedPlan.value !== 'Default') {
-            if (d.planName !== selectedPlan.value) return false;
-        } else {
-            // Default plan: include items with no plan or explicit Default
-            if (d.planName && d.planName !== '' && d.planName !== 'Default') return false;
+        // Whites are always included regardless of plan so they show in the bottom section
+        const isWhite = isExcludedWhite(d.color);
+        if (!isWhite) {
+            if (selectedPlan.value && selectedPlan.value !== 'Default') {
+                if (d.planName !== selectedPlan.value) return false;
+            } else {
+                // Default plan: include items with no plan or explicit Default
+                if (d.planName && d.planName !== '' && d.planName !== 'Default') return false;
+            }
         }
 
         // UNIT FILTER
@@ -1004,12 +1008,7 @@ const matrixData = computed(() => {
         // Skip NO COLOR for legend
         if (colorUpper === "NO COLOR") return;
 
-        let isWhite = false;
-        if (!colorUpper.includes("IVORY") && !colorUpper.includes("CREAM") && !colorUpper.includes("OFF WHITE")) {
-            if (EXCLUDED_WHITES.some(ex => colorUpper.includes(ex))) {
-                isWhite = true;
-            }
-        }
+        let isWhite = isExcludedWhite(d.color);
         
         if (isWhite) allWhites.add(d.color);
         else allColors.add(d.color);
@@ -1149,6 +1148,14 @@ const EXCLUDED_WHITES = [
   "SUPER WHITE", "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"
 ];
 
+function isExcludedWhite(color) {
+    if (!color) return false;
+    const cUpper = color.toUpperCase();
+    // Keep Ivory/Cream explicitly
+    if (cUpper.includes("IVORY") || cUpper.includes("CREAM") || cUpper.includes("OFF WHITE")) return false;
+    return EXCLUDED_WHITES.some(ex => cUpper.includes(ex));
+}
+
 // As per user request: "APART FROM THIS U CAN BRING ALL COLOR IVORY"
 // So IVORY, CREAM, OFF WHITE are kept.
 
@@ -1162,11 +1169,8 @@ const filteredData = computed(() => {
 
       const colorUpper = (d.color || "").toUpperCase();
       
-      // Keep Ivory/Cream explicitly
-      if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return true;
-      
-      // Remove Excluded Whites
-      if (EXCLUDED_WHITES.some(ex => colorUpper.includes(ex))) return false;
+      // Use helper to exclude specific whites
+      if (isExcludedWhite(d.color)) return false;
 
       // Hide "NO COLOR" items visually (User request: "dont show here")
       // They remain in rawData so capacity calculation remains accurate.
@@ -2888,7 +2892,8 @@ function deletePlan() {
 async function pushToProductionBoard() {
     // Collect all items (we will mark the pushed ones visually instead of hiding them)
     // Collect all items from rawData (ignore main page filters)
-    const items = rawData.value || [];
+    // Filter out white orders as they are auto-placed and don't need manual arrangement
+    const items = (rawData.value || []).filter(i => !isExcludedWhite(i.color));
     if (items.length === 0) {
         frappe.msgprint('No orders visible to push. Apply filters first.');
         return;
