@@ -1181,7 +1181,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	
 	# Build SELECT fields — include columns only if they exist
 	fields = ["p.name", "p.customer", "p.party_code", "c.customer_name as party_name", "p.dod", "p.ordered_date", 
-			  "p.planning_status", "p.docstatus", "p.sales_order", "p.custom_plan_name", "p.custom_pb_plan_name"]
+			  "p.planning_status", "p.docstatus", "p.sales_order", "p.custom_plan_name", "p.custom_pb_plan_name",
+			  "COALESCE(p.custom_pb_plan_name, p.custom_plan_name, 'Default') as planName"]
 	
 	if _has_planned_date_column():
 		fields.append("p.custom_planned_date")
@@ -3445,42 +3446,57 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 				""", (target_unit, name))
 
 			# ── Find or create a dedicated PB Planning Sheet ──
-			cache_key = (party_code, effective_date, pb_plan_name)
-			if cache_key in pb_sheet_cache:
-				pb_sheet_name = pb_sheet_cache[cache_key]
-			else:
-				existing = frappe.get_all("Planning sheet", filters={
-					"custom_pb_plan_name": pb_plan_name,
-					"custom_planned_date": effective_date,
-					"party_code": party_code,
-					"docstatus": ["<", 2]
-				}, fields=["name"], limit=1)
-
-				if existing:
-					pb_sheet_name = existing[0].name
+			# BUG FIX: Prefer keeping items in original sheet if possible to prevent "Multiple Sheets per SO" issue.
+			# If the original sheet already matches the target date, we don't need to re-parent.
+			
+			can_reuse_original = False
+			original_effective_date = str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
+			if original_effective_date == effective_date and (parent_doc.get("custom_pb_plan_name") == pb_plan_name or not parent_doc.get("custom_pb_plan_name")):
+				can_reuse_original = True
+				pb_sheet_name = parent_doc.name
+				# If reusing original but it didn't have pb_plan_name, update it
+				if not parent_doc.get("custom_pb_plan_name"):
+					frappe.db.set_value("Planning sheet", pb_sheet_name, "custom_pb_plan_name", pb_plan_name)
+			
+			if not can_reuse_original:
+				cache_key = (party_code, effective_date, pb_plan_name)
+				if cache_key in pb_sheet_cache:
+					pb_sheet_name = pb_sheet_cache[cache_key]
 				else:
-					pb_sheet = frappe.new_doc("Planning sheet")
-					pb_sheet.custom_plan_name = parent_doc.get("custom_plan_name") or "Default"
-					pb_sheet.custom_pb_plan_name = pb_plan_name
-					# CRITICAL: ordered_date stays as ORIGINAL
-					pb_sheet.ordered_date = original_ordered_date
-					pb_sheet.custom_planned_date = effective_date
-					pb_sheet.party_code = party_code
-					pb_sheet.customer = parent_doc.customer or ""
-					pb_sheet.sales_order = parent_doc.sales_order or ""
-					pb_sheet.insert(ignore_permissions=True)
-					pb_sheet_name = pb_sheet.name
-					# Force custom fields via SQL
-					if frappe.db.has_column("Planning sheet", "custom_pb_plan_name"):
-						frappe.db.sql("""
-							UPDATE `tabPlanning sheet`
-							SET custom_pb_plan_name = %s, custom_plan_name = %s,
-							    custom_planned_date = %s
-							WHERE name = %s
-						""", (pb_plan_name, parent_doc.get("custom_plan_name") or "Default",
-						      effective_date, pb_sheet_name))
+					# Match by SO instead of just party_code to ensure "One SO = One Sheet"
+					existing = frappe.get_all("Planning sheet", filters={
+						"custom_pb_plan_name": pb_plan_name,
+						"custom_planned_date": effective_date,
+						"sales_order": parent_doc.sales_order or "",
+						"party_code": party_code,
+						"docstatus": ["<", 2]
+					}, fields=["name"], limit=1)
 
-				pb_sheet_cache[cache_key] = pb_sheet_name
+					if existing:
+						pb_sheet_name = existing[0].name
+					else:
+						pb_sheet = frappe.new_doc("Planning sheet")
+						pb_sheet.custom_plan_name = parent_doc.get("custom_plan_name") or "Default"
+						pb_sheet.custom_pb_plan_name = pb_plan_name
+						# CRITICAL: ordered_date stays as ORIGINAL
+						pb_sheet.ordered_date = original_ordered_date
+						pb_sheet.custom_planned_date = effective_date
+						pb_sheet.party_code = party_code
+						pb_sheet.customer = parent_doc.customer or ""
+						pb_sheet.sales_order = parent_doc.sales_order or ""
+						pb_sheet.insert(ignore_permissions=True)
+						pb_sheet_name = pb_sheet.name
+						# Force custom fields via SQL
+						if frappe.db.has_column("Planning sheet", "custom_pb_plan_name"):
+							frappe.db.sql("""
+								UPDATE `tabPlanning sheet`
+								SET custom_pb_plan_name = %s, custom_plan_name = %s,
+								    custom_planned_date = %s
+								WHERE name = %s
+							""", (pb_plan_name, parent_doc.get("custom_plan_name") or "Default",
+								  effective_date, pb_sheet_name))
+
+					pb_sheet_cache[cache_key] = pb_sheet_name
 
 			# ── Find the current max idx on this PB sheet ──
 			max_idx = frappe.db.sql("""
@@ -3964,7 +3980,13 @@ def auto_create_planning_sheet(doc, method=None):
         push_items_to_pb(white_items_to_push, pb_plan)
         
     frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{cc_plan}</b>")
-    return ps
+    
+    # RE-FETCH TO UPDATE HEADER PLAN CODES
+    final_doc = frappe.get_doc("Planning sheet", ps.name)
+    update_sheet_plan_codes(final_doc)
+    frappe.db.set_value("Planning sheet", ps.name, "custom_plan_code", final_doc.custom_plan_code)
+    
+    return final_doc
 
 # ------------------------------------------------------------
 # REGENERATE PLANNING SHEET (MANUAL RE-CREATION)

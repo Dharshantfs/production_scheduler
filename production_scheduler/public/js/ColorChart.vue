@@ -2884,10 +2884,12 @@ function deletePlan() {
 // ---- PUSH TO PRODUCTION BOARD ----
 async function pushToProductionBoard() {
     // Collect all items (we will mark the pushed ones visually instead of hiding them)
-    // Collect all items from rawData (ignore main page filters)
-    // Filter out white orders as they are auto-placed and don't need manual arrangement
-    // Also filter out orders ALREADY on the production board (have pbPlanName)
-    const items = (rawData.value || []).filter(i => !isExcludedWhite(i.color) && !i.pbPlanName);
+    // but MUST respect the color exclusion rules for Whites and NO COLOR
+    const items = (rawData.value || []).filter(d => {
+        const colorUpper = (d.color || "").toUpperCase();
+        if (colorUpper === "NO COLOR") return false;
+        return !isExcludedWhite(d.color);
+    });
     if (items.length === 0) {
         frappe.msgprint('No orders visible to push. Apply filters first.');
         return;
@@ -4181,7 +4183,9 @@ async function fetchData() {
         partyCode: d.partyCode || d.party_code || "",
         partyName: d.party_name || d.partyName || "",
         approvalStatus: d.custom_approval_status || d.approvalStatus || "Draft",
-        itemName: d.itemName || d.item_name || d.name || ""
+        itemName: d.itemName || d.item_name || d.name || "",
+        planName: d.planName || d.custom_pb_plan_name || d.custom_plan_name || "Default",
+        pbPlanName: d.pbPlanName || d.custom_pb_plan_name || ""
     }));
     
     // ===== DEBUG: Show all plan names in loaded data =====
