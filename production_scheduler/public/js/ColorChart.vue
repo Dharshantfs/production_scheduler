@@ -3103,6 +3103,7 @@ async function pushToProductionBoard() {
 
     function buildDialogHtml(seq, statusOverride = null) {
         const total = seq.filter(i => i.checked !== false).length;
+        const currentStatus = statusOverride || dialogOverallStatus;
         const fetchDates = d.get_value('fetch_dates') ? d.get_value('fetch_dates').split(',').map(s => s.trim()) : [];
         const targetDate = d.get_value('target_date');
         const isDateMismatch = targetDate && !fetchDates.some(fd => fd === targetDate);

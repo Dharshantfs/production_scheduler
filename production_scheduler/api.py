@@ -2240,7 +2240,6 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 					return (c_idx, q_idx, -item["gsmVal"])
 
 				# Partition non-beige colors based on seed position
-				# If we have a seed, items lighter than seed are "next run", others are "continuation"
 				continuation = []
 				next_run = []
 				for item in non_beige:
@@ -2254,7 +2253,13 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 				next_run.sort(key=color_sort_key)
 				sorted_beige = sorted(beige_items, key=color_sort_key)
 				
-				full_sorted = continuation + next_run + sorted_beige
+				# Refined Order:
+				# If board ends DARK (Red/Black) and we move to LIGHT (next_run), use beige as buffer.
+				is_dark_seed = current_seed_color in VERY_DARK_COLORS
+				if is_dark_seed and len(next_run) > 0:
+					full_sorted = continuation + sorted_beige + next_run
+				else:
+					full_sorted = continuation + next_run + sorted_beige
 
 				for idx, item in enumerate(full_sorted):
 					seq_no[0] += 1
