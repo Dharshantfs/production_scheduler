@@ -424,10 +424,10 @@
                                 {{ row.color }}
                                 <button v-if="row.anyPushed || row.isPushed" 
                                     @click.stop="revertColorGroup(row.color)"
-                                    style="margin-left:8px; background: #059669; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(5,150,105,0.3); transition: all 0.2s;"
-                                    :title="`Partially Pushed to: ${row.pushedPlanName}. Click to revert back to Color Chart.`"
+                                    style="margin-left:8px; background: #059669; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:9px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(5,150,105,0.3); transition: all 0.2s;"
+                                    title="Click to revert color group back to Color Chart"
                                 >
-                                    ✅ {{ row.isPushed ? 'FULL' : 'PARTIAL' }}
+                                    ✅ {{ row.isPushed ? 'FULL' : 'PARTIAL' }} ({{ row.pushedPlanName }})
                                 </button>
                                 <button v-if="!row.isPushed" 
                                     @click.stop="openPushColorDialog(row.color)"
@@ -4819,7 +4819,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
 }
 
 async function goToConfirmedOrders() {
-    frappe.set_route("confirmed-order");
+    frappe.set_route("confirmed_order");
 }
 
 async function goToSequenceApprovals() {
