@@ -4184,7 +4184,8 @@ async function fetchData() {
         partyName: d.party_name || d.partyName || "",
         approvalStatus: d.custom_approval_status || d.approvalStatus || "Draft",
         itemName: d.itemName || d.item_name || d.name || "",
-        planName: d.planName || d.custom_pb_plan_name || d.custom_plan_name || "Default",
+        // Robust mapping: Prioritize PB plan name if it exists, especially if planName is "Default"
+        planName: (d.pbPlanName && d.pbPlanName !== "") ? d.pbPlanName : (d.planName || d.custom_pb_plan_name || d.custom_plan_name || "Default"),
         pbPlanName: d.pbPlanName || d.custom_pb_plan_name || ""
     }));
     

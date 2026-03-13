@@ -1312,9 +1312,10 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			color = (item.get("color") or item.get("colour") or "").strip()
 			quality = (item.get("custom_quality") or "").strip()
 			
-			# User explicitly requested to hide orders missing color or quality 
-			# because they break smart sequencing and manual planning flows
-			if not color or not quality or color.upper() == "NO COLOR":
+			# Fallback for missing data instead of skipping (prevents "hidden" orders)
+			if not color: color = "Unknown Color"
+			if not quality: quality = "Unknown Quality"
+			if color.upper() == "NO COLOR":
 				continue
 
 			# ── KEY FIX: Restore missing item details from sheet data ──
@@ -1372,7 +1373,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				"idx": item.get("idx", 0),
 				"width": flt(item.get("width") or item.get("custom_width") or item.get("width_inches") or item.get("width_inch") or item.get("width_in") or 0),
 				"unit": unit,
-				"planName": sheet.get("custom_plan_name") or "Default",
+				"planName": sheet.get("planName") or sheet.get("custom_plan_name") or "Default",
 				"pbPlanName": sheet.get("custom_pb_plan_name") or "",
 				"planCode": item.get("custom_plan_code") or "",
 				"ordered_date": str(sheet.ordered_date) if sheet.ordered_date else "",
