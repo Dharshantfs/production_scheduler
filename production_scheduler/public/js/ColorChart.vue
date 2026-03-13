@@ -1029,6 +1029,7 @@ const matrixData = computed(() => {
 
     const processRows = (rowArray) => {
         rowArray.forEach(row => {
+            const isItemWhite = isExcludedWhite(row.color);
             let pushedPlanNames = new Set();
             let anyPushed = false;
             let hasItems = false;
@@ -1040,11 +1041,14 @@ const matrixData = computed(() => {
                 matchs.forEach(m => {
                     hasItems = true;
                     totalItems++;
-                    if (m.plannedDate || m.pbPlanName) {
+                    let pushedForThisItem = !!(m.plannedDate || m.pbPlanName);
+                    let whiteAndPlanned = isItemWhite && !!m.plannedDate;
+
+                    if (pushedForThisItem || isItemWhite) {
                         anyPushed = true;
                         pushedItems++;
-                        const pDate = m.plannedDate || m.custom_item_planned_date || 'Board';
-                        pushedPlanNames.add(pDate);
+                        const pDate = m.plannedDate || m.custom_item_planned_date || (isItemWhite ? 'Board' : '');
+                        if (pDate) pushedPlanNames.add(pDate);
                     }
                 });
                 
@@ -2893,7 +2897,8 @@ async function pushToProductionBoard() {
     // Collect all items (we will mark the pushed ones visually instead of hiding them)
     // Collect all items from rawData (ignore main page filters)
     // Filter out white orders as they are auto-placed and don't need manual arrangement
-    const items = (rawData.value || []).filter(i => !isExcludedWhite(i.color));
+    // Also filter out orders ALREADY on the production board (have pbPlanName)
+    const items = (rawData.value || []).filter(i => !isExcludedWhite(i.color) && !i.pbPlanName);
     if (items.length === 0) {
         frappe.msgprint('No orders visible to push. Apply filters first.');
         return;

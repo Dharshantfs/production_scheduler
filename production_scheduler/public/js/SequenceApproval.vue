@@ -93,7 +93,7 @@
           </div>
           <div class="draggable-container" ref="dragContainer">
             <div v-for="(item, index) in items" :key="item.name" 
-                 class="sequence-item" :class="{ 'is-pushed': item.custom_item_planned_date }"
+                 class="sequence-item" :class="{ 'is-pushed': isItemPushed(item) }"
                  :data-id="item.name">
               <div class="col-drag draggable-handle">⠿</div>
               <div class="col-idx">{{ index + 1 }}</div>
@@ -107,8 +107,8 @@
               </div>
               <div class="col-quality">
                 {{ item.quality }}
-                <div v-if="item.custom_item_planned_date" class="mt-1">
-                   <span class="badge badge-secondary" style="font-size: 8px; background: #e2e8f0; color: #475569;">Pushed on {{ formatDate(item.custom_item_planned_date) }}</span>
+                <div v-if="isItemPushed(item)" class="mt-1">
+                   <span class="badge badge-secondary" style="font-size: 8px; background: #e2e8f0; color: #475569;">Pushed on {{ formatDate(item.custom_item_planned_date) || 'Board' }}</span>
                 </div>
               </div>
               <div class="col-qty text-right font-weight-bold">{{ formatQty(item.qty) }}</div>
@@ -140,6 +140,24 @@ const isSaving = ref(false);
 const selectedApproval = ref(null);
 const items = ref([]);
 const dragContainer = ref(null);
+const EXCLUDED_WHITES = ["SUPER WHITE", "BRIGHT WHITE", "MILKY WHITE", "OFF WHITE", "WHITE"];
+
+function isExcludedWhite(color) {
+    if (!color) return false;
+    const c = color.toUpperCase();
+    if (c.includes("IVORY") || c.includes("CREAM") || c.includes("OFF WHITE")) return false;
+    return EXCLUDED_WHITES.some(ex => c.includes(ex));
+}
+
+function isItemPushed(item) {
+    if (!item) return false;
+    // Pushed if it has a Production Board plan name
+    if (item.pbPlanName) return true;
+    // White orders are always pushed if they have a planned date
+    if (isExcludedWhite(item.color) && item.custom_item_planned_date) return true;
+    return false;
+}
+
 let sortableInstance = null;
 
 const isDirty = ref(false);
