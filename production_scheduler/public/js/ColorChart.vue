@@ -4172,22 +4172,31 @@ async function fetchData() {
     }
     
     // Normalize API fields for consistent UI behavior across views
-    rawData.value = (r.message || []).map(d => ({
-        ...d,
-        idx: parseInt(d.idx || 0) || 9999,
-        // Ensure date is parsed for monthly grouping
-        orderDate: d.orderDate || d.ordered_date || "",
-        // Production Board status (snake_case -> camelCase)
-        plannedDate: d.plannedDate || d.planned_date || "",
-        // Ensure stable keys even if backend varies
-        partyCode: d.partyCode || d.party_code || "",
-        partyName: d.party_name || d.partyName || "",
-        approvalStatus: d.custom_approval_status || d.approvalStatus || "Draft",
-        itemName: d.itemName || d.item_name || d.name || "",
-        // Robust mapping: Prioritize PB plan name if it exists, especially if planName is "Default"
-        planName: (d.pbPlanName && d.pbPlanName !== "") ? d.pbPlanName : (d.planName || d.custom_pb_plan_name || d.custom_plan_name || "Default"),
-        pbPlanName: d.pbPlanName || d.custom_pb_plan_name || ""
-    }));
+    rawData.value = (r.message || []).map(d => {
+        let u = d.unit || "Mixed";
+        if (u.toUpperCase() === "UNIT 1") u = "Unit 1";
+        else if (u.toUpperCase() === "UNIT 2") u = "Unit 2";
+        else if (u.toUpperCase() === "UNIT 3") u = "Unit 3";
+        else if (u.toUpperCase() === "UNIT 4") u = "Unit 4";
+
+        return {
+            ...d,
+            unit: u,
+            idx: parseInt(d.idx || 0) || 9999,
+            // Ensure date is parsed for monthly grouping
+            orderDate: d.orderDate || d.ordered_date || "",
+            // Production Board status (snake_case -> camelCase)
+            plannedDate: d.plannedDate || d.planned_date || "",
+            // Ensure stable keys even if backend varies
+            partyCode: d.partyCode || d.party_code || "",
+            partyName: d.party_name || d.partyName || "",
+            approvalStatus: d.custom_approval_status || d.approvalStatus || "Draft",
+            itemName: d.itemName || d.item_name || d.name || "",
+            // Robust mapping: Prioritize PB plan name if it exists, especially if planName is "Default"
+            planName: (d.pbPlanName && d.pbPlanName !== "") ? d.pbPlanName : (d.planName || d.custom_pb_plan_name || d.custom_plan_name || "Default"),
+            pbPlanName: d.pbPlanName || d.custom_pb_plan_name || ""
+        };
+    });
     
     // ===== DEBUG: Show all plan names in loaded data =====
     const planNames = {};
