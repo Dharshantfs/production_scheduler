@@ -3105,8 +3105,11 @@ async function pushToProductionBoard() {
         const total = seq.filter(i => i.checked !== false).length;
         const currentStatus = statusOverride || dialogOverallStatus;
         
-        // Safety check: 'd' might be accessed during initialization
-        const hasD = (typeof d !== 'undefined' && d && d.get_value);
+        // Safety check: 'd' might be accessed during his own initialization (TDZ)
+        // Using window.d or var d helps, but being extra defensive here.
+        let hasD = false;
+        try { hasD = (!!d && !!d.get_value); } catch(e) { hasD = false; }
+        
         const activeFetchDates = hasD ? (d.get_value('fetch_dates') ? d.get_value('fetch_dates').split(',').map(s => s.trim()) : []) : fetchDates;
         const activeTargetDate = hasD ? d.get_value('target_date') : defaultTargetDate;
         
@@ -3243,8 +3246,8 @@ async function pushToProductionBoard() {
 
             const uniqueDates = Object.keys(pushLoadsByDate).sort();
             
-            uniqueDates.forEach(d => {
-                const dayLoads = pushLoadsByDate[d];
+            uniqueDates.forEach(pDate => {
+                const dayLoads = pushLoadsByDate[pDate];
                 Object.keys(dayLoads).forEach(u => {
                     if (filterUnitValue !== 'All Units' && u !== filterUnitValue) return;
                     
@@ -3255,9 +3258,9 @@ async function pushToProductionBoard() {
                     if (isOver) capacityExceeded = true;
                     
                     capHtml += `
-                    <div style="padding:10px;border-radius:12px;border:1px solid ${isOver ? '#fecaca' : '#e2e8f0'};background:${isOver ? '#fef2f2' : (d === targetDate ? '#fff' : '#f8fafc')};box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+                    <div style="padding:10px;border-radius:12px;border:1px solid ${isOver ? '#fecaca' : '#e2e8f0'};background:${isOver ? '#fef2f2' : (pDate === targetDate ? '#fff' : '#f8fafc')};box-shadow:0 1px 2px rgba(0,0,0,0.05);">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-                            <span style="font-weight:700;font-size:10px;color:${isOver ? '#dc2626' : '#64748b'};text-transform:uppercase;">${u} ${d === targetDate ? '' : '('+d+')'}</span>
+                            <span style="font-weight:700;font-size:10px;color:${isOver ? '#dc2626' : '#64748b'};text-transform:uppercase;">${u} ${pDate === targetDate ? '' : '('+pDate+')'}</span>
                             <span style="font-size:12px;">${isOver ? '⚠️' : '✅'}</span>
                         </div>
                         <div style="font-size:13px;font-weight:800;color:${isOver ? '#b91c1c' : '#1e293b'};">${totalDayLoad.toFixed(2)} / ${limit.toFixed(1)}T</div>
@@ -3265,7 +3268,7 @@ async function pushToProductionBoard() {
                             <div style="height:100%;width:${Math.min((totalDayLoad/limit)*100, 100)}%;background:${isOver ? '#ef4444' : '#10b981'};"></div>
                         </div>
                         <div style="font-size:8px;color:#94a3b8;text-align:center;">
-                            ${d === targetDate ? 'Start Day' : 'Cascaded Day'}
+                            ${pDate === targetDate ? 'Start Day' : 'Cascaded Day'}
                         </div>
                     </div>`;
                 });
@@ -3277,7 +3280,7 @@ async function pushToProductionBoard() {
         dialog.capacityExceeded = capacityExceeded;
     }
 
-    const d = new frappe.ui.Dialog({
+    var d = new frappe.ui.Dialog({
         title: '🚀 Push to Production Board',
         fields: [
             { fieldname: 'fetch_dates', fieldtype: 'Data', label: 'Fetch Date(s)', default: (fetchDates.join(", ") || defaultTargetDate), read_only: 1 },
