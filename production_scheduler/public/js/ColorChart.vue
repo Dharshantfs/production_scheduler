@@ -2972,8 +2972,34 @@ async function pushToProductionBoard() {
             checked: !isPushed // Only check by default if not already pushed
         };
     });
-    
-    // Determine overall arrangement approval state
+
+    // ✅ SORT: Apply the Saved Sequence from Approval Dashboard (Manager's arrangement)
+    masterSequence.sort((a, b) => {
+        // Group by Unit first
+        const unitA = a.unit || 'Unit 1';
+        const unitB = b.unit || 'Unit 1';
+        if (unitA !== unitB) return unitA.localeCompare(unitB);
+
+        // Within unit, use manager's saved sequence if available
+        const saved = unitSortConfig[unitA]?.savedSequence;
+        if (saved && saved.length) {
+            const idxA = saved.indexOf(a.name);
+            const idxB = saved.indexOf(b.name);
+            
+            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+            if (idxA !== -1) return -1;
+            if (idxB !== -1) return 1;
+        }
+        
+        // Fallback to stable Light-to-Dark sort
+        const pA = a.color ? getColorPriority(a.color) : 999;
+        const pB = b.color ? getColorPriority(b.color) : 999;
+        if (pA !== pB) return pA - pB;
+        return (parseFloat(b.gsm) || 0) - (parseFloat(a.gsm) || 0);
+    });
+
+    // Re-assign sequence numbers based on final sorted order
+    masterSequence.forEach((item, i) => { item.sequence_no = i + 1; });
     const relevantUnits = [...new Set(masterSequence.map(s => s.unit || 'Unit 1'))];
     const unitStatuses = relevantUnits.map(u => sequenceStatuses[u] || 'Draft');
     const overallStatus = unitStatuses.some(s => s === 'Rejected') ? 'Rejected' :
@@ -3358,10 +3384,11 @@ async function pushToProductionBoard() {
                 }
             });
 
-            // Capture sequence data for re-sorting reflection
+            // ✅ Sync unitSortConfig so that 'Smart Auto-Tick' sees the same sequence
             if (msg.sequence_data) {
                 try {
                     const names = JSON.parse(msg.sequence_data);
+                    if (unitSortConfig[u]) unitSortConfig[u].savedSequence = names;
                     combinedSequenceData = combinedSequenceData.concat(names);
                 } catch(e) {}
             }
@@ -3666,21 +3693,31 @@ async function pushToProductionBoard() {
                     const u = mapped.unit || 'Unit 1';
                     
                     // If a specific unit is filtered in the dialog, don't auto-tick items from other units
+                    const filterUnitValue = d.get_value('filter_unit') || 'All Units';
                     if (filterUnitValue !== 'All Units' && u !== filterUnitValue) {
-                        mapped.checked = false;
-                        return mapped;
-                    }
-
-                    // ── Smart Auto-Tick: tick ALL items (cascading at push time handles overflow) ──
-                    // If a specific unit is filtered in the dialog, only tick items from that unit
-                    const filterUnitValue2 = d.get_value('filter_unit') || 'All Units';
-                    if (filterUnitValue2 !== 'All Units' && (mapped.unit || 'Unit 1') !== filterUnitValue2) {
                         mapped.checked = false;
                     } else {
                         mapped.checked = true; // Tick everything — cascade will place on available dates
                     }
                     
                     return mapped;
+                });
+
+                // ✅ RE-SORT: If a manual arrangement exists, maintain that order for the Smart sequence
+                mappedSeq.sort((a, b) => {
+                    const unitA = a.unit || 'Unit 1';
+                    const unitB = b.unit || 'Unit 1';
+                    if (unitA !== unitB) return unitA.localeCompare(unitB);
+
+                    const saved = unitSortConfig[unitA]?.savedSequence;
+                    if (saved && saved.length) {
+                        const idxA = saved.indexOf(a.name);
+                        const idxB = saved.indexOf(b.name);
+                        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                        if (idxA !== -1) return -1;
+                        if (idxB !== -1) return 1;
+                    }
+                    return 0; // Keep smart order within units if no manual record
                 });
                 
                 // Smart sequence only returns un-pushed items now, so we must add the pushed items back
