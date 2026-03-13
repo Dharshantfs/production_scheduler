@@ -54,8 +54,9 @@
         <div class="editor-header">
           <div>
             <h3>{{ selectedApproval.plan_name }} | {{ selectedApproval.unit }}</h3>
-            <p class="mb-0 text-muted">
-              <span class="font-weight-bold" style="color: #64748b;">Target Push Date:</span> {{ formatDate(selectedApproval.date) }} • 
+            <p class="mb-0 text-muted" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span class="font-weight-bold" style="color: #64748b;">Target Push Date:</span> 
+              <input type="date" v-model="editableDate" class="form-control form-control-sm date-input-edit" @change="handleDateChange" /> • 
               <span class="text-info font-weight-bold">
                 <i class="fa fa-user-circle mr-1"></i>Requested By: {{ selectedApproval.owner }}
               </span>
@@ -138,6 +139,7 @@ const approvals = ref([]);
 const loading = ref(false);
 const isSaving = ref(false);
 const selectedApproval = ref(null);
+const editableDate = ref('');
 const items = ref([]);
 const dragContainer = ref(null);
 const EXCLUDED_WHITES = ["SUPER WHITE", "BRIGHT WHITE", "MILKY WHITE", "OFF WHITE", "WHITE"];
@@ -198,6 +200,7 @@ async function selectApproval(app) {
   
   isDirty.value = false;
   selectedApproval.value = app;
+  editableDate.value = app.date;
   const itemNames = JSON.parse(app.sequence_data || "[]");
   
   if (itemNames.length > 0) {
@@ -228,15 +231,24 @@ async function saveSequence() {
   isSaving.value = true;
   try {
     const currentItemNames = items.value.map(i => i.name);
-    await frappe.call({
+    const r = await frappe.call({
       method: "production_scheduler.api.save_color_sequence",
       args: {
         date: selectedApproval.value.date,
         unit: selectedApproval.value.unit,
         plan_name: selectedApproval.value.plan_name,
-        sequence_data: currentItemNames
+        sequence_data: currentItemNames,
+        new_date: editableDate.value
       }
     });
+    
+    // Update the selected approval with new date/name if backend returned them
+    if (r.message && r.message.name) {
+        selectedApproval.value.name = r.message.name;
+        selectedApproval.value.date = r.message.date;
+        editableDate.value = r.message.date;
+    }
+
     isDirty.value = false;
     frappe.show_alert({ message: 'Arrangement Saved', indicator: 'green' });
     // Refresh the sidebar to update timestamps
@@ -247,6 +259,10 @@ async function saveSequence() {
   } finally {
     isSaving.value = false;
   }
+}
+
+function handleDateChange() {
+  isDirty.value = true;
 }
 
 function initSortable() {
@@ -278,21 +294,26 @@ async function saveAndApprove() {
     try {
       // 1. Save new sequence first
       const currentItemNames = items.value.map(i => i.name);
-      await frappe.call({
+      const rSave = await frappe.call({
         method: "production_scheduler.api.save_color_sequence",
         args: {
           date: selectedApproval.value.date,
           unit: selectedApproval.value.unit,
           plan_name: selectedApproval.value.plan_name,
-          sequence_data: currentItemNames
+          sequence_data: currentItemNames,
+          new_date: editableDate.value
         }
       });
+      
+      // Update local reference to handle the rest of approval with correct name
+      const finalDate = rSave.message ? rSave.message.date : editableDate.value;
+      const finalName = rSave.message ? rSave.message.name : selectedApproval.value.name;
 
       // 2. Approve
       await frappe.call({
         method: "production_scheduler.api.approve_sequence",
         args: {
-          date: selectedApproval.value.date,
+          date: finalDate,
           unit: selectedApproval.value.unit,
           plan_name: selectedApproval.value.plan_name
         }
@@ -401,6 +422,26 @@ onMounted(fetchApprovals);
     padding: 8px 4px 12px;
     border-bottom: 1px solid #f1f5f9;
     margin-bottom: 8px;
+}
+
+.date-input-edit {
+  width: 140px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  height: 28px;
+  font-size: 11px;
+  padding: 2px 8px;
+  font-weight: 600;
+  color: #1e293b;
+  transition: all 0.2s ease;
+  background: #f8fafc;
+}
+
+.date-input-edit:focus {
+  background: white;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  outline: none;
 }
 
 .approval-card {

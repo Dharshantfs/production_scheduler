@@ -889,9 +889,22 @@ def get_color_sequence(date, unit, plan_name="Default"):
 	return {"sequence": [], "status": "Draft", "modified": None, "modified_by": None}
 
 @frappe.whitelist()
-def save_color_sequence(date, unit, sequence_data, plan_name="Default"):
-	"""Saves the color arrangement (list of Planning Sheet Item names)."""
+def save_color_sequence(date, unit, sequence_data, plan_name="Default", new_date=None):
+	"""Saves the color arrangement. Handles date changes by renaming the document."""
 	name = f"CSA-{plan_name}-{unit}-{date}"
+	
+	# Handle date change (renaming)
+	if new_date and new_date != date:
+		if frappe.db.exists("Color Sequence Approval", name):
+			new_name = f"CSA-{plan_name}-{unit}-{new_date}"
+			if frappe.db.exists("Color Sequence Approval", new_name):
+				frappe.throw(_("An arrangement already exists for {0} on {1} ({2}).").format(unit, new_date, plan_name))
+			
+			# Rename the document to maintain the name pattern
+			frappe.rename_doc("Color Sequence Approval", name, new_name)
+			name = new_name
+			date = new_date
+
 	if not frappe.db.exists("Color Sequence Approval", name):
 		doc = frappe.new_doc("Color Sequence Approval")
 		doc.date = date
@@ -900,6 +913,8 @@ def save_color_sequence(date, unit, sequence_data, plan_name="Default"):
 		doc.status = "Draft"
 	else:
 		doc = frappe.get_doc("Color Sequence Approval", name)
+		# Update the internal date field just in case
+		doc.date = date
 	
 	if isinstance(sequence_data, str):
 		doc.sequence_data = sequence_data
@@ -908,7 +923,7 @@ def save_color_sequence(date, unit, sequence_data, plan_name="Default"):
 		
 	doc.save()
 	frappe.db.commit()
-	return {"status": "success"}
+	return {"status": "success", "name": name, "date": date}
 
 @frappe.whitelist()
 def request_sequence_approval(date, unit, plan_name="Default"):
