@@ -2222,43 +2222,60 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 						"is_seed_bridge": is_last and (phase_idx == 0 and len(phases[1][1]) > 0),
 					})
 			else:
-				# ── Phase: Color – PARTITION BY SEED (continuation vs wrap-around) ──
+				# ── Phase: Color – PARTITION BY SEED (shade matching + dark phase grouping) ──
 				remaining = list(items)
-				beige_items = [i for i in remaining if i["colorKey"] in BEIGE_COLORS]
-				non_beige = [i for i in remaining if i["colorKey"] not in BEIGE_COLORS]
-				
 				quality_order = UNIT_QUALITY_ORDER.get(unit, [])
 				seed_idx = COLOR_PRIORITY.get(current_seed_color, -1) if current_seed_color else -1
+				is_dark_seed = current_seed_color in VERY_DARK_COLORS
 
 				def color_sort_key(item):
-					# Primary: COLOR light→dark order
+					# Primary: Absolute Priority for Same Shade / Same Color
+					is_exact_shade = (item["colorKey"] == current_seed_color and item["quality"] == effective_seed)
+					is_same_color = (item["colorKey"] == current_seed_color)
+					
+					prio = 0
+					if is_exact_shade: prio = -2
+					elif is_same_color: prio = -1
+					
+					# Secondary: COLOR light→dark order
 					c_idx = COLOR_PRIORITY.get(item["colorKey"], 9999)
-					# Secondary: quality order within same color
+					# Tertiary: quality order within same color
 					q = item["quality"]
 					q_idx = quality_order.index(q) if q in quality_order else len(quality_order)
-					# Tertiary: GSM high→low
-					return (c_idx, q_idx, -item["gsmVal"])
+					# Quaternary: GSM high→low
+					return (prio, c_idx, q_idx, -item["gsmVal"])
 
 				# Partition non-beige colors based on seed position
 				continuation = []
 				next_run = []
-				for item in non_beige:
+				beige_in_batch = []
+				
+				for item in remaining:
+					if item["colorKey"] in BEIGE_COLORS:
+						beige_in_batch.append(item)
+						continue
+						
 					c_idx = COLOR_PRIORITY.get(item["colorKey"], 9999)
-					if seed_idx != -1 and c_idx < seed_idx:
+					is_item_dark = item["colorKey"] in VERY_DARK_COLORS
+					
+					# Rule: If board ends DARK, all DARK items in batch are 'continuation'
+					if is_dark_seed and is_item_dark:
+						continuation.append(item)
+					elif seed_idx != -1 and c_idx < seed_idx:
 						next_run.append(item)
 					else:
 						continuation.append(item)
 				
 				continuation.sort(key=color_sort_key)
 				next_run.sort(key=color_sort_key)
-				sorted_beige = sorted(beige_items, key=color_sort_key)
+				sorted_beige = sorted(beige_in_batch, key=color_sort_key)
 				
 				# Refined Order:
-				# If board ends DARK (Red/Black) and we move to LIGHT (next_run), use beige as buffer.
-				is_dark_seed = current_seed_color in VERY_DARK_COLORS
-				if is_dark_seed and len(next_run) > 0:
+				# If board ends DARK (Red/Black), run dark continuation, then beige buffer, then next light run.
+				if is_dark_seed:
 					full_sorted = continuation + sorted_beige + next_run
 				else:
+					# Standard light-to-dark flow
 					full_sorted = continuation + next_run + sorted_beige
 
 				for idx, item in enumerate(full_sorted):
