@@ -907,7 +907,7 @@ const matrixData = computed(() => {
         }
 
         // UNIT FILTER
-        if (filterUnit.value && (d.unit || "Mixed") !== filterUnit.value) return false;
+        if (filterUnit.value && (d.unit || "Mixed").toUpperCase() !== filterUnit.value.toUpperCase()) return false;
         
         // STATUS FILTER
         if (filterStatus.value && d.planningStatus !== filterStatus.value) return false;
@@ -1185,7 +1185,7 @@ const filteredData = computed(() => {
     );
   }
   if (filterUnit.value) {
-    data = data.filter((d) => d.unit === filterUnit.value);
+    data = data.filter((d) => (d.unit || "").toUpperCase() === (filterUnit.value || "").toUpperCase());
   }
   if (filterStatus.value) {
     data = data.filter((d) => d.planningStatus === filterStatus.value);
@@ -2519,7 +2519,7 @@ function sortItems(unit, items) {
 
 // Group data by unit, sort, and insert mix markers
 function getUnitEntries(unit) {
-  let unitItems = filteredData.value.filter((d) => (d.unit || "Mixed") === unit);
+  let unitItems = filteredData.value.filter((d) => (d.unit || "Mixed").toUpperCase() === (unit || "").toUpperCase());
   unitItems = sortItems(unit, unitItems); 
 
   const entries = [];
@@ -2551,7 +2551,7 @@ function getUnitEntries(unit) {
 
 function getUnitProductionTotal(unit) {
   return filteredData.value
-    .filter((d) => (d.unit || "Mixed") === unit)
+    .filter((d) => (d.unit || "Mixed").toUpperCase() === (unit || "").toUpperCase())
     .reduce((sum, d) => sum + (parseFloat(d.qty) || 0), 0) / 1000;
 }
 
