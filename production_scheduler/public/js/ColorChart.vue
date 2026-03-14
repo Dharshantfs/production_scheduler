@@ -4574,6 +4574,7 @@ onMounted(async () => {
   }
   
   // 2. Fetch Data
+  frappe.call({ method: "production_scheduler.api.cleanup_legacy_plans" });
   await fetchData();
   analyzePreviousFlow();
   
