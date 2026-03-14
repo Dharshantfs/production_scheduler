@@ -35,7 +35,9 @@
         <label>Plan</label>
         <div style="display:flex; gap:4px; align-items:center;">
             <select v-model="selectedPlan" @change="fetchData">
-                <option v-for="p in visiblePlans" :key="p.name" :value="p.name">{{ p.locked ? '🔒 ' : '' }}{{ p.name }}</option>
+                <option v-for="p in visiblePlans" :key="p.name" :value="p.name">
+                    {{ p.locked ? '🔒 ' : '' }}{{ p.name === 'Default' ? 'Default' : currentMonthPrefix + ' ' + p.name }}
+                </option>
             </select>
             <button v-if="selectedPlan" class="cc-mini-btn" @click="togglePlanLock" :title="isCurrentPlanLocked ? 'Unlock Plan' : 'Lock Plan'" style="margin-right:2px; padding: 2px 4px;font-size: 14px;">
                 {{ isCurrentPlanLocked ? '🔒' : '🔓' }}
@@ -789,28 +791,9 @@ const currentMonthPrefix = computed(() => {
 });
 
 // Only show plans that belong to the current month (or have no month prefix like "Default")
+// All plans are now global "slots" and visible regardless of month
 const visiblePlans = computed(() => {
-    const fullPrefix = currentMonthPrefix.value; // MARCH W10 26
-    const monthPart = fullPrefix.split(" ")[0]; // MARCH
-
-    return plans.value.filter(p => {
-        const pName = (p && p.name) ? p.name : (typeof p === 'string' ? p : '');
-        if (!pName) return false;
-        if (pName === 'Default') return true;
-
-        const pUpper = pName.toUpperCase();
-        
-        // Robust Month/Week Matching:
-        // Use 3-letter abbreviation (MAR) to match both "MARCH" and "MAR-26"
-        const pMonth = pUpper.split(/[\s-]/)[0];
-        if (pMonth === monthPart || pMonth === monthPart.slice(0, 3)) return true;
-
-        // Custom plans with no month prefix (e.g. "Urgent Plan")
-        const hasAnyMonthPrefix = /^[A-Z]+[-\s]\d{2}\s/i.test(pName) || /^[A-Z]{3,}\s/i.test(pName);
-        if (!hasAnyMonthPrefix) return true;
-
-        return false;
-    });
+    return plans.value;
 });
 
 // Calculate the frontend viewing Plan Code (e.g., 26CU1-PLAN 1)
@@ -2825,9 +2808,9 @@ function createNewPlan() {
         fieldname: 'plan_name',
         fieldtype: 'Data',
         reqd: 1,
-        description: `Plan will be created as: <b>${monthPrefix}[your name]</b>`
+        description: `Plan will be displayed as: <b>${currentMonthPrefix.value} [your name]</b>`
     }, async (values) => {
-        const fullName = monthPrefix + values.plan_name;
+        const fullName = values.plan_name;
         if (!plans.value.find(p => p.name === fullName)) {
             plans.value.push({name: fullName, locked: 0});
             // Persist the new plan so it survives refresh
@@ -4516,26 +4499,10 @@ watch(viewScope, async (newVal) => {
 watch(filterMonth, async () => {
     updateUrlParams();
     await fetchData();
-    // Try to auto-select a plan that matches the new month
-    if (plans.value && plans.value.length > 0) {
-        const matchingPlan = plans.value.find(p => p.name.includes(filterMonth.value));
-        if (matchingPlan) selectedPlan.value = matchingPlan.name;
-        else selectedPlan.value = "Default";
-    }
 });
 watch(filterWeek, async () => {
     updateUrlParams();
     await fetchData();
-    // Try to auto-select a plan that matches the new week (e.g. contains "W11")
-    if (plans.value && plans.value.length > 0) {
-        const parts = filterWeek.value.split("-W");
-        if (parts.length === 2) {
-            const wNo = parts[1];
-            const matchingPlan = plans.value.find(p => p.name.includes(`W${wNo}`));
-            if (matchingPlan) selectedPlan.value = matchingPlan.name;
-            else selectedPlan.value = "Default";
-        }
-    }
 });
 
 onMounted(async () => {
