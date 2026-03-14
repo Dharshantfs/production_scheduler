@@ -2131,18 +2131,16 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 	target_date = getdate(date) if date else getdate(frappe.utils.today())
 	clean_unit = unit.strip().replace(" ", "").upper()
 	
-	# Ultimate robustness query
+	# Ultimate robustness query - filter out '0', '', NULL
 	rows = frappe.db.sql("""
 		SELECT 
 			i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx, 
-			p.name as sheet, 
-			COALESCE(p.custom_planned_date, p.ordered_date) as sheet_date,
-			COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as eff_date,
-			p.custom_plan_name, p.custom_pb_plan_name, p.docstatus, p.modified
+			p.name as sheet, p.modified
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
 		WHERE REPLACE(UPPER(i.unit), ' ', '') = %s
 		  AND p.docstatus = 1
+		  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
 		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
 		ORDER BY 
 		  -- 1. Prioritize matching the plan name (either on sheet or pb field)
@@ -2155,22 +2153,25 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 	""", (clean_unit, target_date, plan_name, plan_name), as_dict=True)
 	
 	if not rows:
-		frappe.logger().debug(f"[CC Smart] Seed for {unit} (target {target_date}, plan {plan_name}): NOT FOUND for exact date")
-		# Fallback to absolute last submitted item for this unit
+		frappe.logger().debug(f"[CC Smart] Seed for {unit} (target {target_date}, plan {plan_name}): NOT FOUND for exact date. Falling back.")
+		# Fallback to absolute last submitted item for this unit ON OR BEFORE target date
 		rows = frappe.db.sql("""
 			SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, p.name as sheet, p.modified
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
-			WHERE REPLACE(UPPER(i.unit), ' ', '') = %s AND p.docstatus = 1
-			ORDER BY COALESCE(p.custom_planned_date, p.ordered_date) DESC, p.modified DESC, i.idx DESC
+			WHERE REPLACE(UPPER(i.unit), ' ', '') = %s 
+			  AND p.docstatus = 1
+			  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
+			  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= DATE(%s)
+			ORDER BY DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) DESC, p.modified DESC, i.idx DESC
 			LIMIT 1
-		""", (clean_unit,), as_dict=True)
+		""", (clean_unit, target_date), as_dict=True)
 
 	if not rows:
 		return None
 
 	r = rows[0]
-	frappe.logger().debug(f"[CC Smart] Seed for {unit}: {r.color} ({r.quality}) from {r.sheet}")
+	frappe.logger().debug(f"[CC Smart] Seed for {unit}: {r.color} ({r.quality}) from {r.sheet} (Fallback used: {not rows})")
 	
 	return {
 		"color": (r.color or "").upper().strip(),
@@ -2184,180 +2185,120 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, seed_color=None, plan_name=None):
 	"""
 	Returns items in smart push order:
-	  1. White phase (per unit, quality order + GSM)
-	  2. Color phase (per unit): seed quality from last white → find colors in
-	     seed quality (light→dark) → group all qualities of each color together
-	     → update seed = last quality in batch → repeat
-	
-	If target_date is provided, the algorithm autonomously finds the last pushed
-	order on the Production Board for each unit to use as the seed.
-	
-	Returns list of dicts with sequence_no, phase, is_seed_bridge.
+	1. Perfect Match: Same color AND same quality as board seed
+	2. Color Match: Same color as board seed
+	3. Hierarchy Continuation: Next colors in the user light-dark sequence (Wrap-around)
+	4. Quality Priority: Unit-specific quality order
+	5. GSM: High to Low
 	"""
 	import json
 	if isinstance(item_names, str):
 		item_names = json.loads(item_names)
-	if not item_names:
-		return []
-
-	# Load item data
-	raw_items = frappe.get_all(
-		"Planning Sheet Item",
+	
+	items = frappe.get_all("Planning Sheet Item", 
 		filters={"name": ["in", item_names]},
-		fields=["name","color","custom_quality","gsm","qty","unit","item_name",
-		        "weight_per_roll","parent"]
+		fields=["name", "item_code", "item_name", "qty", "unit", "color", "custom_quality", "gsm", "parent"]
 	)
+	
+	if not items:
+		return {"sequence": [], "seeds": {}}
 
-	# Enrich with customer from parent sheet
-	parent_cache = {}
-	for item in raw_items:
-		if item.parent not in parent_cache:
-			parent_cache[item.parent] = frappe.db.get_value(
-				"Planning sheet", item.parent, ["customer","party_code"], as_dict=1) or {}
-		p = parent_cache[item.parent]
-		item["customer"] = p.get("customer","")
-		item["partyCode"] = item.get("party_code") or p.get("party_code","")
-		item["quality"] = (item.get("custom_quality") or "").upper().strip()
-		item["colorKey"] = (item.get("color") or "").upper().strip()
-		item["unitKey"] = item.get("unit") or "Mixed"
-		item["gsmVal"] = float(item.get("gsm") or 0)
-
-	def quality_sort_key(item, unit):
-		order = UNIT_QUALITY_ORDER.get(unit, [])
-		q = item["quality"]
-		idx = order.index(q) if q in order else len(order)
-		return (idx, -item["gsmVal"])
-
-	def color_sort_key(color):
-		return COLOR_PRIORITY.get(color, 9999)
-
-	sequence = []
-	seq_no = [0]  # use list so inner scope can mutate
-
-	units_present = list({i["unitKey"] for i in raw_items if i["unitKey"] != "Mixed"})
-	units_present += (["Mixed"] if any(i["unitKey"] == "Mixed" for i in raw_items) else [])
-
-	for unit in ["Unit 1","Unit 2","Unit 3","Unit 4","Mixed"]:
-		if unit not in units_present:
-			continue
-
-		unit_items = [i for i in raw_items if i["unitKey"] == unit]
-		if not unit_items:
-			continue
-
-		white_items = [i for i in unit_items if i["colorKey"] in WHITE_COLORS]
-		color_items = [i for i in unit_items if i["colorKey"] not in WHITE_COLORS]
-
-		# Initialize phase seeds from board (if provided)
-		effective_seed = seed_quality.upper().strip() if seed_quality else None
-		current_seed_color = seed_color.upper().strip() if seed_color else None
-
-		# If target_date is provided, try to fetch unit-specific seed if no seed given
-		if target_date and not effective_seed:
-			last_order = get_last_unit_order(unit, target_date, plan_name)
-			if last_order:
-				effective_seed = last_order.get("quality", "").upper().strip()
-				current_seed_color = last_order.get("color", "").upper().strip()
-				# If last item was white, we effectively want to treat that as a seed for the white-chain
-				# and then transition to color-chain. If it was already a color, it becomes the color-seed.
-				if last_order.get("is_white") and not white_items:
-					# Already skipped white phase? Then this helps choose the first color seed more wisely.
-					pass
-
-		# ── Unconditionally order: White phase -> Color phase ──
-		# This ensures White is never awkwardly forced to the end of the batch.
-		phases = [("white", white_items), ("color", color_items)]
-
-		for phase_idx, (phase_name, items) in enumerate(phases):
-			if not items:
-				continue
-				
-			if phase_name == "white":
-				# ── Phase: White ──
-				def white_dynamic_key(i):
-					order = UNIT_QUALITY_ORDER.get(unit, [])
-					q = i["quality"]
-					if effective_seed and effective_seed in order:
-						start_idx = order.index(effective_seed)
-						# Rotate order so that it starts from effective_seed
-						rotated = order[start_idx:] + order[:start_idx]
-					else:
-						rotated = order
-					
-					idx = rotated.index(q) if q in rotated else len(rotated)
-					return (idx, -i["gsmVal"])
-
-				white_sorted = sorted(items, key=white_dynamic_key)
-				for idx, item in enumerate(white_sorted):
-					seq_no[0] += 1
-					is_last = (idx == len(white_sorted) - 1)
-					if is_last:
-						effective_seed = item["quality"]
-					sequence.append({
-						**item,
-						"sequence_no": seq_no[0],
-						"phase": "white",
-						"is_seed_bridge": is_last and (phase_idx == 0 and len(phases[1][1]) > 0),
-					})
-			else:
-				# ── Phase: Color – PARTITION BY SEED (shade matching + dark phase grouping) ──
-				remaining = list(items)
-				quality_order = UNIT_QUALITY_ORDER.get(unit, [])
-				seed_idx = COLOR_PRIORITY.get(current_seed_color, -1) if current_seed_color else -1
-				is_dark_seed = current_seed_color in VERY_DARK_COLORS
-
-				def color_sort_key(item):
-					# Primary: Absolute Priority for Same Shade / Same Color from board end
-					# This ensures the run continues smoothly if the same color is in the batch.
-					is_exact_shade = (item["colorKey"] == current_seed_color and item["quality"] == effective_seed)
-					is_same_color = (item["colorKey"] == current_seed_color)
-					
-					prio = 0
-					if is_exact_shade: prio = -2
-					elif is_same_color: prio = -1
-					
-					# Secondary: COLOR light→dark order (The 26-point user list)
-					c_idx = COLOR_PRIORITY.get(item["colorKey"], 9999)
-					
-					# Tertiary: quality order within same color
-					q = item["quality"]
-					q_idx = quality_order.index(q) if q in quality_order else len(quality_order)
-					
-					# Quaternary: GSM high→low
-					return (prio, c_idx, q_idx, -item["gsmVal"])
-
-				# Simply sort all color items by the priority key.
-				# This respects the 1-28 sequence and only puts the board-end shade at the top.
-				# No more 'wrap-around' logic which was pushing light colors to the end.
-				full_sorted = sorted(remaining, key=color_sort_key)
-
-				for idx, item in enumerate(full_sorted):
-					seq_no[0] += 1
-					is_last = (idx == len(full_sorted) - 1)
-					is_bridge = not is_last and full_sorted[idx + 1]["colorKey"] != item["colorKey"]
-					sequence.append({
-						**item,
-						"sequence_no": seq_no[0],
-						"phase": "color",
-						"is_seed_bridge": is_bridge,
-					})
-
-	# Append any unsequenced (Mixed unit or edge cases)
-	sequenced_names = {i["name"] for i in sequence}
-	for item in raw_items:
-		if item["name"] not in sequenced_names:
-			seq_no[0] += 1
-			sequence.append({**item, "sequence_no": seq_no[0], "phase": "unassigned", "is_seed_bridge": False})
-
-	# Collect seeds for UI feedback
+	target_date = getdate(target_date) if target_date else getdate(frappe.utils.today())
+	
+	# Fetch seeds for all units hit by this batch
+	units = list(set([it.unit for it in items]))
 	unit_seeds = {}
-	for unit in ["Unit 1","Unit 2","Unit 3","Unit 4","Mixed"]:
-		last = get_last_unit_order(unit, target_date, plan_name)
-		if last:
-			unit_seeds[unit] = {"color": last["color"], "quality": last["quality"]}
+	for u in units:
+		s = get_last_unit_order(u, target_date, plan_name)
+		if s: unit_seeds[u] = s
+
+	# Enrichment bucket for UI
+	parent_cache = {}
+	
+	# Group by unit for specialized sorting
+	result_sequence = []
+	for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"]:
+		def normalize_u(raw):
+			r = (raw or "Mixed").strip().upper().replace(" ", "")
+			if "UNIT1" in r: return "Unit 1"
+			if "UNIT2" in r: return "Unit 2"
+			if "UNIT3" in r: return "Unit 3"
+			if "UNIT4" in r: return "Unit 4"
+			return "Mixed"
+
+		unit_items = [it for it in items if normalize_u(it.unit) == u]
+		if not unit_items: continue
+		
+		seed = unit_seeds.get(u)
+		s_col = (seed.get("color") if seed else seed_color or "").upper().strip()
+		s_qual = (seed.get("quality") if seed else seed_quality or "").upper().strip()
+
+		# Separate into Perfect Match, Color Match, and Others
+		perfect = []
+		same_col = []
+		remaining = []
+		
+		for it in unit_items:
+			c = (it.color or "").upper().strip()
+			q = (it.custom_quality or "").upper().strip()
+			if c == s_col and q == s_qual: perfect.append(it)
+			elif c == s_col: same_col.append(it)
+			else: remaining.append(it)
+
+		def color_sort_key_fn(it):
+			col = (it.color or "").upper().strip()
+			qual = (it.custom_quality or "").upper().strip()
+			
+			# Priority 1: COLOR light→dark order with WRAP-AROUND
+			c_idx = COLOR_PRIORITY.get(col, 999)
+			s_idx = COLOR_PRIORITY.get(s_col, -1)
+			
+			# Wrap-around calculation
+			num_colors = len(COLOR_ORDER_LIST)
+			# (c_idx - s_idx) % num_colors ensures that colors after seed in hierarchy have low scores (early).
+			# Colors before seed in hierarchy have high scores (late).
+			color_score = (c_idx - s_idx) % num_colors if s_idx != -1 else c_idx
+			
+			# Priority 2: Quality order
+			q_order = UNIT_QUALITY_ORDER.get(u, [])
+			q_idx = q_order.index(qual) if qual in q_order else 999
+			
+			# Priority 3: GSM (High to Low -> negative)
+			gsm_val = -float(it.gsm or 0)
+			
+			return (color_score, q_idx, gsm_val)
+
+		# Final Sort within buckets
+		perfect.sort(key=color_sort_key_fn)
+		same_col.sort(key=color_sort_key_fn)
+		remaining.sort(key=color_sort_key_fn)
+		
+		# Merge buckets for this unit
+		unit_sorted = perfect + same_col + remaining
+		
+		# Enrich items for the frontend as we add them
+		for it in unit_sorted:
+			if it.parent not in parent_cache:
+				parent_cache[it.parent] = frappe.db.get_value("Planning sheet", it.parent, ["customer","party_code"], as_dict=1) or {}
+			p = parent_cache[it.parent]
+			
+			it["customer"] = p.get("customer","")
+			it["partyCode"] = p.get("party_code","")
+			it["quality"] = (it.custom_quality or "").upper().strip()
+			it["colorKey"] = (it.color or "").upper().strip()
+			it["unitKey"] = it.unit or "Mixed"
+			it["gsmVal"] = float(it.gsm or 0)
+			
+			result_sequence.append(it)
+
+	# Safety: add sequence_no
+	for i, it in enumerate(result_sequence):
+		it["sequence_no"] = i + 1
+		it["phase"] = "color" if it["colorKey"] not in WHITE_COLORS else "white"
+		it["is_seed_bridge"] = False # Default
 
 	return {
-		"sequence": sequence,
+		"sequence": result_sequence,
 		"seeds": unit_seeds
 	}
 

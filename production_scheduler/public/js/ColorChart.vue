@@ -3123,11 +3123,12 @@ async function pushToProductionBoard() {
                 ${['Unit 1', 'Unit 2', 'Unit 3', 'Unit 4'].map((unit) => {
                     const normUnit = unit.toUpperCase().replace(/\s+/g, '');
                     const seed = (d.smartSeeds && (d.smartSeeds[unit] || d.smartSeeds[normUnit])) ? (d.smartSeeds[unit] || d.smartSeeds[normUnit]) : null;
+                    const displayColor = (seed && seed.color && seed.color !== '0' && seed.color !== 0) ? seed.color : 'NO ORDERS';
                     return `
                     <div style="background:#f8fafc; border:1px solid #e2e8f0; padding:4px 10px; border-radius:12px; font-size:10px; display:flex; align-items:center; gap:6px;">
                         <span style="color:#64748b; font-weight:700;">${unit.toUpperCase()} BOARD END:</span>
-                        <span style="color:${seed ? '#1e293b' : '#94a3b8'}; font-weight:800;">${seed ? seed.color : 'NO ORDERS'}</span>
-                        ${seed ? `<span style="color:#94a3b8; font-size:9px;">(${seed.quality})</span>` : ''}
+                        <span style="color:${displayColor !== 'NO ORDERS' ? '#1e293b' : '#94a3b8'}; font-weight:800;">${displayColor}</span>
+                        ${(displayColor !== 'NO ORDERS' && seed.quality) ? `<span style="color:#94a3b8; font-size:9px;">(${seed.quality})</span>` : ''}
                     </div>`;
                 }).join('')}
             </div>
@@ -3434,7 +3435,16 @@ async function pushToProductionBoard() {
 
     const updateDialogStatus = async (newTargetDate) => {
         if (!newTargetDate) return;
-        const relevantUnits = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
+        const relevantUnits = [...new Set(currentSequence.map(s => {
+            const raw = (s.unit || s.unitKey || 'Unit 1').trim();
+            // Robust normalization to 'Unit X' format
+            if (raw.toUpperCase().includes('UNIT 1')) return 'Unit 1';
+            if (raw.toUpperCase().includes('UNIT 2')) return 'Unit 2';
+            if (raw.toUpperCase().includes('UNIT 3')) return 'Unit 3';
+            if (raw.toUpperCase().includes('UNIT 4')) return 'Unit 4';
+            return raw;
+        }))].sort();
+        
         const unitStatuses = [];
         dialogApprovalMeta = null;
         dialogPendingUnits = [];
