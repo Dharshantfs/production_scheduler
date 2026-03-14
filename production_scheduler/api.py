@@ -2129,39 +2129,55 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 	If plan_name is provided, it prioritizes items from that plan.
 	"""
 	target_date = getdate(date) if date else getdate(frappe.utils.today())
-	
-	# Ultimate robustness: match unit ignoring spaces/case, match date using DATE()
-	# Allow docstatus 0 or 1. Prioritize submitted.
-	# Check both item-level and sheet-level planned dates.
 	clean_unit = unit.strip().replace(" ", "").upper()
 	
+	# Ultimate robustness query
 	rows = frappe.db.sql("""
-		SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, 
-		       COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as date, 
-		       p.name as sheet, p.custom_pb_plan_name as plan, p.docstatus
+		SELECT 
+			i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx, 
+			p.name as sheet, 
+			COALESCE(p.custom_planned_date, p.ordered_date) as sheet_date,
+			COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as eff_date,
+			p.custom_plan_name, p.custom_pb_plan_name, p.docstatus, p.modified
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
 		WHERE REPLACE(UPPER(i.unit), ' ', '') = %s
+		  AND p.docstatus = 1
 		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
-		  AND p.docstatus != 2
 		ORDER BY 
-		  p.docstatus DESC,
-		  CASE WHEN p.custom_pb_plan_name = %s THEN 0 ELSE 1 END,
-		  p.modified DESC, i.idx DESC
+		  -- 1. Prioritize matching the plan name (either on sheet or pb field)
+		  CASE WHEN (p.custom_plan_name = %s OR p.custom_pb_plan_name = %s) THEN 0 ELSE 1 END ASC,
+		  -- 2. Most recently modified sheet
+		  p.modified DESC,
+		  -- 3. Last item in the sheet
+		  i.idx DESC
 		LIMIT 1
-	""", (clean_unit, target_date, plan_name), as_dict=True)
+	""", (clean_unit, target_date, plan_name, plan_name), as_dict=True)
 	
 	if not rows:
-		frappe.logger().debug(f"[CC Smart] Seed for {unit} (target {target_date}): NOT FOUND")
+		frappe.logger().debug(f"[CC Smart] Seed for {unit} (target {target_date}, plan {plan_name}): NOT FOUND for exact date")
+		# Fallback to absolute last submitted item for this unit
+		rows = frappe.db.sql("""
+			SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, p.name as sheet, p.modified
+			FROM `tabPlanning Sheet Item` i
+			JOIN `tabPlanning sheet` p ON i.parent = p.name
+			WHERE REPLACE(UPPER(i.unit), ' ', '') = %s AND p.docstatus = 1
+			ORDER BY COALESCE(p.custom_planned_date, p.ordered_date) DESC, p.modified DESC, i.idx DESC
+			LIMIT 1
+		""", (clean_unit,), as_dict=True)
+
+	if not rows:
 		return None
+
 	r = rows[0]
-	frappe.logger().debug(f"[CC Smart] Seed for {unit} (target {target_date}): {r.color} ({r.quality}) from {r.sheet} dated {r.date}")
+	frappe.logger().debug(f"[CC Smart] Seed for {unit}: {r.color} ({r.quality}) from {r.sheet}")
+	
 	return {
 		"color": (r.color or "").upper().strip(),
 		"quality": (r.quality or "").upper().strip(),
 		"gsm": r.gsm,
 		"is_white": (r.color or "").upper().strip() in WHITE_COLORS,
-		"date": r.date
+		"date": target_date
 	}
 
 @frappe.whitelist()

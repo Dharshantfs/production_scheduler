@@ -3609,7 +3609,8 @@ async function pushToProductionBoard() {
         d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence, dialogOverallStatus));
         wireCheckboxes();
         updateCountLabel();
-        updateDialogStatus(d.get_value('target_date'));
+        // REMOVED: updateDialogStatus(d.get_value('target_date')); 
+        // Calling it here reverts the 'Draft' status to 'Approved' from DB before re-submission!
     }
 
     // Attach keyup events to inputs for real-time filtering
@@ -3756,6 +3757,17 @@ async function pushToProductionBoard() {
                     dialogApprovalMeta = null;
                     const $btn = d.get_primary_btn();
                     $btn.text('📤 Request Arrangement Approval').css({'background-color': '#d97706', 'border': 'none', 'box-shadow': '0 4px 6px -1px rgba(217, 119, 6, 0.2)'});
+                    
+                    // Force update the UI status badge
+                    const $statusWrapper = d.$wrapper.find('.modal-content [style*="background:#f1f5f9"]');
+                    if ($statusWrapper.length) {
+                        $statusWrapper.html(`
+                            <span style="width:8px;height:8px;border-radius:50%;background:#64748b"></span>
+                            <div style="display:flex; flex-direction:column;">
+                                <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Arrangement for ${d.get_value('target_date')}: DRAFT</span>
+                            </div>
+                        `);
+                    }
                 }
                 
                 // Track target-day limits
