@@ -2967,9 +2967,19 @@ async function pushToProductionBoard() {
     // ✅ SORT: Apply the Saved Sequence from Approval Dashboard (Manager's arrangement)
     masterSequence.sort((a, b) => {
         // Group by Unit first
-        const unitA = a.unit || 'Unit 1';
-        const unitB = b.unit || 'Unit 1';
-        if (unitA !== unitB) return unitA.localeCompare(unitB);
+        const unitNorm = (u) => (u || 'Unit 1').toUpperCase().trim();
+        const unitA = unitNorm(a.unit);
+        const unitB = unitNorm(b.unit);
+        if (unitA !== unitB) {
+            const order = ['UNIT 1', 'UNIT 2', 'UNIT 3', 'UNIT 4', 'MIXED'];
+            const idxA = order.indexOf(unitA);
+            const idxB = order.indexOf(unitB);
+            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+            return unitA.localeCompare(unitB);
+        }
+
+        // Within unit, PUSHED items always come first
+        if (a.pushed !== b.pushed) return a.pushed ? -1 : 1;
 
         // Within unit, use manager's saved sequence if available
         const saved = unitSortConfig[unitA]?.savedSequence;
@@ -3018,12 +3028,14 @@ async function pushToProductionBoard() {
         let lastUnit = null;
         const rows = seq.map((item, i) => {
             let unitDivider = '';
-            if (item.unit !== lastUnit) {
-                lastUnit = item.unit;
+            const unitNorm = (u) => (u || 'Unit 1').toUpperCase().trim();
+            const currentNorm = unitNorm(item.unit);
+            if (currentNorm !== lastUnit) {
+                lastUnit = currentNorm;
                 unitDivider = `<tr style="background:#f1f5f9;color:#1e293b;font-size:11px;font-weight:700;border-bottom:1px solid #e2e8f0;">
                     <td colspan="10" style="padding:4px 12px;display:flex;align-items:center;gap:6px;">
                         <span style="font-size:14px;">📦</span> 
-                        <span style="letter-spacing:0.05em;text-transform:uppercase;">${item.unit || 'Mixed'}</span>
+                        <span style="letter-spacing:0.05em;text-transform:uppercase;">${currentNorm}</span>
                     </td>
                 </tr>`;
             }
@@ -3786,11 +3798,10 @@ async function pushToProductionBoard() {
 
                 // ✅ SMART ORDER PRESERVED: We no longer re-sort by savedSequence here 
                 // because the user explicitly requested a "Smart" sequence from the backend.
-                
-                // Smart sequence only returns un-pushed items now, so we must add the pushed items back
-                // to the bottom of the list so they remain visible in the UI table.
+                // Smart sequence only returns un-pushed items now. 
+                // We MUST place pushed items (fixed seeds) at the TOP of the sequence.
                 const pushedItems = currentSequence.filter(s => s.pushed);
-                currentSequence = [...mappedSeq, ...pushedItems];
+                currentSequence = [...pushedItems, ...mappedSeq];
                 
                 // Re-calculate sequence numbers so the table numbers make sense
                 currentSequence.forEach((item, i) => { item.sequence_no = i + 1; });

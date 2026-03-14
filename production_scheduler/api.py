@@ -2035,7 +2035,7 @@ COLOR_ORDER_LIST = [
 	"MEDICAL GREEN",
 	
 	# ── New Order Stage 3: Ivory / Cream (light buff tones) ──
-	"BRIGHT IVORY","IVORY","OFF WHITE","CREAM","CREAM 2.0","CREAM 3.0","CREAM 4.0","CREAM 5.0",
+	"BRIGHT IVORY","IVORY","OFF WHITE","CREAM 1.0","CREAM 2.0","CREAM 3.0","CREAM 4.0","CREAM 5.0","CREAM",
 	
 	# ── Yellows: Lemon (light) → Golden (darker) ──
 	"LEMON YELLOW 1.0","LEMON YELLOW 3.0","LEMON YELLOW",
@@ -2103,17 +2103,17 @@ def get_last_unit_order(unit, date=None):
 	Looks at the target date first, then looks back at ANY previous date for that unit.
 	"""
 	target_date = getdate(date) if date else getdate(frappe.utils.today())
-	# Get all planning sheet items on this unit with custom_planned_date <= target_date
+	# Robustly find the absolute last item pushed to this unit
 	rows = frappe.db.sql("""
 		SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, p.custom_planned_date as date, p.name as sheet
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
-		WHERE i.unit = %s
+		WHERE (i.unit = %s OR i.unit = UPPER(%s))
 		  AND p.custom_planned_date <= %s
 		  AND p.docstatus = 1
-		ORDER BY p.custom_planned_date DESC, p.modified DESC, i.idx DESC
+		ORDER BY p.custom_planned_date DESC, p.creation DESC, i.idx DESC
 		LIMIT 1
-	""", (unit, target_date), as_dict=True)
+	""", (unit, unit, target_date), as_dict=True)
 	
 	if not rows:
 		frappe.logger().debug(f"[CC Smart] Seed for {unit} (target {target_date}): NOT FOUND")

@@ -222,8 +222,8 @@ async function selectApproval(app) {
     // Sort items according to the saved sequence
     const sortedItems = itemNames.map(name => fetchedItems.find(i => i.name === name)).filter(Boolean);
     
-    // We NO LONGER filter out pushed items, we show them grayed out instead
-    items.value = sortedItems;
+    // Filter out pushed items from approval view as per user request
+    items.value = sortedItems.filter(i => !isItemPushed(i));
 
     // Initialize Sortable after DOM update
     nextTick(() => {
