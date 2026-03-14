@@ -3721,7 +3721,8 @@ async function pushToProductionBoard() {
                 method: 'production_scheduler.api.get_smart_push_sequence',
                 args: { 
                     item_names: JSON.stringify(currentSequence.filter(s => !s.pushed).map(s => s.name)),
-                    target_date: singleTargetDate
+                    target_date: singleTargetDate,
+                    plan_name: (selectedPlan && selectedPlan.value) ? selectedPlan.value : 'Default'
                 }
             });
             const smartSeqData = r.message || {};
@@ -3785,14 +3786,16 @@ async function pushToProductionBoard() {
                         return mapped;
                     }
 
-                    const u = mapped.unit || 'Unit 1';
+                    const u = (mapped.unit || 'Unit 1').toUpperCase().trim();
                     
                     // If a specific unit is filtered in the dialog, don't auto-tick items from other units
-                    const filterUnitValue = d.get_value('filter_unit') || 'All Units';
-                    if (filterUnitValue !== 'All Units' && u !== filterUnitValue) {
+                    let filterUnitValue = 'All Units';
+                    try { filterUnitValue = (d.get_value('filter_unit') || 'All Units').toUpperCase().trim(); } catch(e) {}
+                    
+                    if (filterUnitValue !== 'ALL UNITS' && u !== filterUnitValue) {
                         mapped.checked = false;
                     } else {
-                        mapped.checked = true; // Tick everything — cascade will place on available dates
+                        mapped.checked = true; // Tick everything
                     }
                     
                     return mapped;
@@ -3802,13 +3805,14 @@ async function pushToProductionBoard() {
                 // because the user explicitly requested a "Smart" sequence from the backend.
                 // Smart sequence only returns un-pushed items. 
                 // Pushed items (fixed seeds) MUST be at the BOTTOM.
-                const pushedItems = currentSequence.filter(s => s.pushed);
-                currentSequence = [...mappedSeq, ...pushedItems];
+                const pushedItems = masterSequence.filter(s => s.pushed);
                 
-                // Re-calculate sequence numbers so the table numbers make sense
-                currentSequence.forEach((item, i) => { item.sequence_no = i + 1; });
+                // Update masterSequence with the new smart order for draft items
+                // This ensures that applyFilters() doesn't lose the Smart order!
+                masterSequence = [...mappedSeq, ...pushedItems];
                 
-                d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence));
+                // Keep the current filter (it will use the NEW masterSequence order)
+                applyFilters();
                 setTimeout(() => { wireCheckboxes(); updateCountLabel(); }, 100);
             } else {
                 frappe.show_alert({ message: 'No sequence data returned', indicator: 'orange' });
