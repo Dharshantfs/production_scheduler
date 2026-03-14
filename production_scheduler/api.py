@@ -2103,17 +2103,19 @@ def get_last_unit_order(unit, date=None):
 	Looks at the target date first, then looks back at ANY previous date for that unit.
 	"""
 	target_date = getdate(date) if date else getdate(frappe.utils.today())
-	# Robustly find the absolute last item pushed to this unit
+	# Target-Only Logic: Find the last item pushed to this unit ON the target date.
+	# If empty, we show 'No orders' seed feedback.
 	rows = frappe.db.sql("""
-		SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, p.custom_planned_date as date, p.name as sheet
+		SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, 
+		       COALESCE(p.custom_planned_date, p.ordered_date) as date, p.name as sheet
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
-		WHERE (i.unit = %s OR i.unit = UPPER(%s))
-		  AND p.custom_planned_date <= %s
+		WHERE (TRIM(i.unit) = %s OR TRIM(i.unit) = UPPER(%s))
+		  AND COALESCE(p.custom_planned_date, p.ordered_date) = %s
 		  AND p.docstatus = 1
-		ORDER BY p.custom_planned_date DESC, p.creation DESC, i.idx DESC
+		ORDER BY p.creation DESC, i.idx DESC
 		LIMIT 1
-	""", (unit, unit, target_date), as_dict=True)
+	""", (unit.strip(), unit.strip(), target_date), as_dict=True)
 	
 	if not rows:
 		frappe.logger().debug(f"[CC Smart] Seed for {unit} (target {target_date}): NOT FOUND")

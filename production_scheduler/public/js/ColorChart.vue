@@ -2978,8 +2978,8 @@ async function pushToProductionBoard() {
             return unitA.localeCompare(unitB);
         }
 
-        // Within unit, PUSHED items always come first
-        if (a.pushed !== b.pushed) return a.pushed ? -1 : 1;
+        // Within unit, PUSHED items always come LAST
+        if (a.pushed !== b.pushed) return a.pushed ? 1 : -1;
 
         // Within unit, use manager's saved sequence if available
         const saved = unitSortConfig[unitA]?.savedSequence;
@@ -3120,13 +3120,15 @@ async function pushToProductionBoard() {
 
         const smartSeedsHtml = (smartSequenceActive && hasD && d.smartSeeds) ? `
             <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
-                ${Object.entries(d.smartSeeds).map(([unit, seed]) => `
+                ${['Unit 1', 'Unit 2', 'Unit 3', 'Unit 4'].map((unit) => {
+                    const seed = d.smartSeeds ? d.smartSeeds[unit] : null;
+                    return `
                     <div style="background:#f8fafc; border:1px solid #e2e8f0; padding:4px 10px; border-radius:12px; font-size:10px; display:flex; align-items:center; gap:6px;">
-                        <span style="color:#64748b; font-weight:700;">${unit} BOARD END:</span>
-                        <span style="color:#1e293b; font-weight:800;">${seed.color}</span>
-                        <span style="color:#94a3b8; font-size:9px;">(${seed.quality})</span>
-                    </div>
-                `).join('')}
+                        <span style="color:#64748b; font-weight:700;">${unit.toUpperCase()} BOARD END:</span>
+                        <span style="color:${seed ? '#1e293b' : '#94a3b8'}; font-weight:800;">${seed ? seed.color : 'NO ORDERS'}</span>
+                        ${seed ? `<span style="color:#94a3b8; font-size:9px;">(${seed.quality})</span>` : ''}
+                    </div>`;
+                }).join('')}
             </div>
         ` : '';
 
@@ -3798,10 +3800,10 @@ async function pushToProductionBoard() {
 
                 // ✅ SMART ORDER PRESERVED: We no longer re-sort by savedSequence here 
                 // because the user explicitly requested a "Smart" sequence from the backend.
-                // Smart sequence only returns un-pushed items now. 
-                // We MUST place pushed items (fixed seeds) at the TOP of the sequence.
+                // Smart sequence only returns un-pushed items. 
+                // Pushed items (fixed seeds) MUST be at the BOTTOM.
                 const pushedItems = currentSequence.filter(s => s.pushed);
-                currentSequence = [...pushedItems, ...mappedSeq];
+                currentSequence = [...mappedSeq, ...pushedItems];
                 
                 // Re-calculate sequence numbers so the table numbers make sense
                 currentSequence.forEach((item, i) => { item.sequence_no = i + 1; });
