@@ -233,6 +233,32 @@ def _get_contextual_plan_name(base_name, date_val):
     
     return f"{month_name} W{iso_week} {year_short} {base_name}"
 
+def _strip_legacy_prefixes(name):
+    """
+    Strips various month/week prefixes to get the base plan name.
+    Example: 'MAR-26 PLAN 1' -> 'PLAN 1'
+             'MARCH W10 26 PLAN 1' -> 'PLAN 1'
+    """
+    if not name or name == "Default":
+        return name
+        
+    # Pattern 1: [MONTH] W[XX] [YY] [NAME] -> (e.g. MARCH W10 26 PLAN 1)
+    p1 = re.sub(r'^[A-Z]+\s+W\d+\s+\d{2}\s+', '', name, flags=re.IGNORECASE)
+    if p1 != name:
+        return p1.strip()
+        
+    # Pattern 2: [MON]-[YY] [NAME] -> (e.g. MAR-26 PLAN 1)
+    p2 = re.sub(r'^[A-Z]{3}-\d{2}\s+', '', name, flags=re.IGNORECASE)
+    if p2 != name:
+        return p2.strip()
+        
+    # Pattern 3: [MONTH] [YY] [NAME] -> (e.g. MARCH 26 PLAN 1)
+    p3 = re.sub(r'^[A-Z]+\s+\d{2}\s+', '', name, flags=re.IGNORECASE)
+    if p3 != name:
+        return p3.strip()
+        
+    return name.strip()
+
 HARD_LIMITS = {
 	"Unit 1": 4.4,
 	"Unit 2": 12.0,
@@ -1197,12 +1223,20 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	if plan_name == "__all__":
 		plan_condition = ""  # No plan filter — return all items
 	elif plan_name and plan_name != "Default":
-		# Search for BOTH the base name and its contextual versions for the target dates
+		# Search for BOTH the base name, contextual name, and any legacy variations
 		valid_names = [plan_name]
 		for d in target_dates:
 			ctx_name = _get_contextual_plan_name(plan_name, d)
 			if ctx_name not in valid_names:
 				valid_names.append(ctx_name)
+		
+		# Proactively find legacy candidates in the DB that match this base name when stripped
+		db_names = frappe.db.sql("SELECT DISTINCT custom_plan_name FROM `tabPlanning sheet` WHERE custom_plan_name IS NOT NULL AND custom_plan_name != ''", as_list=1)
+		for row in db_names:
+			full_db_name = row[0]
+			if _strip_legacy_prefixes(full_db_name) == plan_name:
+				if full_db_name not in valid_names:
+					valid_names.append(full_db_name)
 		
 		fmt = ','.join(['%s'] * len(valid_names))
 		plan_condition = f"AND p.custom_plan_name IN ({fmt})"
@@ -1787,17 +1821,74 @@ def get_monthly_plans(start_date, end_date):
 		fields=["custom_plan_name"]
 	)
 	
-	db_plans = set([p.custom_plan_name or "Default" for p in plans])
-	persisted = {p["name"]: p.get("locked", 0) for p in get_persisted_plans("color_chart")}
-	
-	all_names = db_plans.union(set(persisted.keys()))
-	sorted_plans = sorted(list(all_names))
-	
-	if "Default" in sorted_plans:
-		sorted_plans.remove("Default")
-		sorted_plans.insert(0, "Default")
+	# Extract base names and merge duplicates
+	db_raw = set([p.custom_plan_name or "Default" for p in plans])
+	persisted_raw = get_persisted_plans("color_chart")
+
+	merged_plans = {} # base_name -> {locked: bool}
+
+	# Process DB plans
+	for name in db_raw:
+		base = _strip_legacy_prefixes(name)
+		if base not in merged_plans:
+			merged_plans[base] = {"locked": 0}
+
+	# Process Persisted plans (global defaults)
+	for p in persisted_raw:
+		base = _strip_legacy_prefixes(p["name"])
+		# If both are present, we prefer the lock status of the "cleaner" or explicit one
+		is_locked = p.get("locked", 0)
+		if base not in merged_plans or is_locked:
+			merged_plans[base] = {"locked": is_locked}
+
+	sorted_names = sorted(merged_plans.keys())
+	if "Default" in sorted_names:
+		sorted_names.remove("Default")
+		sorted_names.insert(0, "Default")
 		
-	return [{"name": n, "locked": persisted.get(n, 0)} for n in sorted_plans]
+	return [{"name": n, "locked": merged_plans[n]["locked"]} for n in sorted_names]
+
+@frappe.whitelist()
+def cleanup_legacy_plans():
+	"""
+	Migration Script: 
+	1. Merges 'Feb-26 PLAN 1' into 'PLAN 1' in Persisted Defaults.
+	2. Updates old Planning Sheets to have Base names (which the UI now prefixes dynamically).
+	"""
+	# 1. CLEAN PERSISTED DEFAULTS
+	plans = get_persisted_plans("color_chart")
+	cleaned_persisted = {} # base -> locked
+	
+	for p in plans:
+		base = _strip_legacy_prefixes(p["name"])
+		if base not in cleaned_persisted or p.get("locked"):
+			cleaned_persisted[base] = p.get("locked", 0)
+			
+	final_list = [{"name": name, "locked": locked} for name, locked in cleaned_persisted.items()]
+	
+	import json
+	frappe.defaults.set_global_default("production_scheduler_color_chart_plans", json.dumps(final_list))
+	
+	# 2. CLEAN PLANNING SHEETS (only if they match legacy formats)
+	sheets = frappe.db.get_all("Planning sheet", filters={"docstatus": ["<", 2]}, fields=["name", "custom_plan_name"])
+	
+	updated_count = 0
+	for s in sheets:
+		if not s.custom_plan_name or s.custom_plan_name == "Default":
+			continue
+			
+		base = _strip_legacy_prefixes(s.custom_plan_name)
+		if base != s.custom_plan_name:
+			frappe.db.set_value("Planning sheet", s.name, "custom_plan_name", base, update_modified=False)
+			updated_count += 1
+			
+	frappe.db.commit()
+	
+	return {
+		"status": "success",
+		"message": f"Cleaned up {len(plans)} persisted plans into {len(final_list)}. Updated {updated_count} Planning Sheets.",
+		"details": final_list
+	}
 
 @frappe.whitelist()
 def create_plan_name_field():
