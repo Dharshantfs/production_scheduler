@@ -3040,7 +3040,7 @@ async function pushToProductionBoard() {
                 actionHtml = `<input type="checkbox" data-idx="${i}" ${checked ? 'checked' : ''} style="cursor:pointer;width:16px;height:16px;accent-color:#2563eb;">`;
             }
 
-            const dragHandle = (item.pushed || currentArrangementStatus === 'Approved') ? '' : `<span class="drag-handle" style="cursor:grab;color:#94a3b8;font-size:16px;padding:0 8px;user-select:none;display:flex;align-items:center;" title="Drag to reorder">⠿</span>`;
+            const dragHandle = item.pushed ? '' : `<span class="drag-handle" style="cursor:grab;color:#94a3b8;font-size:16px;padding:0 8px;user-select:none;display:flex;align-items:center;" title="Drag to reorder">⠿</span>`;
             
             const statusBadge = item.approvalStatus === 'Approved' 
                 ? '<span style="color:#16a34a;background:#f0fdf4;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;">APPROVED</span>'
@@ -3513,13 +3513,9 @@ async function pushToProductionBoard() {
             $btn.css({'background-color': '', 'border-color': '', 'color': ''});
         }
 
-        // Restrict Smart Auto-Tick if already Approved
+        // Allow Smart Auto-Tick even if Approved (user can re-sequence if needed)
         const $smartBtn = d.$wrapper.find('.btn-custom').filter((i, el) => $(el).text().includes('Smart Auto-Tick'));
-        if (newOverallStatus === 'Approved') {
-            $smartBtn.prop('disabled', true).css('opacity', '0.5').attr('title', 'Arrangement is approved and locked.');
-        } else {
-            $smartBtn.prop('disabled', false).css('opacity', '1').attr('title', '');
-        }
+        $smartBtn.prop('disabled', false).css('opacity', '1').attr('title', '');
     };
 
     d.fields_dict.target_date.df.onchange = () => {
@@ -3640,7 +3636,8 @@ async function pushToProductionBoard() {
         const tbody = container.querySelector('tbody');
         if (tbody && window.Sortable) {
             if (tbody._sortable) tbody._sortable.destroy();
-            if (dialogOverallStatus === 'Approved') return; // Lock reordering for Approved arrangements
+            // User requested to allow reordering even if approved (locks were previous logic)
+            // if (dialogOverallStatus === 'Approved') return; 
             
             tbody._sortable = new window.Sortable(tbody, {
                 animation: 150,
@@ -3653,9 +3650,21 @@ async function pushToProductionBoard() {
                     const allDataRows = Array.from(tbody.querySelectorAll('tr[data-seq-idx]'));
                     const toIdx = allDataRows.indexOf(draggedRow);
                     if (isNaN(fromIdx) || toIdx < 0 || fromIdx === toIdx) return;
+                    
                     const moved = currentSequence.splice(fromIdx, 1)[0];
                     currentSequence.splice(toIdx, 0, moved);
                     currentSequence.forEach((item, i) => { item.sequence_no = i + 1; });
+
+                    // Downgrade status if it was Approved/Rejected to enforce re-approval
+                    if (dialogOverallStatus === 'Approved' || dialogOverallStatus === 'Rejected') {
+                        dialogOverallStatus = 'Draft';
+                        d.overallStatus = 'Draft';
+                        // Update button label and style immediately
+                        const label = '📤 Request Arrangement Approval';
+                        const $btn = d.get_primary_btn();
+                        $btn.text(label).css({'background-color': '#d97706', 'border': 'none', 'box-shadow': '0 4px 6px -1px rgba(217, 119, 6, 0.2)'});
+                    }
+
                     d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence, dialogOverallStatus));
                     setTimeout(() => { wireCheckboxes(); updateCountLabel(); }, 100);
                 }
@@ -3724,6 +3733,14 @@ async function pushToProductionBoard() {
                 } catch(e) { console.error("Failed to get capacity for Smart Tick", e); }
 
                 smartSequenceActive = true;
+
+                // Downgrade status if it was Approved/Rejected to enforce re-approval on change
+                if (dialogOverallStatus === 'Approved' || dialogOverallStatus === 'Rejected') {
+                    dialogOverallStatus = 'Draft';
+                    d.overallStatus = 'Draft';
+                    const $btn = d.get_primary_btn();
+                    $btn.text('📤 Request Arrangement Approval').css({'background-color': '#d97706', 'border': 'none', 'box-shadow': '0 4px 6px -1px rgba(217, 119, 6, 0.2)'});
+                }
                 
                 // Track target-day limits
                 const limitsMap = {};
