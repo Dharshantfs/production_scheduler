@@ -1319,7 +1319,10 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				continue
 
 			# ── KEY FIX: Restore missing item details from sheet data ──
-			unit = item.get("unit") or sheet.get("unit") or "Unit 1"
+			unit = (item.get("unit") or sheet.get("unit") or "Unit 1").strip()
+			if unit.upper() in ["UNIT 1", "UNIT 2", "UNIT 3", "UNIT 4"]:
+				unit = unit.title()
+			
 			effective_date_str = str(item.get("ordered_date") or sheet.get("ordered_date") or "")
 			
 			# Production Board filtering: use item.custom_item_planned_date if set, else sheet.custom_planned_date
