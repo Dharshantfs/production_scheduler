@@ -2959,8 +2959,8 @@ async function pushToProductionBoard() {
             planningSheet: d.planningSheet || '',
             phase: '',
             is_seed_bridge: false,
-            pushed: isPushed,
-            checked: !isPushed // Only check by default if not already pushed
+            pushed: !!(d.pbPlanName || d.plannedDate || d.custom_item_planned_date), 
+            checked: !(d.pbPlanName || d.plannedDate || d.custom_item_planned_date)
         };
     });
 
@@ -3121,7 +3121,8 @@ async function pushToProductionBoard() {
         const smartSeedsHtml = (smartSequenceActive && hasD && d.smartSeeds) ? `
             <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
                 ${['Unit 1', 'Unit 2', 'Unit 3', 'Unit 4'].map((unit) => {
-                    const seed = d.smartSeeds ? d.smartSeeds[unit] : null;
+                    const normUnit = unit.toUpperCase().replace(/\s+/g, '');
+                    const seed = (d.smartSeeds && (d.smartSeeds[unit] || d.smartSeeds[normUnit])) ? (d.smartSeeds[unit] || d.smartSeeds[normUnit]) : null;
                     return `
                     <div style="background:#f8fafc; border:1px solid #e2e8f0; padding:4px 10px; border-radius:12px; font-size:10px; display:flex; align-items:center; gap:6px;">
                         <span style="color:#64748b; font-weight:700;">${unit.toUpperCase()} BOARD END:</span>
@@ -3457,9 +3458,9 @@ async function pushToProductionBoard() {
             });
 
             // ✅ Sync unitSortConfig so that 'Smart Auto-Tick' sees the same sequence
-            if (msg.sequence_data) {
+            if (msg.sequence && msg.sequence.length) {
                 try {
-                    const names = JSON.parse(msg.sequence_data);
+                    const names = msg.sequence;
                     if (unitSortConfig[u]) unitSortConfig[u].savedSequence = names;
                     combinedSequenceData = combinedSequenceData.concat(names);
                 } catch(e) {}
