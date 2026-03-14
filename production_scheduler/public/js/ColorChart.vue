@@ -3655,10 +3655,10 @@ async function pushToProductionBoard() {
                     currentSequence.splice(toIdx, 0, moved);
                     currentSequence.forEach((item, i) => { item.sequence_no = i + 1; });
 
-                    // Downgrade status if it was Approved/Rejected to enforce re-approval
                     if (dialogOverallStatus === 'Approved' || dialogOverallStatus === 'Rejected') {
                         dialogOverallStatus = 'Draft';
                         d.overallStatus = 'Draft';
+                        dialogApprovalMeta = null;
                         // Update button label and style immediately
                         const label = '📤 Request Arrangement Approval';
                         const $btn = d.get_primary_btn();
@@ -3734,10 +3734,10 @@ async function pushToProductionBoard() {
 
                 smartSequenceActive = true;
 
-                // Downgrade status if it was Approved/Rejected to enforce re-approval on change
                 if (dialogOverallStatus === 'Approved' || dialogOverallStatus === 'Rejected') {
                     dialogOverallStatus = 'Draft';
                     d.overallStatus = 'Draft';
+                    dialogApprovalMeta = null;
                     const $btn = d.get_primary_btn();
                     $btn.text('📤 Request Arrangement Approval').css({'background-color': '#d97706', 'border': 'none', 'box-shadow': '0 4px 6px -1px rgba(217, 119, 6, 0.2)'});
                 }
