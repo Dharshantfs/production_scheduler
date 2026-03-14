@@ -2750,6 +2750,20 @@ async function toggleViewScope() {
 }
 
 async function fetchPlans(args) {
+    const stripLegacyPrefix = (name) => {
+        if (!name || name === 'Default') return name;
+        // Pattern 1: MARCH W10 26 PLAN 1
+        let s = name.replace(/^[A-Z]+\s+W\d+\s+\d{2}\s+/i, '');
+        if (s !== name) return s.trim();
+        // Pattern 2: Feb-26 PLAN 1
+        s = name.replace(/^[A-Z]{3}-\d{2}\s+/i, '');
+        if (s !== name) return s.trim();
+        // Pattern 3: MARCH 26 PLAN 1
+        s = name.replace(/^[A-Z]+\s+\d{2}\s+/i, '');
+        if (s !== name) return s.trim();
+        return name.trim();
+    };
+
     try {
         const planArgs = { ...args };
         if (planArgs.date && !planArgs.start_date) {
@@ -2767,9 +2781,18 @@ async function fetchPlans(args) {
         plans.value = r.message || [{name: "Default", locked: 0}];
         // If the currently selected plan is not returned (e.g. new plan with no sheets yet),
         // keep it in the dropdown instead of silently falling back to Default.
-        if (selectedPlan.value && !plans.value.find(p => p.name === selectedPlan.value)) {
-            // Insert as an unlocked empty plan so user stays on it
-            plans.value.push({ name: selectedPlan.value, locked: 0 });
+        const strippedSelected = stripLegacyPrefix(selectedPlan.value);
+        if (selectedPlan.value && selectedPlan.value !== 'Default') {
+            const found = plans.value.find(p => p.name === strippedSelected || p.name === selectedPlan.value);
+            if (found) {
+                // Auto-migrate selection to base name if it matched
+                if (selectedPlan.value !== found.name) {
+                    selectedPlan.value = found.name;
+                }
+            } else {
+                // Insert as an unlocked empty plan so user stays on it
+                plans.value.push({ name: selectedPlan.value, locked: 0 });
+            }
         }
     } catch(e) { console.error("Error fetching plans", e); }
 }
@@ -4110,27 +4133,7 @@ function handleRealtimeColorUpdate(payload) {
 
 async function fetchData() {
 
-  // Auto-reset plan if selected plan belongs to a different month
-  if (selectedPlan.value && selectedPlan.value !== 'Default') {
-      const pNameUpper = selectedPlan.value.toUpperCase();
-      const currentPrefix = currentMonthPrefix.value; // MARCH W11 26
-      const monthPart = currentPrefix.split(" ")[0]; // MARCH
-      let isValid = false;
-
-      // Robust Matching: Use 3rd letter abbreviation (MAR) to match both "MARCH" and "MAR-26" / "MARCH-26"
-      const pMonth = pNameUpper.split(/[\s-]/)[0];
-      if (pMonth === monthPart || pMonth === monthPart.slice(0, 3)) {
-          isValid = true;
-      } else {
-          // Custom plans with no month prefix
-          const hasAnyMonthPrefix = /^[A-Z]+[-\s]\d{2}\s/i.test(pNameUpper) || /^[A-Z]{3,}\s/i.test(pNameUpper);
-          if (!hasAnyMonthPrefix) isValid = true;
-      }
-
-      if (!isValid) {
-          selectedPlan.value = 'Default';
-      }
-  }
+  // fetchData continues (Global Slots persist across months/weeks)
 
   let args = {};
   
