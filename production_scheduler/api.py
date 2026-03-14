@@ -2131,7 +2131,8 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 	target_date = getdate(date) if date else getdate(frappe.utils.today())
 	clean_unit = unit.strip().replace(" ", "").upper()
 	
-	# Ultimate robustness query - filter out '0', '', NULL
+	# Primary query - follow board visual sequence (idx DESC)
+	# Filter for items that have a pb_plan_name OR were pushed (custom_item_planned_date)
 	rows = frappe.db.sql("""
 		SELECT 
 			i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx, 
@@ -2141,13 +2142,12 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 		WHERE REPLACE(UPPER(i.unit), ' ', '') = %s
 		  AND p.docstatus = 1
 		  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
+		  AND (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
 		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
 		ORDER BY 
-		  -- 1. Prioritize matching the plan name (either on sheet or pb field)
-		  CASE WHEN (p.custom_plan_name = %s OR p.custom_pb_plan_name = %s) THEN 0 ELSE 1 END ASC,
-		  -- 2. Last item in the sequence (Visual order on board)
+		  -- ABSOLUTE PRIORITY: Visual order on board
 		  i.idx DESC,
-		  -- 3. Most recently modified sheet
+		  -- 2. Tie-break: Most recently modified sheet
 		  p.modified DESC
 		LIMIT 1
 	""", (clean_unit, target_date, plan_name, plan_name), as_dict=True)
@@ -2155,6 +2155,7 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 	if not rows:
 		frappe.logger().debug(f"[CC Smart] Seed for {unit} (target {target_date}, plan {plan_name}): NOT FOUND for exact date. Falling back.")
 		# Fallback to absolute last submitted item for this unit ON OR BEFORE target date
+		# Must be a pushed item (on a PB sheet)
 		rows = frappe.db.sql("""
 			SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, p.name as sheet, p.modified
 			FROM `tabPlanning Sheet Item` i
@@ -2162,8 +2163,12 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 			WHERE REPLACE(UPPER(i.unit), ' ', '') = %s 
 			  AND p.docstatus = 1
 			  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
+			  AND (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
 			  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= DATE(%s)
-			ORDER BY DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) DESC, i.idx DESC, p.modified DESC
+			ORDER BY 
+			  DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) DESC, 
+			  i.idx DESC, 
+			  p.modified DESC
 			LIMIT 1
 		""", (clean_unit, target_date), as_dict=True)
 
