@@ -2141,7 +2141,7 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
 		WHERE REPLACE(UPPER(i.unit), ' ', '') = %s
-		  AND p.docstatus = 1
+		  AND p.docstatus < 2
 		  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
 		  AND (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
 		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
@@ -2158,7 +2158,7 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
 			WHERE REPLACE(UPPER(i.unit), ' ', '') = %s 
-			  AND p.docstatus = 1
+			  AND p.docstatus < 2
 			  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
 			  AND (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
 			  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= DATE(%s)
