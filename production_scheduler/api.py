@@ -2145,10 +2145,10 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 		ORDER BY 
 		  -- 1. Prioritize matching the plan name (either on sheet or pb field)
 		  CASE WHEN (p.custom_plan_name = %s OR p.custom_pb_plan_name = %s) THEN 0 ELSE 1 END ASC,
-		  -- 2. Most recently modified sheet
-		  p.modified DESC,
-		  -- 3. Last item in the sheet
-		  i.idx DESC
+		  -- 2. Last item in the sequence (Visual order on board)
+		  i.idx DESC,
+		  -- 3. Most recently modified sheet
+		  p.modified DESC
 		LIMIT 1
 	""", (clean_unit, target_date, plan_name, plan_name), as_dict=True)
 	
@@ -2163,7 +2163,7 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 			  AND p.docstatus = 1
 			  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
 			  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= DATE(%s)
-			ORDER BY DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) DESC, p.modified DESC, i.idx DESC
+			ORDER BY DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) DESC, i.idx DESC, p.modified DESC
 			LIMIT 1
 		""", (clean_unit, target_date), as_dict=True)
 
