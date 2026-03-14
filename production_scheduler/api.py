@@ -2150,7 +2150,7 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 		  -- 2. Tie-break: Most recently modified sheet
 		  p.modified DESC
 		LIMIT 1
-	""", (clean_unit, target_date, plan_name, plan_name), as_dict=True)
+	""", (clean_unit, target_date), as_dict=True)
 	
 	if not rows:
 		frappe.logger().debug(f"[CC Smart] Seed for {unit} (target {target_date}, plan {plan_name}): NOT FOUND for exact date. Falling back.")
