@@ -2291,7 +2291,8 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 				is_dark_seed = current_seed_color in VERY_DARK_COLORS
 
 				def color_sort_key(item):
-					# Primary: Absolute Priority for Same Shade / Same Color
+					# Primary: Absolute Priority for Same Shade / Same Color from board end
+					# This ensures the run continues smoothly if the same color is in the batch.
 					is_exact_shade = (item["colorKey"] == current_seed_color and item["quality"] == effective_seed)
 					is_same_color = (item["colorKey"] == current_seed_color)
 					
@@ -2299,46 +2300,20 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 					if is_exact_shade: prio = -2
 					elif is_same_color: prio = -1
 					
-					# Secondary: COLOR light→dark order
+					# Secondary: COLOR light→dark order (The 26-point user list)
 					c_idx = COLOR_PRIORITY.get(item["colorKey"], 9999)
+					
 					# Tertiary: quality order within same color
 					q = item["quality"]
 					q_idx = quality_order.index(q) if q in quality_order else len(quality_order)
+					
 					# Quaternary: GSM high→low
 					return (prio, c_idx, q_idx, -item["gsmVal"])
 
-				# Partition non-beige colors based on seed position
-				continuation = []
-				next_run = []
-				beige_in_batch = []
-				
-				for item in remaining:
-					if item["colorKey"] in BEIGE_COLORS:
-						beige_in_batch.append(item)
-						continue
-						
-					c_idx = COLOR_PRIORITY.get(item["colorKey"], 9999)
-					is_item_dark = item["colorKey"] in VERY_DARK_COLORS
-					
-					# Rule: If board ends DARK, all DARK items in batch are 'continuation'
-					if is_dark_seed and is_item_dark:
-						continuation.append(item)
-					elif seed_idx != -1 and c_idx < seed_idx:
-						next_run.append(item)
-					else:
-						continuation.append(item)
-				
-				continuation.sort(key=color_sort_key)
-				next_run.sort(key=color_sort_key)
-				sorted_beige = sorted(beige_in_batch, key=color_sort_key)
-				
-				# Refined Order:
-				# If board ends DARK (Red/Black), run dark continuation, then beige buffer, then next light run.
-				if is_dark_seed:
-					full_sorted = continuation + sorted_beige + next_run
-				else:
-					# Standard light-to-dark flow
-					full_sorted = continuation + next_run + sorted_beige
+				# Simply sort all color items by the priority key.
+				# This respects the 1-28 sequence and only puts the board-end shade at the top.
+				# No more 'wrap-around' logic which was pushing light colors to the end.
+				full_sorted = sorted(remaining, key=color_sort_key)
 
 				for idx, item in enumerate(full_sorted):
 					seq_no[0] += 1
