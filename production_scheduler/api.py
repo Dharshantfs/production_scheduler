@@ -2023,66 +2023,98 @@ VERY_DARK_COLORS = {
 
 # ── Color light→dark order — USER DEFINED SEQUENCE ─────────────────────────
 COLOR_ORDER_LIST = [
-	# ── Whites / Bleach ──
-	"BRIGHT WHITE","SUPER WHITE","MILKY WHITE","SUNSHINE WHITE",
-	"BLEACH WHITE 1.0","BLEACH WHITE 2.0","BLEACH WHITE","WHITE MIX","WHITE",
+	# 1. White
+	"BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE",
+	"BLEACH WHITE 1.0", "BLEACH WHITE 2.0", "BLEACH WHITE", "WHITE MIX", "WHITE",
 	
-	# ── New Order Stage 1: Baby Pink ──
+	# 2. Ivory / Cream
+	"BRIGHT IVORY", "IVORY", "OFF WHITE",
+	"CREAM 1.0", "CREAM 2.0", "CREAM 3.0", "CREAM 4.0", "CREAM 5.0", "CREAM",
+
+	# 3. Lemon Yellow
+	"LEMON YELLOW 1.0", "LEMON YELLOW 3.0", "LEMON YELLOW",
+	
+	# 4. Golden Yellow
+	"GOLDEN YELLOW 4.0 SPL", "GOLDEN YELLOW 1.0", "GOLDEN YELLOW 2.0", "GOLDEN YELLOW 3.0", "GOLDEN YELLOW",
+	
+	# 5. Orange
+	"BRIGHT ORANGE", "ORANGE 2.0", "DARK ORANGE", "ORANGE",
+
+	# 6. Baby Pink
 	"BABY PINK",
-	
-	# ── New Order Stage 2: Medical ──
-	"LIGHT MEDICAL BLUE","MEDICAL BLUE",
-	"MEDICAL GREEN",
-	
-	# ── New Order Stage 3: Ivory / Cream (light buff tones) ──
-	"BRIGHT IVORY","IVORY","OFF WHITE","CREAM 1.0","CREAM 2.0","CREAM 3.0","CREAM 4.0","CREAM 5.0","CREAM",
-	
-	# ── Yellows: Lemon (light) → Golden (darker) ──
-	"LEMON YELLOW 1.0","LEMON YELLOW 3.0","LEMON YELLOW",
-	"GOLDEN YELLOW 4.0 SPL","GOLDEN YELLOW 1.0","GOLDEN YELLOW 2.0","GOLDEN YELLOW 3.0","GOLDEN YELLOW",
-	
-	# ── Oranges ──
-	"BRIGHT ORANGE","ORANGE 2.0","DARK ORANGE",
-	
-	# ── Pinks: Light → Dark ──
-	"PINK 1.0","PINK 2.0","PINK 3.0","PINK 5.0","DARK PINK","PINK 6.0 DARK","PINK 7.0 DARK",
-	
-	# ── Reds → Maroons ──
-	"RED","CRIMSON RED","LIGHT MAROON","MAROON 1.0","DARK MAROON","MAROON 2.0",
-	
-	# ── Blues: Peacock → Royal → Navy ──
-	"LIGHT PEACOCK BLUE","PEACOCK BLUE",
-	"BLUE 1.0","BLUE 2.0","BLUE 4.0","BLUE 9.0","BLUE", # Other blues
-	"ROYAL BLUE","BLUE 6.0 ROYAL BLUE", # Royal
-	"BLUE 7.0 DARK BLUE","BLUE 8.0 DARK ROYAL BLUE",
-	"NAVY BLUE","BLUE 11.0 NAVY BLUE","BLUE 12.0 SPL NAVY BLUE","BLUE 13.0 INK BLUE", # Navy
-	"LIGHT BLUE","SKY BLUE", # Lightest blues (backup)
-	
-	# ── Violet / Purple ──
-	"VIOLET","VOILET","PURPLE 1.0","PURPLE 2.0","PURPLE 3.0","PURPLE 4.0 BLACKBERRY",
-	
-	# ── Greens: Light → Dark (Reliance / Parrot / Sea / Army) ──
-	"GREEN 1.0 MINT","GREEN 2.0 TORQUISE GREEN",
-	"PARROT GREEN",
-	"SEA GREEN",
-	"GREEN 3.0 RELIANCE GREEN","RELIANCE GREEN",
-	"GREEN 4.0","GREEN 5.0 GRASS GREEN","GREEN 6.0","GREEN 7.0","GREEN 8.0 APPLE GREEN",
-	"GREEN 9.0 BOTTLE GREEN","GREEN 10.0","PEACOCK GREEN",
-	"GREEN 11.0 DARK GREEN","GREEN 12.0 OLIVE GREEN","GREEN 13.0 ARMY GREEN",
+
+	# 7. Pink
+	"PINK 1.0", "PINK 2.0", "PINK 3.0", "PINK 5.0", "DARK PINK", "PINK 6.0 DARK", "PINK 7.0 DARK", "PINK",
+
+	# 8. Red
+	"RED", "CRIMSON RED",
+
+	# 9. Light Maroon
+	"LIGHT MAROON", "MAROON 1.0",
+
+	# 10. Dark Maroon
+	"DARK MAROON", "MAROON 2.0",
+
+	# 11. Light Blue
+	"LIGHT BLUE",
+
+	# 12. Sky Blue
+	"SKY BLUE",
+
+	# 13. Medical Blue
+	"LIGHT MEDICAL BLUE", "MEDICAL BLUE",
+
+	# 14. Peacock Blue
+	"LIGHT PEACOCK BLUE", "PEACOCK BLUE",
+
+	# 15. Navy Blue
+	"NAVY BLUE", "BLUE 11.0 NAVY BLUE", "BLUE 12.0 SPL NAVY BLUE", "BLUE 13.0 INK BLUE",
+
+	# 16. Royal Blue
+	"BLUE 1.0", "BLUE 2.0", "BLUE 4.0", "BLUE 9.0", "BLUE",
+	"ROYAL BLUE", "BLUE 6.0 ROYAL BLUE", 
+	"BLUE 7.0 DARK BLUE", "BLUE 8.0 DARK ROYAL BLUE",
+
+	# 17. Violet
+	"VIOLET", "VOILET",
+
+	# 18. Purple
+	"PURPLE 1.0", "PURPLE 2.0", "PURPLE 3.0", "PURPLE 4.0 BLACKBERRY", "PURPLE",
+
+	# 19. Sea Green
+	"MEDICAL GREEN", "SEA GREEN",
+
+	# 20. Parrot Green
+	"GREEN 1.0 MINT", "GREEN 2.0 TORQUISE GREEN", "PARROT GREEN",
+
+	# 21. Pothys Green
+	"POTHYS GREEN",
+
+	# 22. Peacock Green
+	"PEACOCK GREEN",
+
+	# 23. Reliance Green
+	"GREEN 3.0 RELIANCE GREEN", "RELIANCE GREEN",
+	"GREEN 4.0", "GREEN 5.0 GRASS GREEN", "GREEN 6.0", "GREEN 7.0", "GREEN 8.0 APPLE GREEN",
+	"GREEN 9.0 BOTTLE GREEN", "GREEN 10.0",
+	"GREEN 11.0 DARK GREEN", "GREEN 12.0 OLIVE GREEN", "GREEN 13.0 ARMY GREEN",
 	"GREEN",
-	
-	# ── Grey / Silver ──
-	"LIGHT GREY","SILVER 1.0","SILVER 2.0","GREY 1.0","DARK GREY",
-	
-	# ── Browns (after grey, before black) ──
-	"CHOCOLATE BROWN","CHOCOLATE BROWN 2.0","BROWN 1.0","BROWN 2.0 DARK","BROWN 3.0 DARK COFFEE",
-	"CHIKOO 1.0","CHIKOO 2.0","CHOCOLATE BLACK",
-	
-	# ── Black ──
-	"BLACK MIX","COLOR MIX","BLACK",
-	
-	# ── Beige (Very end — buffer after black) ──
-	"DARK BEIGE","BEIGE MIX","BEIGE 1.0","BEIGE 2.0","BEIGE 3.0","BEIGE 4.0","BEIGE 5.0","LIGHT BEIGE",
+
+	# 24. Grey
+	"LIGHT GREY", "SILVER 1.0", "SILVER 2.0", "GREY 1.0", "DARK GREY", "GREY",
+
+	# 25. Black
+	"BLACK MIX", "COLOR MIX", "BLACK",
+
+	# 26. Brown
+	"CHOCOLATE BROWN", "CHOCOLATE BROWN 2.0", "BROWN 1.0", "BROWN 2.0 DARK", "BROWN 3.0 DARK COFFEE",
+	"CHIKOO 1.0", "CHIKOO 2.0", "CHOCOLATE BLACK", "BROWN",
+
+	# 27. Dark Beige
+	"DARK BEIGE", "BEIGE MIX",
+
+	# 28. Light Beige
+	"BEIGE 1.0", "BEIGE 2.0", "BEIGE 3.0", "BEIGE 4.0", "BEIGE 5.0", "LIGHT BEIGE", "BEIGE",
 ]
 COLOR_PRIORITY = {c: i for i, c in enumerate(COLOR_ORDER_LIST)}
 
