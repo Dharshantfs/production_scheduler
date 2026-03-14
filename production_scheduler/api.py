@@ -2126,13 +2126,14 @@ UNIT_QUALITY_ORDER = {
 def get_last_unit_order(unit, date=None, plan_name=None):
 	"""
 	Returns the last pushed order on the Production Board for a given unit.
-	If plan_name is provided, it prioritizes items from that plan.
+	Visual board sequence (idx DESC) is the absolute priority.
 	"""
+	from frappe.utils import getdate
 	target_date = getdate(date) if date else getdate(frappe.utils.today())
 	clean_unit = unit.strip().replace(" ", "").upper()
 	
 	# Primary query - follow board visual sequence (idx DESC)
-	# Filter for items that have a pb_plan_name OR were pushed (custom_item_planned_date)
+	# Filter for items that have a pb_plan_name (effectively pushed to board)
 	rows = frappe.db.sql("""
 		SELECT 
 			i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx, 
@@ -2145,17 +2146,13 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 		  AND (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
 		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
 		ORDER BY 
-		  -- ABSOLUTE PRIORITY: Visual order on board
 		  i.idx DESC,
-		  -- 2. Tie-break: Most recently modified sheet
 		  p.modified DESC
 		LIMIT 1
 	""", (clean_unit, target_date), as_dict=True)
 	
 	if not rows:
-		frappe.logger().debug(f"[CC Smart] Seed for {unit} (target {target_date}, plan {plan_name}): NOT FOUND for exact date. Falling back.")
-		# Fallback to absolute last submitted item for this unit ON OR BEFORE target date
-		# Must be a pushed item (on a PB sheet)
+		# Fallback to absolute last pushed item for this unit ON OR BEFORE target date
 		rows = frappe.db.sql("""
 			SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, p.name as sheet, p.modified
 			FROM `tabPlanning Sheet Item` i
@@ -2176,8 +2173,6 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 		return None
 
 	r = rows[0]
-	frappe.logger().debug(f"[CC Smart] Seed for {unit}: {r.color} ({r.quality}) from {r.sheet} (Fallback used: {not rows})")
-	
 	return {
 		"color": (r.color or "").upper().strip(),
 		"quality": (r.quality or "").upper().strip(),
