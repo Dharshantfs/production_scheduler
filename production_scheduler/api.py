@@ -3,6 +3,7 @@ from frappe import _
 from frappe.utils import getdate, flt, cint
 import json
 import re
+import datetime
 
 def generate_party_code(doc):
     """One Sales Order = One Party Code.
@@ -202,6 +203,35 @@ WHITE_COLORS = [
     "BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE", 
     "BLEACH WHITE", "WHITE MIX", "WHITE"
 ]
+
+def _get_standard_month_name(month_index):
+    # month_index 1-12
+    month_names = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"]
+    if 1 <= month_index <= 12:
+        return month_names[month_index - 1]
+    return "UNKNOWN"
+
+def _get_contextual_plan_name(base_name, date_val):
+    """
+    Returns the full contextual plan name: [MONTH] W[XX] [YY] [BASE_NAME]
+    Matches ColorChart.vue's currentMonthPrefix logic.
+    """
+    if not base_name or base_name == "Default":
+        return base_name
+        
+    d = getdate(date_val)
+    # Find ISO week number and the year it belongs to
+    iso_year, iso_week, iso_day = d.isocalendar()
+    
+    # In JS: we find ISO start of the week and take its month/year.
+    # ISO week start is Monday.
+    days_to_monday = iso_day - 1
+    monday = d - datetime.timedelta(days=days_to_monday)
+    
+    month_name = _get_standard_month_name(monday.month)
+    year_short = str(monday.year)[2:]
+    
+    return f"{month_name} W{iso_week} {year_short} {base_name}"
 
 HARD_LIMITS = {
 	"Unit 1": 4.4,
@@ -1167,8 +1197,16 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	if plan_name == "__all__":
 		plan_condition = ""  # No plan filter — return all items
 	elif plan_name and plan_name != "Default":
-		plan_condition = "AND p.custom_plan_name = %s"
-		params.append(plan_name)
+		# Search for BOTH the base name and its contextual versions for the target dates
+		valid_names = [plan_name]
+		for d in target_dates:
+			ctx_name = _get_contextual_plan_name(plan_name, d)
+			if ctx_name not in valid_names:
+				valid_names.append(ctx_name)
+		
+		fmt = ','.join(['%s'] * len(valid_names))
+		plan_condition = f"AND p.custom_plan_name IN ({fmt})"
+		params.extend(valid_names)
 	else:
 		plan_condition = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
 
@@ -2870,7 +2908,7 @@ def create_planning_sheet_from_so(doc):
         ps.custom_planned_date = doc.delivery_date
         ps.dod = doc.delivery_date
         ps.planning_status = "Draft"
-        ps.custom_plan_name = cc_plan
+        ps.custom_plan_name = _get_contextual_plan_name(cc_plan, doc.transaction_date)
         ps.custom_pb_plan_name = pb_plan
 
         _populate_planning_sheet_items(ps, doc)
@@ -3901,7 +3939,7 @@ def auto_create_planning_sheet(doc, method=None):
     ps.ordered_date = doc.transaction_date
     ps.dod = doc.delivery_date
     ps.planning_status = "Draft"
-    ps.custom_plan_name = cc_plan
+    ps.custom_plan_name = _get_contextual_plan_name(cc_plan, doc.transaction_date if 'doc' in locals() and hasattr(doc, 'transaction_date') else getdate())
     ps.custom_pb_plan_name = ""
 
     _populate_planning_sheet_items(ps, doc)
