@@ -4784,7 +4784,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
              if (!selected.length) { frappe.msgprint("Please select at least one order."); return; }
              
              const targetDate = d.get_value("target_date");
-             const pbPlan = "Default";
+             const pbPlan = selectedPlan.value || "Default";
              
              const payload = selected.map(s => ({ name: s.name, target_unit: s.target_unit, target_date: targetDate }));
              

@@ -3682,7 +3682,7 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 		"dates": sorted(list(effective_dates_used)),
 		"skipped_already_pushed": len(skipped_already_pushed),
 		"updated_sheets": len(updated_sheets),
-		"plan_name": pb_plan_name,
+		"plan_name": _get_contextual_plan_name(pb_plan_name, sorted(list(effective_dates_used))[0]) if effective_dates_used else pb_plan_name,
 	}
 
 
@@ -4062,7 +4062,7 @@ def auto_create_planning_sheet(doc, method=None):
             
         push_items_to_pb(white_items_to_push, pb_plan)
         
-    frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{cc_plan}</b>")
+    frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{ps.custom_plan_name}</b>")
     
     # RE-FETCH TO UPDATE HEADER PLAN CODES
     final_doc = frappe.get_doc("Planning sheet", ps.name)
@@ -4121,7 +4121,7 @@ def regenerate_planning_sheet(so_name):
     ps.ordered_date = doc.transaction_date
     ps.dod = doc.delivery_date
     ps.planning_status = "Draft"
-    ps.custom_plan_name = cc_plan
+    ps.custom_plan_name = _get_contextual_plan_name(cc_plan, doc.transaction_date if 'doc' in locals() and hasattr(doc, 'transaction_date') else getdate())
     ps.custom_pb_plan_name = ""
 
     _populate_planning_sheet_items(ps, doc)
@@ -4133,7 +4133,7 @@ def regenerate_planning_sheet(so_name):
     frappe.db.commit()
     
     # 3. AUTO-PUSH WHITE ITEMS TO PRODUCTION BOARD 
-    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "IVORY", "CREAM", "OFF WHITE"]
+    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE"]
     white_items_to_push = []
     
     for item in ps.items:
@@ -4169,7 +4169,7 @@ def regenerate_planning_sheet(so_name):
             
         push_items_to_pb(white_items_to_push, pb_plan)
         
-    frappe.msgprint(f"✅ Regenerated Planning Sheet <b>{ps.name}</b> in unlocked plan <b>{cc_plan}</b>")
+    frappe.msgprint(f"✅ Regenerated Planning Sheet <b>{ps.name}</b> in unlocked plan <b>{ps.custom_plan_name}</b>")
     return ps
 
 
