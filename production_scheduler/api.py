@@ -196,12 +196,13 @@ def _is_white_color(color):
     if not color:
         return False
     c = color.upper().strip()
-    return any(w == c for w in WHITE_COLORS)
+    return any(w in c for w in WHITE_COLORS)
 
-# User-defined White colors that are auto-planned on the Production Board
+# User-defined pure White colors (for auto-push and Production Board separation)
+# Consolidated from ColorChart.vue, ProductionScheduler.vue, and api.py
 WHITE_COLORS = [
-    "BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE", 
-    "BLEACH WHITE", "WHITE MIX", "WHITE"
+    "WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", 
+    "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE"
 ]
 
 def _get_standard_month_name(month_index):
@@ -1128,15 +1129,20 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
 	# PULL_BOARD MODE (Production Board only): items already ON the board for this date
 	# Use item-level custom_item_planned_date when set, else sheet custom_planned_date
-	if mode == "pull_board" and date:
-		target_date = getdate(date)
+	if mode == "pull_board" and (date or (start_date and end_date)):
 		has_item_planned = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
 		has_sheet_planned = frappe.db.has_column("Planning sheet", "custom_planned_date")
-		item_date_expr = (
-			"COALESCE(i.custom_item_planned_date, p.custom_planned_date) = %s"
-			if (has_item_planned and has_sheet_planned)
-			else "p.custom_planned_date = %s" if has_sheet_planned else "p.ordered_date = %s"
-		)
+		
+		# Base date logic: Prefer item date, then sheet date, then ordered date
+		date_col = "i.custom_item_planned_date" if has_item_planned else "p.custom_planned_date" if has_sheet_planned else "p.ordered_date"
+		
+		if start_date and end_date:
+			date_filter_expr = f"{date_col} BETWEEN %s AND %s"
+			params = (start_date, end_date)
+		else:
+			date_filter_expr = f"{date_col} = %s"
+			params = (date,)
+
 		sheet_pushed = "AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''" if has_sheet_planned else ""
 
 		so_item_col = ""
@@ -1159,13 +1165,13 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				COALESCE(i.custom_item_planned_date, p.custom_planned_date) as planned_date
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
-			WHERE {item_date_expr}
+			WHERE {date_filter_expr}
 			  AND i.color IS NOT NULL AND i.color != ''
 			  AND i.custom_quality IS NOT NULL AND i.custom_quality != ''
 			  {sheet_pushed}
 			  AND p.docstatus < 2
 			ORDER BY i.unit, i.idx
-		""", (target_date,), as_dict=True)
+		""", params, as_dict=True)
 
 		# Keep PB-plan items plus allowed whites (whites can appear without PB plan)
 		items = [
@@ -1400,10 +1406,20 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			# Production Board filtering: use item.custom_item_planned_date if set, else sheet.custom_planned_date
 			if cint(planned_only):
 				# Separation rule:
-				# - White-family orders may appear directly on the Production Board
-				# - Non-white orders must belong to a PB plan (custom_pb_plan_name set)
-				if not (sheet.get("custom_pb_plan_name") or "").strip():
-					if not _is_white_color(color):
+				# - White-family orders may appear directly on the Production Board (planned_only=1)
+				# - Non-white orders must belong to a PB plan OR they must be explicitly requested via plan_name
+				pn = (sheet.get("custom_pb_plan_name") or "").strip()
+				is_white = _is_white_color(color)
+				
+				# If we are filtering by a SPECIFIC plan (not __all__), and it's not a white order bypass, enforce plan name
+				if plan_name and plan_name != "__all__":
+					if pn != plan_name:
+						# Special bypass: if it's a white order, we show it on the board regardless of plan
+						if not is_white:
+							continue
+				elif not pn:
+					# If no plan name is set at all, only white orders show up on the board
+					if not is_white:
 						continue
 
 				# Resolve effective planned date: item-level first, then sheet-level
