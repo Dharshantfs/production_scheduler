@@ -3981,26 +3981,10 @@ def auto_create_planning_sheet(doc, method=None):
             if isinstance(parsed, str):
                 parsed = json.loads(parsed)
             if isinstance(parsed, list):
-                # Ascertain month prefix from Sales Order date
-                month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-                order_date = doc.transaction_date
-                month_prefix = ""
-                if order_date:
-                    d = frappe.utils.getdate(order_date)
-                    month_prefix = f"{month_names[d.month - 1]}-{str(d.year)[-2:]}"
-                    
                 for plan in parsed:
                     if int(plan.get("locked", 0)) == 0:
-                        p_name = plan.get("name", "")
-                        if p_name == "Default":
-                            default_plan_unlocked = True
-                        elif month_prefix and p_name.startswith(f"{month_prefix} "):
-                            cc_plan = p_name
-                            break
-                            
-                # Fallback to Default if no month-specific unlocked plan exists
-                if not cc_plan and default_plan_unlocked:
-                    cc_plan = "Default"
+                        cc_plan = plan.get("name", "")
+                        break
     except Exception as e:
         frappe.log_error("Plan Lock Fetch Error (auto-create)", str(e))
 
@@ -4042,7 +4026,7 @@ def auto_create_planning_sheet(doc, method=None):
     frappe.db.commit()
     
     # 4. AUTO-PUSH WHITE ITEMS TO PRODUCTION BOARD 
-    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "IVORY", "CREAM", "OFF WHITE"]
+    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE"]
     white_items_to_push = []
     
     for item in ps.items:
@@ -4117,26 +4101,10 @@ def regenerate_planning_sheet(so_name):
             if isinstance(parsed, str):
                 parsed = json.loads(parsed)
             if isinstance(parsed, list):
-                # Ascertain month prefix from Sales Order date
-                month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-                order_date = doc.transaction_date
-                month_prefix = ""
-                if order_date:
-                    d = frappe.utils.getdate(order_date)
-                    month_prefix = f"{month_names[d.month - 1]}-{str(d.year)[-2:]}"
-                    
                 for plan in parsed:
                     if int(plan.get("locked", 0)) == 0:
-                        p_name = plan.get("name", "")
-                        if p_name == "Default":
-                            default_plan_unlocked = True
-                        elif month_prefix and p_name.startswith(f"{month_prefix} "):
-                            cc_plan = p_name
-                            break
-                            
-                # Fallback to Default if no month-specific unlocked plan exists
-                if not cc_plan and default_plan_unlocked:
-                    cc_plan = "Default"
+                        cc_plan = plan.get("name", "")
+                        break
     except Exception as e:
         frappe.log_error("Plan Lock Fetch Error (regen)", str(e))
 

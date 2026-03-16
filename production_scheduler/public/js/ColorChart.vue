@@ -1127,8 +1127,10 @@ const EXCLUDED_WHITES = [
 function isExcludedWhite(color) {
     if (!color) return false;
     const cUpper = color.toUpperCase();
-    // Keep Ivory/Cream explicitly
+    // STRICT RULE: Ivory, Cream, and Off-White are NOT pure whites. They stay in main rows.
     if (cUpper.includes("IVORY") || cUpper.includes("CREAM") || cUpper.includes("OFF WHITE")) return false;
+    
+    // Pure whites are the ones auto-pushed to the board.
     return EXCLUDED_WHITES.some(ex => cUpper.includes(ex));
 }
 
