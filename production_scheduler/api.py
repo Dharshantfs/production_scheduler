@@ -1425,6 +1425,10 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				# Resolve effective planned date: item-level first, then sheet-level
 				it_pdate = item.get("custom_item_planned_date") or sheet.get("custom_planned_date")
 				
+				# WHITE ORDER FALLBACK: If no planned date, use ordered_date so they appear automatically on the board
+				if not it_pdate and is_white:
+					it_pdate = item.get("ordered_date") or sheet.get("ordered_date")
+				
 				# If filter is by single date or multiple dates (normalize so DD-MM-YYYY and YYYY-MM-DD both match)
 				if date:
 					try:
@@ -2622,9 +2626,28 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
     weights_to_add = {} # unit -> tons
     
     docs_to_move = [] 
-    for name in item_names:
+    for item_data in item_names:
+        name = item_data["item_name"] if isinstance(item_data, dict) else item_data
+        requested_qty = flt(item_data.get("qty")) if isinstance(item_data, dict) else None
+        
         try:
             doc = frappe.get_doc("Planning Sheet Item", name)
+            
+            # SPLIT LOGIC: If requested quantity is less than item quantity, split it
+            if requested_qty and requested_qty < flt(doc.qty) and requested_qty > 0:
+                # 1. Reduce original
+                original_qty = flt(doc.qty)
+                doc.qty = original_qty - requested_qty
+                doc.save()
+                
+                # 2. Create clone for moving
+                new_item = frappe.copy_doc(doc)
+                new_item.qty = requested_qty
+                new_item.parent = doc.parent # Keep temporarily
+                new_item.custom_is_split = 1
+                new_item.save()
+                doc = new_item
+            
             docs_to_move.append(doc)
             
             final_unit = target_unit if target_unit else (doc.unit or "")

@@ -181,8 +181,7 @@
                 </div>
               </div>
               <div class="cc-card-right">
-                <span class="cc-card-qty">{{ (entry.qty / 1000).toFixed(3) }} T</span>
-                <span class="cc-card-qty-kg">{{ entry.qty }} Kg</span>
+                <span class="cc-card-qty">{{ entry.qty >= 1000 ? (entry.qty / 1000).toFixed(2) + ' T' : entry.qty + ' Kg' }}</span>
                 <button 
                   class="cc-revert-btn" 
                   @click.stop="revertOrder(entry)" 
@@ -1081,6 +1080,7 @@ function openPullOrdersDialog() {
                 return;
             }
             const targetUnit = d.get_value('target_unit');
+            // selected is now an array of { item_name, qty }
             handleMoveOrders(selected, filterOrderDate.value, targetUnit, d);
         }
     });
@@ -1124,7 +1124,7 @@ async function loadOrders(d) {
         
         items.forEach(item => {
             html += `
-                <div class="pull-item-row" style="display: grid; grid-template-columns: 40px 80px 1fr 100px; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; align-items: center;">
+                <div class="pull-item-row" style="display: grid; grid-template-columns: 40px 80px 1fr 120px; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; align-items: center;">
                     <div style="display:flex; align-items:center; justify-content:center;">
                         <input type="checkbox" class="pull-item-cb" data-name="${item.itemName}" style="cursor:pointer; transform: scale(1.1);" />
                     </div>
@@ -1132,14 +1132,20 @@ async function loadOrders(d) {
                     <div style="display: flex; flex-direction: column; gap: 2px;">
                         <span style="font-size: 13px; font-weight: 600; color: #1e293b;">${item.color || 'No Color'} <span style="font-weight: 400; color: #94a3b8; font-size: 12px;">&bull; ${item.partyCode || item.customer || '-'}</span></span>
                         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                            <span style="display: inline-flex; align-items: center; gap: 4px; border: 1px solid #e2e8f0; padding: 1px 6px; border-radius: 99px; font-size: 11px; background: #fff;">
-                                <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color: ${getHexColor(item.color)};"></span>${item.color || 'No Color'}
-                            </span>
                              <span style="font-size: 10px; font-weight: 600; background: #e2e8f0; color: #475569; padding: 1px 6px; border-radius: 4px;">${item.quality || 'STD'}</span>
                              <span style="font-size: 10px; font-weight: 600; background: #f3f4f6; color: #4b5563; padding: 1px 6px; border-radius: 4px;">${item.gsm ? item.gsm + ' GSM' : 'N/A'}</span>
                         </div>
                     </div>
-                    <div style="text-align: right;"><span style="display: block; font-size: 14px; font-weight: 700; color: #0f172a;">${(item.qty/1000).toFixed(2)} T</span></div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 10px; color: #94a3b8; margin-bottom: 2px;">Max: ${item.qty} Kg</div>
+                        <input type="number" class="pull-item-qty" 
+                            data-name="${item.itemName}" 
+                            data-max="${item.qty}" 
+                            value="${item.qty}" 
+                            style="width: 80px; text-align: right; padding: 2px 4px; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 12px; font-weight: 700;"
+                        />
+                        <span style="font-size: 11px; font-weight: 600; color: #64748b; margin-left: 4px;">Kg</span>
+                    </div>
                 </div>
             `;
         });
@@ -1170,7 +1176,9 @@ async function loadOrders(d) {
 function updateSelection(d) {
     const selected = [];
     d.$wrapper.find('.pull-item-cb:checked').each(function() {
-        selected.push($(this).data('name'));
+        const name = $(this).data('name');
+        const qty = parseFloat(d.$wrapper.find(`.pull-item-qty[data-name="${name}"]`).val()) || 0;
+        selected.push({ item_name: name, qty: qty });
     });
     d.calc_selected_items = selected;
     d.get_primary_btn().text(`Move ${selected.length} to Today`);
