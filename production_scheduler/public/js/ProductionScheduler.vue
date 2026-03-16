@@ -120,9 +120,9 @@
             </div>
           </div>
             <span class="cc-stat-weight" :class="getUnitCapacityStatus(unit).class">
-              {{ getUnitTotal(unit).toFixed(2) }} / {{ Number(getUnitCapacityLimit(unit).toFixed(2)) }}{{ getCapacityLabel() }}
+              {{ formatQty(getUnitTotal(unit) * 1000) }} / {{ formatQty(getUnitCapacityLimit(unit) * 1000) }}{{ getCapacityLabel() }}
               <span v-if="getHiddenWhiteTotal(unit) > 0" style="font-size:10px; font-weight:700; color:#475569; display:block;">
-                 (Inc. {{ getHiddenWhiteTotal(unit).toFixed(2) }}T White)
+                 (Inc. {{ formatQty(getHiddenWhiteTotal(unit) * 1000) }} White)
               </span>
             </span>
             <span class="cc-stat-mix" v-if="getMixRollCount(unit) > 0">
@@ -200,9 +200,9 @@
 
         <!-- Unit Footer -->
         <div class="cc-col-footer">
-          <span>Production: {{ getUnitProductionTotal(unit).toFixed(2) }}T</span>
+          <span>Production: {{ formatQty(getUnitProductionTotal(unit) * 1000) }}</span>
           <span v-if="getMixRollTotalWeight(unit) > 0">
-            Mix Waste: {{ (getMixRollTotalWeight(unit) / 1000).toFixed(3) }}T
+            Mix Waste: {{ formatQty(getMixRollTotalWeight(unit)) }}
           </span>
         </div>
       </div>
@@ -299,6 +299,12 @@ const unitSortConfig = reactive({});
 units.forEach(u => {
     unitSortConfig[u] = { mode: 'manual', color: 'asc', gsm: 'desc', priority: 'color' };
 });
+
+function formatQty(qtyKg) {
+    if (!qtyKg && qtyKg !== 0) return '0 Kg';
+    const q = parseFloat(qtyKg);
+    return q >= 1000 ? (q / 1000).toFixed(2) + ' T' : Math.round(q) + ' Kg';
+}
 
 const rawData = ref([]);
 const selectedItems = ref([]); // Names of Planning Sheet Items selected for bulk actions
@@ -1266,7 +1272,7 @@ async function loadRescueItems(d) {
                     <td><input type="checkbox" class="rescue-cb" data-name="${item.name}"></td>
                     <td>${item.item_name} <br> <span class="text-muted" style="font-size:10px;">${item.name}</span></td>
                     <td>${item.unit || '-'}</td>
-                    <td>${item.qty}</td>
+                    <td>${formatQty(item.qty)}</td>
                     <td>${item.docstatus === 0 ? 'Draft' : item.docstatus === 1 ? 'Submitted' : 'Cancelled'}</td>
                 </tr>
             `;
@@ -1424,7 +1430,7 @@ function openMovePlanDialog() {
                             </span>
                         </td>
                         <td style="vertical-align:middle;">${i.quality || '-'} <span style="color:#94a3b8; font-size:10px;">${i.gsm ? i.gsm + ' GSM' : ''}</span></td>
-                        <td style="text-align:right; font-weight:700; vertical-align:middle;">${i.qty}</td>
+                        <td style="text-align:right; font-weight:700; vertical-align:middle;">${formatQty(i.qty)}</td>
                         <td style="vertical-align:middle;">${(i.unit || 'Mixed') === 'Mixed' ? 'Unassigned' : i.unit}</td>
                     </tr>`;
             });
