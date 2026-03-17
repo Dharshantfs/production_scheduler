@@ -4433,6 +4433,8 @@ async function autoAllocate() {
               frappe.msgprint("Error moving items to next day");
           }
       }
+  }
+}
 
 // Watchers to sync state
 watch(filterOrderDate, () => {
@@ -4454,23 +4456,23 @@ watch(renderKey, () => {
 
 // Re-init sortable when switching between kanban/matrix views
 watch(viewMode, async () => {
-    updateUrlParams();
+    updateURLParams();
     await nextTick();
     initSortable();
 });
 watch(viewScope, async (newVal) => {
-    updateUrlParams();
+    updateURLParams();
     if (newVal === 'daily') {
         initFlatpickr();
     }
     await fetchData();
 });
 watch(filterMonth, async () => {
-    updateUrlParams();
+    updateURLParams();
     await fetchData();
 });
 watch(filterWeek, async () => {
-    updateUrlParams();
+    updateURLParams();
     await fetchData();
 });
 
