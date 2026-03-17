@@ -204,6 +204,15 @@ WHITE_COLORS = {
     "SUPER WHITE", "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"
 }
 
+def _normalize_unit(raw):
+	"""Returns title-case unit names like 'Unit 1', 'Unit 2', etc. from any raw string."""
+	r = (raw or "").strip().upper().replace(" ", "")
+	if "UNIT1" in r: return "Unit 1"
+	if "UNIT2" in r: return "Unit 2"
+	if "UNIT3" in r: return "Unit 3"
+	if "UNIT4" in r: return "Unit 4"
+	return "Mixed"
+
 def _get_standard_month_name(month_index):
     # month_index 1-12
     month_names = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"]
@@ -965,6 +974,7 @@ def get_color_sequence(date, unit, plan_name="Default"):
 @frappe.whitelist()
 def save_color_sequence(date, unit, sequence_data, plan_name="Default", new_date=None):
 	"""Saves the color arrangement. Handles date changes by renaming the document."""
+	unit = _normalize_unit(unit)
 	name = f"CSA-{plan_name}-{unit}-{date}"
 	
 	# Handle date change (renaming)
@@ -1002,6 +1012,7 @@ def save_color_sequence(date, unit, sequence_data, plan_name="Default", new_date
 @frappe.whitelist()
 def request_sequence_approval(date, unit, plan_name="Default"):
 	"""Users call this to move sequence to 'Pending Approval'."""
+	unit = _normalize_unit(unit)
 	name = f"CSA-{plan_name}-{unit}-{date}"
 	if not frappe.db.exists("Color Sequence Approval", name):
 		frappe.throw(_("Please save the sequence before requesting approval."))
@@ -1013,6 +1024,7 @@ def request_sequence_approval(date, unit, plan_name="Default"):
 @frappe.whitelist()
 def approve_sequence(date, unit, plan_name="Default"):
 	"""Managers call this to approve the sequence."""
+	unit = _normalize_unit(unit)
 	name = f"CSA-{plan_name}-{unit}-{date}"
 	if not frappe.db.exists("Color Sequence Approval", name):
 		frappe.throw(_("Sequence record not found."))
@@ -1024,6 +1036,7 @@ def approve_sequence(date, unit, plan_name="Default"):
 @frappe.whitelist()
 def reject_sequence(date, unit, plan_name="Default"):
 	"""Managers call this to reject the sequence."""
+	unit = _normalize_unit(unit)
 	name = f"CSA-{plan_name}-{unit}-{date}"
 	if not frappe.db.exists("Color Sequence Approval", name):
 		frappe.throw(_("Sequence record not found."))
@@ -2385,15 +2398,7 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 	# Group by unit for specialized sorting
 	result_sequence = []
 	for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"]:
-		def normalize_u(raw):
-			r = (raw or "Mixed").strip().upper().replace(" ", "")
-			if "UNIT1" in r: return "Unit 1"
-			if "UNIT2" in r: return "Unit 2"
-			if "UNIT3" in r: return "Unit 3"
-			if "UNIT4" in r: return "Unit 4"
-			return "Mixed"
-
-		unit_items = [it for it in items if normalize_u(it.unit) == u]
+		unit_items = [it for it in items if _normalize_unit(it.unit) == u]
 		if not unit_items: continue
 		
 		seed = unit_seeds.get(u)
@@ -2452,7 +2457,7 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 			it["pbPlanName"] = p.get("custom_pb_plan_name","")
 			it["quality"] = (it.custom_quality or "").upper().strip()
 			it["colorKey"] = (it.color or "").upper().strip()
-			it["unitKey"] = it.unit or "Mixed"
+			it["unitKey"] = _normalize_unit(it.unit)
 			it["gsmVal"] = float(it.gsm or 0)
 			it["plannedDate"] = str(it.get("custom_item_planned_date") or "")
 			

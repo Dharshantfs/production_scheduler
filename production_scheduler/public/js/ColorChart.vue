@@ -3341,6 +3341,15 @@ async function pushToProductionBoard() {
         primary_action: async (values) => {
             const targetDate = (values.target_date || defaultTargetDate || today).trim();
             const currentStatus = dialogOverallStatus || d.overallStatus || overallStatus;
+            
+            const normalizeUnit = (u) => {
+                const r = (u || "").toString().trim().toUpperCase().replace(/\s+/g, '');
+                if (r.indexOf('UNIT1') !== -1) return 'Unit 1';
+                if (r.indexOf('UNIT2') !== -1) return 'Unit 2';
+                if (r.indexOf('UNIT3') !== -1) return 'Unit 3';
+                if (r.indexOf('UNIT4') !== -1) return 'Unit 4';
+                return 'Mixed';
+            };
 
             if (currentStatus === 'Draft' || currentStatus === 'Rejected') {
                 const pendingItems = currentSequence.filter(s => !s.pushed);
@@ -3348,9 +3357,9 @@ async function pushToProductionBoard() {
                     frappe.msgprint('No pending items to request approval for.');
                     return;
                 }
-                const unitsToRequest = [...new Set(pendingItems.map(s => s.unit || 'Unit 1'))];
+                const unitsToRequest = [...new Set(pendingItems.map(s => normalizeUnit(s.unit || 'Unit 1')))];
                 for (const u of unitsToRequest) {
-                    const unitItems = pendingItems.filter(s => (s.unit || 'Unit 1') === u).map(s => s.name);
+                    const unitItems = pendingItems.filter(s => normalizeUnit(s.unit || 'Unit 1') === u).map(s => s.name);
                     await frappe.call({
                         method: "production_scheduler.api.save_color_sequence",
                         args: { date: targetDate, unit: u, sequence_data: unitItems, plan_name: selectedPlan.value }
@@ -3367,7 +3376,7 @@ async function pushToProductionBoard() {
                 return;
             }
             if ((currentStatus === 'Pending Approval' || (currentStatus === 'Draft' && canApprove)) && canApprove) {
-                const unitsToApprove = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
+                const unitsToApprove = [...new Set(currentSequence.map(s => normalizeUnit(s.unit || 'Unit 1')))];
                 for (const u of unitsToApprove) {
                     await frappe.call({
                         method: "production_scheduler.api.approve_sequence",
