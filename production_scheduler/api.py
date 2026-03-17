@@ -233,6 +233,48 @@ def _get_contextual_plan_name(base_name, date_val):
     
     return f"{month_name} W{iso_week} {year_short} {base_name}"
 
+def _find_best_unlocked_plan(parsed_plans, doc_date):
+    """
+    Returns the first unlocked plan name that best matches the document date.
+    Supports both 'MARCH W11 26' and 'Mar-26' style prefixes.
+    """
+    if not parsed_plans:
+        return None
+        
+    d = getdate(doc_date)
+    month_names_short = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    month_names_full = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"]
+    
+    m_short = month_names_short[d.month - 1]
+    m_full = month_names_full[d.month - 1]
+    y_short = str(d.year)[2:]
+    
+    # Try fully contextual name first
+    ctx_prefix = _get_contextual_plan_name("", d).strip()
+    
+    best_matching_plan = None
+    default_plan = None
+    
+    for plan in parsed_plans:
+        if int(plan.get("locked", 0)) == 1:
+            continue
+            
+        p_name = plan.get("name", "")
+        if p_name == "Default":
+            default_plan = "Default"
+            continue
+            
+        # 1. Match full contextual prefix (MARCH W11 26)
+        if ctx_prefix and p_name.startswith(f"{ctx_prefix} "):
+            return p_name
+            
+        # 2. Match month-year (Mar-26 or MARCH)
+        if p_name.startswith(f"{m_short}-{y_short}") or p_name.startswith(f"{m_full} "):
+            if not best_matching_plan:
+                best_matching_plan = p_name
+                
+    return best_matching_plan or default_plan
+
 def _strip_legacy_prefixes(name):
     """
     Strips various month/week prefixes to get the base plan name.
@@ -2261,9 +2303,11 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 	target_date = getdate(date) if date else getdate(frappe.utils.today())
 	clean_unit = unit.strip().replace(" ", "").upper()
 	
+	clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
+	
 	# Primary query - follow board visual sequence (idx DESC)
 	# Filter for items that have a pb_plan_name (effectively pushed to board)
-	rows = frappe.db.sql("""
+	rows = frappe.db.sql(f"""
 		SELECT 
 			i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx, 
 			p.name as sheet, p.modified
@@ -2272,7 +2316,11 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 		WHERE REPLACE(UPPER(i.unit), ' ', '') = %s
 		  AND p.docstatus < 2
 		  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
-		  AND (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
+		  AND (
+		      (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
+		      OR
+		      REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
+		  )
 		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
 		ORDER BY 
 		  i.idx DESC,
@@ -2282,14 +2330,18 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 	
 	if not rows:
 		# Fallback to absolute last pushed item for this unit ON OR BEFORE target date
-		rows = frappe.db.sql("""
+		rows = frappe.db.sql(f"""
 			SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, p.name as sheet, p.modified
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
 			WHERE REPLACE(UPPER(i.unit), ' ', '') = %s 
 			  AND p.docstatus < 2
 			  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
-			  AND (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
+			  AND (
+			      (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
+			      OR
+			      REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
+			  )
 			  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= DATE(%s)
 			ORDER BY 
 			  DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) DESC, 
@@ -3981,26 +4033,7 @@ def auto_create_planning_sheet(doc, method=None):
             if isinstance(parsed, str):
                 parsed = json.loads(parsed)
             if isinstance(parsed, list):
-                # Ascertain month prefix from Sales Order date
-                month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-                order_date = doc.transaction_date
-                month_prefix = ""
-                if order_date:
-                    d = frappe.utils.getdate(order_date)
-                    month_prefix = f"{month_names[d.month - 1]}-{str(d.year)[-2:]}"
-                    
-                for plan in parsed:
-                    if int(plan.get("locked", 0)) == 0:
-                        p_name = plan.get("name", "")
-                        if p_name == "Default":
-                            default_plan_unlocked = True
-                        elif month_prefix and p_name.startswith(f"{month_prefix} "):
-                            cc_plan = p_name
-                            break
-                            
-                # Fallback to Default if no month-specific unlocked plan exists
-                if not cc_plan and default_plan_unlocked:
-                    cc_plan = "Default"
+                cc_plan = _find_best_unlocked_plan(parsed, doc.transaction_date)
     except Exception as e:
         frappe.log_error("Plan Lock Fetch Error (auto-create)", str(e))
 
@@ -4117,26 +4150,7 @@ def regenerate_planning_sheet(so_name):
             if isinstance(parsed, str):
                 parsed = json.loads(parsed)
             if isinstance(parsed, list):
-                # Ascertain month prefix from Sales Order date
-                month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-                order_date = doc.transaction_date
-                month_prefix = ""
-                if order_date:
-                    d = frappe.utils.getdate(order_date)
-                    month_prefix = f"{month_names[d.month - 1]}-{str(d.year)[-2:]}"
-                    
-                for plan in parsed:
-                    if int(plan.get("locked", 0)) == 0:
-                        p_name = plan.get("name", "")
-                        if p_name == "Default":
-                            default_plan_unlocked = True
-                        elif month_prefix and p_name.startswith(f"{month_prefix} "):
-                            cc_plan = p_name
-                            break
-                            
-                # Fallback to Default if no month-specific unlocked plan exists
-                if not cc_plan and default_plan_unlocked:
-                    cc_plan = "Default"
+                cc_plan = _find_best_unlocked_plan(parsed, doc.transaction_date)
     except Exception as e:
         frappe.log_error("Plan Lock Fetch Error (regen)", str(e))
 

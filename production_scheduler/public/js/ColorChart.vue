@@ -4506,6 +4506,29 @@ watch(filterMonth, async () => {
 watch(filterWeek, async () => {
     updateUrlParams();
     await fetchData();
+    // Week Change Sync: Try to maintain the same plan "family" (e.g. MARCH W12 26 PLAN 1 -> MARCH W11 26 PLAN 1)
+    if (selectedPlan.value && selectedPlan.value !== "Default") {
+        const parts = filterWeek.value.split("-W");
+        if (parts.length === 2) {
+            const yShort = parts[0].slice(2);
+            const wNo = parts[1];
+            
+            // Extract the base plan name (e.g. "PLAN 1")
+            const baseMatch = selectedPlan.value.match(/W\d+\s+\d{2}\s+(.+)$/i) || selectedPlan.value.match(/^[A-Z]{3}-\d{2}\s+(.+)$/i);
+            const baseName = baseMatch ? baseMatch[1] : selectedPlan.value;
+            
+            // Find its equivalent in the new week's plans
+            const targetPlan = plans.value.find(p => p.name.includes(`W${wNo}`) && p.name.includes(yShort) && p.name.includes(baseName));
+            if (targetPlan) {
+                selectedPlan.value = targetPlan.name;
+            } else {
+                // Fallback: look for ANY plan containing this week number
+                const weekMatch = plans.value.find(p => p.name.includes(`W${wNo}`));
+                if (weekMatch) selectedPlan.value = weekMatch.name;
+                else selectedPlan.value = "Default";
+            }
+        }
+    }
 });
 
 onMounted(async () => {
