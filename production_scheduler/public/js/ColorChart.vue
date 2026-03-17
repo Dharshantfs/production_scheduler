@@ -3817,7 +3817,7 @@ async function pushToProductionBoard() {
                         phase: s.phase || '',
                         is_seed_bridge: !!s.is_seed_bridge,
                         sequence_no: s.sequence_no,
-                        pushed: !!s.plannedDate
+                        pushed: isExcludedWhite(s.color) ? true : !!s.pbPlanName
                     };
                     
                     if (mapped.pushed) {
