@@ -200,8 +200,9 @@ def _is_white_color(color):
 
 # User-defined White colors that are auto-planned on the Production Board
 WHITE_COLORS = [
-    "BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE", 
-    "BLEACH WHITE", "WHITE MIX", "WHITE"
+    "WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", 
+    "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", 
+    "IVORY", "CREAM", "OFF WHITE", "OPTICAL WHITE"
 ]
 
 def _get_standard_month_name(month_index):
@@ -4025,8 +4026,10 @@ def auto_create_planning_sheet(doc, method=None):
     for s in existing:
         if s.docstatus != 0:
             continue
-        if (s.custom_plan_name or "Default") == cc_plan:
-            # Sheet already exists for the unlocked plan ΓÇô nothing to do
+        # Check matching base names to prevent duplicates if name was prefixed differently
+        existing_base = _strip_legacy_prefixes(s.custom_plan_name or "Default")
+        if existing_base == cc_plan:
+            # Sheet already exists for the unlocked plan - nothing to do
             return frappe.get_doc("Planning sheet", s.name)
 
     # 3. CREATE PLANNING SHEET 
@@ -4069,7 +4072,7 @@ def auto_create_planning_sheet(doc, method=None):
         pb_plan = _find_best_unlocked_plan(parsed_pb, doc.transaction_date) or "Default"
         push_items_to_pb(white_items_to_push, pb_plan)
         
-    frappe.msgprint(f"Γ£à Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{cc_plan}</b>")
+    frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{cc_plan}</b>")
     
     # RE-FETCH TO UPDATE HEADER PLAN CODES
     final_doc = frappe.get_doc("Planning sheet", ps.name)
@@ -4092,9 +4095,11 @@ def regenerate_planning_sheet(so_name):
     if not so_name:
         frappe.throw("Sales Order Name is required")
 
-    existing = frappe.db.get_value("Planning sheet", {"sales_order": so_name, "docstatus": ["<", 2]}, "name")
-    if existing:
-        frappe.throw(f"⚠️ An active Planning Sheet <b>{existing}</b> already exists. Cancel it first.")
+    existing_sheets = frappe.get_all("Planning sheet", filters={"sales_order": so_name, "docstatus": ["<", 2]}, fields=["name", "custom_plan_name"])
+    if existing_sheets:
+        # Before throwing error, check if ANY existing sheet matches legacy formats of what we want
+        # Note: cc_plan is fetched later, so we just check for generic existence first
+        frappe.throw(f"⚠️ An active Planning Sheet <b>{existing_sheets[0].name}</b> already exists. Cancel it first.")
 
     doc = frappe.get_doc("Sales Order", so_name)
 

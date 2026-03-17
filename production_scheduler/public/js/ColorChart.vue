@@ -4517,15 +4517,16 @@ watch(filterWeek, async () => {
             const baseMatch = selectedPlan.value.match(/W\d+\s+\d{2}\s+(.+)$/i) || selectedPlan.value.match(/^[A-Z]{3}-\d{2}\s+(.+)$/i);
             const baseName = baseMatch ? baseMatch[1] : selectedPlan.value;
             
-            // Find its equivalent in the new week's plans
-            const targetPlan = plans.value.find(p => p.name.includes(`W${wNo}`) && p.name.includes(yShort) && p.name.includes(baseName));
+            // Find its equivalent in the new list (matching by base name)
+            const targetPlan = plans.value.find(p => {
+                const pBase = p.name.replace(/^([A-Z]+[-\s]\d{2}|[A-Z]+(\s+W\d+)?(\s+\d{2})?)\s+/i, '');
+                return pBase === baseName;
+            });
+            
             if (targetPlan) {
                 selectedPlan.value = targetPlan.name;
             } else {
-                // Fallback: look for ANY plan containing this week number
-                const weekMatch = plans.value.find(p => p.name.includes(`W${wNo}`));
-                if (weekMatch) selectedPlan.value = weekMatch.name;
-                else selectedPlan.value = "Default";
+                selectedPlan.value = "Default";
             }
         }
     }
