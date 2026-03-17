@@ -214,16 +214,15 @@ def _get_standard_month_name(month_index):
 
 def _get_contextual_plan_name(base_name, date_val):
     """
-    Standardization: Returns ONLY the base name (stripped of prefixes).
-    The UI now handles dynamic prefixing for display (e.g. MARCH W12 26 PLAN 1).
-    This ensures the database remains clean and matches UI filtering.
+    Standardization: Returns the base name as-is.
+    The UI handles dynamic prefixing for display (e.g. MARCH W12 26 PLAN 1).
+    Use _strip_legacy_prefixes() for cleaning legacy prefixed names.
     """
     if not base_name or base_name == "Default":
         return base_name
-        
-    # Strip existing month/week prefixes to get the clean base (e.g. Mar-26 or MARCH W10 26)
-    clean_base = re.sub(r'^([A-Z]+[-\s]\d{2}|[A-Z]+(\s+W\d+)?(\s+\d{2})?)\s+', '', base_name, flags=re.I).strip()
-    return clean_base
+    # Return as-is — no stripping needed. The base name (e.g. "PLAN 1")
+    # is already clean. Legacy prefix stripping is done by _strip_legacy_prefixes().
+    return base_name.strip()
 
 def _find_best_unlocked_plan(parsed_plans, doc_date):
     """
