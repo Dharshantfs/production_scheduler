@@ -511,8 +511,7 @@ def generate_plan_code(date_str, unit, plan_name):
 		else: return ""
 
 		# Strip Month/Week prefix (e.g., "MARCH W10 26 PLAN 1" -> "PLAN 1")
-		import re
-		clean_plan = re.sub(r'(?i)^([A-Z]+[-\s]\d{2}|[A-Z]+(\s+W\d+)?(\s+\d{2})?)\s+', '', plan_name).strip()
+		clean_plan = _strip_legacy_prefixes(plan_name)
 		
 		return f"{yy}{month_char}{u_code}-{clean_plan}"
 	except Exception:
@@ -1269,7 +1268,18 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	# are allowed to appear directly on the Production Board without being pushed.
 	# Non-white items are filtered per-item later unless they belong to a PB plan.
 	if cint(planned_only) and _has_planned_date_column():
-		plan_condition += " AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
+		# Allow sheets where EITHER the sheet has custom_planned_date OR items have custom_item_planned_date
+		has_item_planned = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+		if has_item_planned:
+			plan_condition += """ AND (
+				(p.custom_planned_date IS NOT NULL AND p.custom_planned_date != '')
+				OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi 
+				           WHERE psi.parent = p.name 
+				           AND psi.custom_item_planned_date IS NOT NULL 
+				           AND psi.custom_item_planned_date != '')
+			)"""
+		else:
+			plan_condition += " AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
 	
 	# Build SELECT fields ΓÇö include columns only if they exist
 	fields = ["p.name", "p.customer", "p.party_code", "c.customer_name as party_name", "p.dod", "p.ordered_date", 
@@ -4043,10 +4053,9 @@ def auto_create_planning_sheet(doc, method=None):
     # Use contextual name for the custom_plan_name
     ps.custom_plan_name = _get_contextual_plan_name(cc_plan, doc.transaction_date)
     ps.custom_pb_plan_name = ""
-    # Set planned_date so the Production Board SQL filter finds this sheet.
-    # White items already have custom_item_planned_date set by _populate_planning_sheet_items.
-    # Non-white items are blocked by the _is_white_color check in get_color_chart_data.
-    ps.custom_planned_date = doc.transaction_date
+    # NOTE: Do NOT set custom_planned_date here — it would make Color Chart show
+    # color orders as "pushed". White items have custom_item_planned_date set by
+    # _populate_planning_sheet_items, and the SQL filter finds them via EXISTS.
 
     _populate_planning_sheet_items(ps, doc)
     

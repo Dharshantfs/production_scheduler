@@ -835,7 +835,14 @@ const derivedPlanCode = computed(() => {
 
     
     // Strip Month/Week prefix (e.g., "MARCH W10 26 PLAN 1" -> "PLAN 1" or "Mar-26 PLAN 1" -> "PLAN 1")
-    const cleanPlan = selectedPlan.value.replace(/^([A-Z]+[-\s]\d{2}|[A-Z]+(\s+W\d+)?(\s+\d{2})?)\s+/i, '');
+    // Uses specific month-name patterns to avoid stripping words like "PLAN"
+    let cleanPlan = selectedPlan.value;
+    // Pattern 1: MARCH W10 26 ... (full month + week + year)
+    cleanPlan = cleanPlan.replace(/^(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\s+W\d+\s+\d{2}\s+/i, '');
+    // Pattern 2: MAR-26 ... (short month-year)
+    cleanPlan = cleanPlan.replace(/^[A-Z]{3}-\d{2}\s+/i, '');
+    // Pattern 3: MARCH 26 ... (full month + year, no week)
+    cleanPlan = cleanPlan.replace(/^(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\s+\d{2}\s+/i, '');
     
     return `${yy}${monthChar}${uCode}-${cleanPlan}`;
 });
