@@ -4433,39 +4433,14 @@ async function autoAllocate() {
               frappe.msgprint("Error moving items to next day");
           }
       }
-  }
-}
-
-
-
-  
-  if (filterStatus.value) url.searchParams.set('status', filterStatus.value);
-  else url.searchParams.delete('status');
-  
-  if (selectedPlan.value && selectedPlan.value !== "Default") url.searchParams.set('plan', selectedPlan.value);
-  else url.searchParams.delete('plan');
-  
-  // Persist view state
-  url.searchParams.set('view', viewMode.value);
-  url.searchParams.set('scope', viewScope.value);
-  
-  if (viewScope.value === 'monthly' && filterMonth.value) url.searchParams.set('month', filterMonth.value);
-  else url.searchParams.delete('month');
-  
-  if (viewScope.value === 'weekly' && filterWeek.value) url.searchParams.set('week', filterWeek.value);
-  else url.searchParams.delete('week');
-  
-  window.history.replaceState({}, '', url);
-}
 
 // Watchers to sync state
 watch(filterOrderDate, () => {
-    updateUrlParams();
-    // fetchData called by existing watcher
+    updateURLParams();
 });
-watch(filterUnit, updateUrlParams);
-watch(filterStatus, updateUrlParams);
-watch(selectedPlan, updateUrlParams);
+watch(filterUnit, updateURLParams);
+watch(filterStatus, updateURLParams);
+watch(selectedPlan, updateURLParams);
 
 // Re-init Sortable when renderKey changes (forced re-render)
 // Skip if matrix — matrix init is handled by its own 150ms timer inside initSortable()
