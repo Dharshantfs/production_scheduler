@@ -1140,7 +1140,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		has_sheet_planned = frappe.db.has_column("Planning sheet", "custom_planned_date")
 		
 		# Base date logic: Prefer item date, then sheet date, then ordered date
-		date_col = "i.custom_item_planned_date" if has_item_planned else "p.custom_planned_date" if has_sheet_planned else "p.ordered_date"
+		date_col = "COALESCE(i.custom_item_planned_date, NULLIF(p.custom_planned_date, ''), p.ordered_date)"
 		
 		if start_date and end_date:
 			date_filter_expr = f"{date_col} BETWEEN %s AND %s"
@@ -1149,7 +1149,14 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			date_filter_expr = f"{date_col} = %s"
 			params = (date,)
 
-		sheet_pushed = "AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''" if has_sheet_planned else ""
+		clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
+		
+		sheet_pushed = f"""AND (
+			(i.custom_item_planned_date IS NOT NULL AND i.custom_item_planned_date != '') 
+			OR (p.custom_planned_date IS NOT NULL AND p.custom_planned_date != '')
+			OR (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
+			OR REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
+		)"""
 
 		so_item_col = ""
 		if frappe.db.has_column("Planning Sheet Item", "sales_order_item"):
@@ -1168,7 +1175,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				p.name as planningSheet, p.party_code as partyCode, p.customer,
 				p.ordered_date, p.dod, p.sales_order as salesOrder,
 				p.custom_pb_plan_name as pbPlanName,
-				COALESCE(i.custom_item_planned_date, p.custom_planned_date) as planned_date
+				COALESCE(i.custom_item_planned_date, NULLIF(p.custom_planned_date, ''), p.ordered_date) as planned_date
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
 			WHERE {date_filter_expr}
