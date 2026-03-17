@@ -3112,7 +3112,7 @@ async function pushToProductionBoard() {
         }).join('');
 
         return `<div style="max-height:420px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:12px;box-shadow:inset 0 2px 4px rgba(0,0,0,0.02);">
-            <table style="width:100%;border-collapse:collapse;font-family:'Inter',sans-serif;">
+            <table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;">
                 <thead style="background:#f8fafc;color:#64748b;position:sticky;top:0;z-index:2;border-bottom:2px solid #e2e8f0;">
                     <tr>
                         <th style="padding:8px 6px;width:32px;text-align:center;">☰</th>
@@ -3517,7 +3517,9 @@ async function pushToProductionBoard() {
                 dialogApprovalMeta = { modified_by: msg.modified_by, modified: msg.modified };
             }
             if (msg.status !== 'Approved') {
-                dialogPendingUnits.push(u);
+                if (!dialogPendingUnits.includes(u)) {
+                    dialogPendingUnits.push(u);
+                }
             }
         }
 

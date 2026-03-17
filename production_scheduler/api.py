@@ -2399,7 +2399,7 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 	# Group by unit for specialized sorting
 	result_sequence = []
 	for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"]:
-		unit_items = [it for it in items if _normalize_unit(it.unit) == u]
+		unit_items = [it for it in items if _normalize_unit(it.get("unit")) == u]
 		if not unit_items: continue
 		
 		seed = unit_seeds.get(u)
@@ -2412,15 +2412,15 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 		remaining = []
 		
 		for it in unit_items:
-			c = (it.color or "").upper().strip()
-			q = (it.custom_quality or "").upper().strip()
+			c = (it.get("color") or "").upper().strip()
+			q = (it.get("custom_quality") or "").upper().strip()
 			if c == s_col and q == s_qual: perfect.append(it)
 			elif c == s_col: same_col.append(it)
 			else: remaining.append(it)
 
 		def color_sort_key_fn(it):
-			col = (it.color or "").upper().strip()
-			qual = (it.custom_quality or "").upper().strip()
+			col = (it.get("color") or "").upper().strip()
+			qual = (it.get("custom_quality") or "").upper().strip()
 			
 			# Priority 1: COLOR lightΓåÆdark order with WRAP-AROUND
 			c_idx = COLOR_PRIORITY.get(col, 999)
@@ -2435,7 +2435,7 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 			q_idx = q_order.index(qual) if qual in q_order else 999
 			
 			# Priority 3: GSM (High to Low -> negative)
-			gsm_val = -float(it.gsm or 0)
+			gsm_val = -float(it.get("gsm") or 0)
 			
 			return (color_score, q_idx, gsm_val)
 
@@ -2456,11 +2456,11 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 			it["customer"] = p.get("customer","")
 			it["partyCode"] = p.get("party_code","")
 			it["pbPlanName"] = p.get("custom_pb_plan_name","")
-			it["quality"] = (it.custom_quality or "").upper().strip()
-			it["colorKey"] = (it.color or "").upper().strip()
-			it["unit"] = _normalize_unit(it.unit)
+			it["quality"] = (it.get("custom_quality") or "").upper().strip()
+			it["colorKey"] = (it.get("color") or "").upper().strip()
+			it["unit"] = _normalize_unit(it.get("unit"))
 			it["unitKey"] = it["unit"]
-			it["gsmVal"] = float(it.gsm or 0)
+			it["gsmVal"] = float(it.get("gsm") or 0)
 			it["plannedDate"] = str(it.get("custom_item_planned_date") or "")
 			it["description"] = it.get("item_name") or ""
 			
