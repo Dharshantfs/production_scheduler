@@ -2973,8 +2973,10 @@ async function pushToProductionBoard() {
             planningSheet: d.planningSheet || '',
             phase: '',
             is_seed_bridge: false,
-            pushed: !!(d.pbPlanName || d.plannedDate || d.custom_item_planned_date), 
-            checked: !(d.pbPlanName || d.plannedDate || d.custom_item_planned_date)
+            // Non-white: only "pushed" if manually pushed (has pbPlanName)
+            // White: always on the board (has custom_item_planned_date)
+            pushed: isExcludedWhite(d.color) ? true : !!d.pbPlanName, 
+            checked: isExcludedWhite(d.color) ? false : !d.pbPlanName
         };
     });
 
