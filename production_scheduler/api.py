@@ -4043,6 +4043,10 @@ def auto_create_planning_sheet(doc, method=None):
     # Use contextual name for the custom_plan_name
     ps.custom_plan_name = _get_contextual_plan_name(cc_plan, doc.transaction_date)
     ps.custom_pb_plan_name = ""
+    # Set planned_date so the Production Board SQL filter finds this sheet.
+    # White items already have custom_item_planned_date set by _populate_planning_sheet_items.
+    # Non-white items are blocked by the _is_white_color check in get_color_chart_data.
+    ps.custom_planned_date = doc.transaction_date
 
     _populate_planning_sheet_items(ps, doc)
     
@@ -4052,24 +4056,11 @@ def auto_create_planning_sheet(doc, method=None):
     ps.insert()
     frappe.db.commit()
     
-    # 4. AUTO-PUSH WHITE ITEMS TO PRODUCTION BOARD 
-    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "IVORY", "CREAM", "OFF WHITE"]
-    white_items_to_push = []
-    
-    for item in ps.items:
-        clean_txt = ((item.item_code or "") + " " + (item.item_name or "") + " " + (item.color or "")).upper()
-        if any(w in clean_txt for w in whites):
-            white_items_to_push.append({
-                "name": item.name,
-                "target_date": str(doc.transaction_date),
-                "target_unit": item.unit
-            })
-            
-    if white_items_to_push:
-        # Fetch matching PB plan robustly
-        parsed_pb = get_persisted_plans("production_board")
-        pb_plan = _find_best_unlocked_plan(parsed_pb, doc.transaction_date) or "Default"
-        push_items_to_pb(white_items_to_push, pb_plan)
+    # White items are auto-visible on the Production Board because:
+    # 1. The sheet has custom_planned_date set (passes SQL filter)
+    # 2. White items have custom_item_planned_date set (from _populate_planning_sheet_items)
+    # 3. The _is_white_color check allows them through without custom_pb_plan_name
+    # Non-white items stay in the Color Chart only (no custom_pb_plan_name, not white)
         
     frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{cc_plan}</b>")
     
