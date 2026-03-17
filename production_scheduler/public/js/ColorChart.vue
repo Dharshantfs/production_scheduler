@@ -2918,8 +2918,8 @@ async function pushToProductionBoard() {
     });
 
     // Collect item names from current view
-    // Collect UNIQUE item DocIDs from current view
-    const allItemIDs = [...new Set(items.map(d => d.name).filter(Boolean))];
+    // Collect UNIQUE item DocIDs (the real database names) from current view
+    const allItemIDs = [...new Set(items.map(d => d.itemName).filter(Boolean))];
 
     if (allItemIDs.length === 0) {
         frappe.msgprint('No valid items to push.');
@@ -2958,10 +2958,9 @@ async function pushToProductionBoard() {
     // State for the dialog
     let smartSequenceActive = false;
     let masterSequence = allItemIDs.map((id, i) => {
-        const d = items.find(it => it.name === id) || {};
-        const isPushed = !!d.pbPlanName; // If it has a pbPlanName, it's actually on the Production Board
+        const d = items.find(it => it.itemName === id) || {};
+        const isPushed = !!d.pbPlanName;
         
-        // Normalize unit for the object
         const rawUnit = d.unit || '';
         const normUnit = (rawUnit.toUpperCase().replace(/\s+/g, '').includes('UNIT1')) ? 'Unit 1' :
                          (rawUnit.toUpperCase().replace(/\s+/g, '').includes('UNIT2')) ? 'Unit 2' :
@@ -2969,13 +2968,15 @@ async function pushToProductionBoard() {
                          (rawUnit.toUpperCase().replace(/\s+/g, '').includes('UNIT4')) ? 'Unit 4' : 'Mixed';
 
         return {
-            name: id,
+            name: id, // Truly unique DocID (PSI-xxxx)
+            uiKey: d.name, // The Sheet-Idx key for UI reference if needed
             color: d.color || '',
             quality: d.quality || d.custom_quality || '',
             gsm: d.gsm || '',
             unit: normUnit,
             qty: d.qty || '',
-            itemName: d.itemName || '',
+            itemName: id, // Duplicate for safety in some logic paths
+            description: d.description || '', // Actual item description
             customer: d.customer || '',
             partyCode: d.partyCode || '',
             partyName: d.partyName || '',
@@ -2983,8 +2984,6 @@ async function pushToProductionBoard() {
             planningSheet: d.planningSheet || '',
             phase: '',
             is_seed_bridge: false,
-            // Non-white: only "pushed" if manually pushed (has pbPlanName)
-            // White: always on the board (has custom_item_planned_date)
             pushed: isExcludedWhite(d.color) ? true : !!d.pbPlanName, 
             checked: isExcludedWhite(d.color) ? false : !d.pbPlanName
         };
@@ -3101,7 +3100,7 @@ async function pushToProductionBoard() {
                 <td style="padding:6px;font-weight:bold;color:#64748b;font-size:11px;text-align:center;">${item.sequence_no}${bridge}</td>
                 <td style="padding:6px;font-size:12px;font-weight:700;color:#1e293b;">
                     <div>${item.color || '—'}</div>
-                    <div style="font-size:9px;font-weight:400;color:#64748b;">${item.itemName || ''}</div>
+                    <div style="font-size:9px;font-weight:400;color:#64748b;">${item.description || item.itemName || ''}</div>
                 </td>
                 <td style="padding:6px;font-size:11px;color:#475569;">${item.quality || '—'}</td>
                 <td style="padding:6px;font-size:11px;color:#475569;text-align:center;">${item.gsm || '—'}</td>
@@ -3849,7 +3848,8 @@ async function pushToProductionBoard() {
                         is_seed_bridge: !!s.is_seed_bridge,
                         sequence_no: s.sequence_no,
                         plannedDate: s.plannedDate || '',
-                        itemName: s.item_name || s.itemName || '',
+                        itemName: s.name,
+                        description: s.description || s.item_name || '',
                         pushed: isExcludedWhite(s.color) ? true : !!s.pbPlanName
                     };
                     

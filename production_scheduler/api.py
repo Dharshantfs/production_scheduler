@@ -1477,6 +1477,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			data.append({
 				"name": "{}-{}".format(sheet.name, item.get("idx", 0)),
 				"itemName": item.name,
+				"description": item.item_name or "",
 				"planningSheet": sheet.name,
 				"customer": sheet.customer,
 				"partyCode": sheet.party_code,
@@ -2461,6 +2462,7 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 			it["unitKey"] = it["unit"]
 			it["gsmVal"] = float(it.gsm or 0)
 			it["plannedDate"] = str(it.get("custom_item_planned_date") or "")
+			it["description"] = it.get("item_name") or ""
 			
 			result_sequence.append(it)
 
