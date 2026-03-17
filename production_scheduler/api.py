@@ -1240,8 +1240,22 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			date_condition = f"{eff} IN ({fmt})"
 			params.extend(target_dates)
 		else:
-			date_condition = f"{eff} = %s"
-			params.append(target_dates[0])
+			target_date = target_dates[0]
+			if cint(planned_only) or mode == "pull_board":
+				clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
+				date_condition = f"""(
+					{eff} = %s 
+					OR 
+					({eff} < %s AND EXISTS (
+						SELECT 1 FROM `tabPlanning Sheet Item` 
+						WHERE parent = p.name 
+						AND REPLACE(UPPER(color), ' ', '') IN ({clean_white_sql})
+					))
+				)"""
+				params.extend([target_date, target_date])
+			else:
+				date_condition = f"{eff} = %s"
+				params.append(target_date)
 	
 	if plan_name == "__all__":
 		plan_condition = ""  # No plan filter — return all items
@@ -2838,7 +2852,7 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
             target_sheet.customer = parent_doc.customer
             target_sheet.sales_order = parent_doc.sales_order
             if target_plan:
-                target_sheet.custom_plan_name = target_plan
+                target_sheet.custom_plan_name = _get_contextual_plan_name(target_plan, target_date)
             if target_pb_plan:
                 target_sheet.custom_pb_plan_name = target_pb_plan
             target_sheet.save()
@@ -3753,7 +3767,7 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 						pb_sheet_name = existing[0].name
 					else:
 						pb_sheet = frappe.new_doc("Planning sheet")
-						pb_sheet.custom_plan_name = parent_doc.get("custom_plan_name") or "Default"
+						pb_sheet.custom_plan_name = _get_contextual_plan_name(parent_doc.get("custom_plan_name") or "Default", effective_date)
 						pb_sheet.custom_pb_plan_name = pb_plan_name
 						# CRITICAL: ordered_date stays as ORIGINAL
 						pb_sheet.ordered_date = original_ordered_date
@@ -3770,7 +3784,7 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 								SET custom_pb_plan_name = %s, custom_plan_name = %s,
 								    custom_planned_date = %s
 								WHERE name = %s
-							""", (pb_plan_name, parent_doc.get("custom_plan_name") or "Default",
+							""", (pb_plan_name, _get_contextual_plan_name(parent_doc.get("custom_plan_name") or "Default", effective_date),
 								  effective_date, pb_sheet_name))
 
 					pb_sheet_cache[cache_key] = pb_sheet_name

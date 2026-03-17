@@ -466,6 +466,36 @@
                         </th>
                         <th class="matrix-total-col text-right" style="background:#ffeb3b; color:#000;">{{ matrixData.grandTotal.toFixed(0) }}</th>
                     </tr>
+                    <!-- Whites Section (Reference Only) -->
+                    <tr 
+                        v-for="row in matrixData.whiteRows" 
+                        :key="'w-' + row.color"
+                        class="matrix-row"
+                    >
+                        <td class="matrix-sticky-col bg-white">
+                            <div class="flex items-center">
+                                <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
+                                {{ row.color }}
+                                <button v-if="row.isPushed" 
+                                    @click.stop="revertColorGroup(row.color)"
+                                    style="margin-left:8px; background: #16a34a; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer;"
+                                    title="Click to revert white orders"
+                                >
+                                    ✅ {{ row.pushedPlanName || 'Board' }}
+                                </button>
+                            </div>
+                        </td>
+                        <td 
+                            v-for="col in matrixData.columns" 
+                            :key="'w-' + col.id" 
+                            class="text-right bg-white"
+                        >
+                            {{ (row.cells[col.id] || 0) > 0 ? (row.cells[col.id]).toFixed(0) : '' }}
+                        </td>
+                        <td class="matrix-total-col text-right font-bold bg-gray-50">
+                            {{ row.total.toFixed(0) }}
+                        </td>
+                    </tr>
                 </tfoot>
             </table>
         </div>
@@ -934,9 +964,9 @@ const matrixData = computed(() => {
         return a.code.localeCompare(b.code);
     });
 
-    // 2. Prepare Rows (Unique Colors)
-    // ✅ IMPROVEMENT: Use rawData (All Plans) to seed the vertical legend
+    // 2. Prepare Rows (Unique Colors and Whites)
     const allColors = new Set();
+    const allWhites = new Set();
     
     rawData.value.forEach(d => {
         if (!d.color) return;
@@ -944,9 +974,11 @@ const matrixData = computed(() => {
         
         // Skip NO COLOR for legend
         if (colorUpper === "NO COLOR") return;
+
+        let isWhite = isExcludedWhite(d.color);
         
-        // Whites are already excluded by api.py for the chart mode
-        allColors.add(d.color);
+        if (isWhite) allWhites.add(d.color);
+        else allColors.add(d.color);
     });
     
     // Always sort by Light to Dark default
@@ -956,6 +988,12 @@ const matrixData = computed(() => {
         return { color: color, cells: {}, total: 0 };
     });
     
+    // Sort whites
+    const sortedWhites = Array.from(allWhites).sort((a,b) => compareColor({color: a}, {color: b}, 'asc'));
+    const whiteRows = sortedWhites.map(color => {
+        return { color: color, cells: {}, total: 0 };
+    });
+
     const processRows = (rowArray) => {
         rowArray.forEach(row => {
             const isItemWhite = isExcludedWhite(row.color);
@@ -995,6 +1033,7 @@ const matrixData = computed(() => {
     };
     
     processRows(rows);
+    processRows(whiteRows);
     
     // Group Columns by DATE for Merged Header
     const dateHeaders = [];
@@ -1050,14 +1089,24 @@ const matrixData = computed(() => {
         colTotals[g.id] = rows.reduce((sum, r) => sum + (r.cells[g.id] || 0), 0);
     });
     const grandTotal = rows.reduce((sum, r) => sum + r.total, 0);
+
+    // Column Totals (Whites)
+    const whiteColTotals = {};
+    sortedGroups.forEach(g => {
+        whiteColTotals[g.id] = whiteRows.reduce((sum, r) => sum + (r.cells[g.id] || 0), 0);
+    });
+    const whiteGrandTotal = whiteRows.reduce((sum, r) => sum + r.total, 0);
     
     return {
         dateHeaders,
         sheetHeaders,
         columns: sortedGroups,
         rows,
+        whiteRows,
         colTotals,
-        grandTotal
+        grandTotal,
+        whiteColTotals,
+        whiteGrandTotal
     };
 });
 
@@ -1093,8 +1142,9 @@ const filteredData = computed(() => {
 
       const colorUpper = (d.color || "").toUpperCase();
       
-      // Use helper to exclude specific whites
-      if (isExcludedWhite(d.color)) return false;
+      // Use helper to exclude specific whites for the MAIN Kanban/Matrix rows
+      // (They are still in rawData so processData can pick them up for the footer)
+      if (viewMode.value !== 'matrix' && isExcludedWhite(d.color)) return false;
 
       // Hide "NO COLOR" items visually (User request: "dont show here")
       // They remain in rawData so capacity calculation remains accurate.
@@ -4387,14 +4437,6 @@ async function autoAllocate() {
 
 
 
-// ---- STATE PERSISTENCE (URL SYNC) ----
-function updateUrlParams() {
-  const url = new URL(window.location);
-  
-  if (filterOrderDate.value) url.searchParams.set('date', filterOrderDate.value);
-  
-  if (filterUnit.value) url.searchParams.set('unit', filterUnit.value);
-  else url.searchParams.delete('unit');
   
   if (filterStatus.value) url.searchParams.set('status', filterStatus.value);
   else url.searchParams.delete('status');
@@ -5244,6 +5286,48 @@ function updateRescueSelection(d) {
     d.calc_selected_rescue = s;
     d.get_primary_btn().text(`Rescue ${s.length} Orders`);
 }
+// ───────────────────────────────────────────────────────────────────
+// URL State Persistence
+// ───────────────────────────────────────────────────────────────────
+function updateURLParams() {
+    const params = new URLSearchParams(window.location.search);
+    params.set("view", viewMode.value);
+    params.set("scope", viewScope.value);
+    
+    if (selectedPlan.value && selectedPlan.value !== 'Default') {
+        params.set("plan", selectedPlan.value);
+    } else {
+        params.delete("plan");
+    }
+
+    if (viewScope.value === 'daily' && filterOrderDate.value) {
+        params.set("date", filterOrderDate.value);
+        params.delete("month");
+        params.delete("week");
+    } else if (viewScope.value === 'monthly' && filterMonth.value) {
+        params.set("month", filterMonth.value);
+        params.delete("date");
+        params.delete("week");
+    } else if (viewScope.value === 'weekly' && filterWeek.value) {
+        params.set("week", filterWeek.value);
+        params.delete("date");
+        params.delete("month");
+    }
+    
+    if (filterUnit.value) params.set("unit", filterUnit.value);
+    else params.delete("unit");
+
+    const newPath = window.location.pathname + "?" + params.toString();
+    if (window.location.search !== "?" + params.toString()) {
+        window.history.pushState({ path: newPath }, '', newPath);
+    }
+}
+
+watch([viewMode, viewScope, filterOrderDate, filterMonth, filterWeek, selectedPlan, filterUnit], () => {
+    updateURLParams();
+    fetchData();
+}, { deep: true });
+
 </script>
 
 <style scoped>

@@ -1800,13 +1800,13 @@ onMounted(() => {
     }
 });
 
-watch(viewScope, () => {
-    updateUrlParams(); // Use updateUrlParams instead of updateURL
+watch([viewScope, filterOrderDate, filterMonth, filterWeek, filterUnit], () => {
+    updateURLParams();
     nextTick(() => {
         initFlatpickr();
         fetchData();
     });
-});
+}, { deep: true });
 
 async function openBulkMoveDialog() {
   if (!selectedItems.value.length) {
