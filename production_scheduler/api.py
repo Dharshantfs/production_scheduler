@@ -2364,7 +2364,11 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 		WHERE REPLACE(UPPER(i.unit), ' ', '') = %s
 		  AND p.docstatus < 2
 		  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
-		  AND (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
+		  AND (
+		      (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
+		      OR
+		      REPLACE(UPPER(i.color), ' ', '') IN ({ ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS]) })
+		  )
 		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
 		ORDER BY 
 		  i.idx DESC,
@@ -2381,7 +2385,11 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 			WHERE REPLACE(UPPER(i.unit), ' ', '') = %s 
 			  AND p.docstatus < 2
 			  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
-			  AND (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
+			  AND (
+			      (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
+			      OR
+			      REPLACE(UPPER(i.color), ' ', '') IN ({ ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS]) })
+			  )
 			  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= DATE(%s)
 			ORDER BY 
 			  DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) DESC, 
