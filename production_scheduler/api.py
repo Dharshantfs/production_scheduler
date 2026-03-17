@@ -1310,6 +1310,32 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		ORDER BY {eff} ASC, p.creation ASC
 	""", tuple(params), as_dict=True)
 
+	# ── AUTO-PLAN PURE WHITE SHEETS ──
+	# If we're on the Production Board and some sheets have no planned date,
+	# auto-populate it for those that only contain white items (as per user request).
+	if cint(planned_only) and planning_sheets:
+		unplanned_names = [s.name for s in planning_sheets if not s.get("custom_planned_date")]
+		if unplanned_names:
+			# Find which of these contain color items
+			clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
+			color_sheets = frappe.db.sql(f"""
+				SELECT DISTINCT parent FROM `tabPlanning Sheet Item`
+				WHERE parent IN ({", ".join(["%s"] * len(unplanned_names))})
+				  AND REPLACE(UPPER(color), ' ', '') NOT IN ({clean_white_sql})
+			""", tuple(unplanned_names), as_list=1)
+			
+			color_sheet_names = set(row[0] for row in color_sheets)
+			pure_white_names = [n for n in unplanned_names if n not in color_sheet_names]
+			
+			if pure_white_names:
+				for s in planning_sheets:
+					if s.name in pure_white_names:
+						odate = s.ordered_date
+						# Manually set in DB and local object
+						frappe.db.set_value("Planning sheet", s.name, "custom_planned_date", odate, update_modified=True)
+						s["custom_planned_date"] = odate
+						# Note: We don't need to re-sort as it's already using the same date (eff)
+
 	# Fetch delivery statuses for referenced Sales Orders
 	so_names = [d.sales_order for d in planning_sheets if d.sales_order]
 	sheet_names = [d.name for d in planning_sheets]
