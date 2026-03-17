@@ -1428,6 +1428,15 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				pn = (sheet.get("custom_pb_plan_name") or "").strip()
 				is_white = _is_white_color(color)
 				
+				# ── BACKLOG PROTECTION ──
+				# If this sheet was pulled in because it's OLD (backlog logic), 
+				# we ONLY allow white items from it to reach the board.
+				# Colored items from old sheets must STAY in the Color Chart (not planned_only).
+				sheet_eff_pdt = getdate(sheet.effective_date) if sheet.get("effective_date") else None
+				if start_date and sheet_eff_pdt and sheet_eff_pdt < query_start:
+					if not is_white:
+						continue
+				
 				# If we are filtering by a SPECIFIC plan (not __all__), and it's not a white order bypass, enforce plan name
 				if plan_name and plan_name != "__all__":
 					if pn != plan_name:
