@@ -466,38 +466,6 @@
                         </th>
                         <th class="matrix-total-col text-right" style="background:#ffeb3b; color:#000;">{{ matrixData.grandTotal.toFixed(0) }}</th>
                     </tr>
-                    <!-- Whites Section -->
-                    <tr 
-                        v-for="row in matrixData.whiteRows" 
-                        :key="'w-' + row.color"
-                        class="matrix-row"
-                    >
-                        <td class="matrix-sticky-col bg-white">
-                            <div class="flex items-center">
-                                <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
-                                {{ row.color }}
-                                <button v-if="row.isPushed" 
-                                    @click.stop="revertColorGroup(row.color)"
-                                    style="margin-left:8px; background: #16a34a; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(22,163,74,0.3); transition: all 0.2s;"
-                                    title="Click to revert white orders"
-                                    onmouseover="this.style.opacity='0.8'"
-                                    onmouseout="this.style.opacity='1'"
-                                >
-                                    ✅ {{ row.pushedPlanName || 'Default' }}
-                                </button>
-                            </div>
-                        </td>
-                        <td 
-                            v-for="col in matrixData.columns" 
-                            :key="'w-' + col.id" 
-                            class="text-right bg-white"
-                        >
-                            {{ (row.cells[col.id] || 0) > 0 ? (row.cells[col.id]).toFixed(0) : '' }}
-                        </td>
-                        <td class="matrix-total-col text-right font-bold bg-gray-50">
-                            {{ row.total.toFixed(0) }}
-                        </td>
-                    </tr>
                 </tfoot>
             </table>
         </div>
@@ -966,12 +934,9 @@ const matrixData = computed(() => {
         return a.code.localeCompare(b.code);
     });
 
-    // 2. Prepare Rows (Unique Colors and Whites)
+    // 2. Prepare Rows (Unique Colors)
     // ✅ IMPROVEMENT: Use rawData (All Plans) to seed the vertical legend
-    // This ensures that when you create a new plan, the color names from the Default plan 
-    // are still visible in the legend/rows.
     const allColors = new Set();
-    const allWhites = new Set();
     
     rawData.value.forEach(d => {
         if (!d.color) return;
@@ -979,26 +944,18 @@ const matrixData = computed(() => {
         
         // Skip NO COLOR for legend
         if (colorUpper === "NO COLOR") return;
-
-        let isWhite = isExcludedWhite(d.color);
         
-        if (isWhite) allWhites.add(d.color);
-        else allColors.add(d.color);
+        // Whites are already excluded by api.py for the chart mode
+        allColors.add(d.color);
     });
     
-    // Always sort by Light to Dark default (ignore manual customRowOrder as per user request for strict sorting)
+    // Always sort by Light to Dark default
     let sortedColors = Array.from(allColors).sort((a,b) => compareColor({color: a}, {color: b}, 'asc'));
 
     const rows = sortedColors.map(color => {
         return { color: color, cells: {}, total: 0 };
     });
     
-    // Sort whites
-    const sortedWhites = Array.from(allWhites).sort((a,b) => compareColor({color: a}, {color: b}, 'asc'));
-    const whiteRows = sortedWhites.map(color => {
-        return { color: color, cells: {}, total: 0 };
-    });
-
     const processRows = (rowArray) => {
         rowArray.forEach(row => {
             const isItemWhite = isExcludedWhite(row.color);
@@ -1038,7 +995,6 @@ const matrixData = computed(() => {
     };
     
     processRows(rows);
-    processRows(whiteRows);
     
     // Group Columns by DATE for Merged Header
     const dateHeaders = [];
@@ -1088,30 +1044,20 @@ const matrixData = computed(() => {
         }
     });
 
-    // Column Totals (Main Colors Only)
+    // Column Totals
     const colTotals = {};
     sortedGroups.forEach(g => {
         colTotals[g.id] = rows.reduce((sum, r) => sum + (r.cells[g.id] || 0), 0);
     });
     const grandTotal = rows.reduce((sum, r) => sum + r.total, 0);
     
-    // Column Totals (Whites Only)
-    const whiteColTotals = {};
-    sortedGroups.forEach(g => {
-        whiteColTotals[g.id] = whiteRows.reduce((sum, r) => sum + (r.cells[g.id] || 0), 0);
-    });
-    const whiteGrandTotal = whiteRows.reduce((sum, r) => sum + r.total, 0);
-
     return {
         dateHeaders,
         sheetHeaders,
         columns: sortedGroups,
         rows,
-        whiteRows,
         colTotals,
-        grandTotal,
-        whiteColTotals,
-        whiteGrandTotal
+        grandTotal
     };
 });
 
