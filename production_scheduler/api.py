@@ -216,8 +216,10 @@ def _get_contextual_plan_name(base_name, date_val):
     Returns the full contextual plan name: [MONTH] W[XX] [YY] [BASE_NAME]
     Matches ColorChart.vue's currentMonthPrefix logic.
     """
-    if not base_name or base_name == "Default":
-        return base_name
+    # Allow empty base_name to return just the prefix
+    val = base_name if base_name else ""
+    if val == "Default":
+        return val
         
     # Strip existing month/week prefixes to avoid duplication (e.g. MARCH W10 26 ...)
     # Pattern matches: Mar-26 or MARCH or MARCH W10 26
@@ -1823,12 +1825,18 @@ def get_persisted_plans(plan_type):
 		import json
 		try:
 			plans = json.loads(val)
-			if not any(p.get("name") == "Default" for p in plans):
+			if isinstance(plans, str):
+				plans = json.loads(plans)
+			if not isinstance(plans, list):
+				plans = []
+			if not any(isinstance(p, dict) and p.get("name") == "Default" for p in plans):
 				plans.insert(0, {"name": "Default", "locked": 0})
 			return plans
 		except:
 			pass
-	return [{"name": "Default", "locked": 0}]
+	if plan_type == "color_chart":
+		return [{"name": "Default", "locked": 0}]
+	return []
 
 @frappe.whitelist()
 def add_persistent_plan(plan_type, name):
@@ -4038,7 +4046,8 @@ def auto_create_planning_sheet(doc, method=None):
 
     if not cc_plan:
         # All plans are locked - do not create a sheet
-        frappe.msgprint("⚠️ All Color Chart plans are locked - Planning Sheet not created.", indicator="orange", alert=True)
+        plan_summary = ", ".join([f"{p.get('name')}(L:{p.get('locked')})" for p in parsed if isinstance(p, dict)])
+        frappe.msgprint(f"⚠️ All Color Chart plans are locked - Planning Sheet not created. Plans found: {plan_summary}", indicator="orange", alert=True)
         return None
 
     # 2. CHECK IF AN UNLOCKED SHEET ALREADY EXISTS FOR THIS ORDER
@@ -4118,7 +4127,7 @@ def regenerate_planning_sheet(so_name):
 
     existing = frappe.db.get_value("Planning sheet", {"sales_order": so_name, "docstatus": ["<", 2]}, "name")
     if existing:
-        frappe.throw(f"ΓÜá∩╕Å An active Planning Sheet <b>{existing}</b> already exists. Cancel it first.")
+        frappe.throw(f"⚠️ An active Planning Sheet <b>{existing}</b> already exists. Cancel it first.")
 
     doc = frappe.get_doc("Sales Order", so_name)
 
@@ -4127,7 +4136,8 @@ def regenerate_planning_sheet(so_name):
     cc_plan = _find_best_unlocked_plan(parsed, doc.transaction_date)
 
     if not cc_plan:
-        frappe.msgprint("⚠️ All Color Chart plans are locked - cannot regenerate Planning Sheet.", indicator="orange", alert=True)
+        plan_summary = ", ".join([f"{p.get('name')}(L:{p.get('locked')})" for p in parsed if isinstance(p, dict)])
+        frappe.msgprint(f"⚠️ All Color Chart plans are locked - cannot regenerate Planning Sheet. Plans found: {plan_summary}", indicator="orange", alert=True)
         return None
 
     # 2. CREATE PLANNING SHEET
