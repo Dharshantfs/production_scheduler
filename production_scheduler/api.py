@@ -1429,6 +1429,13 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				unit = unit.title()
 			
 			effective_date_str = str(item.get("ordered_date") or sheet.get("ordered_date") or "")
+			is_white = _is_white_color(color)
+
+			# ── CHART EXCLUSION ──
+			# Per user: "white orders measn directly to prodution"
+			# We exclude white items from the Color Chart matrix/kanban entirely.
+			if not cint(planned_only) and is_white:
+				continue
 			
 			# Production Board filtering: use item.custom_item_planned_date if set, else sheet.custom_planned_date
 			if cint(planned_only):
@@ -1436,7 +1443,6 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				# - White-family orders may appear directly on the Production Board (planned_only=1)
 				# - Non-white orders must belong to a PB plan OR they must be explicitly requested via plan_name
 				pn = (sheet.get("custom_pb_plan_name") or "").strip()
-				is_white = _is_white_color(color)
 				
 				# ── BACKLOG PROTECTION ──
 				# If this sheet was pulled in because it's OLD (backlog logic), 
@@ -1447,13 +1453,13 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 					if not is_white:
 						continue
 				
-				# ── CHART EXCLUSION ──
-				# Per user: "white orders measn directly to prodution"
-				# We exclude white items from the Color Chart matrix/kanban entirely.
-				if is_white:
-					continue
-				
-				# If we are filtering by a SPECIFIC plan (not __all__), and it's not a white order bypass, enforce plan name
+				# ── AUTO-PLAN WHITES ──
+				# If it's a white item and has no planned date, it should appear on its ordered_date.
+				# The fallback is handled below, but we can also auto-set the sheet date for visibility.
+				if is_white and not sheet.get("custom_planned_date") and sheet.name:
+					# Check if all items in this sheet are white to safely auto-set sheet-level date
+					# (Optional optimization: only do it if the user wants it persisted)
+					pass
 				if plan_name and plan_name != "__all__":
 					if pn != plan_name:
 						# Special bypass: if it's a white order, we show it on the board regardless of plan
