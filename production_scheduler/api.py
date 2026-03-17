@@ -1296,26 +1296,25 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			params.extend([plan_name, like_plan_name])
 		else:
 			plan_condition = f"AND p.custom_plan_name IN ({fmt})"
-			params.extend(valid_names)
+	else:
+		clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
+		if cint(planned_only):
+			plan_condition = f"""AND (
+				p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default'
+				OR EXISTS (
+					SELECT 1 FROM `tabPlanning Sheet Item` i
+					WHERE i.parent = p.name AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
+				)
+			)"""
 		else:
-			clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
-			if cint(planned_only):
-				plan_condition = f"""AND (
-					p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default'
-					OR EXISTS (
-						SELECT 1 FROM `tabPlanning Sheet Item` i
-						WHERE i.parent = p.name AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
-					)
-				)"""
-			else:
-				plan_condition = f"""AND (
-					p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default'
-					OR EXISTS (
-						SELECT 1 FROM `tabPlanning Sheet Item` i
-						WHERE i.parent = p.name AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
-						AND (i.custom_plan_code IS NULL OR i.custom_plan_code = '')
-					)
-				)"""
+			plan_condition = f"""AND (
+				p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default'
+				OR EXISTS (
+					SELECT 1 FROM `tabPlanning Sheet Item` i
+					WHERE i.parent = p.name AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
+					AND (i.custom_plan_code IS NULL OR i.custom_plan_code = '')
+				)
+			)"""
 	
 	# Build SELECT fields — include columns only if they exist
 	fields = ["p.name", "p.customer", "p.party_code", "c.customer_name as party_name", "p.dod", "p.ordered_date", 
