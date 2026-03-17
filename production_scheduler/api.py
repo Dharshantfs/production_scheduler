@@ -1522,23 +1522,32 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 					it_pdate = item.get("ordered_date") or sheet.get("ordered_date")
 				
 				# If filter is by single date or multiple dates (normalize so DD-MM-YYYY and YYYY-MM-DD both match)
-				if date:
+				if not (start_date and end_date):
 					try:
 						it_pdt_normalized = getdate(str(it_pdate)) if it_pdate else None
 					except Exception:
 						it_pdt_normalized = None
-					if it_pdt_normalized not in target_dates:
+
+					# Allow past white orders (backlog) or exact date matches
+					if is_white and it_pdt_normalized and target_dates:
+						# If it's earlier than today's target date, it's a backlog white order
+						if it_pdt_normalized > target_dates[0] and it_pdt_normalized not in target_dates:
+							continue
+					elif it_pdt_normalized not in target_dates:
 						continue
 				
 				# If filter is by date range
 				if start_date and end_date:
 					# Skip if it_pdate is none or outside range
-					from frappe.utils import getdate
-					if not it_pdate:
-						continue
 					try:
-						pdt = getdate(str(it_pdate))
-						if not (pdt >= query_start and pdt <= query_end):
+						pdt = getdate(str(it_pdate)) if it_pdate else None
+						if not pdt:
+							continue
+						
+						# For white orders, allow backlog (dates before start_date)
+						if is_white and pdt < query_start:
+							pass # It's a backlog white order, let it through
+						elif not (pdt >= query_start and pdt <= query_end):
 							continue
 					except Exception:
 						# If date parsing fails, treat as invalid and skip
