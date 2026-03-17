@@ -3742,81 +3742,30 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 			# ------------------------------------------------
 
 			party_code = parent_doc.party_code or ""
-			# IMPORTANT: Keep original ordered_date, only change planned_date
-			original_ordered_date = str(parent_doc.ordered_date)
+			# ── KEY FIX: "One SO = One Sheet" ──
+			# Never create new sheets or re-parent items.
+			# Instead, update metadata directly on the item and keep the original parent sheet.
+			pb_sheet_name = parent_doc.name
 
-			# ── Set item-level unit if user picked a different unit ──
-			if target_unit:
-				frappe.db.sql("""
-					UPDATE `tabPlanning Sheet Item` SET unit = %s WHERE name = %s
-				""", (target_unit, name))
+			# Update parent sheet's PB plan / planned date (only if not already set)
+			sheet_set_parts = []
+			sheet_set_vals = []
+			if not parent_doc.get("custom_pb_plan_name"):
+				sheet_set_parts.append("`custom_pb_plan_name` = %s")
+				sheet_set_vals.append(pb_plan_name)
+			if frappe.db.has_column("Planning sheet", "custom_planned_date") and not parent_doc.get("custom_planned_date"):
+				sheet_set_parts.append("`custom_planned_date` = %s")
+				sheet_set_vals.append(effective_date)
+			if not parent_doc.get("custom_plan_name") or parent_doc.get("custom_plan_name") in ["Default", ""]:
+				sheet_set_parts.append("`custom_plan_name` = %s")
+				sheet_set_vals.append(_get_contextual_plan_name(parent_doc.get("custom_plan_name") or "Default", effective_date))
+			if sheet_set_parts:
+				frappe.db.sql(
+					f"UPDATE `tabPlanning sheet` SET {', '.join(sheet_set_parts)} WHERE name = %s",
+					sheet_set_vals + [pb_sheet_name]
+				)
 
-			# ── Find or create a dedicated PB Planning Sheet ──
-			# BUG FIX: Prefer keeping items in original sheet if possible to prevent "Multiple Sheets per SO" issue.
-			# If the original sheet already matches the target date, we don't need to re-parent.
-			
-			can_reuse_original = False
-			original_effective_date = str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
-			if original_effective_date == effective_date and (parent_doc.get("custom_pb_plan_name") == pb_plan_name or not parent_doc.get("custom_pb_plan_name")):
-				can_reuse_original = True
-				pb_sheet_name = parent_doc.name
-				# If reusing original but it didn't have pb_plan_name, update it
-				if not parent_doc.get("custom_pb_plan_name"):
-					frappe.db.set_value("Planning sheet", pb_sheet_name, "custom_pb_plan_name", pb_plan_name)
-			
-			if not can_reuse_original:
-				cache_key = (party_code, effective_date, pb_plan_name)
-				if cache_key in pb_sheet_cache:
-					pb_sheet_name = pb_sheet_cache[cache_key]
-				else:
-					# Match by SO instead of just party_code to ensure "One SO = One Sheet"
-					existing = frappe.get_all("Planning sheet", filters={
-						"custom_pb_plan_name": pb_plan_name,
-						"custom_planned_date": effective_date,
-						"sales_order": parent_doc.sales_order or "",
-						"party_code": party_code,
-						"docstatus": ["<", 2]
-					}, fields=["name"], limit=1)
-
-					if existing:
-						pb_sheet_name = existing[0].name
-					else:
-						pb_sheet = frappe.new_doc("Planning sheet")
-						pb_sheet.custom_plan_name = _get_contextual_plan_name(parent_doc.get("custom_plan_name") or "Default", effective_date)
-						pb_sheet.custom_pb_plan_name = pb_plan_name
-						# CRITICAL: ordered_date stays as ORIGINAL
-						pb_sheet.ordered_date = original_ordered_date
-						pb_sheet.custom_planned_date = effective_date
-						pb_sheet.party_code = party_code
-						pb_sheet.customer = parent_doc.customer or ""
-						pb_sheet.sales_order = parent_doc.sales_order or ""
-						pb_sheet.insert(ignore_permissions=True)
-						pb_sheet_name = pb_sheet.name
-						# Force custom fields via SQL
-						if frappe.db.has_column("Planning sheet", "custom_pb_plan_name"):
-							frappe.db.sql("""
-								UPDATE `tabPlanning sheet`
-								SET custom_pb_plan_name = %s, custom_plan_name = %s,
-								    custom_planned_date = %s
-								WHERE name = %s
-							""", (pb_plan_name, _get_contextual_plan_name(parent_doc.get("custom_plan_name") or "Default", effective_date),
-								  effective_date, pb_sheet_name))
-
-					pb_sheet_cache[cache_key] = pb_sheet_name
-
-			# ── Find the current max idx on this PB sheet ──
-			max_idx = frappe.db.sql("""
-				SELECT COALESCE(MAX(idx), 0) FROM `tabPlanning Sheet Item` WHERE parent = %s
-			""", (pb_sheet_name,))[0][0]
-
-			# ── Move item to the PB sheet via raw SQL ──
-			frappe.db.sql("""
-				UPDATE `tabPlanning Sheet Item`
-				SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items'
-				WHERE name = %s
-			""", (pb_sheet_name, name))
-
-			# Also set item-level planned date + plan code for consistency
+			# ── Set item-level planned date + plan code in-place (no re-parenting) ──
 			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
 				# Determine new plan code
 				new_plan_code = generate_plan_code(effective_date, unit, pb_plan_name)
@@ -3853,16 +3802,7 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 			frappe.db.set_value("Planning Sheet Item", name, "idx", new_idx)
 
 			# ── Track which original sheets were touched ──
-			updated_sheets.add(item_doc.parent)  # original parent
-
-			# ── Clean up original sheet if now empty ──
-			if item_doc.parent != pb_sheet_name:
-				remaining = frappe.db.count("Planning Sheet Item", {"parent": item_doc.parent})
-				if remaining == 0:
-					try:
-						frappe.delete_doc("Planning sheet", item_doc.parent, ignore_permissions=True, force=True)
-					except Exception:
-						pass
+			updated_sheets.add(pb_sheet_name)
 
 			count += 1
 
