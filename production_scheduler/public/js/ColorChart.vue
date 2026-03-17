@@ -2918,9 +2918,10 @@ async function pushToProductionBoard() {
     });
 
     // Collect item names from current view
-    const allItemNames = [...new Set(items.map(d => d.itemName).filter(Boolean))];
+    // Collect UNIQUE item DocIDs from current view
+    const allItemIDs = [...new Set(items.map(d => d.name).filter(Boolean))];
 
-    if (allItemNames.length === 0) {
+    if (allItemIDs.length === 0) {
         frappe.msgprint('No valid items to push.');
         return;
     }
@@ -2956,16 +2957,25 @@ async function pushToProductionBoard() {
 
     // State for the dialog
     let smartSequenceActive = false;
-    let masterSequence = allItemNames.map((n, i) => {
-        const d = items.find(it => it.itemName === n) || {};
+    let masterSequence = allItemIDs.map((id, i) => {
+        const d = items.find(it => it.name === id) || {};
         const isPushed = !!d.pbPlanName; // If it has a pbPlanName, it's actually on the Production Board
+        
+        // Normalize unit for the object
+        const rawUnit = d.unit || '';
+        const normUnit = (rawUnit.toUpperCase().replace(/\s+/g, '').includes('UNIT1')) ? 'Unit 1' :
+                         (rawUnit.toUpperCase().replace(/\s+/g, '').includes('UNIT2')) ? 'Unit 2' :
+                         (rawUnit.toUpperCase().replace(/\s+/g, '').includes('UNIT3')) ? 'Unit 3' :
+                         (rawUnit.toUpperCase().replace(/\s+/g, '').includes('UNIT4')) ? 'Unit 4' : 'Mixed';
+
         return {
-            name: n,
+            name: id,
             color: d.color || '',
             quality: d.quality || d.custom_quality || '',
             gsm: d.gsm || '',
-            unit: d.unit || '',
+            unit: normUnit,
             qty: d.qty || '',
+            itemName: d.itemName || '',
             customer: d.customer || '',
             partyCode: d.partyCode || '',
             partyName: d.partyName || '',
@@ -3089,7 +3099,10 @@ async function pushToProductionBoard() {
                     ${actionHtml}
                 </td>
                 <td style="padding:6px;font-weight:bold;color:#64748b;font-size:11px;text-align:center;">${item.sequence_no}${bridge}</td>
-                <td style="padding:6px;font-size:12px;font-weight:700;color:#1e293b;">${item.color || '—'}</td>
+                <td style="padding:6px;font-size:12px;font-weight:700;color:#1e293b;">
+                    <div>${item.color || '—'}</div>
+                    <div style="font-size:9px;font-weight:400;color:#64748b;">${item.itemName || ''}</div>
+                </td>
                 <td style="padding:6px;font-size:11px;color:#475569;">${item.quality || '—'}</td>
                 <td style="padding:6px;font-size:11px;color:#475569;text-align:center;">${item.gsm || '—'}</td>
                 <td style="padding:6px;font-size:11px;color:#475569;">${item.unit || '—'}</td>
@@ -3619,7 +3632,11 @@ async function pushToProductionBoard() {
 
         currentSequence = masterSequence.filter(item => {
             // Unit filter is always strict (AND condition)
-            if (unitSearch !== 'All Units' && item.unit !== unitSearch) return false;
+            if (unitSearch !== 'All Units') {
+                const u1 = (item.unit || '').toString().toUpperCase().trim();
+                const u2 = unitSearch.toUpperCase().trim();
+                if (u1 !== u2) return false;
+            }
 
             const matchQ = qualitySearch ? item.quality.toLowerCase().includes(qualitySearch) : false;
             const matchC = colorSearch ? item.color.toLowerCase().includes(colorSearch) : false;
@@ -3832,6 +3849,7 @@ async function pushToProductionBoard() {
                         is_seed_bridge: !!s.is_seed_bridge,
                         sequence_no: s.sequence_no,
                         plannedDate: s.plannedDate || '',
+                        itemName: s.item_name || s.itemName || '',
                         pushed: isExcludedWhite(s.color) ? true : !!s.pbPlanName
                     };
                     

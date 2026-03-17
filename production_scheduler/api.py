@@ -2457,7 +2457,8 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 			it["pbPlanName"] = p.get("custom_pb_plan_name","")
 			it["quality"] = (it.custom_quality or "").upper().strip()
 			it["colorKey"] = (it.color or "").upper().strip()
-			it["unitKey"] = _normalize_unit(it.unit)
+			it["unit"] = _normalize_unit(it.unit)
+			it["unitKey"] = it["unit"]
 			it["gsmVal"] = float(it.gsm or 0)
 			it["plannedDate"] = str(it.get("custom_item_planned_date") or "")
 			
