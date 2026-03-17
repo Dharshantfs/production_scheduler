@@ -219,6 +219,10 @@ def _get_contextual_plan_name(base_name, date_val):
     if not base_name or base_name == "Default":
         return base_name
         
+    # Strip existing month/week prefixes to avoid duplication (e.g. MARCH W10 26 ...)
+    # Pattern matches: Mar-26 or MARCH or MARCH W10 26
+    clean_base = re.sub(r'^([A-Z]+[-\s]\d{2}|[A-Z]+(\s+W\d+)?(\s+\d{2})?)\s+', '', base_name, flags=re.I).strip()
+    
     d = getdate(date_val)
     # Find ISO week number and the year it belongs to
     iso_year, iso_week, iso_day = d.isocalendar()
@@ -231,7 +235,8 @@ def _get_contextual_plan_name(base_name, date_val):
     month_name = _get_standard_month_name(monday.month)
     year_short = str(monday.year)[2:]
     
-    return f"{month_name} W{iso_week} {year_short} {base_name}"
+    prefix = f"{month_name} W{iso_week} {year_short}"
+    return f"{prefix} {clean_base}".strip()
 
 def _find_best_unlocked_plan(parsed_plans, doc_date):
     """
@@ -242,34 +247,38 @@ def _find_best_unlocked_plan(parsed_plans, doc_date):
         return None
         
     d = getdate(doc_date)
-    month_names_short = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    month_names_short = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
     month_names_full = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"]
     
     m_short = month_names_short[d.month - 1]
     m_full = month_names_full[d.month - 1]
     y_short = str(d.year)[2:]
     
-    # Try fully contextual name first
-    ctx_prefix = _get_contextual_plan_name("", d).strip()
+    # Try fully contextual prefix (MARCH W11 26)
+    ctx_prefix = _get_contextual_plan_name("", d).upper().strip()
     
     best_matching_plan = None
     default_plan = None
     
     for plan in parsed_plans:
-        if int(plan.get("locked", 0)) == 1:
+        # Relaxed locking check
+        is_locked = str(plan.get("locked", "0")) in ["1", 1, "true", True]
+        if is_locked:
             continue
             
-        p_name = plan.get("name", "")
-        if p_name == "Default":
-            default_plan = "Default"
+        p_name = str(plan.get("name", "")).strip()
+        p_name_up = p_name.upper()
+        
+        if p_name_up == "DEFAULT":
+            default_plan = p_name
             continue
             
         # 1. Match full contextual prefix (MARCH W11 26)
-        if ctx_prefix and p_name.startswith(f"{ctx_prefix} "):
+        if ctx_prefix and p_name_up.startswith(ctx_prefix):
             return p_name
             
         # 2. Match month-year (Mar-26 or MARCH)
-        if p_name.startswith(f"{m_short}-{y_short}") or p_name.startswith(f"{m_full} "):
+        if p_name_up.startswith(f"{m_short}-{y_short}") or p_name_up.startswith(m_full):
             if not best_matching_plan:
                 best_matching_plan = p_name
                 
@@ -406,7 +415,7 @@ def get_unit_load(date, unit, plan_name=None, pb_only=0):
 	Uses custom_planned_date if set, otherwise falls back to ordered_date."""
 	eff = _effective_date_expr("p")
 	pb_only = cint(pb_only)
-	# Build plan filter — each plan is treated independently
+	# Build plan filter ΓÇö each plan is treated independently
 	if plan_name and plan_name != "__all__":
 		if plan_name == "Default":
 			plan_cond = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
@@ -415,7 +424,7 @@ def get_unit_load(date, unit, plan_name=None, pb_only=0):
 			plan_cond = "AND p.custom_plan_name = %s"
 			params = (date, unit, plan_name)
 	else:
-		# No plan filter — sum all (used internally for global capacity checks)
+		# No plan filter ΓÇö sum all (used internally for global capacity checks)
 		plan_cond = ""
 		params = (date, unit)
 
@@ -601,7 +610,7 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 	item = frappe.get_doc("Planning Sheet Item", item_name)
 	parent_sheet = frappe.get_doc("Planning sheet", item.parent)
 	
-	# 2. Docstatus check — allow movement even from submitted sheets
+	# 2. Docstatus check ΓÇö allow movement even from submitted sheets
 	# (user requested free movement; we use raw SQL to bypass Frappe immutability)
 
 	item_wt_tons = flt(item.qty) / 1000.0
@@ -623,7 +632,7 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 		load_for_check = current_load
 	elif is_same_date:
 		# Same date, different unit: item moves FROM old unit TO new unit.
-		# Don't count the item's own weight in the old unit's load — only the new unit's load matters
+		# Don't count the item's own weight in the old unit's load ΓÇö only the new unit's load matters
 		load_for_check = current_load + item_wt_tons
 	else:
 		# Different date: full new load
@@ -648,7 +657,7 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
 			next_limit = HARD_LIMITS.get(unit, 999.0)
 			
 			if next_load + item_wt_tons > next_limit:
-				# Next day also full — ask user again
+				# Next day also full ΓÇö ask user again
 				return {
 					"status": "overflow",
 					"available": max(0, next_limit - next_load),
@@ -785,7 +794,7 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 			# Create new sheet for the target date
 			new_sheet = frappe.copy_doc(source_parent)
 			new_sheet.name = None
-			new_sheet.docstatus = 0  # Reset docstatus — copied doc must be Draft
+			new_sheet.docstatus = 0  # Reset docstatus ΓÇö copied doc must be Draft
 			new_sheet.amended_from = None
 			new_sheet.set("items", []) # clear items
 			if has_col:
@@ -815,7 +824,7 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 				pass  # Ignore if linked to Production Plan or other constraints
 
 	# 2. Handle IDX Shifting if inserting at specific position
-	# Update Item unit and parent first — use raw SQL to bypass docstatus immutability
+	# Update Item unit and parent first ΓÇö use raw SQL to bypass docstatus immutability
 	update_fields = {"unit": unit}
 	if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
 		update_fields["custom_item_planned_date"] = target_date
@@ -1263,7 +1272,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			params.append(target_dates[0])
 	
 	if plan_name == "__all__":
-		plan_condition = ""  # No plan filter — return all items
+		plan_condition = ""  # No plan filter ΓÇö return all items
 	elif plan_name and plan_name != "Default":
 		# Search for BOTH the base name, contextual name, and any legacy variations
 		valid_names = [plan_name]
@@ -1293,7 +1302,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	if cint(planned_only) and _has_planned_date_column():
 		plan_condition += " AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
 	
-	# Build SELECT fields — include columns only if they exist
+	# Build SELECT fields ΓÇö include columns only if they exist
 	fields = ["p.name", "p.customer", "p.party_code", "c.customer_name as party_name", "p.dod", "p.ordered_date", 
 			  "p.planning_status", "p.docstatus", "p.sales_order", "p.custom_plan_name", "p.custom_pb_plan_name",
 			  "COALESCE(p.custom_pb_plan_name, p.custom_plan_name, 'Default') as planName"]
@@ -1432,7 +1441,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			if color.upper() == "NO COLOR":
 				continue
 
-			# ── KEY FIX: Restore missing item details from sheet data ──
+			# ΓöÇΓöÇ KEY FIX: Restore missing item details from sheet data ΓöÇΓöÇ
 			unit = (item.get("unit") or sheet.get("unit") or "Unit 1").strip()
 			if unit.upper() in ["UNIT 1", "UNIT 2", "UNIT 3", "UNIT 4"]:
 				unit = unit.title()
@@ -2104,7 +2113,7 @@ def split_order(item_name, split_qty, target_unit):
 def duplicate_unprocessed_orders_to_plan(old_plan, new_plan, date=None, start_date=None, end_date=None):
 	"""
 	Moves unprocessed Planning Sheets from `old_plan` to `new_plan` by updating custom_plan_name.
-	Does NOT create new sheets — just updates the plan name on existing ones.
+	Does NOT create new sheets ΓÇö just updates the plan name on existing ones.
 	Only moves sheets that do NOT have BOTH a Production Plan AND a Work Order.
 	"""
 	if start_date and end_date:
@@ -2173,26 +2182,26 @@ def delete_plan(plan_name, date=None, start_date=None, end_date=None):
 	frappe.db.commit()
 	return {"status": "success", "deleted_count": count}
 
-# ── White color group (ONLY these 6 true whites — confirmed by user) ──────────
+# ΓöÇΓöÇ White color group (ONLY these 6 true whites ΓÇö confirmed by user) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 WHITE_COLORS = {
 	"BRIGHT WHITE", "MILKY WHITE", "SUPER WHITE",
 	"SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0",
 }
 
-# ── Beige / buffer colors placed at very end of color sequence ─────────────
+# ΓöÇΓöÇ Beige / buffer colors placed at very end of color sequence ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 BEIGE_COLORS = {
 	"BEIGE 1.0","BEIGE 2.0","BEIGE 3.0","BEIGE 4.0","BEIGE 5.0",
 	"LIGHT BEIGE","DARK BEIGE","BEIGE MIX",
 }
 
-# ── Very dark colors that should be followed by beige buffers when possible ──
+# ΓöÇΓöÇ Very dark colors that should be followed by beige buffers when possible ΓöÇΓöÇ
 VERY_DARK_COLORS = {
 	"BLACK","BLACK MIX","CHOCOLATE BLACK",
 	"CRIMSON RED","RED","DARK MAROON","MAROON 2.0","MAROON 1.0",
 	"BROWN 3.0 DARK COFFEE","BROWN 2.0 DARK",
 }
 
-# ── Color light→dark order — FINAL USER DEFINED SEQUENCE ─────────────────────────
+# ΓöÇΓöÇ Color lightΓåÆdark order ΓÇö FINAL USER DEFINED SEQUENCE ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 COLOR_ORDER_LIST = [
 	# 0. White (Universal Starting Point)
 	"BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE",
@@ -2284,7 +2293,7 @@ COLOR_ORDER_LIST = [
 ]
 COLOR_PRIORITY = {c: i for i, c in enumerate(COLOR_ORDER_LIST)}
 
-# ── Quality run order per unit ─────────────────────────────────────────────────
+# ΓöÇΓöÇ Quality run order per unit ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 UNIT_QUALITY_ORDER = {
 	"Unit 1": ["PREMIUM","PLATINUM","SUPER PLATINUM","GOLD","SILVER"],
 	"Unit 2": ["GOLD","SILVER","BRONZE","CLASSIC","SUPER CLASSIC","LIFE STYLE",
@@ -2430,7 +2439,7 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 			col = (it.color or "").upper().strip()
 			qual = (it.custom_quality or "").upper().strip()
 			
-			# Priority 1: COLOR light→dark order with WRAP-AROUND
+			# Priority 1: COLOR lightΓåÆdark order with WRAP-AROUND
 			c_idx = COLOR_PRIORITY.get(col, 999)
 			s_idx = COLOR_PRIORITY.get(s_col, -1)
 			
@@ -2521,7 +2530,7 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
 			if parent_sheet.sales_order:
 				so_status = frappe.db.get_value("Sales Order", parent_sheet.sales_order, "docstatus")
 				if so_status == 2:  # Cancelled
-					skipped.append(f"{name}: linked Sales Order {parent_sheet.sales_order} is cancelled — skipped")
+					skipped.append(f"{name}: linked Sales Order {parent_sheet.sales_order} is cancelled ΓÇö skipped")
 					continue
 
 			# --- Find or create a Planning Sheet in the target plan ---
@@ -2670,7 +2679,7 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         except frappe.DoesNotExistError:
             continue
             
-    # 2. Check Limits (skip if force_move — e.g. monthly/weekly aggregate view)
+    # 2. Check Limits (skip if force_move ΓÇö e.g. monthly/weekly aggregate view)
     if not force_move:
         for unit, added_weight in weights_to_add.items():
             if unit in HARD_LIMITS:
@@ -3024,7 +3033,7 @@ def create_planning_sheet_from_so(doc):
                 break
         
         if unlocked_sheet:
-            # frappe.msgprint(f"ℹ️ Planning Sheet already exists (unlocked): {unlocked_sheet}")
+            # frappe.msgprint(f"Γä╣∩╕Å Planning Sheet already exists (unlocked): {unlocked_sheet}")
             return
             
         # --- GET ACTIVE UNLOCKED PLANS ---
@@ -3059,11 +3068,11 @@ def create_planning_sheet_from_so(doc):
         ps.flags.ignore_permissions = True
         ps.insert()
         frappe.db.commit()
-        frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> Created!")
+        frappe.msgprint(f"Γ£à Planning Sheet <b>{ps.name}</b> Created!")
 
     except Exception as e:
         frappe.log_error("Planning Sheet Creation Failed: " + str(e))
-        frappe.msgprint("⚠️ Planning Sheet failed. Check 'Error Log' for details.")
+        frappe.msgprint("ΓÜá∩╕Å Planning Sheet failed. Check 'Error Log' for details.")
 
 @frappe.whitelist()
 def create_production_plan_from_sheet(sheet_name):
@@ -3545,7 +3554,7 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 			# Get item + parent sheet info
 			item_doc = frappe.get_doc("Planning Sheet Item", name)
 			parent_doc = frappe.get_doc("Planning sheet", item_doc.parent)
-			# Prevent re-pushing — check ITEM-LEVEL only (not parent-level!)
+			# Prevent re-pushing ΓÇö check ITEM-LEVEL only (not parent-level!)
 			# Parent-level check was blocking ALL items from a sheet once one was pushed
 			already_pushed = False
 			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
@@ -3590,13 +3599,13 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 			# IMPORTANT: Keep original ordered_date, only change planned_date
 			original_ordered_date = str(parent_doc.ordered_date)
 
-			# ── Set item-level unit if user picked a different unit ──
+			# ΓöÇΓöÇ Set item-level unit if user picked a different unit ΓöÇΓöÇ
 			if target_unit:
 				frappe.db.sql("""
 					UPDATE `tabPlanning Sheet Item` SET unit = %s WHERE name = %s
 				""", (target_unit, name))
 
-			# ── Find or create a dedicated PB Planning Sheet ──
+			# ΓöÇΓöÇ Find or create a dedicated PB Planning Sheet ΓöÇΓöÇ
 			# BUG FIX: Prefer keeping items in original sheet if possible to prevent "Multiple Sheets per SO" issue.
 			# If the original sheet already matches the target date, we don't need to re-parent.
 			
@@ -3649,12 +3658,12 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 
 					pb_sheet_cache[cache_key] = pb_sheet_name
 
-			# ── Find the current max idx on this PB sheet ──
+			# ΓöÇΓöÇ Find the current max idx on this PB sheet ΓöÇΓöÇ
 			max_idx = frappe.db.sql("""
 				SELECT COALESCE(MAX(idx), 0) FROM `tabPlanning Sheet Item` WHERE parent = %s
 			""", (pb_sheet_name,))[0][0]
 
-			# ── Move item to the PB sheet via raw SQL ──
+			# ΓöÇΓöÇ Move item to the PB sheet via raw SQL ΓöÇΓöÇ
 			frappe.db.sql("""
 				UPDATE `tabPlanning Sheet Item`
 				SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items'
@@ -3673,7 +3682,7 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 				""", (effective_date, new_plan_code, name))
 			effective_dates_used.add(effective_date)
 
-			# ── Update idx for sequence ordering on board ──
+			# ΓöÇΓöÇ Update idx for sequence ordering on board ΓöÇΓöÇ
 			# Use a global offset for the unit/date to ensure monotonic sequence
 			# AND prevent triangular growth bug (max_idx + sequence_no inside loop)
 			idx_key = (unit, effective_date)
@@ -3697,10 +3706,10 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 			
 			frappe.db.set_value("Planning Sheet Item", name, "idx", new_idx)
 
-			# ── Track which original sheets were touched ──
+			# ΓöÇΓöÇ Track which original sheets were touched ΓöÇΓöÇ
 			updated_sheets.add(item_doc.parent)  # original parent
 
-			# ── Clean up original sheet if now empty ──
+			# ΓöÇΓöÇ Clean up original sheet if now empty ΓöÇΓöÇ
 			if item_doc.parent != pb_sheet_name:
 				remaining = frappe.db.count("Planning Sheet Item", {"parent": item_doc.parent})
 				if remaining == 0:
@@ -3847,7 +3856,7 @@ def sync_custom_fields():
 def delete_pb_plan(pb_plan_name, date=None, start_date=None, end_date=None):
 	"""
 	Removes Production Board plan assignment from Planning Sheets.
-	Does NOT delete the sheets — just clears custom_pb_plan_name.
+	Does NOT delete the sheets ΓÇö just clears custom_pb_plan_name.
 	"""
 	if not pb_plan_name:
 		return {"status": "error", "message": "Plan name required"}
@@ -4024,22 +4033,12 @@ def auto_create_planning_sheet(doc, method=None):
     - Does NOT set `custom_planned_date`; it will be filled when the sheet is pushed to the Production Board.
     """
     # 1. FETCH UNLOCKED PLAN
-    cc_plan = None
-    default_plan_unlocked = False
-    try:
-        raw_string = frappe.db.get_value("DefaultValue", {"defkey": "production_scheduler_color_chart_plans", "parent": "__default"}, "defvalue")
-        if raw_string:
-            parsed = json.loads(raw_string)
-            if isinstance(parsed, str):
-                parsed = json.loads(parsed)
-            if isinstance(parsed, list):
-                cc_plan = _find_best_unlocked_plan(parsed, doc.transaction_date)
-    except Exception as e:
-        frappe.log_error("Plan Lock Fetch Error (auto-create)", str(e))
+    parsed = get_persisted_plans("color_chart")
+    cc_plan = _find_best_unlocked_plan(parsed, doc.transaction_date)
 
     if not cc_plan:
-        # All plans are locked – do not create a sheet
-        frappe.msgprint("⚠️ All Color Chart plans are locked – Planning Sheet not created.", indicator="orange", alert=True)
+        # All plans are locked - do not create a sheet
+        frappe.msgprint("⚠️ All Color Chart plans are locked - Planning Sheet not created.", indicator="orange", alert=True)
         return None
 
     # 2. CHECK IF AN UNLOCKED SHEET ALREADY EXISTS FOR THIS ORDER
@@ -4051,7 +4050,7 @@ def auto_create_planning_sheet(doc, method=None):
         if s.docstatus != 0:
             continue
         if (s.custom_plan_name or "Default") == cc_plan:
-            # Sheet already exists for the unlocked plan – nothing to do
+            # Sheet already exists for the unlocked plan ΓÇô nothing to do
             return frappe.get_doc("Planning sheet", s.name)
 
     # 3. CREATE PLANNING SHEET 
@@ -4063,7 +4062,8 @@ def auto_create_planning_sheet(doc, method=None):
     ps.ordered_date = doc.transaction_date
     ps.dod = doc.delivery_date
     ps.planning_status = "Draft"
-    ps.custom_plan_name = _get_contextual_plan_name(cc_plan, doc.transaction_date if 'doc' in locals() and hasattr(doc, 'transaction_date') else getdate())
+    # Use contextual name for the custom_plan_name
+    ps.custom_plan_name = _get_contextual_plan_name(cc_plan, doc.transaction_date)
     ps.custom_pb_plan_name = ""
 
     _populate_planning_sheet_items(ps, doc)
@@ -4088,30 +4088,12 @@ def auto_create_planning_sheet(doc, method=None):
             })
             
     if white_items_to_push:
-        # Fetch the matching PB plan the same way we fetched CC plan
-        pb_plan = "Default"
-        try:
-            raw_pb = frappe.db.get_value("DefaultValue", {"defkey": "production_scheduler_production_board_plans", "parent": "__default"}, "defvalue")
-            if raw_pb:
-                parsed_pb = json.loads(raw_pb) if isinstance(raw_pb, str) else raw_pb
-                if isinstance(parsed_pb, str): parsed_pb = json.loads(parsed_pb)
-                month_prefix = ""
-                if doc.transaction_date:
-                    d = frappe.utils.getdate(doc.transaction_date)
-                    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-                    month_prefix = f"{month_names[d.month - 1]}-{str(d.year)[-2:]}"
-                for plan in parsed_pb:
-                    if int(plan.get("locked", 0)) == 0:
-                        p_name = plan.get("name", "")
-                        if month_prefix and p_name.startswith(f"{month_prefix} "):
-                            pb_plan = p_name
-                            break
-        except Exception:
-            pass
-            
+        # Fetch matching PB plan robustly
+        parsed_pb = get_persisted_plans("production_board")
+        pb_plan = _find_best_unlocked_plan(parsed_pb, doc.transaction_date) or "Default"
         push_items_to_pb(white_items_to_push, pb_plan)
         
-    frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{cc_plan}</b>")
+    frappe.msgprint(f"Γ£à Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{cc_plan}</b>")
     
     # RE-FETCH TO UPDATE HEADER PLAN CODES
     final_doc = frappe.get_doc("Planning sheet", ps.name)
@@ -4136,26 +4118,16 @@ def regenerate_planning_sheet(so_name):
 
     existing = frappe.db.get_value("Planning sheet", {"sales_order": so_name, "docstatus": ["<", 2]}, "name")
     if existing:
-        frappe.throw(f"⚠️ An active Planning Sheet <b>{existing}</b> already exists. Cancel it first.")
+        frappe.throw(f"ΓÜá∩╕Å An active Planning Sheet <b>{existing}</b> already exists. Cancel it first.")
 
     doc = frappe.get_doc("Sales Order", so_name)
 
     # 1. FETCH UNLOCKED PLAN (same logic as auto_create)
-    cc_plan = None
-    default_plan_unlocked = False
-    try:
-        raw_string = frappe.db.get_value("DefaultValue", {"defkey": "production_scheduler_color_chart_plans", "parent": "__default"}, "defvalue")
-        if raw_string:
-            parsed = json.loads(raw_string)
-            if isinstance(parsed, str):
-                parsed = json.loads(parsed)
-            if isinstance(parsed, list):
-                cc_plan = _find_best_unlocked_plan(parsed, doc.transaction_date)
-    except Exception as e:
-        frappe.log_error("Plan Lock Fetch Error (regen)", str(e))
+    parsed = get_persisted_plans("color_chart")
+    cc_plan = _find_best_unlocked_plan(parsed, doc.transaction_date)
 
     if not cc_plan:
-        frappe.msgprint("⚠️ All Color Chart plans are locked – cannot regenerate Planning Sheet.", indicator="orange", alert=True)
+        frappe.msgprint("⚠️ All Color Chart plans are locked - cannot regenerate Planning Sheet.", indicator="orange", alert=True)
         return None
 
     # 2. CREATE PLANNING SHEET
@@ -4167,7 +4139,7 @@ def regenerate_planning_sheet(so_name):
     ps.ordered_date = doc.transaction_date
     ps.dod = doc.delivery_date
     ps.planning_status = "Draft"
-    ps.custom_plan_name = cc_plan
+    ps.custom_plan_name = _get_contextual_plan_name(cc_plan, doc.transaction_date)
     ps.custom_pb_plan_name = ""
 
     _populate_planning_sheet_items(ps, doc)
@@ -4215,7 +4187,7 @@ def regenerate_planning_sheet(so_name):
             
         push_items_to_pb(white_items_to_push, pb_plan)
         
-    frappe.msgprint(f"✅ Regenerated Planning Sheet <b>{ps.name}</b> in unlocked plan <b>{cc_plan}</b>")
+    frappe.msgprint(f"Γ£à Regenerated Planning Sheet <b>{ps.name}</b> in unlocked plan <b>{cc_plan}</b>")
     return ps
 
 
@@ -4223,8 +4195,8 @@ def regenerate_planning_sheet(so_name):
 def run_global_cleanup():
     """
     Two-phase global cleanup:
-    Phase 1 — Remove duplicate Planning Sheet headers per Sales Order (keeps OLDEST).
-    Phase 2 — Remove duplicate Planning Sheet Items (if field exists).
+    Phase 1 ΓÇö Remove duplicate Planning Sheet headers per Sales Order (keeps OLDEST).
+    Phase 2 ΓÇö Remove duplicate Planning Sheet Items (if field exists).
     """
     frappe.only_for("System Manager")
 
@@ -4232,7 +4204,7 @@ def run_global_cleanup():
     removed_items = 0
     sheet_details = []
 
-    # ── PHASE 1: Deduplicate Planning Sheet HEADERS per Sales Order ───────────
+    # ΓöÇΓöÇ PHASE 1: Deduplicate Planning Sheet HEADERS per Sales Order ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
     # Use only standard fields: name, sales_order, creation
     all_sheets = frappe.get_all(
         "Planning sheet",
@@ -4275,7 +4247,7 @@ def run_global_cleanup():
             "removed_sheets": dup_sheet_names
         })
 
-    # ── PHASE 2: Deduplicate Planning Sheet ITEMS by name within same parent ──
+    # ΓöÇΓöÇ PHASE 2: Deduplicate Planning Sheet ITEMS by name within same parent ΓöÇΓöÇ
     # Find items that share the same parent+item_name (catches logical duplicates)
     dup_items_in_sheet = frappe.db.sql("""
         SELECT parent, item_name, COUNT(*) AS cnt
@@ -4318,7 +4290,7 @@ def fix_white_orders_planned_date():
     """
     One-time migration: For every Planning Sheet that:
       1. Has custom_planned_date NULL or empty
-      2. Has at least one item — and ALL items are white-family colors
+      2. Has at least one item ΓÇö and ALL items are white-family colors
     Set custom_planned_date = ordered_date.
 
     Returns a summary of how many sheets were updated.
@@ -4363,13 +4335,13 @@ def fix_white_orders_planned_date():
         "status": "success",
         "updated": updated,
         "skipped": skipped,
-        "message": f"✅ Updated {updated} white Planning Sheet(s). Skipped {skipped} (color or no items)."
+        "message": f"Γ£à Updated {updated} white Planning Sheet(s). Skipped {skipped} (color or no items)."
     }
 
 
-# ═══════════════════════════════════════════════════════════════════════
+# ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 # MIX ROLL DATA PERSISTENCE
-# ═══════════════════════════════════════════════════════════════════════
+# ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 @frappe.whitelist()
 def save_mix_roll_data(date_key, entries):
