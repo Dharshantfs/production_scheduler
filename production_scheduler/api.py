@@ -3759,6 +3759,25 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 			# That would drag un-pushed items from this sheet to the new date.
 			pb_sheet_name = parent_doc.name
 
+			# ── PER USER REQUEST: Update parent sheet's Plan Names (but NOT dates) ──
+			# "plan name need to updates because we will identfy by plan name only"
+			sheet_set_parts = []
+			sheet_set_vals = []
+			
+			if not parent_doc.get("custom_pb_plan_name"):
+				sheet_set_parts.append("`custom_pb_plan_name` = %s")
+				sheet_set_vals.append(pb_plan_name)
+				
+			if not parent_doc.get("custom_plan_name") or parent_doc.get("custom_plan_name") in ["Default", ""]:
+				sheet_set_parts.append("`custom_plan_name` = %s")
+				sheet_set_vals.append(_get_contextual_plan_name(parent_doc.get("custom_plan_name") or "Default", effective_date))
+				
+			if sheet_set_parts:
+				frappe.db.sql(
+					f"UPDATE `tabPlanning sheet` SET {', '.join(sheet_set_parts)} WHERE name = %s",
+					sheet_set_vals + [pb_sheet_name]
+				)
+
 			# ── Set item-level planned date + plan code in-place (no re-parenting) ──
 			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
 				# Determine new plan code
