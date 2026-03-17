@@ -2652,10 +2652,15 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                 # 2. Create clone for moving
                 new_item = frappe.copy_doc(doc)
                 new_item.qty = requested_qty
-                new_item.parent = doc.parent # Keep temporarily
+                new_item.parent = doc.parent 
                 new_item.custom_is_split = 1
-                new_item.save()
+                
+                # ERPNext Protocol: Use db_insert to avoid parent DocStatus check
+                new_item.db_insert()
                 doc = new_item
+                
+                # Update modified timestamp of source parent
+                frappe.db.set_value("Planning sheet", doc.parent, "modified", frappe.utils.now(), update_modified=False)
             
             docs_to_move.append(doc)
             
@@ -2810,20 +2815,26 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                     pp_item.sales_order_item = item_doc.sales_order_item
                     pp_item.warehouse = item_doc.warehouse if hasattr(item_doc, 'warehouse') else ""
                     pp_item.insert(ignore_permissions=True)
+                
+                # Protocol: Update target PP modified timestamp
+                frappe.db.set_value("Production Plan", target_pp, "modified", frappe.utils.now(), update_modified=False)
+            
+            # Update target sheet modified
+            frappe.db.set_value("Planning sheet", target_sheet.name, "modified", frappe.utils.now(), update_modified=False)
             
             # --- SYNC SOURCE PRODUCTION PLAN (if moved entirely) ---
             if target_sheet.name != parent_doc.name:
                 source_pp = frappe.db.get_value("Production Plan", {"custom_planning_sheet": parent_doc.name}, "name")
                 if source_pp:
-                     # If the item was split earlier, the original quantity was already adjusted.
-                     # If it skipped split (moved entirely), we need to reduce/delete from source PP.
-                     # We only reach here if move_orders_to_date was called on the whole document OR the split piece.
-                     # Best approach: subtract moved quantity from source PP row.
+                     # Subtract moved quantity from source PP row.
                      frappe.db.sql("""
                         UPDATE `tabProduction Plan Item` 
                         SET qty = GREATEST(0, qty - %s) 
                         WHERE parent = %s AND sales_order_item = %s
                      """, (item_doc.qty, source_pp, item_doc.sales_order_item))
+                     
+                     # Protocol: Update source PP modified
+                     frappe.db.set_value("Production Plan", source_pp, "modified", frappe.utils.now(), update_modified=False)
             
             count = int(count) + 1
         
