@@ -1010,9 +1010,9 @@ const matrixData = computed(() => {
                     totalItems++;
                     // For white items, only consider explicitly pushed if item-level date is set. 
                     // Ignore pbPlanName inherited from colored siblings on the same sheet.
-                    let explicitItemPush = !!(m.custom_item_planned_date || m.planCode);
+                    let explicitItemPush = !!m.custom_item_planned_date;
                     let explicitSheetPush = !!m.plannedDate; // only matters if we used sheet dates
-                    let pushedForThisItem = isItemWhite ? explicitItemPush : !!(m.plannedDate || m.pbPlanName || m.custom_item_planned_date || m.planCode);
+                    let pushedForThisItem = isItemWhite ? explicitItemPush : !!(m.plannedDate || m.pbPlanName || m.custom_item_planned_date);
 
                     if (pushedForThisItem || isItemWhite) {
                         anyPushed = true;
