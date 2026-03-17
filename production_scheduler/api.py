@@ -1272,7 +1272,17 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	# are allowed to appear directly on the Production Board without being pushed.
 	# Non-white items are filtered per-item later unless they belong to a PB plan.
 	if cint(planned_only) and _has_planned_date_column():
-		plan_condition += " AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
+		# Relax filter part: Include sheets with a planned date OR those containing white backlog items
+		# (The date_condition already restricts white backlog to query_start or range)
+		plan_condition += f""" AND (
+			(p.custom_planned_date IS NOT NULL AND p.custom_planned_date != '')
+			OR 
+			EXISTS (
+				SELECT 1 FROM `tabPlanning Sheet Item` 
+				WHERE parent = p.name 
+				AND REPLACE(UPPER(color), ' ', '') IN ({ ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS]) })
+			)
+		)"""
 	
 	# Build SELECT fields — include columns only if they exist
 	fields = ["p.name", "p.customer", "p.party_code", "c.customer_name as party_name", "p.dod", "p.ordered_date", 
@@ -1436,6 +1446,12 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				if start_date and sheet_eff_pdt and sheet_eff_pdt < query_start:
 					if not is_white:
 						continue
+				
+				# ── CHART EXCLUSION ──
+				# Per user: "white orders measn directly to prodution"
+				# We exclude white items from the Color Chart matrix/kanban entirely.
+				if is_white:
+					continue
 				
 				# If we are filtering by a SPECIFIC plan (not __all__), and it's not a white order bypass, enforce plan name
 				if plan_name and plan_name != "__all__":
