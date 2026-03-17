@@ -213,83 +213,45 @@ def _get_standard_month_name(month_index):
 
 def _get_contextual_plan_name(base_name, date_val):
     """
-    Returns the full contextual plan name: [MONTH] W[XX] [YY] [BASE_NAME]
-    Matches ColorChart.vue's currentMonthPrefix logic.
+    Standardization: Returns ONLY the base name (stripped of prefixes).
+    The UI now handles dynamic prefixing for display (e.g. MARCH W12 26 PLAN 1).
+    This ensures the database remains clean and matches UI filtering.
     """
-    # Allow empty base_name to return just the prefix
-    val = base_name if base_name else ""
-    if val == "Default":
-        return val
+    if not base_name or base_name == "Default":
+        return base_name
         
-    # Strip existing month/week prefixes to avoid duplication (e.g. MARCH W10 26 ...)
-    # Pattern matches: Mar-26 or MARCH or MARCH W10 26
+    # Strip existing month/week prefixes to get the clean base (e.g. Mar-26 or MARCH W10 26)
     clean_base = re.sub(r'^([A-Z]+[-\s]\d{2}|[A-Z]+(\s+W\d+)?(\s+\d{2})?)\s+', '', base_name, flags=re.I).strip()
-    
-    d = getdate(date_val)
-    # Find ISO week number and the year it belongs to
-    iso_year, iso_week, iso_day = d.isocalendar()
-    
-    # In JS: we find ISO start of the week and take its month/year.
-    # ISO week start is Monday.
-    days_to_monday = iso_day - 1
-    monday = d - datetime.timedelta(days=days_to_monday)
-    
-    month_name = _get_standard_month_name(monday.month)
-    year_short = str(monday.year)[2:]
-    
-    prefix = f"{month_name} W{iso_week} {year_short}"
-    return f"{prefix} {clean_base}".strip()
+    return clean_base
 
 def _find_best_unlocked_plan(parsed_plans, doc_date):
     """
-    Returns the first unlocked plan name that best matches the document date.
-    Supports both 'MARCH W11 26' and 'Mar-26' style prefixes.
+    Returns the first unlocked plan name.
+    Matches primarily by 'base name' to avoid prefix issues.
     """
     if not parsed_plans:
         return None
         
-    d = getdate(doc_date)
-    month_names_short = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
-    month_names_full = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"]
-    
-    m_short = month_names_short[d.month - 1]
-    m_full = month_names_full[d.month - 1]
-    y_short = str(d.year)[2:]
-    
-    # Try fully contextual prefix (MARCH W11 26)
-    ctx_prefix = _get_contextual_plan_name("", d).upper().strip()
-    
-    best_matching_plan = None
-    default_plan = None
     first_unlocked = None
+    default_plan = None
     
     for plan in parsed_plans:
-        # Relaxed locking check
         is_locked = str(plan.get("locked", "0")) in ["1", 1, "true", True]
         if is_locked:
             continue
             
         p_name = str(plan.get("name", "")).strip()
-        p_name_up = p_name.upper()
+        # Get base name for matching (e.g. MARCH W10 26 PLAN 1 -> PLAN 1)
+        base = _strip_legacy_prefixes(p_name)
         
-        # Track first unlocked plan encountered (that isn't Default) as a last-resort fallback
-        if p_name_up != "DEFAULT" and not first_unlocked:
-            first_unlocked = p_name
-
-        if p_name_up == "DEFAULT":
+        if base.upper() == "DEFAULT":
             default_plan = p_name
             continue
             
-        # 1. Match full contextual prefix (MARCH W11 26)
-        if ctx_prefix and p_name_up.startswith(ctx_prefix):
-            return p_name
-            
-        # 2. Match month-year (Mar-26 or MARCH)
-        if p_name_up.startswith(f"{m_short}-{y_short}") or p_name_up.startswith(m_full):
-            if not best_matching_plan:
-                best_matching_plan = p_name
+        if not first_unlocked:
+            first_unlocked = p_name
                 
-    return best_matching_plan or default_plan or first_unlocked
+    return first_unlocked or default_plan
 
 def _strip_legacy_prefixes(name):
     """
