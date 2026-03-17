@@ -1297,18 +1297,25 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		else:
 			plan_condition = f"AND p.custom_plan_name IN ({fmt})"
 			params.extend(valid_names)
-	else:
-		clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
-		if cint(planned_only):
-			plan_condition = f"""AND (
-				p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default'
-				OR EXISTS (
-					SELECT 1 FROM `tabPlanning Sheet Item` i
-					WHERE i.parent = p.name AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
-				)
-			)"""
 		else:
-			plan_condition = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
+			clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
+			if cint(planned_only):
+				plan_condition = f"""AND (
+					p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default'
+					OR EXISTS (
+						SELECT 1 FROM `tabPlanning Sheet Item` i
+						WHERE i.parent = p.name AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
+					)
+				)"""
+			else:
+				plan_condition = f"""AND (
+					p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default'
+					OR EXISTS (
+						SELECT 1 FROM `tabPlanning Sheet Item` i
+						WHERE i.parent = p.name AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
+						AND (i.custom_plan_code IS NULL OR i.custom_plan_code = '')
+					)
+				)"""
 	
 	# Build SELECT fields — include columns only if they exist
 	fields = ["p.name", "p.customer", "p.party_code", "c.customer_name as party_name", "p.dod", "p.ordered_date", 
@@ -1591,7 +1598,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				"has_wo": sheet_has_wo,
 				"produced_qty": flt(produced_weight),
 				"salesOrderItem": item.get("sales_order_item"),
-				"isSplit": item.get("custom_is_split")
+				"isSplit": item.get("custom_is_split"),
+				"custom_item_planned_date": str(item.get("custom_item_planned_date")) if item.get("custom_item_planned_date") else ""
 			})
 
 	if cint(planned_only) and plan_name == "__all__":
