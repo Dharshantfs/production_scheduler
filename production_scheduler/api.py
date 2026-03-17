@@ -1214,9 +1214,24 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	eff = _effective_date_expr("p")
 	plan_condition = ""
 	params = []
+	
 	if start_date and end_date:
-		date_condition = f"{eff} BETWEEN %s AND %s"
-		params.extend([query_start, query_end])
+		# Separately handle white order visibility (allow past whites to show for pulling)
+		if cint(planned_only) or cint(pull_board):
+			white_list_sql = ", ".join([f"'{c}'" for c in WHITE_COLORS])
+			date_condition = f"""(
+				({eff} BETWEEN %s AND %s) 
+				OR 
+				({eff} < %s AND EXISTS (
+					SELECT 1 FROM `tabPlanning Sheet Item` 
+					WHERE parent = p.name 
+					AND (REPLACE(UPPER(color), ' ', '') IN (REPLACE(UPPER('{ "','".join(WHITE_COLORS) }'), ' ', '')))
+				))
+			)"""
+			params.extend([query_start, query_end, query_start])
+		else:
+			date_condition = f"{eff} BETWEEN %s AND %s"
+			params.extend([query_start, query_end])
 	else:
 		if len(target_dates) > 1:
 			fmt = ','.join(['%s'] * len(target_dates))
