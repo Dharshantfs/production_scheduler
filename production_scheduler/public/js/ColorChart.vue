@@ -35,9 +35,7 @@
         <label>Plan</label>
         <div style="display:flex; gap:4px; align-items:center;">
             <select v-model="selectedPlan" @change="fetchData">
-                <option v-for="p in visiblePlans" :key="p.name" :value="p.name">
-                    {{ p.locked ? '🔒 ' : '' }}{{ p.name === 'Default' ? 'Default' : currentMonthPrefix + ' ' + p.name }}
-                </option>
+                <option v-for="p in visiblePlans" :key="p.name" :value="p.name">{{ p.locked ? '🔒 ' : '' }}{{ p.name }}</option>
             </select>
             <button v-if="selectedPlan" class="cc-mini-btn" @click="togglePlanLock" :title="isCurrentPlanLocked ? 'Unlock Plan' : 'Lock Plan'" style="margin-right:2px; padding: 2px 4px;font-size: 14px;">
                 {{ isCurrentPlanLocked ? '🔒' : '🔓' }}
@@ -466,7 +464,7 @@
                         </th>
                         <th class="matrix-total-col text-right" style="background:#ffeb3b; color:#000;">{{ matrixData.grandTotal.toFixed(0) }}</th>
                     </tr>
-                    <!-- Whites Section (Reference Only) -->
+                    <!-- Whites Section -->
                     <tr 
                         v-for="row in matrixData.whiteRows" 
                         :key="'w-' + row.color"
@@ -478,10 +476,12 @@
                                 {{ row.color }}
                                 <button v-if="row.isPushed" 
                                     @click.stop="revertColorGroup(row.color)"
-                                    style="margin-left:8px; background: #16a34a; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer;"
+                                    style="margin-left:8px; background: #16a34a; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(22,163,74,0.3); transition: all 0.2s;"
                                     title="Click to revert white orders"
+                                    onmouseover="this.style.opacity='0.8'"
+                                    onmouseout="this.style.opacity='1'"
                                 >
-                                    ✅ {{ row.pushedPlanName || 'Board' }}
+                                    ✅ {{ row.pushedPlanName || 'Default' }}
                                 </button>
                             </div>
                         </td>
@@ -789,9 +789,28 @@ const currentMonthPrefix = computed(() => {
 });
 
 // Only show plans that belong to the current month (or have no month prefix like "Default")
-// All plans are now global "slots" and visible regardless of month
 const visiblePlans = computed(() => {
-    return plans.value;
+    const fullPrefix = currentMonthPrefix.value; // MARCH W10 26
+    const monthPart = fullPrefix.split(" ")[0]; // MARCH
+
+    return plans.value.filter(p => {
+        const pName = (p && p.name) ? p.name : (typeof p === 'string' ? p : '');
+        if (!pName) return false;
+        if (pName === 'Default') return true;
+
+        const pUpper = pName.toUpperCase();
+        
+        // Robust Month/Week Matching:
+        // Use 3-letter abbreviation (MAR) to match both "MARCH" and "MAR-26"
+        const pMonth = pUpper.split(/[\s-]/)[0];
+        if (pMonth === monthPart || pMonth === monthPart.slice(0, 3)) return true;
+
+        // Custom plans with no month prefix (e.g. "Urgent Plan")
+        const hasAnyMonthPrefix = /^[A-Z]+[-\s]\d{2}\s/i.test(pName) || /^[A-Z]{3,}\s/i.test(pName);
+        if (!hasAnyMonthPrefix) return true;
+
+        return false;
+    });
 });
 
 // Calculate the frontend viewing Plan Code (e.g., 26CU1-PLAN 1)
@@ -965,6 +984,9 @@ const matrixData = computed(() => {
     });
 
     // 2. Prepare Rows (Unique Colors and Whites)
+    // ✅ IMPROVEMENT: Use rawData (All Plans) to seed the vertical legend
+    // This ensures that when you create a new plan, the color names from the Default plan 
+    // are still visible in the legend/rows.
     const allColors = new Set();
     const allWhites = new Set();
     
@@ -981,7 +1003,7 @@ const matrixData = computed(() => {
         else allColors.add(d.color);
     });
     
-    // Always sort by Light to Dark default
+    // Always sort by Light to Dark default (ignore manual customRowOrder as per user request for strict sorting)
     let sortedColors = Array.from(allColors).sort((a,b) => compareColor({color: a}, {color: b}, 'asc'));
 
     const rows = sortedColors.map(color => {
@@ -1008,17 +1030,13 @@ const matrixData = computed(() => {
                 matchs.forEach(m => {
                     hasItems = true;
                     totalItems++;
-                    // For white items, only consider explicitly pushed if item-level date is set. 
-                    // Ignore pbPlanName inherited from colored siblings on the same sheet.
-                    let explicitItemPush = !!m.custom_item_planned_date;
-                    let explicitSheetPush = !!m.plannedDate; // only matters if we used sheet dates
-                    let pushedForThisItem = isItemWhite ? explicitItemPush : !!(m.plannedDate || m.pbPlanName || m.custom_item_planned_date);
+                    let pushedForThisItem = !!(m.plannedDate || m.pbPlanName);
+                    let whiteAndPlanned = isItemWhite && !!m.plannedDate;
 
                     if (pushedForThisItem || isItemWhite) {
                         anyPushed = true;
                         pushedItems++;
-                        let pVal = isItemWhite ? (m.planCode || m.custom_item_planned_date) : (m.planCode || m.pbPlanName || m.plannedDate || m.custom_item_planned_date);
-                        const pDate = pVal || (isItemWhite ? 'Board' : '');
+                        const pDate = m.plannedDate || m.custom_item_planned_date || (isItemWhite ? 'Board' : '');
                         if (pDate) pushedPlanNames.add(pDate);
                     }
                 });
@@ -1087,20 +1105,20 @@ const matrixData = computed(() => {
         }
     });
 
-    // Column Totals
+    // Column Totals (Main Colors Only)
     const colTotals = {};
     sortedGroups.forEach(g => {
         colTotals[g.id] = rows.reduce((sum, r) => sum + (r.cells[g.id] || 0), 0);
     });
     const grandTotal = rows.reduce((sum, r) => sum + r.total, 0);
-
-    // Column Totals (Whites)
+    
+    // Column Totals (Whites Only)
     const whiteColTotals = {};
     sortedGroups.forEach(g => {
         whiteColTotals[g.id] = whiteRows.reduce((sum, r) => sum + (r.cells[g.id] || 0), 0);
     });
     const whiteGrandTotal = whiteRows.reduce((sum, r) => sum + r.total, 0);
-    
+
     return {
         dateHeaders,
         sheetHeaders,
@@ -1126,11 +1144,8 @@ const EXCLUDED_WHITES = [
 function isExcludedWhite(color) {
     if (!color) return false;
     const cUpper = color.toUpperCase();
-    // STRICT RULE: Ivory, Cream, Off-White, and mixed colors (with slashes) are NOT pure whites.
-    // They should stay in the main matrix rows.
-    if (cUpper.includes("IVORY") || cUpper.includes("CREAM") || cUpper.includes("OFF WHITE") || cUpper.includes("/")) return false;
-    
-    // Pure whites are the ones auto-pushed to the board.
+    // Keep Ivory/Cream explicitly
+    if (cUpper.includes("IVORY") || cUpper.includes("CREAM") || cUpper.includes("OFF WHITE")) return false;
     return EXCLUDED_WHITES.some(ex => cUpper.includes(ex));
 }
 
@@ -1147,9 +1162,8 @@ const filteredData = computed(() => {
 
       const colorUpper = (d.color || "").toUpperCase();
       
-      // Use helper to exclude specific whites for the MAIN Kanban/Matrix rows
-      // (They are still in rawData so processData can pick them up for the footer)
-      if (viewMode.value !== 'matrix' && isExcludedWhite(d.color)) return false;
+      // Use helper to exclude specific whites
+      if (isExcludedWhite(d.color)) return false;
 
       // Hide "NO COLOR" items visually (User request: "dont show here")
       // They remain in rawData so capacity calculation remains accurate.
@@ -2753,20 +2767,6 @@ async function toggleViewScope() {
 }
 
 async function fetchPlans(args) {
-    const stripLegacyPrefix = (name) => {
-        if (!name || name === 'Default') return name;
-        // Pattern 1: MARCH W10 26 PLAN 1
-        let s = name.replace(/^[A-Z]+\s+W\d+\s+\d{2}\s+/i, '');
-        if (s !== name) return s.trim();
-        // Pattern 2: Feb-26 PLAN 1
-        s = name.replace(/^[A-Z]{3}-\d{2}\s+/i, '');
-        if (s !== name) return s.trim();
-        // Pattern 3: MARCH 26 PLAN 1
-        s = name.replace(/^[A-Z]+\s+\d{2}\s+/i, '');
-        if (s !== name) return s.trim();
-        return name.trim();
-    };
-
     try {
         const planArgs = { ...args };
         if (planArgs.date && !planArgs.start_date) {
@@ -2784,18 +2784,9 @@ async function fetchPlans(args) {
         plans.value = r.message || [{name: "Default", locked: 0}];
         // If the currently selected plan is not returned (e.g. new plan with no sheets yet),
         // keep it in the dropdown instead of silently falling back to Default.
-        const strippedSelected = stripLegacyPrefix(selectedPlan.value);
-        if (selectedPlan.value && selectedPlan.value !== 'Default') {
-            const found = plans.value.find(p => p.name === strippedSelected || p.name === selectedPlan.value);
-            if (found) {
-                // Auto-migrate selection to base name if it matched
-                if (selectedPlan.value !== found.name) {
-                    selectedPlan.value = found.name;
-                }
-            } else {
-                // Insert as an unlocked empty plan so user stays on it
-                plans.value.push({ name: selectedPlan.value, locked: 0 });
-            }
+        if (selectedPlan.value && !plans.value.find(p => p.name === selectedPlan.value)) {
+            // Insert as an unlocked empty plan so user stays on it
+            plans.value.push({ name: selectedPlan.value, locked: 0 });
         }
     } catch(e) { console.error("Error fetching plans", e); }
 }
@@ -2834,9 +2825,9 @@ function createNewPlan() {
         fieldname: 'plan_name',
         fieldtype: 'Data',
         reqd: 1,
-        description: `Plan will be displayed as: <b>${currentMonthPrefix.value} [your name]</b>`
+        description: `Plan will be created as: <b>${monthPrefix}[your name]</b>`
     }, async (values) => {
-        const fullName = values.plan_name;
+        const fullName = monthPrefix + values.plan_name;
         if (!plans.value.find(p => p.name === fullName)) {
             plans.value.push({name: fullName, locked: 0});
             // Persist the new plan so it survives refresh
@@ -2968,8 +2959,8 @@ async function pushToProductionBoard() {
             planningSheet: d.planningSheet || '',
             phase: '',
             is_seed_bridge: false,
-            pushed: !!(d.pbPlanName || d.plannedDate || d.custom_item_planned_date), 
-            checked: !(d.pbPlanName || d.plannedDate || d.custom_item_planned_date)
+            pushed: isPushed,
+            checked: !isPushed // Only check by default if not already pushed
         };
     });
 
@@ -3130,14 +3121,12 @@ async function pushToProductionBoard() {
         const smartSeedsHtml = (smartSequenceActive && hasD && d.smartSeeds) ? `
             <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
                 ${['Unit 1', 'Unit 2', 'Unit 3', 'Unit 4'].map((unit) => {
-                    const normUnit = unit.toUpperCase().replace(/\s+/g, '');
-                    const seed = (d.smartSeeds && (d.smartSeeds[unit] || d.smartSeeds[normUnit])) ? (d.smartSeeds[unit] || d.smartSeeds[normUnit]) : null;
-                    const displayColor = (seed && seed.color && seed.color !== '0' && seed.color !== 0) ? seed.color : 'NO ORDERS';
+                    const seed = d.smartSeeds ? d.smartSeeds[unit] : null;
                     return `
                     <div style="background:#f8fafc; border:1px solid #e2e8f0; padding:4px 10px; border-radius:12px; font-size:10px; display:flex; align-items:center; gap:6px;">
                         <span style="color:#64748b; font-weight:700;">${unit.toUpperCase()} BOARD END:</span>
-                        <span style="color:${displayColor !== 'NO ORDERS' ? '#1e293b' : '#94a3b8'}; font-weight:800;">${displayColor}</span>
-                        ${(displayColor !== 'NO ORDERS' && seed.quality) ? `<span style="color:#94a3b8; font-size:9px;">(${seed.quality})</span>` : ''}
+                        <span style="color:${seed ? '#1e293b' : '#94a3b8'}; font-weight:800;">${seed ? seed.color : 'NO ORDERS'}</span>
+                        ${seed ? `<span style="color:#94a3b8; font-size:9px;">(${seed.quality})</span>` : ''}
                     </div>`;
                 }).join('')}
             </div>
@@ -3444,16 +3433,7 @@ async function pushToProductionBoard() {
 
     const updateDialogStatus = async (newTargetDate) => {
         if (!newTargetDate) return;
-        const relevantUnits = [...new Set(currentSequence.map(s => {
-            const raw = (s.unit || s.unitKey || 'Unit 1').trim();
-            // Robust normalization to 'Unit X' format
-            if (raw.toUpperCase().includes('UNIT 1')) return 'Unit 1';
-            if (raw.toUpperCase().includes('UNIT 2')) return 'Unit 2';
-            if (raw.toUpperCase().includes('UNIT 3')) return 'Unit 3';
-            if (raw.toUpperCase().includes('UNIT 4')) return 'Unit 4';
-            return raw;
-        }))].sort();
-        
+        const relevantUnits = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
         const unitStatuses = [];
         dialogApprovalMeta = null;
         dialogPendingUnits = [];
@@ -3477,9 +3457,9 @@ async function pushToProductionBoard() {
             });
 
             // ✅ Sync unitSortConfig so that 'Smart Auto-Tick' sees the same sequence
-            if (msg.sequence && msg.sequence.length) {
+            if (msg.sequence_data) {
                 try {
-                    const names = msg.sequence;
+                    const names = JSON.parse(msg.sequence_data);
                     if (unitSortConfig[u]) unitSortConfig[u].savedSequence = names;
                     combinedSequenceData = combinedSequenceData.concat(names);
                 } catch(e) {}
@@ -3628,8 +3608,7 @@ async function pushToProductionBoard() {
         d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence, dialogOverallStatus));
         wireCheckboxes();
         updateCountLabel();
-        // REMOVED: updateDialogStatus(d.get_value('target_date')); 
-        // Calling it here reverts the 'Draft' status to 'Approved' from DB before re-submission!
+        updateDialogStatus(d.get_value('target_date'));
     }
 
     // Attach keyup events to inputs for real-time filtering
@@ -3776,17 +3755,6 @@ async function pushToProductionBoard() {
                     dialogApprovalMeta = null;
                     const $btn = d.get_primary_btn();
                     $btn.text('📤 Request Arrangement Approval').css({'background-color': '#d97706', 'border': 'none', 'box-shadow': '0 4px 6px -1px rgba(217, 119, 6, 0.2)'});
-                    
-                    // Force update the UI status badge
-                    const $statusWrapper = d.$wrapper.find('.modal-content [style*="background:#f1f5f9"]');
-                    if ($statusWrapper.length) {
-                        $statusWrapper.html(`
-                            <span style="width:8px;height:8px;border-radius:50%;background:#64748b"></span>
-                            <div style="display:flex; flex-direction:column;">
-                                <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Arrangement for ${d.get_value('target_date')}: DRAFT</span>
-                            </div>
-                        `);
-                    }
                 }
                 
                 // Track target-day limits
@@ -4136,7 +4104,27 @@ function handleRealtimeColorUpdate(payload) {
 
 async function fetchData() {
 
-  // fetchData continues (Global Slots persist across months/weeks)
+  // Auto-reset plan if selected plan belongs to a different month
+  if (selectedPlan.value && selectedPlan.value !== 'Default') {
+      const pNameUpper = selectedPlan.value.toUpperCase();
+      const currentPrefix = currentMonthPrefix.value; // MARCH W11 26
+      const monthPart = currentPrefix.split(" ")[0]; // MARCH
+      let isValid = false;
+
+      // Robust Matching: Use 3rd letter abbreviation (MAR) to match both "MARCH" and "MAR-26" / "MARCH-26"
+      const pMonth = pNameUpper.split(/[\s-]/)[0];
+      if (pMonth === monthPart || pMonth === monthPart.slice(0, 3)) {
+          isValid = true;
+      } else {
+          // Custom plans with no month prefix
+          const hasAnyMonthPrefix = /^[A-Z]+[-\s]\d{2}\s/i.test(pNameUpper) || /^[A-Z]{3,}\s/i.test(pNameUpper);
+          if (!hasAnyMonthPrefix) isValid = true;
+      }
+
+      if (!isValid) {
+          selectedPlan.value = 'Default';
+      }
+  }
 
   let args = {};
   
@@ -4440,13 +4428,44 @@ async function autoAllocate() {
   }
 }
 
+
+
+// ---- STATE PERSISTENCE (URL SYNC) ----
+function updateUrlParams() {
+  const url = new URL(window.location);
+  
+  if (filterOrderDate.value) url.searchParams.set('date', filterOrderDate.value);
+  
+  if (filterUnit.value) url.searchParams.set('unit', filterUnit.value);
+  else url.searchParams.delete('unit');
+  
+  if (filterStatus.value) url.searchParams.set('status', filterStatus.value);
+  else url.searchParams.delete('status');
+  
+  if (selectedPlan.value && selectedPlan.value !== "Default") url.searchParams.set('plan', selectedPlan.value);
+  else url.searchParams.delete('plan');
+  
+  // Persist view state
+  url.searchParams.set('view', viewMode.value);
+  url.searchParams.set('scope', viewScope.value);
+  
+  if (viewScope.value === 'monthly' && filterMonth.value) url.searchParams.set('month', filterMonth.value);
+  else url.searchParams.delete('month');
+  
+  if (viewScope.value === 'weekly' && filterWeek.value) url.searchParams.set('week', filterWeek.value);
+  else url.searchParams.delete('week');
+  
+  window.history.replaceState({}, '', url);
+}
+
 // Watchers to sync state
 watch(filterOrderDate, () => {
-    updateURLParams();
+    updateUrlParams();
+    // fetchData called by existing watcher
 });
-watch(filterUnit, updateURLParams);
-watch(filterStatus, updateURLParams);
-watch(selectedPlan, updateURLParams);
+watch(filterUnit, updateUrlParams);
+watch(filterStatus, updateUrlParams);
+watch(selectedPlan, updateUrlParams);
 
 // Re-init Sortable when renderKey changes (forced re-render)
 // Skip if matrix — matrix init is handled by its own 150ms timer inside initSortable()
@@ -4460,24 +4479,40 @@ watch(renderKey, () => {
 
 // Re-init sortable when switching between kanban/matrix views
 watch(viewMode, async () => {
-    updateURLParams();
+    updateUrlParams();
     await nextTick();
     initSortable();
 });
 watch(viewScope, async (newVal) => {
-    updateURLParams();
+    updateUrlParams();
     if (newVal === 'daily') {
         initFlatpickr();
     }
     await fetchData();
 });
 watch(filterMonth, async () => {
-    updateURLParams();
+    updateUrlParams();
     await fetchData();
+    // Try to auto-select a plan that matches the new month
+    if (plans.value && plans.value.length > 0) {
+        const matchingPlan = plans.value.find(p => p.name.includes(filterMonth.value));
+        if (matchingPlan) selectedPlan.value = matchingPlan.name;
+        else selectedPlan.value = "Default";
+    }
 });
 watch(filterWeek, async () => {
-    updateURLParams();
+    updateUrlParams();
     await fetchData();
+    // Try to auto-select a plan that matches the new week (e.g. contains "W11")
+    if (plans.value && plans.value.length > 0) {
+        const parts = filterWeek.value.split("-W");
+        if (parts.length === 2) {
+            const wNo = parts[1];
+            const matchingPlan = plans.value.find(p => p.name.includes(`W${wNo}`));
+            if (matchingPlan) selectedPlan.value = matchingPlan.name;
+            else selectedPlan.value = "Default";
+        }
+    }
 });
 
 onMounted(async () => {
@@ -4546,7 +4581,6 @@ onMounted(async () => {
   }
   
   // 2. Fetch Data
-  frappe.call({ method: "production_scheduler.api.cleanup_legacy_plans" });
   await fetchData();
   analyzePreviousFlow();
   
@@ -4754,7 +4788,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
              if (!selected.length) { frappe.msgprint("Please select at least one order."); return; }
              
              const targetDate = d.get_value("target_date");
-             const pbPlan = selectedPlan.value || "Default";
+             const pbPlan = "Default";
              
              const payload = selected.map(s => ({ name: s.name, target_unit: s.target_unit, target_date: targetDate }));
              
@@ -5268,48 +5302,6 @@ function updateRescueSelection(d) {
     d.calc_selected_rescue = s;
     d.get_primary_btn().text(`Rescue ${s.length} Orders`);
 }
-// ───────────────────────────────────────────────────────────────────
-// URL State Persistence
-// ───────────────────────────────────────────────────────────────────
-function updateURLParams() {
-    const params = new URLSearchParams(window.location.search);
-    params.set("view", viewMode.value);
-    params.set("scope", viewScope.value);
-    
-    if (selectedPlan.value && selectedPlan.value !== 'Default') {
-        params.set("plan", selectedPlan.value);
-    } else {
-        params.delete("plan");
-    }
-
-    if (viewScope.value === 'daily' && filterOrderDate.value) {
-        params.set("date", filterOrderDate.value);
-        params.delete("month");
-        params.delete("week");
-    } else if (viewScope.value === 'monthly' && filterMonth.value) {
-        params.set("month", filterMonth.value);
-        params.delete("date");
-        params.delete("week");
-    } else if (viewScope.value === 'weekly' && filterWeek.value) {
-        params.set("week", filterWeek.value);
-        params.delete("date");
-        params.delete("month");
-    }
-    
-    if (filterUnit.value) params.set("unit", filterUnit.value);
-    else params.delete("unit");
-
-    const newPath = window.location.pathname + "?" + params.toString();
-    if (window.location.search !== "?" + params.toString()) {
-        window.history.pushState({ path: newPath }, '', newPath);
-    }
-}
-
-watch([viewMode, viewScope, filterOrderDate, filterMonth, filterWeek, selectedPlan, filterUnit], () => {
-    updateURLParams();
-    fetchData();
-}, { deep: true });
-
 </script>
 
 <style scoped>

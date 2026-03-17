@@ -3,7 +3,6 @@ from frappe import _
 from frappe.utils import getdate, flt, cint
 import json
 import re
-import datetime
 
 def generate_party_code(doc):
     """One Sales Order = One Party Code.
@@ -192,79 +191,17 @@ def _populate_planning_sheet_items(ps, doc):
 
 
 def _is_white_color(color):
-    """Return True if color string matches a pure white-family color."""
+    """Return True if color string matches a white-family color."""
     if not color:
         return False
     c = color.upper().strip()
-    
-    # STRICT RULE: Ivory, Cream, Off-White, and mixed colors (with /) are NOT pure whites.
-    # They should remain in the Color Chart matrix.
-    if any(x in c for x in ["IVORY", "CREAM", "OFF WHITE", "/"]):
-        return False
-        
-    return any(w in c for w in WHITE_COLORS)
+    return any(w == c for w in WHITE_COLORS)
 
-# User-defined pure White colors (for auto-push and Production Board separation)
+# User-defined White colors that are auto-planned on the Production Board
 WHITE_COLORS = [
-    "WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", 
-    "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE",
-    "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"
+    "BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE", 
+    "BLEACH WHITE", "WHITE MIX", "WHITE"
 ]
-
-def _get_standard_month_name(month_index):
-    # month_index 1-12
-    month_names = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"]
-    if 1 <= month_index <= 12:
-        return month_names[month_index - 1]
-    return "UNKNOWN"
-
-def _get_contextual_plan_name(base_name, date_val):
-    """
-    Returns the full contextual plan name: [MONTH] W[XX] [YY] [BASE_NAME]
-    Matches ColorChart.vue's currentMonthPrefix logic.
-    """
-    if not base_name or base_name == "Default":
-        return base_name
-        
-    d = getdate(date_val)
-    # Find ISO week number and the year it belongs to
-    iso_year, iso_week, iso_day = d.isocalendar()
-    
-    # In JS: we find ISO start of the week and take its month/year.
-    # ISO week start is Monday.
-    days_to_monday = iso_day - 1
-    monday = d - datetime.timedelta(days=days_to_monday)
-    
-    month_name = _get_standard_month_name(monday.month)
-    year_short = str(monday.year)[2:]
-    
-    return f"{month_name} W{iso_week} {year_short} {base_name}"
-
-def _strip_legacy_prefixes(name):
-    """
-    Strips various month/week prefixes to get the base plan name.
-    Example: 'MAR-26 PLAN 1' -> 'PLAN 1'
-             'MARCH W10 26 PLAN 1' -> 'PLAN 1'
-    """
-    if not name or name == "Default":
-        return name
-        
-    # Pattern 1: [MONTH] W[XX] [YY] [NAME] -> (e.g. MARCH W10 26 PLAN 1)
-    p1 = re.sub(r'^[A-Z]+\s+W\d+\s+\d{2}\s+', '', name, flags=re.IGNORECASE)
-    if p1 != name:
-        return p1.strip()
-        
-    # Pattern 2: [MON]-[YY] [NAME] -> (e.g. MAR-26 PLAN 1)
-    p2 = re.sub(r'^[A-Z]{3}-\d{2}\s+', '', name, flags=re.IGNORECASE)
-    if p2 != name:
-        return p2.strip()
-        
-    # Pattern 3: [MONTH] [YY] [NAME] -> (e.g. MARCH 26 PLAN 1)
-    p3 = re.sub(r'^[A-Z]+\s+\d{2}\s+', '', name, flags=re.IGNORECASE)
-    if p3 != name:
-        return p3.strip()
-        
-    return name.strip()
 
 HARD_LIMITS = {
 	"Unit 1": 4.4,
@@ -1135,28 +1072,16 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
 	# PULL_BOARD MODE (Production Board only): items already ON the board for this date
 	# Use item-level custom_item_planned_date when set, else sheet custom_planned_date
-	if mode == "pull_board" and (date or (start_date and end_date)):
+	if mode == "pull_board" and date:
+		target_date = getdate(date)
 		has_item_planned = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
 		has_sheet_planned = frappe.db.has_column("Planning sheet", "custom_planned_date")
-		
-		# Base date logic: Prefer item date, then sheet date, then ordered date
-		date_col = "COALESCE(i.custom_item_planned_date, NULLIF(p.custom_planned_date, ''), p.ordered_date)"
-		
-		if start_date and end_date:
-			date_filter_expr = f"{date_col} BETWEEN %s AND %s"
-			params = (start_date, end_date)
-		else:
-			date_filter_expr = f"{date_col} = %s"
-			params = (date,)
-
-		clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
-		
-		sheet_pushed = f"""AND (
-			(i.custom_item_planned_date IS NOT NULL AND i.custom_item_planned_date != '') 
-			OR (p.custom_planned_date IS NOT NULL AND p.custom_planned_date != '')
-			OR (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
-			OR REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
-		)"""
+		item_date_expr = (
+			"COALESCE(i.custom_item_planned_date, p.custom_planned_date) = %s"
+			if (has_item_planned and has_sheet_planned)
+			else "p.custom_planned_date = %s" if has_sheet_planned else "p.ordered_date = %s"
+		)
+		sheet_pushed = "AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''" if has_sheet_planned else ""
 
 		so_item_col = ""
 		if frappe.db.has_column("Planning Sheet Item", "sales_order_item"):
@@ -1175,16 +1100,16 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				p.name as planningSheet, p.party_code as partyCode, p.customer,
 				p.ordered_date, p.dod, p.sales_order as salesOrder,
 				p.custom_pb_plan_name as pbPlanName,
-				COALESCE(i.custom_item_planned_date, NULLIF(p.custom_planned_date, ''), p.ordered_date) as planned_date
+				COALESCE(i.custom_item_planned_date, p.custom_planned_date) as planned_date
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
-			WHERE {date_filter_expr}
+			WHERE {item_date_expr}
 			  AND i.color IS NOT NULL AND i.color != ''
 			  AND i.custom_quality IS NOT NULL AND i.custom_quality != ''
 			  {sheet_pushed}
 			  AND p.docstatus < 2
 			ORDER BY i.unit, i.idx
-		""", params, as_dict=True)
+		""", (target_date,), as_dict=True)
 
 		# Keep PB-plan items plus allowed whites (whites can appear without PB plan)
 		items = [
@@ -1227,101 +1152,32 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	eff = _effective_date_expr("p")
 	plan_condition = ""
 	params = []
-	
 	if start_date and end_date:
-		if cint(planned_only) or mode == "pull_board":
-			date_condition = f"""(
-				({eff} BETWEEN %s AND %s) 
-				OR 
-				EXISTS (
-					SELECT 1 FROM `tabPlanning Sheet Item` i 
-					WHERE i.parent = p.name AND i.custom_item_planned_date BETWEEN %s AND %s
-				)
-			)"""
-			params.extend([query_start, query_end, query_start, query_end])
-		else:
-			date_condition = f"{eff} BETWEEN %s AND %s"
-			params.extend([query_start, query_end])
+		date_condition = f"{eff} BETWEEN %s AND %s"
+		params.extend([query_start, query_end])
 	else:
 		if len(target_dates) > 1:
 			fmt = ','.join(['%s'] * len(target_dates))
 			date_condition = f"{eff} IN ({fmt})"
 			params.extend(target_dates)
 		else:
-			target_date = target_dates[0]
-			if cint(planned_only) or mode == "pull_board":
-				date_condition = f"""(
-					{eff} = %s 
-					OR 
-					EXISTS (
-						SELECT 1 FROM `tabPlanning Sheet Item` i 
-						WHERE i.parent = p.name AND i.custom_item_planned_date = %s
-					)
-				)"""
-				params.extend([target_date, target_date])
-			else:
-				date_condition = f"{eff} = %s"
-				params.append(target_date)
+			date_condition = f"{eff} = %s"
+			params.append(target_dates[0])
 	
 	if plan_name == "__all__":
 		plan_condition = ""  # No plan filter — return all items
 	elif plan_name and plan_name != "Default":
-		# Search for BOTH the base name, contextual name, and any legacy variations
-		valid_names = [plan_name]
-		for d in target_dates:
-			ctx_name = _get_contextual_plan_name(plan_name, d)
-			if ctx_name not in valid_names:
-				valid_names.append(ctx_name)
-		
-		# Proactively find legacy candidates in the DB that match this base name when stripped
-		db_names = frappe.db.sql("SELECT DISTINCT custom_plan_name FROM `tabPlanning sheet` WHERE custom_plan_name IS NOT NULL AND custom_plan_name != ''", as_list=1)
-		for row in db_names:
-			full_db_name = row[0]
-			if _strip_legacy_prefixes(full_db_name) == plan_name:
-				if full_db_name not in valid_names:
-					valid_names.append(full_db_name)
-		
-		fmt = ','.join(['%s'] * len(valid_names))
-		clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
-		
-		# For the Production Board, white orders bypass the plan filter.
-		# Also check item-level plan code for pushed items.
-		if cint(planned_only):
-			like_plan_name = f"%{plan_name}%"
-			plan_condition = f"""AND (
-				p.custom_plan_name IN ({fmt})
-				OR p.custom_pb_plan_name = %s
-				OR EXISTS (
-					SELECT 1 FROM `tabPlanning Sheet Item` i
-					WHERE i.parent = p.name AND (
-						i.custom_plan_code LIKE %s
-						OR REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
-					)
-				)
-			)"""
-			params.extend(valid_names)
-			params.extend([plan_name, like_plan_name])
-		else:
-			plan_condition = f"AND p.custom_plan_name IN ({fmt})"
+		plan_condition = "AND p.custom_plan_name = %s"
+		params.append(plan_name)
 	else:
-		clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
-		if cint(planned_only):
-			plan_condition = f"""AND (
-				p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default'
-				OR EXISTS (
-					SELECT 1 FROM `tabPlanning Sheet Item` i
-					WHERE i.parent = p.name AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
-				)
-			)"""
-		else:
-			plan_condition = f"""AND (
-				p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default'
-				OR EXISTS (
-					SELECT 1 FROM `tabPlanning Sheet Item` i
-					WHERE i.parent = p.name AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
-					AND (i.custom_plan_code IS NULL OR i.custom_plan_code = '')
-				)
-			)"""
+		plan_condition = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
+
+	# Production Board only: require custom_planned_date to be set (scheduled).
+	# IMPORTANT: We do NOT require custom_pb_plan_name here because "white" orders
+	# are allowed to appear directly on the Production Board without being pushed.
+	# Non-white items are filtered per-item later unless they belong to a PB plan.
+	if cint(planned_only) and _has_planned_date_column():
+		plan_condition += " AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
 	
 	# Build SELECT fields — include columns only if they exist
 	fields = ["p.name", "p.customer", "p.party_code", "c.customer_name as party_name", "p.dod", "p.ordered_date", 
@@ -1348,32 +1204,6 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		{plan_condition}
 		ORDER BY {eff} ASC, p.creation ASC
 	""", tuple(params), as_dict=True)
-
-	# ── AUTO-PLAN PURE WHITE SHEETS ──
-	# If we're on the Production Board and some sheets have no planned date,
-	# auto-populate it for those that only contain white items (as per user request).
-	if cint(planned_only) and planning_sheets:
-		unplanned_names = [s.name for s in planning_sheets if not s.get("custom_planned_date")]
-		if unplanned_names:
-			# Find which of these contain color items
-			clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
-			color_sheets = frappe.db.sql(f"""
-				SELECT DISTINCT parent FROM `tabPlanning Sheet Item`
-				WHERE parent IN ({", ".join(["%s"] * len(unplanned_names))})
-				  AND REPLACE(UPPER(color), ' ', '') NOT IN ({clean_white_sql})
-			""", tuple(unplanned_names), as_list=1)
-			
-			color_sheet_names = set(row[0] for row in color_sheets)
-			pure_white_names = [n for n in unplanned_names if n not in color_sheet_names]
-			
-			if pure_white_names:
-				for s in planning_sheets:
-					if s.name in pure_white_names:
-						odate = s.ordered_date
-						# Manually set in DB and local object
-						frappe.db.set_value("Planning sheet", s.name, "custom_planned_date", odate, update_modified=True)
-						s["custom_planned_date"] = odate
-						# Note: We don't need to re-sort as it's already using the same date (eff)
 
 	# Fetch delivery statuses for referenced Sales Orders
 	so_names = [d.sales_order for d in planning_sheets if d.sales_order]
@@ -1494,83 +1324,36 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				unit = unit.title()
 			
 			effective_date_str = str(item.get("ordered_date") or sheet.get("ordered_date") or "")
-			is_white = _is_white_color(color)
-
-			# ── CHART INCLUSION ──
-			# Per user: "whit orders need o show in color char tat bottom only for refernce"
-			# We allow white items even if planned_only=0 (Color Chart).
 			
 			# Production Board filtering: use item.custom_item_planned_date if set, else sheet.custom_planned_date
 			if cint(planned_only):
 				# Separation rule:
-				# - White-family orders may appear directly on the Production Board (planned_only=1)
-				# - Non-white orders must belong to a PB plan OR they must be explicitly requested via plan_name
-				pn = (sheet.get("custom_pb_plan_name") or "").strip()
-				
-				# ── BACKLOG PROTECTION ──
-				# If this sheet was pulled in because it's OLD (backlog logic), 
-				# we ONLY allow white items from it to reach the board.
-				# Colored items from old sheets must STAY in the Color Chart (not planned_only).
-				sheet_eff_pdt = getdate(sheet.effective_date) if sheet.get("effective_date") else None
-				if start_date and sheet_eff_pdt and sheet_eff_pdt < query_start:
-					if not is_white:
-						continue
-				
-				# ── AUTO-PLAN WHITES ──
-				# If it's a white item and has no planned date, it should appear on its ordered_date.
-				# The fallback is handled below, but we can also auto-set the sheet date for visibility.
-				if is_white and not sheet.get("custom_planned_date") and sheet.name:
-					# Check if all items in this sheet are white to safely auto-set sheet-level date
-					# (Optional optimization: only do it if the user wants it persisted)
-					pass
-				if plan_name and plan_name != "__all__":
-					item_plan = (item.get("custom_plan_code") or "").strip()
-					matches_plan = False
-					if pn == plan_name or (item_plan and plan_name in item_plan):
-						matches_plan = True
-					
-					if not matches_plan:
-						# Special bypass: if it's a white order, we show it on the board regardless of plan
-						if not is_white:
-							continue
-				elif not pn and not item.get("custom_plan_code"):
-					# If no plan name is set at all, only white orders show up on the board
-					if not is_white:
+				# - White-family orders may appear directly on the Production Board
+				# - Non-white orders must belong to a PB plan (custom_pb_plan_name set)
+				if not (sheet.get("custom_pb_plan_name") or "").strip():
+					if not _is_white_color(color):
 						continue
 
-				# Resolve effective planned date: item-level first
-				it_pdate = item.get("custom_item_planned_date")
-				
-				if is_white and not it_pdate:
-					# Prevent white items from being dragged along when colored items are pushed.
-					# Always use ordered_date for whites unless explicitly item-planned.
-					it_pdate = item.get("ordered_date") or sheet.get("ordered_date")
-				elif not it_pdate:
-					it_pdate = sheet.get("custom_planned_date")
-				
-				if not it_pdate:
-					it_pdate = item.get("ordered_date") or sheet.get("ordered_date")
+				# Resolve effective planned date: item-level first, then sheet-level
+				it_pdate = item.get("custom_item_planned_date") or sheet.get("custom_planned_date")
 				
 				# If filter is by single date or multiple dates (normalize so DD-MM-YYYY and YYYY-MM-DD both match)
-				if not (start_date and end_date):
+				if date:
 					try:
 						it_pdt_normalized = getdate(str(it_pdate)) if it_pdate else None
 					except Exception:
 						it_pdt_normalized = None
-
-					# Require exact date match based on board filter
 					if it_pdt_normalized not in target_dates:
 						continue
 				
 				# If filter is by date range
 				if start_date and end_date:
 					# Skip if it_pdate is none or outside range
+					from frappe.utils import getdate
+					if not it_pdate:
+						continue
 					try:
-						pdt = getdate(str(it_pdate)) if it_pdate else None
-						if not pdt:
-							continue
-						
-						# Require date to strictly fall in range
+						pdt = getdate(str(it_pdate))
 						if not (pdt >= query_start and pdt <= query_end):
 							continue
 					except Exception:
@@ -1604,8 +1387,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				"has_wo": sheet_has_wo,
 				"produced_qty": flt(produced_weight),
 				"salesOrderItem": item.get("sales_order_item"),
-				"isSplit": item.get("custom_is_split"),
-				"custom_item_planned_date": str(item.get("custom_item_planned_date")) if item.get("custom_item_planned_date") else ""
+				"isSplit": item.get("custom_is_split")
 			})
 
 	if cint(planned_only) and plan_name == "__all__":
@@ -1967,74 +1749,17 @@ def get_monthly_plans(start_date, end_date):
 		fields=["custom_plan_name"]
 	)
 	
-	# Extract base names and merge duplicates
-	db_raw = set([p.custom_plan_name or "Default" for p in plans])
-	persisted_raw = get_persisted_plans("color_chart")
-
-	merged_plans = {} # base_name -> {locked: bool}
-
-	# Process DB plans
-	for name in db_raw:
-		base = _strip_legacy_prefixes(name)
-		if base not in merged_plans:
-			merged_plans[base] = {"locked": 0}
-
-	# Process Persisted plans (global defaults)
-	for p in persisted_raw:
-		base = _strip_legacy_prefixes(p["name"])
-		# If both are present, we prefer the lock status of the "cleaner" or explicit one
-		is_locked = p.get("locked", 0)
-		if base not in merged_plans or is_locked:
-			merged_plans[base] = {"locked": is_locked}
-
-	sorted_names = sorted(merged_plans.keys())
-	if "Default" in sorted_names:
-		sorted_names.remove("Default")
-		sorted_names.insert(0, "Default")
+	db_plans = set([p.custom_plan_name or "Default" for p in plans])
+	persisted = {p["name"]: p.get("locked", 0) for p in get_persisted_plans("color_chart")}
+	
+	all_names = db_plans.union(set(persisted.keys()))
+	sorted_plans = sorted(list(all_names))
+	
+	if "Default" in sorted_plans:
+		sorted_plans.remove("Default")
+		sorted_plans.insert(0, "Default")
 		
-	return [{"name": n, "locked": merged_plans[n]["locked"]} for n in sorted_names]
-
-@frappe.whitelist()
-def cleanup_legacy_plans():
-	"""
-	Migration Script: 
-	1. Merges 'Feb-26 PLAN 1' into 'PLAN 1' in Persisted Defaults.
-	2. Updates old Planning Sheets to have Base names (which the UI now prefixes dynamically).
-	"""
-	# 1. CLEAN PERSISTED DEFAULTS
-	plans = get_persisted_plans("color_chart")
-	cleaned_persisted = {} # base -> locked
-	
-	for p in plans:
-		base = _strip_legacy_prefixes(p["name"])
-		if base not in cleaned_persisted or p.get("locked"):
-			cleaned_persisted[base] = p.get("locked", 0)
-			
-	final_list = [{"name": name, "locked": locked} for name, locked in cleaned_persisted.items()]
-	
-	import json
-	frappe.defaults.set_global_default("production_scheduler_color_chart_plans", json.dumps(final_list))
-	
-	# 2. CLEAN PLANNING SHEETS (only if they match legacy formats)
-	sheets = frappe.db.get_all("Planning sheet", filters={"docstatus": ["<", 2]}, fields=["name", "custom_plan_name"])
-	
-	updated_count = 0
-	for s in sheets:
-		if not s.custom_plan_name or s.custom_plan_name == "Default":
-			continue
-			
-		base = _strip_legacy_prefixes(s.custom_plan_name)
-		if base != s.custom_plan_name:
-			frappe.db.set_value("Planning sheet", s.name, "custom_plan_name", base, update_modified=False)
-			updated_count += 1
-			
-	frappe.db.commit()
-	
-	return {
-		"status": "success",
-		"message": f"Cleaned up {len(plans)} persisted plans into {len(final_list)}. Updated {updated_count} Planning Sheets.",
-		"details": final_list
-	}
+	return [{"name": n, "locked": persisted.get(n, 0)} for n in sorted_plans]
 
 @frappe.whitelist()
 def create_plan_name_field():
@@ -2296,95 +2021,68 @@ VERY_DARK_COLORS = {
 	"BROWN 3.0 DARK COFFEE","BROWN 2.0 DARK",
 }
 
-# ── Color light→dark order — FINAL USER DEFINED SEQUENCE ─────────────────────────
+# ── Color light→dark order — USER DEFINED SEQUENCE ─────────────────────────
 COLOR_ORDER_LIST = [
-	# 0. White (Universal Starting Point)
-	"BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE",
-	"BLEACH WHITE 1.0", "BLEACH WHITE 2.0", "BLEACH WHITE", "WHITE MIX", "WHITE",
+	# ── Whites / Bleach ──
+	"BRIGHT WHITE","SUPER WHITE","MILKY WHITE","SUNSHINE WHITE",
+	"BLEACH WHITE 1.0","BLEACH WHITE 2.0","BLEACH WHITE","WHITE MIX","WHITE",
 	
-	# 1. BABY PINK
+	# ── New Order Stage 1: Baby Pink ──
 	"BABY PINK",
-
-	# 2. MEDICAL BLUE
-	"LIGHT MEDICAL BLUE", "MEDICAL BLUE",
-
-	# 3. MEDICAL GREEN
+	
+	# ── New Order Stage 2: Medical ──
+	"LIGHT MEDICAL BLUE","MEDICAL BLUE",
 	"MEDICAL GREEN",
-
-	# 4. IVORY
-	"BRIGHT IVORY", "IVORY", "OFF WHITE",
-
-	# 5. CREAM
-	"CREAM 1.0", "CREAM 2.0", "CREAM 3.0", "CREAM 4.0", "CREAM 5.0", "CREAM",
-
-	# 6. LEMON YELLOW
-	"LEMON YELLOW 1.0", "LEMON YELLOW 3.0", "LEMON YELLOW",
-
-	# 7. GOLDEN YELLOW
-	"GOLDEN YELLOW 4.0 SPL", "GOLDEN YELLOW 1.0", "GOLDEN YELLOW 2.0", "GOLDEN YELLOW 3.0", "GOLDEN YELLOW",
-
-	# 8. ORANGE
-	"BRIGHT ORANGE", "ORANGE 2.0", "DARK ORANGE", "ORANGE",
-
-	# 9. PINK
-	"PINK 1.0", "PINK 2.0", "PINK 3.0", "PINK 5.0", "DARK PINK", "PINK 6.0 DARK", "PINK 7.0 DARK", "PINK",
-
-	# 10. RED
-	"RED", "CRIMSON RED",
-
-	# 11. LIGHT MAROON
-	"LIGHT MAROON", "MAROON 1.0",
-
-	# 12. DARK MAROON
-	"DARK MAROON", "MAROON 2.0",
-
-	# 13. PEACOCK BLUE
-	"LIGHT PEACOCK BLUE", "PEACOCK BLUE",
-
-	# 14. ROYAL BLUE
-	"BLUE 1.0", "BLUE 2.0", "BLUE 4.0", "BLUE 9.0", "BLUE",
-	"ROYAL BLUE", "BLUE 6.0 ROYAL BLUE", 
-	"BLUE 7.0 DARK BLUE", "BLUE 8.0 DARK ROYAL BLUE",
-
-	# 15. NAVY BLUE
-	"NAVY BLUE", "BLUE 11.0 NAVY BLUE", "BLUE 12.0 SPL NAVY BLUE", "BLUE 13.0 INK BLUE",
-
-	# 16. VOILET
-	"VIOLET", "VOILET",
-
-	# 17. RELIANCE GREEN
-	"GREEN 3.0 RELIANCE GREEN", "RELIANCE GREEN",
-
-	# 18. PARROT GREEN
-	"GREEN 1.0 MINT", "GREEN 2.0 TORQUISE GREEN", "PARROT GREEN",
-
-	# 19. SEA GREEN
+	
+	# ── New Order Stage 3: Ivory / Cream (light buff tones) ──
+	"BRIGHT IVORY","IVORY","OFF WHITE","CREAM 1.0","CREAM 2.0","CREAM 3.0","CREAM 4.0","CREAM 5.0","CREAM",
+	
+	# ── Yellows: Lemon (light) → Golden (darker) ──
+	"LEMON YELLOW 1.0","LEMON YELLOW 3.0","LEMON YELLOW",
+	"GOLDEN YELLOW 4.0 SPL","GOLDEN YELLOW 1.0","GOLDEN YELLOW 2.0","GOLDEN YELLOW 3.0","GOLDEN YELLOW",
+	
+	# ── Oranges ──
+	"BRIGHT ORANGE","ORANGE 2.0","DARK ORANGE",
+	
+	# ── Pinks: Light → Dark ──
+	"PINK 1.0","PINK 2.0","PINK 3.0","PINK 5.0","DARK PINK","PINK 6.0 DARK","PINK 7.0 DARK",
+	
+	# ── Reds → Maroons ──
+	"RED","CRIMSON RED","LIGHT MAROON","MAROON 1.0","DARK MAROON","MAROON 2.0",
+	
+	# ── Blues: Peacock → Royal → Navy ──
+	"LIGHT PEACOCK BLUE","PEACOCK BLUE",
+	"BLUE 1.0","BLUE 2.0","BLUE 4.0","BLUE 9.0","BLUE", # Other blues
+	"ROYAL BLUE","BLUE 6.0 ROYAL BLUE", # Royal
+	"BLUE 7.0 DARK BLUE","BLUE 8.0 DARK ROYAL BLUE",
+	"NAVY BLUE","BLUE 11.0 NAVY BLUE","BLUE 12.0 SPL NAVY BLUE","BLUE 13.0 INK BLUE", # Navy
+	"LIGHT BLUE","SKY BLUE", # Lightest blues (backup)
+	
+	# ── Violet / Purple ──
+	"VIOLET","VOILET","PURPLE 1.0","PURPLE 2.0","PURPLE 3.0","PURPLE 4.0 BLACKBERRY",
+	
+	# ── Greens: Light → Dark (Reliance / Parrot / Sea / Army) ──
+	"GREEN 1.0 MINT","GREEN 2.0 TORQUISE GREEN",
+	"PARROT GREEN",
 	"SEA GREEN",
-
-	# 20. ARMY GREEN
-	"GREEN 4.0", "GREEN 5.0 GRASS GREEN", "GREEN 6.0", "GREEN 7.0", "GREEN 8.0 APPLE GREEN",
-	"GREEN 9.0 BOTTLE GREEN", "GREEN 10.0", "PEACOCK GREEN",
-	"GREEN 11.0 DARK GREEN", "GREEN 12.0 OLIVE GREEN", "GREEN 13.0 ARMY GREEN",
+	"GREEN 3.0 RELIANCE GREEN","RELIANCE GREEN",
+	"GREEN 4.0","GREEN 5.0 GRASS GREEN","GREEN 6.0","GREEN 7.0","GREEN 8.0 APPLE GREEN",
+	"GREEN 9.0 BOTTLE GREEN","GREEN 10.0","PEACOCK GREEN",
+	"GREEN 11.0 DARK GREEN","GREEN 12.0 OLIVE GREEN","GREEN 13.0 ARMY GREEN",
 	"GREEN",
-
-	# 21. LIGHT GREY
-	"LIGHT GREY", "SILVER 1.0", "SILVER 2.0", "GREY 1.0",
-
-	# 22. DARK GREY
-	"DARK GREY", "GREY",
-
-	# 23. BROWN
-	"CHOCOLATE BROWN", "CHOCOLATE BROWN 2.0", "BROWN 1.0", "BROWN 2.0 DARK", "BROWN 3.0 DARK COFFEE",
-	"CHIKOO 1.0", "CHIKOO 2.0", "CHOCOLATE BLACK", "BROWN",
-
-	# 24. BLACK
-	"BLACK MIX", "COLOR MIX", "BLACK",
-
-	# 25. DARK BEIGE
-	"DARK BEIGE", "BEIGE MIX",
-
-	# 26. LIGHT BEIGE
-	"BEIGE 1.0", "BEIGE 2.0", "BEIGE 3.0", "BEIGE 4.0", "BEIGE 5.0", "LIGHT BEIGE", "BEIGE",
+	
+	# ── Grey / Silver ──
+	"LIGHT GREY","SILVER 1.0","SILVER 2.0","GREY 1.0","DARK GREY",
+	
+	# ── Browns (after grey, before black) ──
+	"CHOCOLATE BROWN","CHOCOLATE BROWN 2.0","BROWN 1.0","BROWN 2.0 DARK","BROWN 3.0 DARK COFFEE",
+	"CHIKOO 1.0","CHIKOO 2.0","CHOCOLATE BLACK",
+	
+	# ── Black ──
+	"BLACK MIX","COLOR MIX","BLACK",
+	
+	# ── Beige (Very end — buffer after black) ──
+	"DARK BEIGE","BEIGE MIX","BEIGE 1.0","BEIGE 2.0","BEIGE 3.0","BEIGE 4.0","BEIGE 5.0","LIGHT BEIGE",
 ]
 COLOR_PRIORITY = {c: i for i, c in enumerate(COLOR_ORDER_LIST)}
 
@@ -2401,185 +2099,242 @@ UNIT_QUALITY_ORDER = {
 def get_last_unit_order(unit, date=None, plan_name=None):
 	"""
 	Returns the last pushed order on the Production Board for a given unit.
-	Visual board sequence (idx DESC) is the absolute priority.
+	If plan_name is provided, it prioritizes items from that plan.
 	"""
-	from frappe.utils import getdate
 	target_date = getdate(date) if date else getdate(frappe.utils.today())
-	clean_unit = unit.strip().replace(" ", "").upper()
 	
-	# Primary query - follow board visual sequence (idx DESC)
-	# Filter for items that have a pb_plan_name (effectively pushed to board)
+	# Try to find exactly on target date
 	rows = frappe.db.sql("""
-		SELECT 
-			i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx, 
-			p.name as sheet, p.modified
+		SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, 
+		       COALESCE(p.custom_planned_date, p.ordered_date) as date, p.name as sheet,
+		       p.custom_pb_plan_name as plan
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
-		WHERE REPLACE(UPPER(i.unit), ' ', '') = %s
-		  AND p.docstatus < 2
-		  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
-		  AND (
-		      (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
-		      OR
-		      REPLACE(UPPER(i.color), ' ', '') IN ({ ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS]) })
-		  )
-		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
+		WHERE (TRIM(i.unit) = %s OR TRIM(i.unit) = UPPER(%s))
+		  AND COALESCE(p.custom_planned_date, p.ordered_date) = %s
+		  AND p.docstatus = 1
 		ORDER BY 
-		  i.idx DESC,
-		  p.modified DESC
+		  CASE WHEN p.custom_pb_plan_name = %s THEN 0 ELSE 1 END,
+		  p.modified DESC, i.idx DESC
 		LIMIT 1
-	""", (clean_unit, target_date), as_dict=True)
+	""", (unit.strip(), unit.strip(), target_date, plan_name), as_dict=True)
 	
 	if not rows:
-		# Fallback to absolute last pushed item for this unit ON OR BEFORE target date
-		rows = frappe.db.sql("""
-			SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, p.name as sheet, p.modified
-			FROM `tabPlanning Sheet Item` i
-			JOIN `tabPlanning sheet` p ON i.parent = p.name
-			WHERE REPLACE(UPPER(i.unit), ' ', '') = %s 
-			  AND p.docstatus < 2
-			  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
-			  AND (
-			      (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
-			      OR
-			      REPLACE(UPPER(i.color), ' ', '') IN ({ ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS]) })
-			  )
-			  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= DATE(%s)
-			ORDER BY 
-			  DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) DESC, 
-			  i.idx DESC, 
-			  p.modified DESC
-			LIMIT 1
-		""", (clean_unit, target_date), as_dict=True)
-
-	if not rows:
+		frappe.logger().debug(f"[CC Smart] Seed for {unit} (target {target_date}): NOT FOUND")
 		return None
-
 	r = rows[0]
+	frappe.logger().debug(f"[CC Smart] Seed for {unit} (target {target_date}): {r.color} ({r.quality}) from {r.sheet} dated {r.date}")
 	return {
 		"color": (r.color or "").upper().strip(),
 		"quality": (r.quality or "").upper().strip(),
 		"gsm": r.gsm,
 		"is_white": (r.color or "").upper().strip() in WHITE_COLORS,
-		"date": target_date
+		"date": r.date
 	}
 
 @frappe.whitelist()
 def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, seed_color=None, plan_name=None):
 	"""
 	Returns items in smart push order:
-	1. Perfect Match: Same color AND same quality as board seed
-	2. Color Match: Same color as board seed
-	3. Hierarchy Continuation: Next colors in the user light-dark sequence (Wrap-around)
-	4. Quality Priority: Unit-specific quality order
-	5. GSM: High to Low
+	  1. White phase (per unit, quality order + GSM)
+	  2. Color phase (per unit): seed quality from last white → find colors in
+	     seed quality (light→dark) → group all qualities of each color together
+	     → update seed = last quality in batch → repeat
+	
+	If target_date is provided, the algorithm autonomously finds the last pushed
+	order on the Production Board for each unit to use as the seed.
+	
+	Returns list of dicts with sequence_no, phase, is_seed_bridge.
 	"""
 	import json
 	if isinstance(item_names, str):
 		item_names = json.loads(item_names)
-	
-	items = frappe.get_all("Planning Sheet Item", 
+	if not item_names:
+		return []
+
+	# Load item data
+	raw_items = frappe.get_all(
+		"Planning Sheet Item",
 		filters={"name": ["in", item_names]},
-		fields=["name", "item_code", "item_name", "qty", "unit", "color", "custom_quality", "gsm", "parent"]
+		fields=["name","color","custom_quality","gsm","qty","unit","item_name",
+		        "weight_per_roll","parent"]
 	)
-	
-	if not items:
-		return {"sequence": [], "seeds": {}}
 
-	target_date = getdate(target_date) if target_date else getdate(frappe.utils.today())
-	
-	# Fetch seeds for all units hit by this batch
-	units = list(set([it.unit for it in items]))
-	unit_seeds = {}
-	for u in units:
-		s = get_last_unit_order(u, target_date, plan_name)
-		if s: unit_seeds[u] = s
-
-	# Enrichment bucket for UI
+	# Enrich with customer from parent sheet
 	parent_cache = {}
-	
-	# Group by unit for specialized sorting
-	result_sequence = []
-	for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"]:
-		def normalize_u(raw):
-			r = (raw or "Mixed").strip().upper().replace(" ", "")
-			if "UNIT1" in r: return "Unit 1"
-			if "UNIT2" in r: return "Unit 2"
-			if "UNIT3" in r: return "Unit 3"
-			if "UNIT4" in r: return "Unit 4"
-			return "Mixed"
+	for item in raw_items:
+		if item.parent not in parent_cache:
+			parent_cache[item.parent] = frappe.db.get_value(
+				"Planning sheet", item.parent, ["customer","party_code"], as_dict=1) or {}
+		p = parent_cache[item.parent]
+		item["customer"] = p.get("customer","")
+		item["partyCode"] = item.get("party_code") or p.get("party_code","")
+		item["quality"] = (item.get("custom_quality") or "").upper().strip()
+		item["colorKey"] = (item.get("color") or "").upper().strip()
+		item["unitKey"] = item.get("unit") or "Mixed"
+		item["gsmVal"] = float(item.get("gsm") or 0)
 
-		unit_items = [it for it in items if normalize_u(it.unit) == u]
-		if not unit_items: continue
-		
-		seed = unit_seeds.get(u)
-		s_col = (seed.get("color") if seed else seed_color or "").upper().strip()
-		s_qual = (seed.get("quality") if seed else seed_quality or "").upper().strip()
+	def quality_sort_key(item, unit):
+		order = UNIT_QUALITY_ORDER.get(unit, [])
+		q = item["quality"]
+		idx = order.index(q) if q in order else len(order)
+		return (idx, -item["gsmVal"])
 
-		# Separate into Perfect Match, Color Match, and Others
-		perfect = []
-		same_col = []
-		remaining = []
-		
-		for it in unit_items:
-			c = (it.color or "").upper().strip()
-			q = (it.custom_quality or "").upper().strip()
-			if c == s_col and q == s_qual: perfect.append(it)
-			elif c == s_col: same_col.append(it)
-			else: remaining.append(it)
+	def color_sort_key(color):
+		return COLOR_PRIORITY.get(color, 9999)
 
-		def color_sort_key_fn(it):
-			col = (it.color or "").upper().strip()
-			qual = (it.custom_quality or "").upper().strip()
-			
-			# Priority 1: COLOR light→dark order with WRAP-AROUND
-			c_idx = COLOR_PRIORITY.get(col, 999)
-			s_idx = COLOR_PRIORITY.get(s_col, -1)
-			
-			# Use absolute rank from COLOR_ORDER_LIST (Light to Dark)
-			# This ensures colors like Baby Pink appear at the top if they don't match the seed.
-			color_score = c_idx
-			
-			# Priority 2: Quality order
-			q_order = UNIT_QUALITY_ORDER.get(u, [])
-			q_idx = q_order.index(qual) if qual in q_order else 999
-			
-			# Priority 3: GSM (High to Low -> negative)
-			gsm_val = -float(it.gsm or 0)
-			
-			return (color_score, q_idx, gsm_val)
+	sequence = []
+	seq_no = [0]  # use list so inner scope can mutate
 
-		# Final Sort within buckets
-		perfect.sort(key=color_sort_key_fn)
-		same_col.sort(key=color_sort_key_fn)
-		remaining.sort(key=color_sort_key_fn)
-		
-		# Merge buckets for this unit
-		unit_sorted = perfect + same_col + remaining
-		
-		# Enrich items for the frontend as we add them
-		for it in unit_sorted:
-			if it.parent not in parent_cache:
-				parent_cache[it.parent] = frappe.db.get_value("Planning sheet", it.parent, ["customer","party_code"], as_dict=1) or {}
-			p = parent_cache[it.parent]
-			
-			it["customer"] = p.get("customer","")
-			it["partyCode"] = p.get("party_code","")
-			it["quality"] = (it.custom_quality or "").upper().strip()
-			it["colorKey"] = (it.color or "").upper().strip()
-			it["unitKey"] = it.unit or "Mixed"
-			it["gsmVal"] = float(it.gsm or 0)
-			
-			result_sequence.append(it)
+	units_present = list({i["unitKey"] for i in raw_items if i["unitKey"] != "Mixed"})
+	units_present += (["Mixed"] if any(i["unitKey"] == "Mixed" for i in raw_items) else [])
 
-	# Safety: add sequence_no
-	for i, it in enumerate(result_sequence):
-		it["sequence_no"] = i + 1
-		it["phase"] = "color" if it["colorKey"] not in WHITE_COLORS else "white"
-		it["is_seed_bridge"] = False # Default
+	for unit in ["Unit 1","Unit 2","Unit 3","Unit 4","Mixed"]:
+		if unit not in units_present:
+			continue
+
+		unit_items = [i for i in raw_items if i["unitKey"] == unit]
+		if not unit_items:
+			continue
+
+		white_items = [i for i in unit_items if i["colorKey"] in WHITE_COLORS]
+		color_items = [i for i in unit_items if i["colorKey"] not in WHITE_COLORS]
+
+		# Initialize phase seeds from board (if provided)
+		effective_seed = seed_quality.upper().strip() if seed_quality else None
+		current_seed_color = seed_color.upper().strip() if seed_color else None
+
+		# If target_date is provided, try to fetch unit-specific seed if no seed given
+		if target_date and not effective_seed:
+			last_order = get_last_unit_order(unit, target_date, plan_name)
+			if last_order:
+				effective_seed = last_order.get("quality", "").upper().strip()
+				current_seed_color = last_order.get("color", "").upper().strip()
+				# If last item was white, we effectively want to treat that as a seed for the white-chain
+				# and then transition to color-chain. If it was already a color, it becomes the color-seed.
+				if last_order.get("is_white") and not white_items:
+					# Already skipped white phase? Then this helps choose the first color seed more wisely.
+					pass
+
+		# ── Unconditionally order: White phase -> Color phase ──
+		# This ensures White is never awkwardly forced to the end of the batch.
+		phases = [("white", white_items), ("color", color_items)]
+
+		for phase_idx, (phase_name, items) in enumerate(phases):
+			if not items:
+				continue
+				
+			if phase_name == "white":
+				# ── Phase: White ──
+				def white_dynamic_key(i):
+					order = UNIT_QUALITY_ORDER.get(unit, [])
+					q = i["quality"]
+					if effective_seed and effective_seed in order:
+						start_idx = order.index(effective_seed)
+						# Rotate order so that it starts from effective_seed
+						rotated = order[start_idx:] + order[:start_idx]
+					else:
+						rotated = order
+					
+					idx = rotated.index(q) if q in rotated else len(rotated)
+					return (idx, -i["gsmVal"])
+
+				white_sorted = sorted(items, key=white_dynamic_key)
+				for idx, item in enumerate(white_sorted):
+					seq_no[0] += 1
+					is_last = (idx == len(white_sorted) - 1)
+					if is_last:
+						effective_seed = item["quality"]
+					sequence.append({
+						**item,
+						"sequence_no": seq_no[0],
+						"phase": "white",
+						"is_seed_bridge": is_last and (phase_idx == 0 and len(phases[1][1]) > 0),
+					})
+			else:
+				# ── Phase: Color – PARTITION BY SEED (shade matching + dark phase grouping) ──
+				remaining = list(items)
+				quality_order = UNIT_QUALITY_ORDER.get(unit, [])
+				seed_idx = COLOR_PRIORITY.get(current_seed_color, -1) if current_seed_color else -1
+				is_dark_seed = current_seed_color in VERY_DARK_COLORS
+
+				def color_sort_key(item):
+					# Primary: Absolute Priority for Same Shade / Same Color
+					is_exact_shade = (item["colorKey"] == current_seed_color and item["quality"] == effective_seed)
+					is_same_color = (item["colorKey"] == current_seed_color)
+					
+					prio = 0
+					if is_exact_shade: prio = -2
+					elif is_same_color: prio = -1
+					
+					# Secondary: COLOR light→dark order
+					c_idx = COLOR_PRIORITY.get(item["colorKey"], 9999)
+					# Tertiary: quality order within same color
+					q = item["quality"]
+					q_idx = quality_order.index(q) if q in quality_order else len(quality_order)
+					# Quaternary: GSM high→low
+					return (prio, c_idx, q_idx, -item["gsmVal"])
+
+				# Partition non-beige colors based on seed position
+				continuation = []
+				next_run = []
+				beige_in_batch = []
+				
+				for item in remaining:
+					if item["colorKey"] in BEIGE_COLORS:
+						beige_in_batch.append(item)
+						continue
+						
+					c_idx = COLOR_PRIORITY.get(item["colorKey"], 9999)
+					is_item_dark = item["colorKey"] in VERY_DARK_COLORS
+					
+					# Rule: If board ends DARK, all DARK items in batch are 'continuation'
+					if is_dark_seed and is_item_dark:
+						continuation.append(item)
+					elif seed_idx != -1 and c_idx < seed_idx:
+						next_run.append(item)
+					else:
+						continuation.append(item)
+				
+				continuation.sort(key=color_sort_key)
+				next_run.sort(key=color_sort_key)
+				sorted_beige = sorted(beige_in_batch, key=color_sort_key)
+				
+				# Refined Order:
+				# If board ends DARK (Red/Black), run dark continuation, then beige buffer, then next light run.
+				if is_dark_seed:
+					full_sorted = continuation + sorted_beige + next_run
+				else:
+					# Standard light-to-dark flow
+					full_sorted = continuation + next_run + sorted_beige
+
+				for idx, item in enumerate(full_sorted):
+					seq_no[0] += 1
+					is_last = (idx == len(full_sorted) - 1)
+					is_bridge = not is_last and full_sorted[idx + 1]["colorKey"] != item["colorKey"]
+					sequence.append({
+						**item,
+						"sequence_no": seq_no[0],
+						"phase": "color",
+						"is_seed_bridge": is_bridge,
+					})
+
+	# Append any unsequenced (Mixed unit or edge cases)
+	sequenced_names = {i["name"] for i in sequence}
+	for item in raw_items:
+		if item["name"] not in sequenced_names:
+			seq_no[0] += 1
+			sequence.append({**item, "sequence_no": seq_no[0], "phase": "unassigned", "is_seed_bridge": False})
+
+	# Collect seeds for UI feedback
+	unit_seeds = {}
+	for unit in ["Unit 1","Unit 2","Unit 3","Unit 4","Mixed"]:
+		last = get_last_unit_order(unit, target_date, plan_name)
+		if last:
+			unit_seeds[unit] = {"color": last["color"], "quality": last["quality"]}
 
 	return {
-		"sequence": result_sequence,
+		"sequence": sequence,
 		"seeds": unit_seeds
 	}
 
@@ -2760,44 +2515,9 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
     weights_to_add = {} # unit -> tons
     
     docs_to_move = [] 
-    for item_data in item_names:
-        name = item_data["item_name"] if isinstance(item_data, dict) else item_data
-        requested_qty = flt(item_data.get("qty")) if isinstance(item_data, dict) else None
-        
+    for name in item_names:
         try:
             doc = frappe.get_doc("Planning Sheet Item", name)
-            
-            # SPLIT LOGIC: If requested quantity is less than item quantity, split it
-            if requested_qty and requested_qty < flt(doc.qty) and requested_qty > 0:
-                # 1. Reduce original
-                original_qty = flt(doc.qty)
-                new_orig_qty = original_qty - requested_qty
-                
-                # ERPNext Protocol: Bypass DocStatus lock for adjustments
-                frappe.db.set_value("Planning Sheet Item", doc.name, "qty", new_orig_qty, update_modified=True)
-                
-                # Sync linked Production Plan if exists
-                pp_name = frappe.db.get_value("Production Plan", {"custom_planning_sheet": doc.parent}, "name")
-                if pp_name:
-                    frappe.db.sql("""
-                        UPDATE `tabProduction Plan Item` 
-                        SET qty = %s 
-                        WHERE parent = %s AND sales_order_item = %s
-                    """, (new_orig_qty, pp_name, doc.sales_order_item))
-                
-                # 2. Create clone for moving
-                new_item = frappe.copy_doc(doc)
-                new_item.qty = requested_qty
-                new_item.parent = doc.parent 
-                new_item.custom_is_split = 1
-                
-                # ERPNext Protocol: Use db_insert to avoid parent DocStatus check
-                new_item.db_insert()
-                doc = new_item
-                
-                # Update modified timestamp of source parent
-                frappe.db.set_value("Planning sheet", doc.parent, "modified", frappe.utils.now(), update_modified=False)
-            
             docs_to_move.append(doc)
             
             final_unit = target_unit if target_unit else (doc.unit or "")
@@ -2839,7 +2559,7 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         find_filters = {
             "ordered_date": target_date,
             "party_code": parent_doc.party_code,
-            "docstatus": ["<", 2]  # Include Submitted!
+            "docstatus": ["<", 2]  # Include submitted sheets (docstatus 0 or 1)
         }
         
         # Determine target plan: if explicitly "Default", force to None (no plan = Default view)
@@ -2892,7 +2612,7 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
             target_sheet.customer = parent_doc.customer
             target_sheet.sales_order = parent_doc.sales_order
             if target_plan:
-                target_sheet.custom_plan_name = _get_contextual_plan_name(target_plan, target_date)
+                target_sheet.custom_plan_name = target_plan
             if target_pb_plan:
                 target_sheet.custom_pb_plan_name = target_pb_plan
             target_sheet.save()
@@ -2928,49 +2648,6 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                 SET parent = %s, idx = %s, unit = %s, parenttype='Planning sheet', parentfield='items'{set_date}
                 WHERE name = %s
             """, (target_sheet.name, new_idx, new_unit, item_doc.name))
-            
-            # --- SYNC TARGET PRODUCTION PLAN ---
-            target_pp = frappe.db.get_value("Production Plan", {"custom_planning_sheet": target_sheet.name}, "name")
-            if target_pp:
-                # Check if item already exists in target PP
-                exists = frappe.db.exists("Production Plan Item", {"parent": target_pp, "sales_order_item": item_doc.sales_order_item})
-                if exists:
-                    frappe.db.sql("""
-                        UPDATE `tabProduction Plan Item` 
-                        SET qty = qty + %s 
-                        WHERE parent = %s AND sales_order_item = %s
-                    """, (item_doc.qty, target_pp, item_doc.sales_order_item))
-                else:
-                    # Append new row to submitted target Production Plan
-                    pp_item = frappe.new_doc("Production Plan Item")
-                    pp_item.parent = target_pp
-                    pp_item.parenttype = "Production Plan"
-                    pp_item.parentfield = "po_items"
-                    pp_item.item_code = item_doc.item_code
-                    pp_item.qty = item_doc.qty
-                    pp_item.sales_order_item = item_doc.sales_order_item
-                    pp_item.warehouse = item_doc.warehouse if hasattr(item_doc, 'warehouse') else ""
-                    pp_item.insert(ignore_permissions=True)
-                
-                # Protocol: Update target PP modified timestamp
-                frappe.db.set_value("Production Plan", target_pp, "modified", frappe.utils.now(), update_modified=False)
-            
-            # Update target sheet modified
-            frappe.db.set_value("Planning sheet", target_sheet.name, "modified", frappe.utils.now(), update_modified=False)
-            
-            # --- SYNC SOURCE PRODUCTION PLAN (if moved entirely) ---
-            if target_sheet.name != parent_doc.name:
-                source_pp = frappe.db.get_value("Production Plan", {"custom_planning_sheet": parent_doc.name}, "name")
-                if source_pp:
-                     # Subtract moved quantity from source PP row.
-                     frappe.db.sql("""
-                        UPDATE `tabProduction Plan Item` 
-                        SET qty = GREATEST(0, qty - %s) 
-                        WHERE parent = %s AND sales_order_item = %s
-                     """, (item_doc.qty, source_pp, item_doc.sales_order_item))
-                     
-                     # Protocol: Update source PP modified
-                     frappe.db.set_value("Production Plan", source_pp, "modified", frappe.utils.now(), update_modified=False)
             
             count = int(count) + 1
         
@@ -3231,7 +2908,7 @@ def create_planning_sheet_from_so(doc):
         ps.custom_planned_date = doc.delivery_date
         ps.dod = doc.delivery_date
         ps.planning_status = "Draft"
-        ps.custom_plan_name = _get_contextual_plan_name(cc_plan, doc.transaction_date)
+        ps.custom_plan_name = cc_plan
         ps.custom_pb_plan_name = pb_plan
 
         _populate_planning_sheet_items(ps, doc)
@@ -3767,27 +3444,81 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 			# ------------------------------------------------
 
 			party_code = parent_doc.party_code or ""
-			# ── KEY FIX: "One SO = One Sheet" ──
-			# Never create new sheets or re-parent items.
-			# Also do NOT update the parent sheet's planned date. 
-			# That would drag un-pushed items from this sheet to the new date.
-			pb_sheet_name = parent_doc.name
+			# IMPORTANT: Keep original ordered_date, only change planned_date
+			original_ordered_date = str(parent_doc.ordered_date)
 
-			# ── PER USER REQUEST: Update parent sheet's Plan Names (but NOT dates) ──
-			# "plan name need to updates because we will identfy by plan name only"
-			sheet_set_parts = []
-			sheet_set_vals = []
+			# ── Set item-level unit if user picked a different unit ──
+			if target_unit:
+				frappe.db.sql("""
+					UPDATE `tabPlanning Sheet Item` SET unit = %s WHERE name = %s
+				""", (target_unit, name))
+
+			# ── Find or create a dedicated PB Planning Sheet ──
+			# BUG FIX: Prefer keeping items in original sheet if possible to prevent "Multiple Sheets per SO" issue.
+			# If the original sheet already matches the target date, we don't need to re-parent.
 			
-			if not parent_doc.get("custom_pb_plan_name"):
-				sheet_set_parts.append("`custom_pb_plan_name` = %s")
-				sheet_set_vals.append(pb_plan_name)
-			if sheet_set_parts:
-				frappe.db.sql(
-					f"UPDATE `tabPlanning sheet` SET {', '.join(sheet_set_parts)} WHERE name = %s",
-					sheet_set_vals + [pb_sheet_name]
-				)
+			can_reuse_original = False
+			original_effective_date = str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
+			if original_effective_date == effective_date and (parent_doc.get("custom_pb_plan_name") == pb_plan_name or not parent_doc.get("custom_pb_plan_name")):
+				can_reuse_original = True
+				pb_sheet_name = parent_doc.name
+				# If reusing original but it didn't have pb_plan_name, update it
+				if not parent_doc.get("custom_pb_plan_name"):
+					frappe.db.set_value("Planning sheet", pb_sheet_name, "custom_pb_plan_name", pb_plan_name)
+			
+			if not can_reuse_original:
+				cache_key = (party_code, effective_date, pb_plan_name)
+				if cache_key in pb_sheet_cache:
+					pb_sheet_name = pb_sheet_cache[cache_key]
+				else:
+					# Match by SO instead of just party_code to ensure "One SO = One Sheet"
+					existing = frappe.get_all("Planning sheet", filters={
+						"custom_pb_plan_name": pb_plan_name,
+						"custom_planned_date": effective_date,
+						"sales_order": parent_doc.sales_order or "",
+						"party_code": party_code,
+						"docstatus": ["<", 2]
+					}, fields=["name"], limit=1)
 
-			# ── Set item-level planned date + plan code in-place (no re-parenting) ──
+					if existing:
+						pb_sheet_name = existing[0].name
+					else:
+						pb_sheet = frappe.new_doc("Planning sheet")
+						pb_sheet.custom_plan_name = parent_doc.get("custom_plan_name") or "Default"
+						pb_sheet.custom_pb_plan_name = pb_plan_name
+						# CRITICAL: ordered_date stays as ORIGINAL
+						pb_sheet.ordered_date = original_ordered_date
+						pb_sheet.custom_planned_date = effective_date
+						pb_sheet.party_code = party_code
+						pb_sheet.customer = parent_doc.customer or ""
+						pb_sheet.sales_order = parent_doc.sales_order or ""
+						pb_sheet.insert(ignore_permissions=True)
+						pb_sheet_name = pb_sheet.name
+						# Force custom fields via SQL
+						if frappe.db.has_column("Planning sheet", "custom_pb_plan_name"):
+							frappe.db.sql("""
+								UPDATE `tabPlanning sheet`
+								SET custom_pb_plan_name = %s, custom_plan_name = %s,
+								    custom_planned_date = %s
+								WHERE name = %s
+							""", (pb_plan_name, parent_doc.get("custom_plan_name") or "Default",
+								  effective_date, pb_sheet_name))
+
+					pb_sheet_cache[cache_key] = pb_sheet_name
+
+			# ── Find the current max idx on this PB sheet ──
+			max_idx = frappe.db.sql("""
+				SELECT COALESCE(MAX(idx), 0) FROM `tabPlanning Sheet Item` WHERE parent = %s
+			""", (pb_sheet_name,))[0][0]
+
+			# ── Move item to the PB sheet via raw SQL ──
+			frappe.db.sql("""
+				UPDATE `tabPlanning Sheet Item`
+				SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items'
+				WHERE name = %s
+			""", (pb_sheet_name, name))
+
+			# Also set item-level planned date + plan code for consistency
 			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
 				# Determine new plan code
 				new_plan_code = generate_plan_code(effective_date, unit, pb_plan_name)
@@ -3824,7 +3555,16 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 			frappe.db.set_value("Planning Sheet Item", name, "idx", new_idx)
 
 			# ── Track which original sheets were touched ──
-			updated_sheets.add(pb_sheet_name)
+			updated_sheets.add(item_doc.parent)  # original parent
+
+			# ── Clean up original sheet if now empty ──
+			if item_doc.parent != pb_sheet_name:
+				remaining = frappe.db.count("Planning Sheet Item", {"parent": item_doc.parent})
+				if remaining == 0:
+					try:
+						frappe.delete_doc("Planning sheet", item_doc.parent, ignore_permissions=True, force=True)
+					except Exception:
+						pass
 
 			count += 1
 
@@ -3851,7 +3591,7 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 		"dates": sorted(list(effective_dates_used)),
 		"skipped_already_pushed": len(skipped_already_pushed),
 		"updated_sheets": len(updated_sheets),
-		"plan_name": _get_contextual_plan_name(pb_plan_name, sorted(list(effective_dates_used))[0]) if effective_dates_used else pb_plan_name,
+		"plan_name": pb_plan_name,
 	}
 
 
@@ -4150,10 +3890,26 @@ def auto_create_planning_sheet(doc, method=None):
             if isinstance(parsed, str):
                 parsed = json.loads(parsed)
             if isinstance(parsed, list):
+                # Ascertain month prefix from Sales Order date
+                month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+                order_date = doc.transaction_date
+                month_prefix = ""
+                if order_date:
+                    d = frappe.utils.getdate(order_date)
+                    month_prefix = f"{month_names[d.month - 1]}-{str(d.year)[-2:]}"
+                    
                 for plan in parsed:
                     if int(plan.get("locked", 0)) == 0:
-                        cc_plan = plan.get("name", "")
-                        break
+                        p_name = plan.get("name", "")
+                        if p_name == "Default":
+                            default_plan_unlocked = True
+                        elif month_prefix and p_name.startswith(f"{month_prefix} "):
+                            cc_plan = p_name
+                            break
+                            
+                # Fallback to Default if no month-specific unlocked plan exists
+                if not cc_plan and default_plan_unlocked:
+                    cc_plan = "Default"
     except Exception as e:
         frappe.log_error("Plan Lock Fetch Error (auto-create)", str(e))
 
@@ -4183,7 +3939,7 @@ def auto_create_planning_sheet(doc, method=None):
     ps.ordered_date = doc.transaction_date
     ps.dod = doc.delivery_date
     ps.planning_status = "Draft"
-    ps.custom_plan_name = _get_contextual_plan_name(cc_plan, doc.transaction_date if 'doc' in locals() and hasattr(doc, 'transaction_date') else getdate())
+    ps.custom_plan_name = cc_plan
     ps.custom_pb_plan_name = ""
 
     _populate_planning_sheet_items(ps, doc)
@@ -4195,7 +3951,7 @@ def auto_create_planning_sheet(doc, method=None):
     frappe.db.commit()
     
     # 4. AUTO-PUSH WHITE ITEMS TO PRODUCTION BOARD 
-    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE"]
+    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "IVORY", "CREAM", "OFF WHITE"]
     white_items_to_push = []
     
     for item in ps.items:
@@ -4231,7 +3987,7 @@ def auto_create_planning_sheet(doc, method=None):
             
         push_items_to_pb(white_items_to_push, pb_plan)
         
-    frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{ps.custom_plan_name}</b>")
+    frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{cc_plan}</b>")
     
     # RE-FETCH TO UPDATE HEADER PLAN CODES
     final_doc = frappe.get_doc("Planning sheet", ps.name)
@@ -4270,10 +4026,26 @@ def regenerate_planning_sheet(so_name):
             if isinstance(parsed, str):
                 parsed = json.loads(parsed)
             if isinstance(parsed, list):
+                # Ascertain month prefix from Sales Order date
+                month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+                order_date = doc.transaction_date
+                month_prefix = ""
+                if order_date:
+                    d = frappe.utils.getdate(order_date)
+                    month_prefix = f"{month_names[d.month - 1]}-{str(d.year)[-2:]}"
+                    
                 for plan in parsed:
                     if int(plan.get("locked", 0)) == 0:
-                        cc_plan = plan.get("name", "")
-                        break
+                        p_name = plan.get("name", "")
+                        if p_name == "Default":
+                            default_plan_unlocked = True
+                        elif month_prefix and p_name.startswith(f"{month_prefix} "):
+                            cc_plan = p_name
+                            break
+                            
+                # Fallback to Default if no month-specific unlocked plan exists
+                if not cc_plan and default_plan_unlocked:
+                    cc_plan = "Default"
     except Exception as e:
         frappe.log_error("Plan Lock Fetch Error (regen)", str(e))
 
@@ -4290,7 +4062,7 @@ def regenerate_planning_sheet(so_name):
     ps.ordered_date = doc.transaction_date
     ps.dod = doc.delivery_date
     ps.planning_status = "Draft"
-    ps.custom_plan_name = _get_contextual_plan_name(cc_plan, doc.transaction_date if 'doc' in locals() and hasattr(doc, 'transaction_date') else getdate())
+    ps.custom_plan_name = cc_plan
     ps.custom_pb_plan_name = ""
 
     _populate_planning_sheet_items(ps, doc)
@@ -4302,7 +4074,7 @@ def regenerate_planning_sheet(so_name):
     frappe.db.commit()
     
     # 3. AUTO-PUSH WHITE ITEMS TO PRODUCTION BOARD 
-    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE"]
+    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "IVORY", "CREAM", "OFF WHITE"]
     white_items_to_push = []
     
     for item in ps.items:
@@ -4338,7 +4110,7 @@ def regenerate_planning_sheet(so_name):
             
         push_items_to_pb(white_items_to_push, pb_plan)
         
-    frappe.msgprint(f"✅ Regenerated Planning Sheet <b>{ps.name}</b> in unlocked plan <b>{ps.custom_plan_name}</b>")
+    frappe.msgprint(f"✅ Regenerated Planning Sheet <b>{ps.name}</b> in unlocked plan <b>{cc_plan}</b>")
     return ps
 
 

@@ -120,9 +120,9 @@
             </div>
           </div>
             <span class="cc-stat-weight" :class="getUnitCapacityStatus(unit).class">
-              {{ formatQty(getUnitTotal(unit) * 1000) }} / {{ formatQty(getUnitCapacityLimit(unit) * 1000) }}{{ getCapacityLabel() }}
+              {{ getUnitTotal(unit).toFixed(2) }} / {{ Number(getUnitCapacityLimit(unit).toFixed(2)) }}{{ getCapacityLabel() }}
               <span v-if="getHiddenWhiteTotal(unit) > 0" style="font-size:10px; font-weight:700; color:#475569; display:block;">
-                 (Inc. {{ formatQty(getHiddenWhiteTotal(unit) * 1000) }} White)
+                 (Inc. {{ getHiddenWhiteTotal(unit).toFixed(2) }}T White)
               </span>
             </span>
             <span class="cc-stat-mix" v-if="getMixRollCount(unit) > 0">
@@ -181,7 +181,8 @@
                 </div>
               </div>
               <div class="cc-card-right">
-                <span class="cc-card-qty">{{ entry.qty >= 1000 ? (entry.qty / 1000).toFixed(2) + ' T' : entry.qty + ' Kg' }}</span>
+                <span class="cc-card-qty">{{ (entry.qty / 1000).toFixed(3) }} T</span>
+                <span class="cc-card-qty-kg">{{ entry.qty }} Kg</span>
                 <button 
                   class="cc-revert-btn" 
                   @click.stop="revertOrder(entry)" 
@@ -200,9 +201,9 @@
 
         <!-- Unit Footer -->
         <div class="cc-col-footer">
-          <span>Production: {{ formatQty(getUnitProductionTotal(unit) * 1000) }}</span>
+          <span>Production: {{ getUnitProductionTotal(unit).toFixed(2) }}T</span>
           <span v-if="getMixRollTotalWeight(unit) > 0">
-            Mix Waste: {{ formatQty(getMixRollTotalWeight(unit)) }}
+            Mix Waste: {{ (getMixRollTotalWeight(unit) / 1000).toFixed(3) }}T
           </span>
         </div>
       </div>
@@ -300,12 +301,6 @@ units.forEach(u => {
     unitSortConfig[u] = { mode: 'manual', color: 'asc', gsm: 'desc', priority: 'color' };
 });
 
-function formatQty(qtyKg) {
-    if (!qtyKg && qtyKg !== 0) return '0 Kg';
-    const q = parseFloat(qtyKg);
-    return q >= 1000 ? (q / 1000).toFixed(2) + ' T' : Math.round(q) + ' Kg';
-}
-
 const rawData = ref([]);
 const selectedItems = ref([]); // Names of Planning Sheet Items selected for bulk actions
 
@@ -393,8 +388,7 @@ const visibleUnits = computed(() => {
 
 const NO_RULE_WHITES = ["BRIGHT WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"];
 const EXCLUDED_WHITES = [
-  "WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", 
-  "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE"
+  "WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE"
 ];
 
 // Filter data by plan + party code + status
@@ -1086,7 +1080,6 @@ function openPullOrdersDialog() {
                 return;
             }
             const targetUnit = d.get_value('target_unit');
-            // selected is now an array of { item_name, qty }
             handleMoveOrders(selected, filterOrderDate.value, targetUnit, d);
         }
     });
@@ -1130,7 +1123,7 @@ async function loadOrders(d) {
         
         items.forEach(item => {
             html += `
-                <div class="pull-item-row" style="display: grid; grid-template-columns: 40px 80px 1fr 120px; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; align-items: center;">
+                <div class="pull-item-row" style="display: grid; grid-template-columns: 40px 80px 1fr 100px; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; align-items: center;">
                     <div style="display:flex; align-items:center; justify-content:center;">
                         <input type="checkbox" class="pull-item-cb" data-name="${item.itemName}" style="cursor:pointer; transform: scale(1.1);" />
                     </div>
@@ -1138,20 +1131,14 @@ async function loadOrders(d) {
                     <div style="display: flex; flex-direction: column; gap: 2px;">
                         <span style="font-size: 13px; font-weight: 600; color: #1e293b;">${item.color || 'No Color'} <span style="font-weight: 400; color: #94a3b8; font-size: 12px;">&bull; ${item.partyCode || item.customer || '-'}</span></span>
                         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            <span style="display: inline-flex; align-items: center; gap: 4px; border: 1px solid #e2e8f0; padding: 1px 6px; border-radius: 99px; font-size: 11px; background: #fff;">
+                                <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color: ${getHexColor(item.color)};"></span>${item.color || 'No Color'}
+                            </span>
                              <span style="font-size: 10px; font-weight: 600; background: #e2e8f0; color: #475569; padding: 1px 6px; border-radius: 4px;">${item.quality || 'STD'}</span>
                              <span style="font-size: 10px; font-weight: 600; background: #f3f4f6; color: #4b5563; padding: 1px 6px; border-radius: 4px;">${item.gsm ? item.gsm + ' GSM' : 'N/A'}</span>
                         </div>
                     </div>
-                    <div style="text-align: right;">
-                        <div style="font-size: 10px; color: #94a3b8; margin-bottom: 2px;">Max: ${item.qty} Kg</div>
-                        <input type="number" class="pull-item-qty" 
-                            data-name="${item.itemName}" 
-                            data-max="${item.qty}" 
-                            value="${item.qty}" 
-                            style="width: 80px; text-align: right; padding: 2px 4px; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 12px; font-weight: 700;"
-                        />
-                        <span style="font-size: 11px; font-weight: 600; color: #64748b; margin-left: 4px;">Kg</span>
-                    </div>
+                    <div style="text-align: right;"><span style="display: block; font-size: 14px; font-weight: 700; color: #0f172a;">${(item.qty/1000).toFixed(2)} T</span></div>
                 </div>
             `;
         });
@@ -1182,9 +1169,7 @@ async function loadOrders(d) {
 function updateSelection(d) {
     const selected = [];
     d.$wrapper.find('.pull-item-cb:checked').each(function() {
-        const name = $(this).data('name');
-        const qty = parseFloat(d.$wrapper.find(`.pull-item-qty[data-name="${name}"]`).val()) || 0;
-        selected.push({ item_name: name, qty: qty });
+        selected.push($(this).data('name'));
     });
     d.calc_selected_items = selected;
     d.get_primary_btn().text(`Move ${selected.length} to Today`);
@@ -1272,7 +1257,7 @@ async function loadRescueItems(d) {
                     <td><input type="checkbox" class="rescue-cb" data-name="${item.name}"></td>
                     <td>${item.item_name} <br> <span class="text-muted" style="font-size:10px;">${item.name}</span></td>
                     <td>${item.unit || '-'}</td>
-                    <td>${formatQty(item.qty)}</td>
+                    <td>${item.qty}</td>
                     <td>${item.docstatus === 0 ? 'Draft' : item.docstatus === 1 ? 'Submitted' : 'Cancelled'}</td>
                 </tr>
             `;
@@ -1430,7 +1415,7 @@ function openMovePlanDialog() {
                             </span>
                         </td>
                         <td style="vertical-align:middle;">${i.quality || '-'} <span style="color:#94a3b8; font-size:10px;">${i.gsm ? i.gsm + ' GSM' : ''}</span></td>
-                        <td style="text-align:right; font-weight:700; vertical-align:middle;">${formatQty(i.qty)}</td>
+                        <td style="text-align:right; font-weight:700; vertical-align:middle;">${i.qty}</td>
                         <td style="vertical-align:middle;">${(i.unit || 'Mixed') === 'Mixed' ? 'Unassigned' : i.unit}</td>
                     </tr>`;
             });
@@ -1800,13 +1785,13 @@ onMounted(() => {
     }
 });
 
-watch([viewScope, filterOrderDate, filterMonth, filterWeek, filterUnit], () => {
-    updateURLParams();
+watch(viewScope, () => {
+    updateUrlParams(); // Use updateUrlParams instead of updateURL
     nextTick(() => {
         initFlatpickr();
         fetchData();
     });
-}, { deep: true });
+});
 
 async function openBulkMoveDialog() {
   if (!selectedItems.value.length) {
