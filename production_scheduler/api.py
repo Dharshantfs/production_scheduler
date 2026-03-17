@@ -1457,11 +1457,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			effective_date_str = str(item.get("ordered_date") or sheet.get("ordered_date") or "")
 			is_white = _is_white_color(color)
 
-			# ── CHART EXCLUSION ──
-			# Per user: "white orders measn directly to prodution"
-			# We exclude white items from the Color Chart matrix/kanban entirely.
-			if not cint(planned_only) and is_white:
-				continue
+			# ── CHART INCLUSION ──
+			# Per user: "whit orders need o show in color char tat bottom only for refernce"
+			# We allow white items even if planned_only=0 (Color Chart).
 			
 			# Production Board filtering: use item.custom_item_planned_date if set, else sheet.custom_planned_date
 			if cint(planned_only):
