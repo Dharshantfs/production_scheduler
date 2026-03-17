@@ -198,12 +198,11 @@ def _is_white_color(color):
     c = color.upper().strip()
     return any(w == c for w in WHITE_COLORS)
 
-# User-defined White colors that are auto-planned on the Production Board
-WHITE_COLORS = [
-    "WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", 
-    "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", 
-    "IVORY", "CREAM", "OFF WHITE", "OPTICAL WHITE"
-]
+# White colors that are auto-planned on the Production Board and excluded from Color Chart sequencing
+WHITE_COLORS = {
+    "WHITE", "BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE", 
+    "SUPER WHITE", "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"
+}
 
 def _get_standard_month_name(month_index):
     # month_index 1-12
@@ -2167,12 +2166,6 @@ def delete_plan(plan_name, date=None, start_date=None, end_date=None):
 	frappe.db.commit()
 	return {"status": "success", "deleted_count": count}
 
-# ΓöÇΓöÇ White color group (ONLY these 6 true whites ΓÇö confirmed by user) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
-WHITE_COLORS = {
-	"BRIGHT WHITE", "MILKY WHITE", "SUPER WHITE",
-	"SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0",
-}
-
 # ΓöÇΓöÇ Beige / buffer colors placed at very end of color sequence ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 BEIGE_COLORS = {
 	"BEIGE 1.0","BEIGE 2.0","BEIGE 3.0","BEIGE 4.0","BEIGE 5.0",
@@ -2372,7 +2365,7 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 	
 	items = frappe.get_all("Planning Sheet Item", 
 		filters={"name": ["in", item_names]},
-		fields=["name", "item_code", "item_name", "qty", "unit", "color", "custom_quality", "gsm", "parent"]
+		fields=["name", "item_code", "item_name", "qty", "unit", "color", "custom_quality", "gsm", "parent", "custom_item_planned_date"]
 	)
 	
 	if not items:
@@ -2380,10 +2373,9 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 
 	target_date = getdate(target_date) if target_date else getdate(frappe.utils.today())
 	
-	# Fetch seeds for all units hit by this batch
-	units = list(set([it.unit for it in items]))
+	# Always fetch seeds for all 4 units for UI visibility (Board End display)
 	unit_seeds = {}
-	for u in units:
+	for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
 		s = get_last_unit_order(u, target_date, plan_name)
 		if s: unit_seeds[u] = s
 
@@ -2452,15 +2444,17 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 		# Enrich items for the frontend as we add them
 		for it in unit_sorted:
 			if it.parent not in parent_cache:
-				parent_cache[it.parent] = frappe.db.get_value("Planning sheet", it.parent, ["customer","party_code"], as_dict=1) or {}
+				parent_cache[it.parent] = frappe.db.get_value("Planning sheet", it.parent, ["customer","party_code", "custom_pb_plan_name"], as_dict=1) or {}
 			p = parent_cache[it.parent]
 			
 			it["customer"] = p.get("customer","")
 			it["partyCode"] = p.get("party_code","")
+			it["pbPlanName"] = p.get("custom_pb_plan_name","")
 			it["quality"] = (it.custom_quality or "").upper().strip()
 			it["colorKey"] = (it.color or "").upper().strip()
 			it["unitKey"] = it.unit or "Mixed"
 			it["gsmVal"] = float(it.gsm or 0)
+			it["plannedDate"] = str(it.get("custom_item_planned_date") or "")
 			
 			result_sequence.append(it)
 

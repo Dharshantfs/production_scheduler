@@ -3748,7 +3748,8 @@ async function pushToProductionBoard() {
             const r = await frappe.call({
                 method: 'production_scheduler.api.get_smart_push_sequence',
                 args: { 
-                    item_names: JSON.stringify(currentSequence.filter(s => !s.pushed).map(s => s.name)),
+                    // Use masterSequence instead of currentSequence to ensure we don't LOSE un-pushed items that are currently filtered out!
+                    item_names: JSON.stringify(masterSequence.filter(s => !s.pushed).map(s => s.name)),
                     target_date: singleTargetDate,
                     plan_name: (selectedPlan && selectedPlan.value) ? selectedPlan.value : 'Default'
                 }
@@ -3813,10 +3814,15 @@ async function pushToProductionBoard() {
                         gsm: s.gsm || s.gsmVal || '',
                         unit: s.unit || s.unitKey || '',
                         qty: s.qty || '',
-                        customer: s.customer || s.partyCode || '',
+                        customer: s.customer || '',
+                        partyCode: s.partyCode || s.party_code || '',
+                        partyName: s.partyName || s.customer || '',
+                        approvalStatus: s.approvalStatus || 'Draft',
+                        planningSheet: s.planningSheet || s.parent || '',
                         phase: s.phase || '',
                         is_seed_bridge: !!s.is_seed_bridge,
                         sequence_no: s.sequence_no,
+                        plannedDate: s.plannedDate || '',
                         pushed: isExcludedWhite(s.color) ? true : !!s.pbPlanName
                     };
                     
