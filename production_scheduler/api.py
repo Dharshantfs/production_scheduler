@@ -261,6 +261,7 @@ def _find_best_unlocked_plan(parsed_plans, doc_date):
     
     best_matching_plan = None
     default_plan = None
+    first_unlocked = None
     
     for plan in parsed_plans:
         # Relaxed locking check
@@ -271,6 +272,10 @@ def _find_best_unlocked_plan(parsed_plans, doc_date):
         p_name = str(plan.get("name", "")).strip()
         p_name_up = p_name.upper()
         
+        # Track first unlocked plan encountered (that isn't Default) as a last-resort fallback
+        if p_name_up != "DEFAULT" and not first_unlocked:
+            first_unlocked = p_name
+
         if p_name_up == "DEFAULT":
             default_plan = p_name
             continue
@@ -284,7 +289,7 @@ def _find_best_unlocked_plan(parsed_plans, doc_date):
             if not best_matching_plan:
                 best_matching_plan = p_name
                 
-    return best_matching_plan or default_plan
+    return best_matching_plan or default_plan or first_unlocked
 
 def _strip_legacy_prefixes(name):
     """
