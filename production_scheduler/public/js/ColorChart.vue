@@ -1122,8 +1122,9 @@ const EXCLUDED_WHITES = [
 function isExcludedWhite(color) {
     if (!color) return false;
     const cUpper = color.toUpperCase();
-    // STRICT RULE: Ivory, Cream, and Off-White are NOT pure whites. They stay in main rows.
-    if (cUpper.includes("IVORY") || cUpper.includes("CREAM") || cUpper.includes("OFF WHITE")) return false;
+    // STRICT RULE: Ivory, Cream, Off-White, and mixed colors (with slashes) are NOT pure whites.
+    // They should stay in the main matrix rows.
+    if (cUpper.includes("IVORY") || cUpper.includes("CREAM") || cUpper.includes("OFF WHITE") || cUpper.includes("/")) return false;
     
     // Pure whites are the ones auto-pushed to the board.
     return EXCLUDED_WHITES.some(ex => cUpper.includes(ex));

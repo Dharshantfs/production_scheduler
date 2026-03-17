@@ -192,17 +192,23 @@ def _populate_planning_sheet_items(ps, doc):
 
 
 def _is_white_color(color):
-    """Return True if color string matches a white-family color."""
+    """Return True if color string matches a pure white-family color."""
     if not color:
         return False
     c = color.upper().strip()
+    
+    # STRICT RULE: Ivory, Cream, Off-White, and mixed colors (with /) are NOT pure whites.
+    # They should remain in the Color Chart matrix.
+    if any(x in c for x in ["IVORY", "CREAM", "OFF WHITE", "/"]):
+        return False
+        
     return any(w in c for w in WHITE_COLORS)
 
 # User-defined pure White colors (for auto-push and Production Board separation)
-# Consolidated from ColorChart.vue, ProductionScheduler.vue, and api.py
 WHITE_COLORS = [
     "WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", 
-    "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE"
+    "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE",
+    "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"
 ]
 
 def _get_standard_month_name(month_index):
