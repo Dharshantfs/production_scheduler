@@ -1217,7 +1217,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	
 	if start_date and end_date:
 		# Separately handle white order visibility (allow past whites to show for pulling)
-		if cint(planned_only) or cint(pull_board):
+		if cint(planned_only) or mode == "pull_board":
 			# Clean white colors list for SQL IN clause
 			clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
 			date_condition = f"""(
