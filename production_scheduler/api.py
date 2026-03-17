@@ -1222,21 +1222,23 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	params = []
 	
 	if start_date and end_date:
-		# Separately handle white order visibility (allow past whites to show for pulling)
-		# Corrected: Use mode check to avoid NameError
 		if cint(planned_only) or mode == "pull_board":
-			# Clean white colors list for SQL IN clause
 			clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
 			date_condition = f"""(
 				({eff} BETWEEN %s AND %s) 
 				OR 
+				EXISTS (
+					SELECT 1 FROM `tabPlanning Sheet Item` i 
+					WHERE i.parent = p.name AND i.custom_item_planned_date BETWEEN %s AND %s
+				)
+				OR 
 				({eff} < %s AND EXISTS (
-					SELECT 1 FROM `tabPlanning Sheet Item` 
-					WHERE parent = p.name 
-					AND REPLACE(UPPER(color), ' ', '') IN ({clean_white_sql})
+					SELECT 1 FROM `tabPlanning Sheet Item` i
+					WHERE i.parent = p.name 
+					AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
 				))
 			)"""
-			params.extend([query_start, query_end, query_start])
+			params.extend([query_start, query_end, query_start, query_end, query_start])
 		else:
 			date_condition = f"{eff} BETWEEN %s AND %s"
 			params.extend([query_start, query_end])
@@ -1252,13 +1254,18 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				date_condition = f"""(
 					{eff} = %s 
 					OR 
+					EXISTS (
+						SELECT 1 FROM `tabPlanning Sheet Item` i 
+						WHERE i.parent = p.name AND i.custom_item_planned_date = %s
+					)
+					OR 
 					({eff} < %s AND EXISTS (
-						SELECT 1 FROM `tabPlanning Sheet Item` 
-						WHERE parent = p.name 
-						AND REPLACE(UPPER(color), ' ', '') IN ({clean_white_sql})
+						SELECT 1 FROM `tabPlanning Sheet Item` i
+						WHERE i.parent = p.name 
+						AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
 					))
 				)"""
-				params.extend([target_date, target_date])
+				params.extend([target_date, target_date, target_date])
 			else:
 				date_condition = f"{eff} = %s"
 				params.append(target_date)
@@ -1282,27 +1289,40 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 					valid_names.append(full_db_name)
 		
 		fmt = ','.join(['%s'] * len(valid_names))
-		plan_condition = f"AND p.custom_plan_name IN ({fmt})"
-		params.extend(valid_names)
+		clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
+		
+		# For the Production Board, white orders bypass the plan filter.
+		# Also check item-level plan code for pushed items.
+		if cint(planned_only):
+			like_plan_name = f"%{plan_name}%"
+			plan_condition = f"""AND (
+				p.custom_plan_name IN ({fmt})
+				OR p.custom_pb_plan_name = %s
+				OR EXISTS (
+					SELECT 1 FROM `tabPlanning Sheet Item` i
+					WHERE i.parent = p.name AND (
+						i.custom_plan_code LIKE %s
+						OR REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
+					)
+				)
+			)"""
+			params.extend(valid_names)
+			params.extend([plan_name, like_plan_name])
+		else:
+			plan_condition = f"AND p.custom_plan_name IN ({fmt})"
+			params.extend(valid_names)
 	else:
-		plan_condition = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
-
-	# Production Board only: require custom_planned_date to be set (scheduled).
-	# IMPORTANT: We do NOT require custom_pb_plan_name here because "white" orders
-	# are allowed to appear directly on the Production Board without being pushed.
-	# Non-white items are filtered per-item later unless they belong to a PB plan.
-	if cint(planned_only) and _has_planned_date_column():
-		# Relax filter part: Include sheets with a planned date OR those containing white backlog items
-		# (The date_condition already restricts white backlog to query_start or range)
-		plan_condition += f""" AND (
-			(p.custom_planned_date IS NOT NULL AND p.custom_planned_date != '')
-			OR 
-			EXISTS (
-				SELECT 1 FROM `tabPlanning Sheet Item` 
-				WHERE parent = p.name 
-				AND REPLACE(UPPER(color), ' ', '') IN ({ ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS]) })
-			)
-		)"""
+		clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
+		if cint(planned_only):
+			plan_condition = f"""AND (
+				p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default'
+				OR EXISTS (
+					SELECT 1 FROM `tabPlanning Sheet Item` i
+					WHERE i.parent = p.name AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
+				)
+			)"""
+		else:
+			plan_condition = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
 	
 	# Build SELECT fields — include columns only if they exist
 	fields = ["p.name", "p.customer", "p.party_code", "c.customer_name as party_name", "p.dod", "p.ordered_date", 
@@ -1505,20 +1525,31 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 					# (Optional optimization: only do it if the user wants it persisted)
 					pass
 				if plan_name and plan_name != "__all__":
-					if pn != plan_name:
+					item_plan = (item.get("custom_plan_code") or "").strip()
+					matches_plan = False
+					if pn == plan_name or (item_plan and plan_name in item_plan):
+						matches_plan = True
+					
+					if not matches_plan:
 						# Special bypass: if it's a white order, we show it on the board regardless of plan
 						if not is_white:
 							continue
-				elif not pn:
+				elif not pn and not item.get("custom_plan_code"):
 					# If no plan name is set at all, only white orders show up on the board
 					if not is_white:
 						continue
 
-				# Resolve effective planned date: item-level first, then sheet-level
-				it_pdate = item.get("custom_item_planned_date") or sheet.get("custom_planned_date")
+				# Resolve effective planned date: item-level first
+				it_pdate = item.get("custom_item_planned_date")
 				
-				# WHITE ORDER FALLBACK: If no planned date, use ordered_date so they appear automatically on the board
-				if not it_pdate and is_white:
+				if is_white and not it_pdate:
+					# Prevent white items from being dragged along when colored items are pushed.
+					# Always use ordered_date for whites unless explicitly item-planned.
+					it_pdate = item.get("ordered_date") or sheet.get("ordered_date")
+				elif not it_pdate:
+					it_pdate = sheet.get("custom_planned_date")
+				
+				if not it_pdate:
 					it_pdate = item.get("ordered_date") or sheet.get("ordered_date")
 				
 				# If filter is by single date or multiple dates (normalize so DD-MM-YYYY and YYYY-MM-DD both match)
