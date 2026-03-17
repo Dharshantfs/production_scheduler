@@ -35,7 +35,9 @@
         <label>Plan</label>
         <div style="display:flex; gap:4px; align-items:center;">
             <select v-model="selectedPlan" @change="fetchData">
-                <option v-for="p in visiblePlans" :key="p.name" :value="p.name">{{ p.locked ? '🔒 ' : '' }}{{ p.name }}</option>
+                <option v-for="p in visiblePlans" :key="p.name" :value="p.name">
+                    {{ p.locked ? '🔒 ' : '' }}{{ p.name === 'Default' ? 'Default' : currentMonthPrefix + ' ' + p.name }}
+                </option>
             </select>
             <button v-if="selectedPlan" class="cc-mini-btn" @click="togglePlanLock" :title="isCurrentPlanLocked ? 'Unlock Plan' : 'Lock Plan'" style="margin-right:2px; padding: 2px 4px;font-size: 14px;">
                 {{ isCurrentPlanLocked ? '🔒' : '🔓' }}
@@ -789,28 +791,9 @@ const currentMonthPrefix = computed(() => {
 });
 
 // Only show plans that belong to the current month (or have no month prefix like "Default")
+// All plans are now global "slots" and visible regardless of month
 const visiblePlans = computed(() => {
-    const fullPrefix = currentMonthPrefix.value; // MARCH W10 26
-    const monthPart = fullPrefix.split(" ")[0]; // MARCH
-
-    return plans.value.filter(p => {
-        const pName = (p && p.name) ? p.name : (typeof p === 'string' ? p : '');
-        if (!pName) return false;
-        if (pName === 'Default') return true;
-
-        const pUpper = pName.toUpperCase();
-        
-        // Robust Month/Week Matching:
-        // Use 3-letter abbreviation (MAR) to match both "MARCH" and "MAR-26"
-        const pMonth = pUpper.split(/[\s-]/)[0];
-        if (pMonth === monthPart || pMonth === monthPart.slice(0, 3)) return true;
-
-        // Custom plans with no month prefix (e.g. "Urgent Plan")
-        const hasAnyMonthPrefix = /^[A-Z]+[-\s]\d{2}\s/i.test(pName) || /^[A-Z]{3,}\s/i.test(pName);
-        if (!hasAnyMonthPrefix) return true;
-
-        return false;
-    });
+    return plans.value;
 });
 
 // Calculate the frontend viewing Plan Code (e.g., 26CU1-PLAN 1)
@@ -2767,6 +2750,20 @@ async function toggleViewScope() {
 }
 
 async function fetchPlans(args) {
+    const stripLegacyPrefix = (name) => {
+        if (!name || name === 'Default') return name;
+        // Pattern 1: MARCH W10 26 PLAN 1
+        let s = name.replace(/^[A-Z]+\s+W\d+\s+\d{2}\s+/i, '');
+        if (s !== name) return s.trim();
+        // Pattern 2: Feb-26 PLAN 1
+        s = name.replace(/^[A-Z]{3}-\d{2}\s+/i, '');
+        if (s !== name) return s.trim();
+        // Pattern 3: MARCH 26 PLAN 1
+        s = name.replace(/^[A-Z]+\s+\d{2}\s+/i, '');
+        if (s !== name) return s.trim();
+        return name.trim();
+    };
+
     try {
         const planArgs = { ...args };
         if (planArgs.date && !planArgs.start_date) {
@@ -2784,9 +2781,18 @@ async function fetchPlans(args) {
         plans.value = r.message || [{name: "Default", locked: 0}];
         // If the currently selected plan is not returned (e.g. new plan with no sheets yet),
         // keep it in the dropdown instead of silently falling back to Default.
-        if (selectedPlan.value && !plans.value.find(p => p.name === selectedPlan.value)) {
-            // Insert as an unlocked empty plan so user stays on it
-            plans.value.push({ name: selectedPlan.value, locked: 0 });
+        const strippedSelected = stripLegacyPrefix(selectedPlan.value);
+        if (selectedPlan.value && selectedPlan.value !== 'Default') {
+            const found = plans.value.find(p => p.name === strippedSelected || p.name === selectedPlan.value);
+            if (found) {
+                // Auto-migrate selection to base name if it matched
+                if (selectedPlan.value !== found.name) {
+                    selectedPlan.value = found.name;
+                }
+            } else {
+                // Insert as an unlocked empty plan so user stays on it
+                plans.value.push({ name: selectedPlan.value, locked: 0 });
+            }
         }
     } catch(e) { console.error("Error fetching plans", e); }
 }
@@ -2825,9 +2831,9 @@ function createNewPlan() {
         fieldname: 'plan_name',
         fieldtype: 'Data',
         reqd: 1,
-        description: `Plan will be created as: <b>${monthPrefix}[your name]</b>`
+        description: `Plan will be displayed as: <b>${currentMonthPrefix.value} [your name]</b>`
     }, async (values) => {
-        const fullName = monthPrefix + values.plan_name;
+        const fullName = values.plan_name;
         if (!plans.value.find(p => p.name === fullName)) {
             plans.value.push({name: fullName, locked: 0});
             // Persist the new plan so it survives refresh
@@ -2959,8 +2965,8 @@ async function pushToProductionBoard() {
             planningSheet: d.planningSheet || '',
             phase: '',
             is_seed_bridge: false,
-            pushed: isPushed,
-            checked: !isPushed // Only check by default if not already pushed
+            pushed: !!(d.pbPlanName || d.plannedDate || d.custom_item_planned_date), 
+            checked: !(d.pbPlanName || d.plannedDate || d.custom_item_planned_date)
         };
     });
 
@@ -3121,12 +3127,14 @@ async function pushToProductionBoard() {
         const smartSeedsHtml = (smartSequenceActive && hasD && d.smartSeeds) ? `
             <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
                 ${['Unit 1', 'Unit 2', 'Unit 3', 'Unit 4'].map((unit) => {
-                    const seed = d.smartSeeds ? d.smartSeeds[unit] : null;
+                    const normUnit = unit.toUpperCase().replace(/\s+/g, '');
+                    const seed = (d.smartSeeds && (d.smartSeeds[unit] || d.smartSeeds[normUnit])) ? (d.smartSeeds[unit] || d.smartSeeds[normUnit]) : null;
+                    const displayColor = (seed && seed.color && seed.color !== '0' && seed.color !== 0) ? seed.color : 'NO ORDERS';
                     return `
                     <div style="background:#f8fafc; border:1px solid #e2e8f0; padding:4px 10px; border-radius:12px; font-size:10px; display:flex; align-items:center; gap:6px;">
                         <span style="color:#64748b; font-weight:700;">${unit.toUpperCase()} BOARD END:</span>
-                        <span style="color:${seed ? '#1e293b' : '#94a3b8'}; font-weight:800;">${seed ? seed.color : 'NO ORDERS'}</span>
-                        ${seed ? `<span style="color:#94a3b8; font-size:9px;">(${seed.quality})</span>` : ''}
+                        <span style="color:${displayColor !== 'NO ORDERS' ? '#1e293b' : '#94a3b8'}; font-weight:800;">${displayColor}</span>
+                        ${(displayColor !== 'NO ORDERS' && seed.quality) ? `<span style="color:#94a3b8; font-size:9px;">(${seed.quality})</span>` : ''}
                     </div>`;
                 }).join('')}
             </div>
@@ -3433,7 +3441,16 @@ async function pushToProductionBoard() {
 
     const updateDialogStatus = async (newTargetDate) => {
         if (!newTargetDate) return;
-        const relevantUnits = [...new Set(currentSequence.map(s => s.unit || 'Unit 1'))];
+        const relevantUnits = [...new Set(currentSequence.map(s => {
+            const raw = (s.unit || s.unitKey || 'Unit 1').trim();
+            // Robust normalization to 'Unit X' format
+            if (raw.toUpperCase().includes('UNIT 1')) return 'Unit 1';
+            if (raw.toUpperCase().includes('UNIT 2')) return 'Unit 2';
+            if (raw.toUpperCase().includes('UNIT 3')) return 'Unit 3';
+            if (raw.toUpperCase().includes('UNIT 4')) return 'Unit 4';
+            return raw;
+        }))].sort();
+        
         const unitStatuses = [];
         dialogApprovalMeta = null;
         dialogPendingUnits = [];
@@ -3457,9 +3474,9 @@ async function pushToProductionBoard() {
             });
 
             // ✅ Sync unitSortConfig so that 'Smart Auto-Tick' sees the same sequence
-            if (msg.sequence_data) {
+            if (msg.sequence && msg.sequence.length) {
                 try {
-                    const names = JSON.parse(msg.sequence_data);
+                    const names = msg.sequence;
                     if (unitSortConfig[u]) unitSortConfig[u].savedSequence = names;
                     combinedSequenceData = combinedSequenceData.concat(names);
                 } catch(e) {}
@@ -3608,7 +3625,8 @@ async function pushToProductionBoard() {
         d.fields_dict.sequence_html.$wrapper.html(buildDialogHtml(currentSequence, dialogOverallStatus));
         wireCheckboxes();
         updateCountLabel();
-        updateDialogStatus(d.get_value('target_date'));
+        // REMOVED: updateDialogStatus(d.get_value('target_date')); 
+        // Calling it here reverts the 'Draft' status to 'Approved' from DB before re-submission!
     }
 
     // Attach keyup events to inputs for real-time filtering
@@ -3755,6 +3773,17 @@ async function pushToProductionBoard() {
                     dialogApprovalMeta = null;
                     const $btn = d.get_primary_btn();
                     $btn.text('📤 Request Arrangement Approval').css({'background-color': '#d97706', 'border': 'none', 'box-shadow': '0 4px 6px -1px rgba(217, 119, 6, 0.2)'});
+                    
+                    // Force update the UI status badge
+                    const $statusWrapper = d.$wrapper.find('.modal-content [style*="background:#f1f5f9"]');
+                    if ($statusWrapper.length) {
+                        $statusWrapper.html(`
+                            <span style="width:8px;height:8px;border-radius:50%;background:#64748b"></span>
+                            <div style="display:flex; flex-direction:column;">
+                                <span style="font-size:11px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.02em;">Arrangement for ${d.get_value('target_date')}: DRAFT</span>
+                            </div>
+                        `);
+                    }
                 }
                 
                 // Track target-day limits
@@ -4104,27 +4133,7 @@ function handleRealtimeColorUpdate(payload) {
 
 async function fetchData() {
 
-  // Auto-reset plan if selected plan belongs to a different month
-  if (selectedPlan.value && selectedPlan.value !== 'Default') {
-      const pNameUpper = selectedPlan.value.toUpperCase();
-      const currentPrefix = currentMonthPrefix.value; // MARCH W11 26
-      const monthPart = currentPrefix.split(" ")[0]; // MARCH
-      let isValid = false;
-
-      // Robust Matching: Use 3rd letter abbreviation (MAR) to match both "MARCH" and "MAR-26" / "MARCH-26"
-      const pMonth = pNameUpper.split(/[\s-]/)[0];
-      if (pMonth === monthPart || pMonth === monthPart.slice(0, 3)) {
-          isValid = true;
-      } else {
-          // Custom plans with no month prefix
-          const hasAnyMonthPrefix = /^[A-Z]+[-\s]\d{2}\s/i.test(pNameUpper) || /^[A-Z]{3,}\s/i.test(pNameUpper);
-          if (!hasAnyMonthPrefix) isValid = true;
-      }
-
-      if (!isValid) {
-          selectedPlan.value = 'Default';
-      }
-  }
+  // fetchData continues (Global Slots persist across months/weeks)
 
   let args = {};
   
@@ -4493,26 +4502,10 @@ watch(viewScope, async (newVal) => {
 watch(filterMonth, async () => {
     updateUrlParams();
     await fetchData();
-    // Try to auto-select a plan that matches the new month
-    if (plans.value && plans.value.length > 0) {
-        const matchingPlan = plans.value.find(p => p.name.includes(filterMonth.value));
-        if (matchingPlan) selectedPlan.value = matchingPlan.name;
-        else selectedPlan.value = "Default";
-    }
 });
 watch(filterWeek, async () => {
     updateUrlParams();
     await fetchData();
-    // Try to auto-select a plan that matches the new week (e.g. contains "W11")
-    if (plans.value && plans.value.length > 0) {
-        const parts = filterWeek.value.split("-W");
-        if (parts.length === 2) {
-            const wNo = parts[1];
-            const matchingPlan = plans.value.find(p => p.name.includes(`W${wNo}`));
-            if (matchingPlan) selectedPlan.value = matchingPlan.name;
-            else selectedPlan.value = "Default";
-        }
-    }
 });
 
 onMounted(async () => {
@@ -4581,6 +4574,7 @@ onMounted(async () => {
   }
   
   // 2. Fetch Data
+  frappe.call({ method: "production_scheduler.api.cleanup_legacy_plans" });
   await fetchData();
   analyzePreviousFlow();
   
