@@ -1020,10 +1020,11 @@ const matrixData = computed(() => {
                 matchs.forEach(m => {
                     hasItems = true;
                     totalItems++;
-                    let pushedForThisItem = !!(m.plannedDate || m.pbPlanName);
-                    let whiteAndPlanned = isItemWhite && !!m.plannedDate;
+                    // Non-white: only "pushed" if it has pbPlanName (manually pushed from Color Chart)
+                    // White: always considered "on the board" (auto-placed)
+                    let pushedForThisItem = isItemWhite ? true : !!m.pbPlanName;
 
-                    if (pushedForThisItem || isItemWhite) {
+                    if (pushedForThisItem) {
                         anyPushed = true;
                         pushedItems++;
                         const pDate = m.plannedDate || m.custom_item_planned_date || (isItemWhite ? 'Board' : '');

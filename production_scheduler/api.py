@@ -4131,44 +4131,13 @@ def regenerate_planning_sheet(so_name):
     ps.insert()
     frappe.db.commit()
     
-    # 3. AUTO-PUSH WHITE ITEMS TO PRODUCTION BOARD 
-    whites = ["WHITE", "BRIGHT WHITE", "P. WHITE", "P.WHITE", "R.F.D", "RFD", "BLEACHED", "B.WHITE", "SNOW WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "IVORY", "CREAM", "OFF WHITE"]
-    white_items_to_push = []
-    
-    for item in ps.items:
-        clean_txt = ((item.item_code or "") + " " + (item.item_name or "") + " " + (item.color or "")).upper()
-        if any(w in clean_txt for w in whites):
-            white_items_to_push.append({
-                "name": item.name,
-                "target_date": str(doc.transaction_date),
-                "target_unit": item.unit
-            })
-            
-    if white_items_to_push:
-        # Fetch the matching PB plan the same way we fetched CC plan
-        pb_plan = "Default"
-        try:
-            raw_pb = frappe.db.get_value("DefaultValue", {"defkey": "production_scheduler_production_board_plans", "parent": "__default"}, "defvalue")
-            if raw_pb:
-                parsed_pb = json.loads(raw_pb) if isinstance(raw_pb, str) else raw_pb
-                if isinstance(parsed_pb, str): parsed_pb = json.loads(parsed_pb)
-                month_prefix = ""
-                if doc.transaction_date:
-                    d = frappe.utils.getdate(doc.transaction_date)
-                    month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-                    month_prefix = f"{month_names[d.month - 1]}-{str(d.year)[-2:]}"
-                for plan in parsed_pb:
-                    if int(plan.get("locked", 0)) == 0:
-                        p_name = plan.get("name", "")
-                        if month_prefix and p_name.startswith(f"{month_prefix} "):
-                            pb_plan = p_name
-                            break
-        except Exception:
-            pass
-            
-        push_items_to_pb(white_items_to_push, pb_plan)
+    # White items are auto-visible on the Production Board because:
+    # 1. White items have custom_item_planned_date set (from _populate_planning_sheet_items)
+    # 2. The EXISTS SQL filter finds them
+    # 3. The _is_white_color check allows them through without custom_pb_plan_name
+    # Non-white items stay in the Color Chart only (no custom_pb_plan_name, not white)
         
-    frappe.msgprint(f"Γ£à Regenerated Planning Sheet <b>{ps.name}</b> in unlocked plan <b>{cc_plan}</b>")
+    frappe.msgprint(f"✅ Regenerated Planning Sheet <b>{ps.name}</b> in unlocked plan <b>{cc_plan}</b>")
     return ps
 
 
