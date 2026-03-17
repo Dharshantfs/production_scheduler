@@ -1482,7 +1482,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				"pbPlanName": sheet.get("custom_pb_plan_name") or "",
 				"planCode": item.get("custom_plan_code") or "",
 				"ordered_date": str(sheet.ordered_date) if sheet.ordered_date else "",
-				"planned_date": str(sheet.custom_planned_date) if sheet.get("custom_planned_date") else "",
+				"planned_date": str(item.get("custom_item_planned_date") or sheet.get("custom_planned_date") or ""),
 				"dod": str(sheet.dod) if sheet.dod else "",
 				"delivery_status": so_status_map.get(sheet.sales_order) or "Not Delivered",
 				"has_pp": sheet_has_pp,
