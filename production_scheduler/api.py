@@ -2633,6 +2633,8 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         try:
             doc = frappe.get_doc("Planning Sheet Item", name)
             
+            # SPLIT LOGIC: If requested quantity is less than item quantity, split it
+            if requested_qty and requested_qty < flt(doc.qty) and requested_qty > 0:
                 # 1. Reduce original
                 original_qty = flt(doc.qty)
                 new_orig_qty = original_qty - requested_qty
