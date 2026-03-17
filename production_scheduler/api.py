@@ -1223,7 +1223,6 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	
 	if start_date and end_date:
 		if cint(planned_only) or mode == "pull_board":
-			clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
 			date_condition = f"""(
 				({eff} BETWEEN %s AND %s) 
 				OR 
@@ -1231,14 +1230,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 					SELECT 1 FROM `tabPlanning Sheet Item` i 
 					WHERE i.parent = p.name AND i.custom_item_planned_date BETWEEN %s AND %s
 				)
-				OR 
-				({eff} < %s AND EXISTS (
-					SELECT 1 FROM `tabPlanning Sheet Item` i
-					WHERE i.parent = p.name 
-					AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
-				))
 			)"""
-			params.extend([query_start, query_end, query_start, query_end, query_start])
+			params.extend([query_start, query_end, query_start, query_end])
 		else:
 			date_condition = f"{eff} BETWEEN %s AND %s"
 			params.extend([query_start, query_end])
@@ -1250,7 +1243,6 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		else:
 			target_date = target_dates[0]
 			if cint(planned_only) or mode == "pull_board":
-				clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
 				date_condition = f"""(
 					{eff} = %s 
 					OR 
@@ -1258,14 +1250,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 						SELECT 1 FROM `tabPlanning Sheet Item` i 
 						WHERE i.parent = p.name AND i.custom_item_planned_date = %s
 					)
-					OR 
-					({eff} < %s AND EXISTS (
-						SELECT 1 FROM `tabPlanning Sheet Item` i
-						WHERE i.parent = p.name 
-						AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
-					))
 				)"""
-				params.extend([target_date, target_date, target_date])
+				params.extend([target_date, target_date])
 			else:
 				date_condition = f"{eff} = %s"
 				params.append(target_date)
@@ -1559,12 +1545,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 					except Exception:
 						it_pdt_normalized = None
 
-					# Allow past white orders (backlog) or exact date matches
-					if is_white and it_pdt_normalized and target_dates:
-						# If it's earlier than today's target date, it's a backlog white order
-						if it_pdt_normalized > target_dates[0] and it_pdt_normalized not in target_dates:
-							continue
-					elif it_pdt_normalized not in target_dates:
+					# Require exact date match based on board filter
+					if it_pdt_normalized not in target_dates:
 						continue
 				
 				# If filter is by date range
@@ -1575,10 +1557,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 						if not pdt:
 							continue
 						
-						# For white orders, allow backlog (dates before start_date)
-						if is_white and pdt < query_start:
-							pass # It's a backlog white order, let it through
-						elif not (pdt >= query_start and pdt <= query_end):
+						# Require date to strictly fall in range
+						if not (pdt >= query_start and pdt <= query_end):
 							continue
 					except Exception:
 						# If date parsing fails, treat as invalid and skip
@@ -3775,26 +3755,9 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 			party_code = parent_doc.party_code or ""
 			# ── KEY FIX: "One SO = One Sheet" ──
 			# Never create new sheets or re-parent items.
-			# Instead, update metadata directly on the item and keep the original parent sheet.
+			# Also do NOT update the parent sheet's planned date. 
+			# That would drag un-pushed items from this sheet to the new date.
 			pb_sheet_name = parent_doc.name
-
-			# Update parent sheet's PB plan / planned date (only if not already set)
-			sheet_set_parts = []
-			sheet_set_vals = []
-			if not parent_doc.get("custom_pb_plan_name"):
-				sheet_set_parts.append("`custom_pb_plan_name` = %s")
-				sheet_set_vals.append(pb_plan_name)
-			if frappe.db.has_column("Planning sheet", "custom_planned_date") and not parent_doc.get("custom_planned_date"):
-				sheet_set_parts.append("`custom_planned_date` = %s")
-				sheet_set_vals.append(effective_date)
-			if not parent_doc.get("custom_plan_name") or parent_doc.get("custom_plan_name") in ["Default", ""]:
-				sheet_set_parts.append("`custom_plan_name` = %s")
-				sheet_set_vals.append(_get_contextual_plan_name(parent_doc.get("custom_plan_name") or "Default", effective_date))
-			if sheet_set_parts:
-				frappe.db.sql(
-					f"UPDATE `tabPlanning sheet` SET {', '.join(sheet_set_parts)} WHERE name = %s",
-					sheet_set_vals + [pb_sheet_name]
-				)
 
 			# ── Set item-level planned date + plan code in-place (no re-parenting) ──
 			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
