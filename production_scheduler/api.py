@@ -325,7 +325,6 @@ def is_sheet_locked(sheet_name):
 		
 		# Check if its plans are locked
 		cc_plan = sheet.get("custom_plan_name") or "Default"
-		pb_plan = sheet.get("custom_pb_plan_name")
 		
 		# We need to fetch persisted plans to check lock status
 		from production_scheduler.api import get_persisted_plans
@@ -334,10 +333,7 @@ def is_sheet_locked(sheet_name):
 		if any(p["name"] == cc_plan and p.get("locked") for p in cc_plans):
 			return True
 			
-		if pb_plan:
-			pb_plans = get_persisted_plans("production_board")
-			if any(p["name"] == pb_plan and p.get("locked") for p in pb_plans):
-				return True
+		return False
 				
 		return False
 	except Exception:
@@ -532,7 +528,7 @@ def update_sheet_plan_codes(sheet_doc):
 	"""
 	sheet_date = sheet_doc.get("custom_planned_date") or sheet_doc.get("ordered_date")
 	# Look at PB plan if it exists, otherwise rely on CC plan
-	active_plan = sheet_doc.get("custom_pb_plan_name") or sheet_doc.get("custom_plan_name") or "Default"
+	active_plan = sheet_doc.get("custom_plan_name") or "Default"
 	
 	unique_codes = set()
 	
@@ -2027,18 +2023,6 @@ def create_plan_name_field():
 		})
 		custom_field2.insert(ignore_permissions=True)
 	
-	# Create Production Board Plan Name custom field (SEPARATE from Color Chart plan)
-	if not frappe.db.exists('Custom Field', 'Planning sheet-custom_pb_plan_name'):
-		custom_field3 = frappe.get_doc({
-			"doctype": "Custom Field",
-			"dt": "Planning sheet",
-			"fieldname": "custom_pb_plan_name",
-			"label": "Production Board Plan",
-			"fieldtype": "Data",
-			"insert_after": "custom_plan_name",
-			"description": "Production Board plan name. Separate from Color Chart plan."
-		})
-		custom_field3.insert(ignore_permissions=True)
 	
 	# Fix: Set NULL custom_plan_name to 'Default' so plan filtering works correctly
 	if frappe.db.has_column("Planning sheet", "custom_plan_name"):

@@ -440,13 +440,14 @@
                                 >
                                     ✅ {{ row.isPushed ? 'FULL' : 'PARTIAL' }} ({{ row.pushedPlanName }})
                                 </button>
-                                <button v-if="!row.isPushed && row.total >= 800" 
+                                <button v-if="!row.isPushed && row.total > 0" 
                                     @click.stop="openPushColorDialog(row.color)"
                                     style="margin-left:8px; background: linear-gradient(135deg, #3b82f6, #2563eb); color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(37,99,235,0.3); transition: all 0.2s;"
                                     onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(37,99,235,0.4)'"
                                     onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 4px rgba(37,99,235,0.3)'"
                                 >
-                                    📤 Push {{ (row.anyPushed || row.isPushed) ? 'REM' : '' }}
+                                    <!-- 📤 Push {{ (row.anyPushed || row.isPushed) ? 'REM' : '' }} -->
+                                    📤 Push
                                 </button>
                             </div>
                         </td>
@@ -1139,8 +1140,8 @@ const matrixData = computed(() => {
 });
 
 const canPushToBoard = computed(() => {
-    // Only allow global push if at least one COLOR row (non-white) reaches 800 KG and isn't fully pushed
-    return matrixData.value.rows.some(r => !r.isPushed && r.total >= 800);
+    // Only allow global push if at least one COLOR row (non-white) has items and isn't fully pushed
+    return matrixData.value.rows.some(r => !r.isPushed && r.total > 0);
 });
 
 const visibleUnits = computed(() =>
