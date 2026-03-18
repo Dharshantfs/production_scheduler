@@ -2392,15 +2392,7 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 			  p.modified DESC
 			LIMIT 1
 		""", (clean_unit, target_date), as_dict=True)
-DER BY 
-			  DATE(i.custom_item_planned_date) DESC, 
-			  i.idx DESC, 
-			  p.modified DESC
-			LIMIT 1
-		""", (clean_unit, target_date), as_dict=True)
-
 	if not rows:
-		return None
 		return None
 
 	r = rows[0]
