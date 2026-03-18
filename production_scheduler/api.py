@@ -1520,10 +1520,10 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				if start_date and end_date:
 					# Skip if it_pdate is none or outside range
 					from frappe.utils import getdate
-					if not it_pdate:
+					if not item_pdate:
 						continue
 					try:
-						pdt = getdate(str(it_pdate))
+						pdt = getdate(str(item_pdate))
 						if not (pdt >= query_start and pdt <= query_end):
 							continue
 					except Exception:

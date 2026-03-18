@@ -5058,7 +5058,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
 }
 
 async function goToConfirmedOrders() {
-    frappe.set_route("confirmed_order");
+    frappe.set_route("confirmed-order");
 }
 
 async function goToSequenceApprovals() {
