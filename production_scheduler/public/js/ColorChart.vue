@@ -346,6 +346,15 @@
                             </th>
                         </template>
                     </tr>
+                    <!-- Row 2b: Plan Name (Merged by Sheet) -->
+                    <tr>
+                        <th class="matrix-sticky-col">PLAN</th>
+                        <template v-for="(sh, si) in matrixData.sheetHeaders" :key="'planname-sh-'+si">
+                            <th :colspan="sh.span" class="text-center font-normal" style="font-size:10px; border-left:1px solid #cbd5e1; font-weight:700; color:#4338ca;">
+                                {{ sh.planName }}
+                            </th>
+                        </template>
+                    </tr>
                     <!-- Row 3: Plan Code (Merged by Sheet, Clickable) -->
                     <tr>
                         <th class="matrix-sticky-col">PLAN CODE</th>
@@ -950,6 +959,7 @@ const matrixData = computed(() => {
                 customer: d.customer || d.partyCode || "",
                 unit: unit,
                 planCode: planCode,
+                planName: d.planName || "Default",
                 items: [],
                 idxSum: 0 
             };
@@ -1091,7 +1101,7 @@ const matrixData = computed(() => {
             }
             lastSheetCode = groupKey;
             sheetSpan = 1;
-            sheetData = { code: g.code, planCode: g.planCode, partyCode: g.partyCode, days: g.days, customer: g.customer, span: 1 };
+            sheetData = { code: g.code, planCode: g.planCode, planName: g.planName, partyCode: g.partyCode, days: g.days, customer: g.customer, span: 1 };
         } else {
             sheetSpan++;
             sheetData.span = sheetSpan;
