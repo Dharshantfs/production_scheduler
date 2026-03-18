@@ -2389,6 +2389,8 @@ def get_last_unit_order(unit, date=None, plan_name=None, exclude_items=None):
 		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
 		  {exclude_sql}
 		ORDER BY 
+		  -- Prioritize color items over white if they share the same date
+		  (CASE WHEN REPLACE(UPPER(i.color), ' ', '') NOT IN ({clean_white_sql}) THEN 0 ELSE 1 END) ASC,
 		  p.docstatus DESC,
 		  i.idx DESC,
 		  p.modified DESC
@@ -2411,6 +2413,8 @@ def get_last_unit_order(unit, date=None, plan_name=None, exclude_items=None):
 			  {exclude_sql}
 			ORDER BY 
 			  p_date DESC,
+			  -- Prioritize color items over white if they share the same date
+			  (CASE WHEN REPLACE(UPPER(i.color), ' ', '') NOT IN ({clean_white_sql}) THEN 0 ELSE 1 END) ASC,
 			  p.docstatus DESC,
 			  i.idx DESC,
 			  p.modified DESC
