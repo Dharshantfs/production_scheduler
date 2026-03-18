@@ -1112,18 +1112,19 @@ async function loadOrders(d) {
         
         let html = `
             <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;">
-                <div style="position: sticky; top: 0; background: #f8fafc; z-index: 10; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; display: grid; grid-template-columns: 40px 80px 1fr 100px; gap: 8px; font-weight: 600; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
+                <div style="position: sticky; top: 0; background: #f8fafc; z-index: 10; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; display: grid; grid-template-columns: 40px 80px 1fr 100px 100px; gap: 8px; font-weight: 600; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
                     <div style="display:flex; align-items:center; justify-content:center;"><input type="checkbox" id="select-all-pull" style="cursor:pointer;" /></div>
                     <div>Unit</div>
                     <div>Order Details</div>
-                    <div style="text-align:right;">Qty</div>
+                    <div style="text-align:right;">Total Qty</div>
+                    <div style="text-align:right;">Pull Qty (KG)</div>
                 </div>
                 <div style="display: flex; flex-direction: column;">
         `;
         
         items.forEach(item => {
             html += `
-                <div class="pull-item-row" style="display: grid; grid-template-columns: 40px 80px 1fr 100px; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; align-items: center;">
+                <div class="pull-item-row" style="display: grid; grid-template-columns: 40px 80px 1fr 100px 100px; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; align-items: center;">
                     <div style="display:flex; align-items:center; justify-content:center;">
                         <input type="checkbox" class="pull-item-cb" data-name="${item.itemName}" style="cursor:pointer; transform: scale(1.1);" />
                     </div>
@@ -1138,7 +1139,8 @@ async function loadOrders(d) {
                              <span style="font-size: 10px; font-weight: 600; background: #f3f4f6; color: #4b5563; padding: 1px 6px; border-radius: 4px;">${item.gsm ? item.gsm + ' GSM' : 'N/A'}</span>
                         </div>
                     </div>
-                    <div style="text-align: right;"><span style="display: block; font-size: 14px; font-weight: 700; color: #0f172a;">${(item.qty/1000).toFixed(2)} T</span></div>
+                    <div style="text-align: right;"><span style="display: block; font-size: 13px; font-weight: 700; color: #0f172a;">${item.qty < 1000 ? item.qty + ' KG' : (item.qty/1000).toFixed(2) + ' T'}</span></div>
+                    <div style="text-align: right;"><input type="number" class="pull-qty-input" data-name="${item.itemName}" data-max="${item.qty}" value="${item.qty}" style="width: 80px; text-align: right; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; color: #2563eb; font-weight: 700;" /></div>
                 </div>
             `;
         });
@@ -1154,7 +1156,7 @@ async function loadOrders(d) {
             updateSelection(d);
         });
         
-        d.$wrapper.find('.pull-item-cb').on('change', function() {
+        d.$wrapper.find('.pull-item-cb, .pull-qty-input').on('change', function() {
             updateSelection(d);
         });
         
@@ -1169,7 +1171,9 @@ async function loadOrders(d) {
 function updateSelection(d) {
     const selected = [];
     d.$wrapper.find('.pull-item-cb:checked').each(function() {
-        selected.push($(this).data('name'));
+        const name = $(this).data('name');
+        const qty = parseFloat(d.$wrapper.find(`.pull-qty-input[data-name="${name}"]`).val()) || 0;
+        selected.push({ itemName: name, qty: qty });
     });
     d.calc_selected_items = selected;
     d.get_primary_btn().text(`Move ${selected.length} to Today`);

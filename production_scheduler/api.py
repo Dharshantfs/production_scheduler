@@ -2720,19 +2720,46 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
 
     target_date = getdate(target_date)
     
-    # --- CAPACITY VALIDATION ---
-    # 1. Calculate weight to add per unit
+    # --- CAPACITY VALIDATION & SPLITTING PREPARATION ---
+    # 1. Calculate weight to add per unit and prepare docs
     weights_to_add = {} # unit -> tons
-    
     docs_to_move = [] 
-    for name in item_names:
+
+    for entry in item_names:
+        # Support both simple list of names and list of {itemName, qty}
+        name = entry.get("itemName") if isinstance(entry, dict) else entry
+        req_qty = flt(entry.get("qty")) if isinstance(entry, dict) else None
+        
         try:
             doc = frappe.get_doc("Planning Sheet Item", name)
-            docs_to_move.append(doc)
             
-            final_unit = target_unit if target_unit else (doc.unit or "")
+            # If partial quantity requested, perform split
+            if req_qty and 0 < req_qty < flt(doc.qty):
+                # Create split item (this is the part that moves to the target date)
+                split_part = frappe.copy_doc(doc)
+                split_part.qty = req_qty
+                split_part.name = None # Clear name to generate new one
+                if frappe.db.has_column("Planning Sheet Item", "custom_is_split"):
+                    split_part.custom_is_split = 1
+                
+                # IMPORTANT: Insert into original parent first, we reparent it to target sheet later in the loop
+                split_part.insert(ignore_permissions=True)
+                
+                # Reduce original item quantity (stays on original date/parent)
+                doc.qty = flt(doc.qty) - req_qty
+                doc.save(ignore_permissions=True)
+                
+                move_doc = split_part
+            else:
+                # Move the entire original item
+                move_doc = doc
+
+            docs_to_move.append(move_doc)
+            
+            # For capacity check
+            final_unit = target_unit if target_unit else (move_doc.unit or "")
             if final_unit:
-                wt_tons = flt(doc.qty) / 1000.0
+                wt_tons = flt(move_doc.qty) / 1000.0
                 weights_to_add[final_unit] = weights_to_add.get(final_unit, 0.0) + wt_tons
         except frappe.DoesNotExistError:
             continue
