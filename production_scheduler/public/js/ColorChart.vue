@@ -639,10 +639,10 @@ const COLOR_GROUPS = [
   { keywords: ["BABY PINK"], priority: 1, hex: "#FFB6C1" },
 
   // ── 3. MEDICAL BLUE (Priority 2) ───────────────────────────────────
-  { keywords: ["MEDICAL BLUE"],          priority: 2, hex: "#0077B6" },
+  { keywords: ["MEDICAL BLUE"],          priority: 2, hex: "#0096FF" },
 
   // ── 4. MEDICAL GREEN (Priority 3) ───────────────────────────────────
-  { keywords: ["MEDICAL GREEN"],         priority: 3, hex: "#00897B" },
+  { keywords: ["MEDICAL GREEN"],         priority: 3, hex: "#00A36C" },
 
   // ── 5. IVORY / CREAM / OFF WHITE (Priority 4) ──────────────────
   { keywords: ["BRIGHT IVORY", "IVORY", "OFF WHITE", "CREAM"], priority: 4, hex: "#FFFFF0" },
@@ -650,21 +650,24 @@ const COLOR_GROUPS = [
   // ── 6. YELLOWS (Priority 5-6): Lemon → Yellow → Golden
   { keywords: ["LEMON YELLOW"],          priority: 5, hex: "#FFF44F" },
   { keywords: ["GOLDEN YELLOW", "GOLD"], priority: 6, hex: "#FFD700" },
-  { keywords: ["YELLOW"],                priority: 5, hex: "#FFFF00" },
+  { keywords: ["YELLOW"],                priority: 5, hex: "#FFEA00" },
 
   // ── 7. ORANGES (Priority 7)
-  { keywords: ["LIGHT ORANGE", "PEACH", "BRIGHT ORANGE", "ORANGE"], priority: 7, hex: "#FFA500" },
+  { keywords: ["LIGHT ORANGE", "PEACH", "BRIGHT ORANGE", "ORANGE"], priority: 7, hex: "#FF8C00" },
 
   // ── 8. PINKS (Priority 8)
-  { keywords: ["PINK", "PINK 1.0", "PINK 2.0", "PINK 3.0", "PINK 5.0", "DARK PINK", "HOT PINK"], priority: 8, hex: "#FFC0CB" },
+  { keywords: ["DARK PINK"],             priority: 8, hex: "#C71585" },
+  { keywords: ["PINK", "PINK 1.0", "PINK 2.0", "PINK 3.0", "PINK 5.0", "HOT PINK"], priority: 8, hex: "#FFC0CB" },
 
   // ── 9. REDS / MAROONS (Priority 9)
-  { keywords: ["BRIGHT RED", "SCARLET", "CRIMSON", "RED", "MAROON", "BURGUNDY", "DARK RED"],  priority: 9, hex: "#800000" },
+  { keywords: ["BRIGHT RED", "SCARLET", "CRIMSON", "RED"],  priority: 9, hex: "#D32F2F" },
+  { keywords: ["MAROON", "BURGUNDY", "DARK RED"],  priority: 9, hex: "#800000" },
 
   // ── 10. BLUES (Priority 10-12): Peacock → Royal → Navy
-  { keywords: ["LIGHT PEACOCK BLUE", "PEACOCK BLUE"], priority: 10, hex: "#005F69" },
-  { keywords: ["SKY BLUE", "LIGHT BLUE", "ROYAL BLUE", "BLUE"], priority: 11, hex: "#0000FF" },
-  { keywords: ["NAVY BLUE", "DARK BLUE"], priority: 12, hex: "#000080" },
+  { keywords: ["LIGHT PEACOCK BLUE", "PEACOCK BLUE"], priority: 10, hex: "#008B8B" },
+  { keywords: ["SKY BLUE", "LIGHT BLUE"], priority: 11, hex: "#87CEEB" },
+  { keywords: ["ROYAL BLUE", "BLUE"], priority: 11, hex: "#2962FF" },
+  { keywords: ["NAVY BLUE", "DARK BLUE"], priority: 12, hex: "#1A237E" },
 
   // ── 11. VIOLET / PURPLE (Priority 13)
   { keywords: ["VIOLET", "VOILET", "PURPLE"], priority: 13, hex: "#8B00FF" },
@@ -891,7 +894,7 @@ const matrixData = computed(() => {
     const baseData = rawData.value.filter(d => {
         // ---- PLAN FILTER (columns show only selected plan) ----
         if (selectedPlan.value && selectedPlan.value !== 'Default') {
-            if (d.planName !== selectedPlan.value) return false;
+            if (d.planName !== selectedPlanLabel.value) return false;
         } else {
             // Default plan: include items with no plan or explicit Default
             if (d.planName && d.planName !== '' && d.planName !== 'Default') return false;
