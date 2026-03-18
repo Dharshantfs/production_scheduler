@@ -1115,16 +1115,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				JOIN `tabPlanning sheet` p ON i.parent = p.name
 				WHERE i.color IS NOT NULL AND i.color != ''
 				  AND p.docstatus < 2
-				  AND (
-				      DATE(i.custom_item_planned_date) = DATE(%s)
-				      OR (
-				          (i.custom_item_planned_date IS NULL OR i.custom_item_planned_date = '')
-				          AND DATE(p.ordered_date) = DATE(%s)
-				          AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql_pull})
-				      )
-				  )
+				  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
 				ORDER BY i.unit, i.idx
-			""", (target_date, target_date), as_dict=True)
+			""", (target_date,), as_dict=True)
 		else:
 			# Fallback: use sheet-level date
 			sheet_date_col = "COALESCE(p.custom_planned_date, p.ordered_date)" if frappe.db.has_column("Planning sheet", "custom_planned_date") else "p.ordered_date"

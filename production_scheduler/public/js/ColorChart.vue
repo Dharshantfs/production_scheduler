@@ -894,7 +894,8 @@ const matrixData = computed(() => {
     const baseData = rawData.value.filter(d => {
         // ---- PLAN FILTER (columns show only selected plan) ----
         if (selectedPlan.value && selectedPlan.value !== 'Default') {
-            if (d.planName !== selectedPlanLabel.value) return false;
+            // Match either the short name (legacy) or the full labeled name (new)
+            if (d.planName !== selectedPlan.value && d.planName !== selectedPlanLabel.value) return false;
         } else {
             // Default plan: include items with no plan or explicit Default
             if (d.planName && d.planName !== '' && d.planName !== 'Default') return false;
