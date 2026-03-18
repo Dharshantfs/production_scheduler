@@ -2352,14 +2352,7 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 	target_date = getdate(date) if date else getdate(frappe.utils.today())
 	clean_unit = unit.strip().replace(" ", "").upper()
 	
-	clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
-	
-	# Primary query: prefer COLOR items (explicitly pushed) over white items.
-	# Color items MUST have custom_item_planned_date set to be on the board.
-	# White items are auto-planned (no date needed), so we only use them as fallback.
-	# Within each group, pick the highest idx (last on board).
-
-	# Step 1: Try non-white items with explicit push date on target date
+	clean_white_sql = ", ".join([f"'{c.upper().repla	# --- Combined Search Part 1: Items on Target Date (Color or White) ---
 	rows = frappe.db.sql(f"""
 		SELECT 
 			i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx, 
@@ -2369,45 +2362,35 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 		WHERE REPLACE(UPPER(i.unit), ' ', '') = %s
 		  AND p.docstatus < 2
 		  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
-		  AND REPLACE(UPPER(i.color), ' ', '') NOT IN ({clean_white_sql})
-		  AND i.custom_item_planned_date IS NOT NULL
-		  AND DATE(i.custom_item_planned_date) = DATE(%s)
+		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
 		ORDER BY 
+		  -- Prioritize color items over white if they share the same date/index for some reason
+		  (CASE WHEN REPLACE(UPPER(i.color), ' ', '') NOT IN ({clean_white_sql}) THEN 0 ELSE 1 END) ASC,
 		  i.idx DESC,
 		  p.modified DESC
 		LIMIT 1
 	""", (clean_unit, target_date), as_dict=True)
 
 	if not rows:
-		# Step 2: Try white items (auto-planned) on target date as fallback
+		# --- Combined Search Part 2: Falling back to Previous Days (Absolute Last Item) ---
 		rows = frappe.db.sql(f"""
 			SELECT 
-				i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx,
-				p.name as sheet, p.modified
+				i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx, 
+				p.name as sheet, p.modified,
+				DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) as p_date
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
 			WHERE REPLACE(UPPER(i.unit), ' ', '') = %s
 			  AND p.docstatus < 2
 			  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
-			  AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
-			  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
-			ORDER BY i.idx DESC, p.modified DESC
+			  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) < DATE(%s)
+			ORDER BY 
+			  p_date DESC,
+			  i.idx DESC,
+			  p.modified DESC
 			LIMIT 1
 		""", (clean_unit, target_date), as_dict=True)
-
-	if not rows:
-		# Step 3: Fallback - last pushed non-white item ON OR BEFORE target date
-		rows = frappe.db.sql(f"""
-			SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, p.name as sheet, p.modified
-			FROM `tabPlanning Sheet Item` i
-			JOIN `tabPlanning sheet` p ON i.parent = p.name
-			WHERE REPLACE(UPPER(i.unit), ' ', '') = %s 
-			  AND p.docstatus < 2
-			  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
-			  AND REPLACE(UPPER(i.color), ' ', '') NOT IN ({clean_white_sql})
-			  AND i.custom_item_planned_date IS NOT NULL
-			  AND DATE(i.custom_item_planned_date) <= DATE(%s)
-			ORDER BY 
+DER BY 
 			  DATE(i.custom_item_planned_date) DESC, 
 			  i.idx DESC, 
 			  p.modified DESC
@@ -2415,24 +2398,7 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 		""", (clean_unit, target_date), as_dict=True)
 
 	if not rows:
-		# Step 4: Last white item as final fallback
-		rows = frappe.db.sql(f"""
-			SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, p.name as sheet, p.modified
-			FROM `tabPlanning Sheet Item` i
-			JOIN `tabPlanning sheet` p ON i.parent = p.name
-			WHERE REPLACE(UPPER(i.unit), ' ', '') = %s 
-			  AND p.docstatus < 2
-			  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
-			  AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
-			  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= DATE(%s)
-			ORDER BY 
-			  DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) DESC,
-			  i.idx DESC, 
-			  p.modified DESC
-			LIMIT 1
-		""", (clean_unit, target_date), as_dict=True)
-
-	if not rows:
+		return None
 		return None
 
 	r = rows[0]
