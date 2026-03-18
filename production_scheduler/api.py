@@ -2793,66 +2793,55 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         moving_docs = items  # items is already a list
         
         # Determine Target Sheet
-        find_filters = {
-            "ordered_date": target_date,
-            "party_code": parent_doc.party_code,
-            "docstatus": ["<", 2]  # Include submitted sheets (docstatus 0 or 1)
-        }
+        # Fix: Stay in the SAME sheet unless moving to a DIFFERENT plan
+        target_sheet_name = parent_name
         
-        # Determine target plan: if explicitly "Default", force to None (no plan = Default view)
-        if plan_name and plan_name != "Default":
-            target_plan = plan_name
-        elif plan_name == "Default":
-            target_plan = None  # Explicitly targeting Default = no custom plan name
-        else:
-            target_plan = parent_doc.get("custom_plan_name")
-            if target_plan == "Default": target_plan = None
+        # Only look for a different sheet if a plan change is actually requested
+        is_plan_change = (plan_name and plan_name != "Default" and plan_name != parent_doc.get("custom_plan_name")) or \
+                         (pb_plan_name and pb_plan_name != "Default" and pb_plan_name != parent_doc.get("custom_pb_plan_name"))
+        
+        if is_plan_change:
+            find_filters = {
+                "ordered_date": target_date,
+                "party_code": parent_doc.party_code,
+                "docstatus": ["<", 2]
+            }
             
-        # Determine target PB plan
-        if pb_plan_name and pb_plan_name != "Default":
-            target_pb_plan = pb_plan_name
-        elif pb_plan_name == "Default":
-            target_pb_plan = None
-        else:
-            target_pb_plan = parent_doc.get("custom_pb_plan_name")
-            if target_pb_plan == "Default": target_pb_plan = None
+            # Target Plan checks
+            if plan_name and plan_name != "Default":
+                find_filters["custom_plan_name"] = plan_name
+            elif plan_name == "Default":
+                find_filters["custom_plan_name"] = ["in", ["", None, "Default"]]
+            
+            if pb_plan_name and pb_plan_name != "Default":
+                find_filters["custom_pb_plan_name"] = pb_plan_name
+            elif pb_plan_name == "Default":
+                find_filters["custom_pb_plan_name"] = ["in", ["", None, "Default"]]
+
+            found_name = frappe.db.get_value("Planning sheet", find_filters, "name")
+            if found_name:
+                target_sheet_name = found_name
+            else:
+                # Create NEW sheet only for plan changes
+                target_sheet = frappe.new_doc("Planning sheet")
+                target_sheet.ordered_date = target_date
+                if frappe.db.has_column("Planning sheet", "custom_planned_date"):
+                    target_sheet.custom_planned_date = target_date
+                target_sheet.party_code = parent_doc.party_code
+                target_sheet.customer = parent_doc.customer
+                target_sheet.sales_order = parent_doc.sales_order
+                if plan_name and plan_name != "Default":
+                    target_sheet.custom_plan_name = plan_name
+                if pb_plan_name and pb_plan_name != "Default":
+                    target_sheet.custom_pb_plan_name = pb_plan_name
+                target_sheet.save(ignore_permissions=True)
+                target_sheet_name = target_sheet.name
+
+        target_sheet = frappe.get_doc("Planning sheet", target_sheet_name)
         
-        if target_plan:
-             find_filters["custom_plan_name"] = target_plan
-        else:
-             find_filters["custom_plan_name"] = ["in", ["", None, "Default"]]
-             
-        if target_pb_plan:
-             find_filters["custom_pb_plan_name"] = target_pb_plan
-        else:
-             find_filters["custom_pb_plan_name"] = ["in", ["", None, "Default"]]
-             
-        target_sheet_name = frappe.db.get_value("Planning sheet", find_filters, "name")
-        
-        if target_sheet_name and target_sheet_name != parent_name:
-            target_sheet = frappe.get_doc("Planning sheet", target_sheet_name)
-            # Ensure existing sheet has custom_planned_date synced (fixes invisible orders)
-            if frappe.db.has_column("Planning sheet", "custom_planned_date") and target_sheet.custom_planned_date != target_date:
-                frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_planned_date = %s WHERE name = %s", (target_date, target_sheet.name))
-        elif target_sheet_name == parent_name:
-            # Already on target date, but maybe unit change requested or date same
-            target_sheet = parent_doc
-            if frappe.db.has_column("Planning sheet", "custom_planned_date") and target_sheet.custom_planned_date != target_date:
-                frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_planned_date = %s WHERE name = %s", (target_date, target_sheet.name))
-        else:
-            target_sheet = frappe.new_doc("Planning sheet")
-            target_sheet.ordered_date = target_date
-            # Also set custom_planned_date so items appear on the Production Board
-            if frappe.db.has_column("Planning sheet", "custom_planned_date"):
-                target_sheet.custom_planned_date = target_date
-            target_sheet.party_code = parent_doc.party_code
-            target_sheet.customer = parent_doc.customer
-            target_sheet.sales_order = parent_doc.sales_order
-            if target_plan:
-                target_sheet.custom_plan_name = target_plan
-            if target_pb_plan:
-                target_sheet.custom_pb_plan_name = target_pb_plan
-            target_sheet.save()
+        # Ensure target sheet has custom_planned_date synced if it's new/different
+        if frappe.db.has_column("Planning sheet", "custom_planned_date") and not target_sheet.custom_planned_date:
+            frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_planned_date = %s WHERE name = %s", (target_date, target_sheet.name))
         
         # Get starting idx for target
         target_sheet.reload()
