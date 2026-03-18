@@ -106,7 +106,7 @@
       <button class="cc-clear-btn" style="color: #059669; border-color: #059669; margin-left: 8px;" @click="openPullOrdersDialog" title="Pull orders from a future date">
         📥 Pull Orders
       </button>
-      <button v-if="canPushToBoard" class="cc-clear-btn" style="color: #7c3aed; border-color: #7c3aed; margin-left: 8px; font-weight:600;" @click="pushToProductionBoard" title="Push visible orders to Production Board plan">
+      <button class="cc-clear-btn" style="color: #7c3aed; border-color: #7c3aed; margin-left: 8px; font-weight:600;" @click="pushToProductionBoard" :disabled="!canPushToBoard" title="Push visible orders to Production Board plan">
         📤 Push to Board
       </button>
       <button class="cc-clear-btn" style="color: #ca8a04; border-color: #ca8a04; margin-left: 8px; font-weight:600;" @click="openMovePlanDialog" title="Move visible orders to another Color Chart plan">
@@ -1140,7 +1140,8 @@ const matrixData = computed(() => {
 });
 
 const canPushToBoard = computed(() => {
-    // Only allow global push if at least one COLOR row (non-white) has items and isn't fully pushed
+    if (!matrixData.value || !matrixData.value.rows) return false;
+    // Show global push if at least one COLOR row (non-white) has items and isn't fully pushed
     return matrixData.value.rows.some(r => !r.isPushed && r.total > 0);
 });
 
