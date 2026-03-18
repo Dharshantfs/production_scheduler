@@ -3721,7 +3721,7 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 						pb_sheet_name = existing[0].name
 					else:
 						pb_sheet = frappe.new_doc("Planning sheet")
-						pb_sheet.custom_plan_name = parent_doc.get("custom_plan_name") or "Default"
+						pb_sheet.custom_plan_name = pb_plan_name or parent_doc.get("custom_plan_name") or "Default"
 						# CRITICAL: ordered_date stays as ORIGINAL
 						pb_sheet.ordered_date = original_ordered_date
 						pb_sheet.custom_planned_date = effective_date
@@ -3735,7 +3735,7 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 							UPDATE `tabPlanning sheet`
 							SET custom_plan_name = %s, custom_planned_date = %s
 							WHERE name = %s
-						""", (parent_doc.get("custom_plan_name") or "Default", effective_date, pb_sheet_name))
+						""", (pb_plan_name or parent_doc.get("custom_plan_name") or "Default", effective_date, pb_sheet_name))
 
 					pb_sheet_cache[cache_key] = pb_sheet_name
 

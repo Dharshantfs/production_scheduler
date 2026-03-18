@@ -106,7 +106,7 @@
       <button class="cc-clear-btn" style="color: #059669; border-color: #059669; margin-left: 8px;" @click="openPullOrdersDialog" title="Pull orders from a future date">
         📥 Pull Orders
       </button>
-      <button class="cc-clear-btn" style="color: #7c3aed; border-color: #7c3aed; margin-left: 8px; font-weight:600;" @click="pushToProductionBoard" title="Push visible orders to Production Board plan">
+      <button v-if="canPushToBoard" class="cc-clear-btn" style="color: #7c3aed; border-color: #7c3aed; margin-left: 8px; font-weight:600;" @click="pushToProductionBoard" title="Push visible orders to Production Board plan">
         📤 Push to Board
       </button>
       <button class="cc-clear-btn" style="color: #ca8a04; border-color: #ca8a04; margin-left: 8px; font-weight:600;" @click="openMovePlanDialog" title="Move visible orders to another Color Chart plan">
@@ -431,7 +431,7 @@
                                 >
                                     ✅ {{ row.isPushed ? 'FULL' : 'PARTIAL' }} ({{ row.pushedPlanName }})
                                 </button>
-                                <button v-if="!row.isPushed" 
+                                <button v-if="!row.isPushed && row.total >= 800" 
                                     @click.stop="openPushColorDialog(row.color)"
                                     style="margin-left:8px; background: linear-gradient(135deg, #3b82f6, #2563eb); color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(37,99,235,0.3); transition: all 0.2s;"
                                     onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(37,99,235,0.4)'"
@@ -790,6 +790,11 @@ const currentMonthPrefix = computed(() => {
     return `${monthNames[now.getMonth()]} ${String(now.getFullYear()).slice(2)}`;
 });
 
+const selectedPlanLabel = computed(() => {
+    if (!selectedPlan.value || selectedPlan.value === 'Default') return 'Default';
+    return currentMonthPrefix.value + ' ' + selectedPlan.value;
+});
+
 // Only show plans that belong to the current month (or have no month prefix like "Default")
 // All plans are now global "slots" and visible regardless of month
 const visiblePlans = computed(() => {
@@ -885,15 +890,11 @@ const matrixData = computed(() => {
     // baseData = only the selected plan's items (for columns)
     const baseData = rawData.value.filter(d => {
         // ---- PLAN FILTER (columns show only selected plan) ----
-        // Whites are always included regardless of plan so they show in the bottom section
-        const isWhite = isExcludedWhite(d.color);
-        if (!isWhite) {
-            if (selectedPlan.value && selectedPlan.value !== 'Default') {
-                if (d.planName !== selectedPlan.value) return false;
-            } else {
-                // Default plan: include items with no plan or explicit Default
-                if (d.planName && d.planName !== '' && d.planName !== 'Default') return false;
-            }
+        if (selectedPlan.value && selectedPlan.value !== 'Default') {
+            if (d.planName !== selectedPlan.value) return false;
+        } else {
+            // Default plan: include items with no plan or explicit Default
+            if (d.planName && d.planName !== '' && d.planName !== 'Default') return false;
         }
 
         // UNIT FILTER
@@ -1121,6 +1122,11 @@ const matrixData = computed(() => {
         whiteColTotals,
         whiteGrandTotal
     };
+});
+
+const canPushToBoard = computed(() => {
+    // Only allow global push if at least one COLOR row (non-white) reaches 800 KG and isn't fully pushed
+    return matrixData.value.rows.some(r => !r.isPushed && r.total >= 800);
 });
 
 const visibleUnits = computed(() =>
@@ -3449,7 +3455,8 @@ async function pushToProductionBoard() {
                     args: {
                         items_data: JSON.stringify(itemsToMove),
                         fetch_dates: fetchDatesValue,
-                        target_date: targetDate
+                        target_date: targetDate,
+                        pb_plan_name: selectedPlanLabel.value
                     }
                 });
                 if (r.message && r.message.status === 'success') {
@@ -4863,7 +4870,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
              if (!selected.length) { frappe.msgprint("Please select at least one order."); return; }
              
              const targetDate = d.get_value("target_date");
-             const pbPlan = "Default";
+             const pbPlan = selectedPlanLabel.value;
              
              const payload = selected.map(s => ({ name: s.name, target_unit: s.target_unit, target_date: targetDate }));
              
