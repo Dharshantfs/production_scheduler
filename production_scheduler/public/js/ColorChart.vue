@@ -2988,10 +2988,11 @@ async function pushToProductionBoard() {
             partyName: d.partyName || '',
             approvalStatus: d.approvalStatus || 'Draft',
             planningSheet: d.planningSheet || '',
+            plannedDate: d.planned_date || '',
             phase: '',
             is_seed_bridge: false,
-            pushed: isExcludedWhite(d.color) ? true : !!d.pbPlanName, 
-            checked: isExcludedWhite(d.color) ? false : !d.pbPlanName
+            pushed: isPushed,  // true = already on board, don't show in arrangement checkboxes
+            checked: !isPushed // Only unchecked if pushed
         };
     });
 

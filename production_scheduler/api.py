@@ -1080,16 +1080,12 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	if mode == "pull" and date:
 		target_date = getdate(date)
 		
-		# If we have the column, ensure we aren't pulling items already planned for ANY date
-		# We want items whose underlying sheet date is target_date, but they are NOT assigned yet
+		# Pull dialog: shows COLOR items that are on the Production Board for target_date
+		# A color item is "on the board" if it has custom_item_planned_date = target_date
+		# White items are always auto-planned; they don't need to be in the pull list.
+		# The pull list is for RE-ASSIGNING / MOVING items FROM one date TO another.
 		has_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
-		date_filter = "AND i.custom_item_planned_date IS NULL" if has_col else ""
 		
-		# For pull, we check the sheet's original ordered_date or sheet-level planned_date
-		# to find items "available" on that date but not yet item-planned.
-		sheet_date_col = "COALESCE(p.custom_planned_date, p.ordered_date)" if frappe.db.has_column("Planning sheet", "custom_planned_date") else "p.ordered_date"
-
-		# Check if the problematic column actually exists in the DB to prevent crashes
 		so_item_col = ""
 		if frappe.db.has_column("Planning Sheet Item", "sales_order_item"):
 			so_item_col = "i.sales_order_item as salesOrderItem,"
@@ -1104,21 +1100,41 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		else:
 			split_col = "0 as isSplit,"
 
-		items = frappe.db.sql(f"""
-			SELECT 
-				i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
-				i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
-				{so_item_col} {split_col}
-				p.name as planningSheet, p.party_code as partyCode, p.customer,
-				p.ordered_date, p.dod, p.sales_order as salesOrder
-			FROM `tabPlanning Sheet Item` i
-			JOIN `tabPlanning sheet` p ON i.parent = p.name
-			WHERE {sheet_date_col} = %s
-			  AND i.color IS NOT NULL AND i.color != ''
-			  AND i.custom_quality IS NOT NULL AND i.custom_quality != ''
-			  {date_filter}
-			ORDER BY i.unit, i.idx
-		""", (target_date,), as_dict=True)
+		if has_col:
+			# Items explicitly pushed to this date (have item-level planned date)
+			items = frappe.db.sql(f"""
+				SELECT 
+					i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
+					i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
+					{so_item_col} {split_col}
+					p.name as planningSheet, p.party_code as partyCode, p.customer,
+					p.ordered_date, p.dod, p.sales_order as salesOrder
+				FROM `tabPlanning Sheet Item` i
+				JOIN `tabPlanning sheet` p ON i.parent = p.name
+				WHERE DATE(i.custom_item_planned_date) = DATE(%s)
+				  AND i.color IS NOT NULL AND i.color != ''
+				  AND i.custom_quality IS NOT NULL AND i.custom_quality != ''
+				  AND p.docstatus < 2
+				ORDER BY i.unit, i.idx
+			""", (target_date,), as_dict=True)
+		else:
+			# Fallback: use sheet-level date
+			sheet_date_col = "COALESCE(p.custom_planned_date, p.ordered_date)" if frappe.db.has_column("Planning sheet", "custom_planned_date") else "p.ordered_date"
+			items = frappe.db.sql(f"""
+				SELECT 
+					i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
+					i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
+					{so_item_col} {split_col}
+					p.name as planningSheet, p.party_code as partyCode, p.customer,
+					p.ordered_date, p.dod, p.sales_order as salesOrder
+				FROM `tabPlanning Sheet Item` i
+				JOIN `tabPlanning sheet` p ON i.parent = p.name
+				WHERE {sheet_date_col} = %s
+				  AND i.color IS NOT NULL AND i.color != ''
+				  AND i.custom_quality IS NOT NULL AND i.custom_quality != ''
+				  AND p.docstatus < 2
+				ORDER BY i.unit, i.idx
+			""", (target_date,), as_dict=True)
 		
 		# Check which planning sheets have Work Orders (those can't be moved)
 		if items:
@@ -2309,8 +2325,12 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 	
 	clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
 	
-	# Primary query - follow board visual sequence (idx DESC)
-	# Filter for items that have a pb_plan_name (effectively pushed to board)
+	# Primary query: prefer COLOR items (explicitly pushed) over white items.
+	# Color items MUST have custom_item_planned_date set to be on the board.
+	# White items are auto-planned (no date needed), so we only use them as fallback.
+	# Within each group, pick the highest idx (last on board).
+
+	# Step 1: Try non-white items with explicit push date on target date
 	rows = frappe.db.sql(f"""
 		SELECT 
 			i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx, 
@@ -2320,20 +2340,34 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 		WHERE REPLACE(UPPER(i.unit), ' ', '') = %s
 		  AND p.docstatus < 2
 		  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
-		  AND (
-		      i.custom_item_planned_date IS NOT NULL 
-		      OR
-		      REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
-		  )
-		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
+		  AND REPLACE(UPPER(i.color), ' ', '') NOT IN ({clean_white_sql})
+		  AND i.custom_item_planned_date IS NOT NULL
+		  AND DATE(i.custom_item_planned_date) = DATE(%s)
 		ORDER BY 
 		  i.idx DESC,
 		  p.modified DESC
 		LIMIT 1
 	""", (clean_unit, target_date), as_dict=True)
-	
+
 	if not rows:
-		# Fallback to absolute last pushed item for this unit ON OR BEFORE target date
+		# Step 2: Try white items (auto-planned) on target date as fallback
+		rows = frappe.db.sql(f"""
+			SELECT 
+				i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx,
+				p.name as sheet, p.modified
+			FROM `tabPlanning Sheet Item` i
+			JOIN `tabPlanning sheet` p ON i.parent = p.name
+			WHERE REPLACE(UPPER(i.unit), ' ', '') = %s
+			  AND p.docstatus < 2
+			  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
+			  AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
+			  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
+			ORDER BY i.idx DESC, p.modified DESC
+			LIMIT 1
+		""", (clean_unit, target_date), as_dict=True)
+
+	if not rows:
+		# Step 3: Fallback - last pushed non-white item ON OR BEFORE target date
 		rows = frappe.db.sql(f"""
 			SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, p.name as sheet, p.modified
 			FROM `tabPlanning Sheet Item` i
@@ -2341,14 +2375,29 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 			WHERE REPLACE(UPPER(i.unit), ' ', '') = %s 
 			  AND p.docstatus < 2
 			  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
-			  AND (
-			      i.custom_item_planned_date IS NOT NULL 
-			      OR
-			      REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
-			  )
+			  AND REPLACE(UPPER(i.color), ' ', '') NOT IN ({clean_white_sql})
+			  AND i.custom_item_planned_date IS NOT NULL
+			  AND DATE(i.custom_item_planned_date) <= DATE(%s)
+			ORDER BY 
+			  DATE(i.custom_item_planned_date) DESC, 
+			  i.idx DESC, 
+			  p.modified DESC
+			LIMIT 1
+		""", (clean_unit, target_date), as_dict=True)
+
+	if not rows:
+		# Step 4: Last white item as final fallback
+		rows = frappe.db.sql(f"""
+			SELECT i.color, i.custom_quality as quality, i.gsm, i.idx, p.name as sheet, p.modified
+			FROM `tabPlanning Sheet Item` i
+			JOIN `tabPlanning sheet` p ON i.parent = p.name
+			WHERE REPLACE(UPPER(i.unit), ' ', '') = %s 
+			  AND p.docstatus < 2
+			  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
+			  AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
 			  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= DATE(%s)
 			ORDER BY 
-			  DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) DESC, 
+			  DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) DESC,
 			  i.idx DESC, 
 			  p.modified DESC
 			LIMIT 1
