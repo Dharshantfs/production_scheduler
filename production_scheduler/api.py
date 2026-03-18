@@ -731,12 +731,9 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 		date_cond = "COALESCE(custom_planned_date, ordered_date) = %(target)s" if has_col else "ordered_date = %(target)s"
 		so_cond = "sales_order = %(so)s" if source_parent.sales_order else "party_code = %(party)s"
 		
-		# IMPORTANT: also match custom_pb_plan_name so PB items stay on PB sheets
-		pb_plan = source_parent.get("custom_pb_plan_name") or ""
-		if pb_plan:
-			pb_cond = "AND custom_pb_plan_name = %(pb_plan)s"
-		else:
-			pb_cond = "AND (custom_pb_plan_name IS NULL OR custom_pb_plan_name = '')"
+		# Match custom_plan_name to ensure items stay on correct sheets
+		cc_plan = source_parent.get("custom_plan_name") or "Default"
+		plan_cond = "AND custom_plan_name = %(cc_plan)s"
 		
 		existing = frappe.db.sql(f"""
 			SELECT name FROM `tabPlanning sheet`
@@ -744,14 +741,14 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 			  AND {date_cond}
 			  AND docstatus < 2
 			  AND name != %(source)s
-			  {pb_cond}
+			  {plan_cond}
 			LIMIT 1
 		""", {
 			"so": source_parent.sales_order,
 			"party": source_parent.party_code,
 			"target": target_date,
 			"source": source_parent.name,
-			"pb_plan": pb_plan
+			"cc_plan": cc_plan
 		})
 		
 		if existing:
@@ -2033,6 +2030,11 @@ def create_plan_name_field():
 		""")
 		frappe.db.commit()
 		
+	# Cleanup: Remove Production Board Plan field as requested
+	if frappe.db.exists('Custom Field', 'Planning sheet-custom_pb_plan_name'):
+		frappe.db.sql("DELETE FROM `tabCustom Field` WHERE name = 'Planning sheet-custom_pb_plan_name'")
+		frappe.db.commit()
+
 	# Create Plan Code custom fields for Tracking Code logic
 	if not frappe.db.exists('Custom Field', 'Planning sheet-custom_plan_code'):
 		cf4 = frappe.get_doc({
@@ -2042,7 +2044,7 @@ def create_plan_name_field():
 			"label": "Plan Code",
 			"fieldtype": "Data",
 			"read_only": 0,
-			"insert_after": "custom_pb_plan_name"
+			"insert_after": "custom_plan_name"
 		})
 		cf4.insert(ignore_permissions=True)
 	else:
