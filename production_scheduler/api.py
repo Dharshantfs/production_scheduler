@@ -1115,7 +1115,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				JOIN `tabPlanning sheet` p ON i.parent = p.name
 				WHERE i.color IS NOT NULL AND i.color != ''
 				  AND p.docstatus < 2
-				  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
+				  AND DATE(COALESCE(NULLIF(i.custom_item_planned_date, ''), NULLIF(p.custom_planned_date, ''), p.ordered_date)) = DATE(%s)
 				ORDER BY i.unit, i.idx
 			""", (target_date,), as_dict=True)
 		else:
