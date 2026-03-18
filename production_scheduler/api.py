@@ -1163,12 +1163,13 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		target_date = getdate(date)
 		has_item_planned = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
 		has_sheet_planned = frappe.db.has_column("Planning sheet", "custom_planned_date")
+		# Effective date: prefer item level, then sheet level, fallback to ordered_date (for auto-whites)
 		item_date_expr = (
-			"COALESCE(i.custom_item_planned_date, p.custom_planned_date) = %s"
+			"COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) = %s"
 			if (has_item_planned and has_sheet_planned)
-			else "p.custom_planned_date = %s" if has_sheet_planned else "p.ordered_date = %s"
+			else "COALESCE(p.custom_planned_date, p.ordered_date) = %s" if has_sheet_planned else "p.ordered_date = %s"
 		)
-		sheet_pushed = "AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''" if has_sheet_planned else ""
+		sheet_pushed = "" # No longer require sheet-level push check
 
 		so_item_col = ""
 		if frappe.db.has_column("Planning Sheet Item", "sales_order_item"):
@@ -1186,8 +1187,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				{so_item_col} {split_col}
 				p.name as planningSheet, p.party_code as partyCode, p.customer,
 				p.ordered_date, p.dod, p.sales_order as salesOrder,
-				p.custom_pb_plan_name as pbPlanName,
-				COALESCE(i.custom_item_planned_date, p.custom_planned_date) as planned_date
+				'' as pbPlanName,
+				COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as planned_date
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
 			WHERE {item_date_expr}
@@ -1198,10 +1199,12 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			ORDER BY i.unit, i.idx
 		""", (target_date,), as_dict=True)
 
-		# Keep PB-plan items plus allowed whites (whites can appear without PB plan)
+		# Visibility check:
+		# - White items: always visible if they match the date
+		# - Color items: MUST have custom_item_planned_date set (signifies 'pushed')
 		items = [
 			it for it in (items or [])
-			if (it.get("pbPlanName") or "").strip() or _is_white_color(it.get("color"))
+			if _is_white_color(it.get("color")) or it.get("custom_item_planned_date")
 		]
 
 		if items:
@@ -1295,8 +1298,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	
 	# Build SELECT fields ΓÇö include columns only if they exist
 	fields = ["p.name", "p.customer", "p.party_code", "c.customer_name as party_name", "p.dod", "p.ordered_date", 
-			  "p.planning_status", "p.docstatus", "p.sales_order", "p.custom_plan_name", "p.custom_pb_plan_name",
-			  "COALESCE(p.custom_pb_plan_name, p.custom_plan_name, 'Default') as planName"]
+			  "p.planning_status", "p.docstatus", "p.sales_order", "p.custom_plan_name",
+			  "COALESCE(p.custom_plan_name, 'Default') as planName"]
 	
 	if _has_planned_date_column():
 		fields.append("p.custom_planned_date")
@@ -1439,22 +1442,22 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			
 			effective_date_str = str(item.get("ordered_date") or sheet.get("ordered_date") or "")
 			
-			# Production Board filtering: use item.custom_item_planned_date if set, else sheet.custom_planned_date
+			# Production Board filtering: determine if item is "scheduled"
 			if cint(planned_only):
-				# Separation rule:
-				# - White-family orders may appear directly on the Production Board
-				# - Non-white orders must belong to a PB plan (custom_pb_plan_name set)
-				if not (sheet.get("custom_pb_plan_name") or "").strip():
-					if not _is_white_color(color):
-						continue
-
-				# Resolve effective planned date: item-level first, then sheet-level
-				it_pdate = item.get("custom_item_planned_date") or sheet.get("custom_planned_date")
+				is_white = _is_white_color(color)
+				item_pdate = item.get("custom_item_planned_date")
 				
-				# If filter is by single date or multiple dates (normalize so DD-MM-YYYY and YYYY-MM-DD both match)
+				# NON-WHITE items MUST be explicitly pushed (have a planned date)
+				if not is_white and not item_pdate:
+					continue
+				
+				# WHITE items use ordered_date as default scheduled date if none set
+				eff_pdate = item_pdate or sheet.get("custom_planned_date") or sheet.get("ordered_date")
+				
+				# If filter is by single date or multiple dates
 				if date:
 					try:
-						it_pdt_normalized = getdate(str(it_pdate)) if it_pdate else None
+						it_pdt_normalized = getdate(str(eff_pdate)) if eff_pdate else None
 					except Exception:
 						it_pdt_normalized = None
 					if it_pdt_normalized not in target_dates:
@@ -1492,7 +1495,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				"width": flt(item.get("width") or item.get("custom_width") or item.get("width_inches") or item.get("width_inch") or item.get("width_in") or 0),
 				"unit": unit,
 				"planName": sheet.get("planName") or sheet.get("custom_plan_name") or "Default",
-				"pbPlanName": sheet.get("custom_pb_plan_name") or "",
+				"pbPlanName": "",
 				"planCode": item.get("custom_plan_code") or "",
 				"ordered_date": str(sheet.ordered_date) if sheet.ordered_date else "",
 				"planned_date": str(item.get("custom_item_planned_date") or sheet.get("custom_planned_date") or ""),
@@ -2318,7 +2321,7 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 		  AND p.docstatus < 2
 		  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
 		  AND (
-		      (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
+		      i.custom_item_planned_date IS NOT NULL 
 		      OR
 		      REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
 		  )
@@ -2339,7 +2342,7 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 			  AND p.docstatus < 2
 			  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
 			  AND (
-			      (p.custom_pb_plan_name IS NOT NULL AND p.custom_pb_plan_name != '')
+			      i.custom_item_planned_date IS NOT NULL 
 			      OR
 			      REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql})
 			  )
@@ -2450,12 +2453,12 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 		# Enrich items for the frontend as we add them
 		for it in unit_sorted:
 			if it.parent not in parent_cache:
-				parent_cache[it.parent] = frappe.db.get_value("Planning sheet", it.parent, ["customer","party_code", "custom_pb_plan_name"], as_dict=1) or {}
+				parent_cache[it.parent] = frappe.db.get_value("Planning sheet", it.parent, ["customer","party_code"], as_dict=1) or {}
 			p = parent_cache[it.parent]
 			
 			it["customer"] = p.get("customer","")
 			it["partyCode"] = p.get("party_code","")
-			it["pbPlanName"] = p.get("custom_pb_plan_name","")
+			it["pbPlanName"] = ""
 			it["quality"] = (it.get("custom_quality") or "").upper().strip()
 			it["colorKey"] = (it.get("color") or "").upper().strip()
 			it["unit"] = _normalize_unit(it.get("unit"))
@@ -3509,7 +3512,7 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
 
 
 @frappe.whitelist()
-def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=None):
+def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_date=None):
 	"""
 	Pushes Planning Sheet Items to a Production Board plan.
 	Re-parents each item to a PB Planning Sheet (with custom_planned_date set)
@@ -3520,13 +3523,13 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 	if isinstance(items_data, str):
 		items_data = json.loads(items_data)
 
-	if not items_data or not pb_plan_name:
-		return {"status": "error", "message": "Missing item data or plan name"}
+	if not items_data:
+		return {"status": "error", "message": "Missing item data"}
 
 	count = 0
 	skipped_already_pushed = []
 	updated_sheets = set()
-	pb_sheet_cache = {}  # (party_code, target_date, pb_plan_name) -> pb sheet name
+	pb_sheet_cache = {}  # (party_code, target_date) -> pb sheet name
 	local_loads = {} # (date, unit) -> current load
 	unit_date_idx_offsets = {} # (unit, date) -> max_idx
 	effective_dates_used = set()
@@ -3598,21 +3601,17 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 			
 			can_reuse_original = False
 			original_effective_date = str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
-			if original_effective_date == effective_date and (parent_doc.get("custom_pb_plan_name") == pb_plan_name or not parent_doc.get("custom_pb_plan_name")):
+			if original_effective_date == effective_date:
 				can_reuse_original = True
 				pb_sheet_name = parent_doc.name
-				# If reusing original but it didn't have pb_plan_name, update it
-				if not parent_doc.get("custom_pb_plan_name"):
-					frappe.db.set_value("Planning sheet", pb_sheet_name, "custom_pb_plan_name", pb_plan_name)
 			
 			if not can_reuse_original:
-				cache_key = (party_code, effective_date, pb_plan_name)
+				cache_key = (party_code, effective_date)
 				if cache_key in pb_sheet_cache:
 					pb_sheet_name = pb_sheet_cache[cache_key]
 				else:
 					# Match by SO instead of just party_code to ensure "One SO = One Sheet"
 					existing = frappe.get_all("Planning sheet", filters={
-						"custom_pb_plan_name": pb_plan_name,
 						"custom_planned_date": effective_date,
 						"sales_order": parent_doc.sales_order or "",
 						"party_code": party_code,
@@ -3624,7 +3623,6 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 					else:
 						pb_sheet = frappe.new_doc("Planning sheet")
 						pb_sheet.custom_plan_name = parent_doc.get("custom_plan_name") or "Default"
-						pb_sheet.custom_pb_plan_name = pb_plan_name
 						# CRITICAL: ordered_date stays as ORIGINAL
 						pb_sheet.ordered_date = original_ordered_date
 						pb_sheet.custom_planned_date = effective_date
@@ -3634,14 +3632,11 @@ def push_items_to_pb(items_data, pb_plan_name, fetch_dates=None, target_date=Non
 						pb_sheet.insert(ignore_permissions=True)
 						pb_sheet_name = pb_sheet.name
 						# Force custom fields via SQL
-						if frappe.db.has_column("Planning sheet", "custom_pb_plan_name"):
-							frappe.db.sql("""
-								UPDATE `tabPlanning sheet`
-								SET custom_pb_plan_name = %s, custom_plan_name = %s,
-								    custom_planned_date = %s
-								WHERE name = %s
-							""", (pb_plan_name, parent_doc.get("custom_plan_name") or "Default",
-								  effective_date, pb_sheet_name))
+						frappe.db.sql("""
+							UPDATE `tabPlanning sheet`
+							SET custom_plan_name = %s, custom_planned_date = %s
+							WHERE name = %s
+						""", (parent_doc.get("custom_plan_name") or "Default", effective_date, pb_sheet_name))
 
 					pb_sheet_cache[cache_key] = pb_sheet_name
 

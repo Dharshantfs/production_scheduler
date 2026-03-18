@@ -1020,9 +1020,9 @@ const matrixData = computed(() => {
                 matchs.forEach(m => {
                     hasItems = true;
                     totalItems++;
-                    // Non-white: only "pushed" if it has pbPlanName (manually pushed from Color Chart)
+                    // Non-white: only "pushed" if it has plannedDate (manually pushed from Color Chart)
                     // White: always considered "on the board" (auto-placed)
-                    let pushedForThisItem = isItemWhite ? true : !!m.pbPlanName;
+                    let pushedForThisItem = isItemWhite ? true : (!!m.plannedDate && m.plannedDate !== "");
 
                     if (pushedForThisItem) {
                         anyPushed = true;
@@ -2959,7 +2959,13 @@ async function pushToProductionBoard() {
     let smartSequenceActive = false;
     let masterSequence = allItemIDs.map((id, i) => {
         const d = items.find(it => it.itemName === id) || {};
-        const isPushed = !!d.pbPlanName;
+        const isWhite = (col) => {
+            if (!col) return false;
+            const w = ["WHITE", "BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE", "SUPER WHITE", "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"];
+            return w.includes(col.toString().toUpperCase().trim());
+        };
+        // Pushed status: Whites are auto-pushed; Colors are pushed if they have a planned_date
+        const isPushed = isWhite(d.color) || (!!d.planned_date && d.planned_date !== "");
         
         const rawUnit = d.unit || '';
         const normUnit = (rawUnit.toUpperCase().replace(/\s+/g, '').includes('UNIT1')) ? 'Unit 1' :
@@ -3049,6 +3055,12 @@ async function pushToProductionBoard() {
         return '#f5f5f5';
     }
 
+    // Escape text for safe insertion into Frappe microtemplate HTML strings
+    function esc(s) {
+        if (!s) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;').replace(/"/g,'&quot;').replace(/\\/g,'&#92;');
+    }
+
     function renderTable(seq, currentArrangementStatus = null) {
         let lastUnit = null;
         const rows = seq.map((item, i) => {
@@ -3060,13 +3072,14 @@ async function pushToProductionBoard() {
                 unitDivider = `<tr style="background:#f1f5f9;color:#1e293b;font-size:11px;font-weight:700;border-bottom:1px solid #e2e8f0;">
                     <td colspan="10" style="padding:4px 12px;display:flex;align-items:center;gap:6px;">
                         <span style="font-size:14px;">📦</span> 
-                        <span style="letter-spacing:0.05em;text-transform:uppercase;">${currentNorm}</span>
+                        <span style="letter-spacing:0.05em;text-transform:uppercase;">${esc(currentNorm)}</span>
                     </td>
                 </tr>`;
             }
             const bridge = item.is_seed_bridge ? ' 🔗' : '';
-            const rowBg = smartSequenceActive ? getPhaseColor(item.phase) : (item.pushed ? '#f8fafc' : '#fff');
-            const rowOpacity = item.pushed ? '0.6' : '1';
+            const isPushed = item.pushed;
+            const rowBg = smartSequenceActive ? getPhaseColor(item.phase) : (isPushed ? '#f8fafc' : '#fff');
+            const rowOpacity = isPushed ? '0.6' : '1';
             const checked = item.checked !== false;
             const qty_str = item.qty ? parseFloat(item.qty).toFixed(0) + ' Kg' : '—';
             
@@ -3088,8 +3101,8 @@ async function pushToProductionBoard() {
                         : '<span style="color:#64748b;background:#f1f5f9;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;">DRAFT</span>'));
 
             const partyInfo = `
-                <div style="font-size:11px;font-weight:600;color:#1e293b;">${item.partyName || '—'}</div>
-                <div style="font-size:9px;color:#64748b;">${item.partyCode} | ${item.customer}</div>
+                <div style="font-size:11px;font-weight:600;color:#1e293b;">${esc(item.partyName) || '—'}</div>
+                <div style="font-size:9px;color:#64748b;">${esc(item.partyCode)} | ${esc(item.customer)}</div>
             `;
 
             return `${unitDivider}<tr data-seq-idx="${i}" style="background:${rowBg};border-bottom:1px solid #f1f5f9;opacity:${rowOpacity};">
@@ -3099,12 +3112,12 @@ async function pushToProductionBoard() {
                 </td>
                 <td style="padding:6px;font-weight:bold;color:#64748b;font-size:11px;text-align:center;">${item.sequence_no}${bridge}</td>
                 <td style="padding:6px;font-size:12px;font-weight:700;color:#1e293b;">
-                    <div>${item.color || '—'}</div>
-                    <div style="font-size:9px;font-weight:400;color:#64748b;">${item.description || item.itemName || ''}</div>
+                    <div>${esc(item.color) || '—'}</div>
+                    <div style="font-size:9px;font-weight:400;color:#64748b;">${esc(item.description || item.itemName || '')}</div>
                 </td>
-                <td style="padding:6px;font-size:11px;color:#475569;">${item.quality || '—'}</td>
-                <td style="padding:6px;font-size:11px;color:#475569;text-align:center;">${item.gsm || '—'}</td>
-                <td style="padding:6px;font-size:11px;color:#475569;">${item.unit || '—'}</td>
+                <td style="padding:6px;font-size:11px;color:#475569;">${esc(item.quality) || '—'}</td>
+                <td style="padding:6px;font-size:11px;color:#475569;text-align:center;">${esc(item.gsm) || '—'}</td>
+                <td style="padding:6px;font-size:11px;color:#475569;">${esc(item.unit) || '—'}</td>
                 <td style="padding:6px;">${partyInfo}</td>
                 <td style="padding:6px;text-align:center;">${statusBadge}</td>
                 <td style="padding:6px;font-size:11px;text-align:right;font-weight:700;color:#1e293b;">${qty_str}</td>
@@ -3154,9 +3167,9 @@ async function pushToProductionBoard() {
                     const displayColor = (seed && seed.color && seed.color !== '0' && seed.color !== 0) ? seed.color : 'NO ORDERS';
                     return `
                     <div style="background:#f8fafc; border:1px solid #e2e8f0; padding:4px 10px; border-radius:12px; font-size:10px; display:flex; align-items:center; gap:6px;">
-                        <span style="color:#64748b; font-weight:700;">${unit.toUpperCase()} BOARD END:</span>
-                        <span style="color:${displayColor !== 'NO ORDERS' ? '#1e293b' : '#94a3b8'}; font-weight:800;">${displayColor}</span>
-                        ${(displayColor !== 'NO ORDERS' && seed.quality) ? `<span style="color:#94a3b8; font-size:9px;">(${seed.quality})</span>` : ''}
+                        <span style="color:#64748b; font-weight:700;">${esc(unit.toUpperCase())} BOARD END:</span>
+                        <span style="color:${displayColor !== 'NO ORDERS' ? '#1e293b' : '#94a3b8'}; font-weight:800;">${esc(displayColor)}</span>
+                        ${(displayColor !== 'NO ORDERS' && seed.quality) ? `<span style="color:#94a3b8; font-size:9px;">(${esc(seed.quality)})</span>` : ''}
                     </div>`;
                 }).join('')}
             </div>
@@ -3407,7 +3420,6 @@ async function pushToProductionBoard() {
 
 
             // PUSH LOGIC (Only if overallStatus is Approved)
-            const pbPlanName = 'Default';
             const fetchDatesValue = values.fetch_dates || fetchDates.join(",");
 
             const checkedItems = currentSequence.filter(i => i.checked !== false);
@@ -3435,7 +3447,6 @@ async function pushToProductionBoard() {
                     method: "production_scheduler.api.push_items_to_pb",
                     args: {
                         items_data: JSON.stringify(itemsToMove),
-                        pb_plan_name: pbPlanName,
                         fetch_dates: fetchDatesValue,
                         target_date: targetDate
                     }
@@ -4282,7 +4293,7 @@ async function fetchData() {
             itemName: d.itemName || d.item_name || d.name || "",
             // Robust mapping: Prioritize PB plan name if it exists, especially if planName is "Default"
             planName: (d.pbPlanName && d.pbPlanName !== "") ? d.pbPlanName : (d.planName || d.custom_pb_plan_name || d.custom_plan_name || "Default"),
-            pbPlanName: d.pbPlanName || d.custom_pb_plan_name || ""
+            pbPlanName: ""
         };
     });
     
@@ -4818,7 +4829,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
 
     function getFilteredItems() {
         return allForColor.filter(d => {
-            if (d.pbPlanName) return false; // already pushed
+            if (d.plannedDate) return false; // already pushed
             if (fQuality && (d.quality || "").toUpperCase().trim() !== fQuality.toUpperCase().trim()) return false;
             if (fPartyCode && (d.partyCode || "").toUpperCase().indexOf(fPartyCode.toUpperCase()) === -1) return false;
             if (fGsm && String(d.gsm || "").trim() !== String(fGsm).trim()) return false;
@@ -4828,7 +4839,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
 
     let items = getFilteredItems();
 
-    if (allForColor.filter(d => !d.pbPlanName).length === 0) {
+    if (allForColor.filter(d => !d.plannedDate).length === 0) {
         frappe.msgprint("No eligible items found. (Note: White orders are auto-allocated and do not need to be pushed manually, and already-pushed items are hidden.)");
         return;
     }
