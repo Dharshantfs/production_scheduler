@@ -183,6 +183,14 @@
               <div class="cc-card-right">
                 <span class="cc-card-qty">{{ (entry.qty / 1000).toFixed(3) }} T</span>
                 <span class="cc-card-qty-kg">{{ entry.qty }} Kg</span>
+                <button v-if="entry.isSplit"
+                  class="cc-revert-btn" 
+                  style="background: #eff6ff; color: #2563eb; border-color: #bfdbfe; margin-bottom: 4px;"
+                  @click.stop="mergeSplit(entry)" 
+                  title="Merge back to original order"
+                >
+                  🎒 Merge
+                </button>
                 <button 
                   class="cc-revert-btn" 
                   @click.stop="revertOrder(entry)" 

@@ -4370,6 +4370,48 @@ def fix_white_orders_planned_date():
     }
 
 
+@frappe.whitelist()
+def revert_split_item(item_name):
+    """
+    Merges a split planning sheet item back into its original row within the same sheet.
+    Useful for undoing partial pulls.
+    """
+    try:
+        it = frappe.get_doc("Planning Sheet Item", item_name)
+        if not it.get("custom_is_split"):
+            # If not marked as split, check if we can find any peer to merge with
+            pass
+            
+        # Find the 'original' or 'primary' item for this SO row in the same sheet
+        # Original is defined as custom_is_split=0 or the oldest one
+        candidates = frappe.get_all("Planning Sheet Item", 
+            filters={
+                "parent": it.parent,
+                "sales_order_item": it.sales_order_item,
+                "name": ["!=", it.name]
+            },
+            fields=["name", "qty", "custom_is_split"],
+            order_by="custom_is_split asc, creation asc"
+        )
+        
+        if not candidates:
+            return {"status": "failed", "message": "No original item found to merge with."}
+            
+        target = candidates[0]
+        new_qty = flt(target.qty) + flt(it.qty)
+        
+        # Update target and remove current
+        frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET qty = %s WHERE name = %s", (new_qty, target.name))
+        frappe.db.sql("DELETE FROM `tabPlanning Sheet Item` WHERE name = %s", (it.name,))
+        
+        frappe.logger().info(f"[RevertSplit] Merged {it.name} ({it.qty}) into {target.name} ({target.qty} -> {new_qty})")
+        
+        return {"status": "success", "message": f"Merged {it.qty} back into original row."}
+    except Exception as e:
+        frappe.logger().error(f"[RevertSplit] Error: {str(e)}")
+        return {"status": "failed", "message": str(e)}
+
+
 # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 # MIX ROLL DATA PERSISTENCE
 # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
