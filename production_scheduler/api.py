@@ -2343,31 +2343,53 @@ UNIT_QUALITY_ORDER = {
 }
 
 @frappe.whitelist()
-def get_last_unit_order(unit, date=None, plan_name=None):
+def get_board_seeds(target_date, plan_name=None, exclude_items=None):
+	"""API to fetch seeds for all 4 units for the frontend."""
+	seeds = {}
+	for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
+		s = get_last_unit_order(u, target_date, plan_name, exclude_items)
+		if s: seeds[u] = s
+	return seeds
+
+@frappe.whitelist()
+def get_last_unit_order(unit, date=None, plan_name=None, exclude_items=None):
 	"""
 	Returns the last pushed order on the Production Board for a given unit.
 	Visual board sequence (idx DESC) is the absolute priority.
+	exclude_items: list of names (Planning Sheet Item) to ignore.
 	"""
 	from frappe.utils import getdate
 	target_date = getdate(date) if date else getdate(frappe.utils.today())
 	clean_unit = unit.strip().replace(" ", "").upper()
 	
+	exclude_sql = ""
+	if exclude_items:
+		if isinstance(exclude_items, str):
+			import json
+			exclude_items = json.loads(exclude_items)
+		if exclude_items:
+			# Format for SQL IN clause. Psuedo-safe because these are system DocIDs (PSI-XXXXX)
+			# But we'll use a safer approach.
+			names = ", ".join([f"'{n}'" for n in exclude_items if n])
+			if names:
+				exclude_sql = f"AND i.name NOT IN ({names})"
+
 	clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
 	
 	# --- Combined Search Part 1: Items on Target Date (Color or White) ---
 	rows = frappe.db.sql(f"""
 		SELECT 
 			i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx, 
-			p.name as sheet, p.modified
+			p.name as sheet, p.modified, p.docstatus
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
 		WHERE REPLACE(UPPER(i.unit), ' ', '') = %s
 		  AND p.docstatus < 2
 		  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
 		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
+		  {exclude_sql}
 		ORDER BY 
-		  -- Prioritize color items over white if they share the same date/index for some reason
-		  (CASE WHEN REPLACE(UPPER(i.color), ' ', '') NOT IN ({clean_white_sql}) THEN 0 ELSE 1 END) ASC,
+		  p.docstatus DESC,
 		  i.idx DESC,
 		  p.modified DESC
 		LIMIT 1
@@ -2378,7 +2400,7 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 		rows = frappe.db.sql(f"""
 			SELECT 
 				i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx, 
-				p.name as sheet, p.modified,
+				p.name as sheet, p.modified, p.docstatus,
 				DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) as p_date
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
@@ -2386,8 +2408,10 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 			  AND p.docstatus < 2
 			  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
 			  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) < DATE(%s)
+			  {exclude_sql}
 			ORDER BY 
 			  p_date DESC,
+			  p.docstatus DESC,
 			  i.idx DESC,
 			  p.modified DESC
 			LIMIT 1
@@ -2429,10 +2453,7 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 	target_date = getdate(target_date) if target_date else getdate(frappe.utils.today())
 	
 	# Always fetch seeds for all 4 units for UI visibility (Board End display)
-	unit_seeds = {}
-	for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
-		s = get_last_unit_order(u, target_date, plan_name)
-		if s: unit_seeds[u] = s
+	unit_seeds = get_board_seeds(target_date, plan_name, item_names)
 
 	# Enrichment bucket for UI
 	parent_cache = {}

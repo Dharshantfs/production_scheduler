@@ -3182,7 +3182,7 @@ async function pushToProductionBoard() {
         
         const isDateMismatch = activeTargetDate && !activeFetchDates.some(fd => fd === activeTargetDate);
 
-        const smartSeedsHtml = (smartSequenceActive && hasD && d.smartSeeds) ? `
+        const smartSeedsHtml = (hasD && d.smartSeeds) ? `
             <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
                 ${['Unit 1', 'Unit 2', 'Unit 3', 'Unit 4'].map((unit) => {
                     const normUnit = unit.toUpperCase().replace(/\s+/g, '');
@@ -3558,6 +3558,19 @@ async function pushToProductionBoard() {
             }
         }
 
+        // Fetch Board Seeds proactively to show "Board End" immediately
+        try {
+            const rSeeds = await frappe.call({
+                method: "production_scheduler.api.get_board_seeds",
+                args: { 
+                    target_date: newTargetDate, 
+                    plan_name: selectedPlan.value,
+                    exclude_items: JSON.stringify(masterSequence.map(s => s.name))
+                }
+            });
+            d.smartSeeds = rSeeds.message || {};
+        } catch(e) { console.error("Failed to fetch seeds proactively", e); }
+
         // Re-sort currentSequence if we have sequence_data from the approval record(s)
         let matchedCount = 0;
         if (combinedSequenceData.length > 0) {
@@ -3617,21 +3630,16 @@ async function pushToProductionBoard() {
         $smartBtn.prop('disabled', false).css('opacity', '1').attr('title', '');
     };
 
-    d.fields_dict.target_date.df.onchange = () => {
-        const val = d.get_value('target_date');
-        updateDialogStatus(val);
+    d.setup = () => {
+        updateDialogStatus(defaultTargetDate);
     };
 
-    d.overallStatus = overallStatus; 
-    
-    // Global hook for the refresh icon in buildDialogHtml
-    window.refreshPushStatus = () => {
+    d.fields_dict.target_date.df.onchange = () => {
         const val = d.get_value('target_date');
-        updateDialogStatus(val);
+        if (val) updateDialogStatus(val);
     };
-    
+
     d.show();
-    updateDialogStatus(d.get_value('target_date'));
     
     d.on_hide = () => {
         window.refreshPushStatus = null;
