@@ -2492,9 +2492,13 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
 			c_idx = COLOR_PRIORITY.get(col, 999)
 			s_idx = COLOR_PRIORITY.get(s_col, -1)
 			
-			# Use absolute rank from COLOR_ORDER_LIST (Light to Dark)
-			# This ensures colors like Baby Pink appear at the top if they don't match the seed.
-			color_score = c_idx
+			if s_idx != -1 and c_idx != 999:
+				# Continuous Flow: index relative to the seed
+				total_colors = len(COLOR_ORDER_LIST)
+				color_score = (c_idx - s_idx + total_colors) % total_colors
+			else:
+				# Fallback to absolute rank if seed or color not found in hierarchy
+				color_score = c_idx
 			
 			# Priority 2: Quality order
 			q_order = UNIT_QUALITY_ORDER.get(u, [])
