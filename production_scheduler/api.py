@@ -2352,7 +2352,9 @@ def get_last_unit_order(unit, date=None, plan_name=None):
 	target_date = getdate(date) if date else getdate(frappe.utils.today())
 	clean_unit = unit.strip().replace(" ", "").upper()
 	
-	clean_white_sql = ", ".join([f"'{c.upper().repla	# --- Combined Search Part 1: Items on Target Date (Color or White) ---
+	clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
+	
+	# --- Combined Search Part 1: Items on Target Date (Color or White) ---
 	rows = frappe.db.sql(f"""
 		SELECT 
 			i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx, 
