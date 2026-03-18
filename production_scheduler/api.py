@@ -1080,11 +1080,11 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	if mode == "pull" and date:
 		target_date = getdate(date)
 		
-		# Pull dialog: shows COLOR items that are on the Production Board for target_date
-		# A color item is "on the board" if it has custom_item_planned_date = target_date
-		# White items are always auto-planned; they don't need to be in the pull list.
-		# The pull list is for RE-ASSIGNING / MOVING items FROM one date TO another.
+		# Pull Orders dialog: shows ALL items currently ON the board for source_date.
+		# This includes color items (explicitly pushed, have custom_item_planned_date = target_date)
+		# AND white items (auto-planned, use ordered_date = target_date with no item-level date).
 		has_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+		clean_white_sql_pull = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
 		
 		so_item_col = ""
 		if frappe.db.has_column("Planning Sheet Item", "sales_order_item"):
@@ -1101,7 +1101,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			split_col = "0 as isSplit,"
 
 		if has_col:
-			# Items explicitly pushed to this date (have item-level planned date)
+			# All items on board for target_date:
+			# 1. Items with explicit custom_item_planned_date = target_date (colors + manually-moved whites)
+			# 2. White items with ordered_date = target_date and no item-level override
 			items = frappe.db.sql(f"""
 				SELECT 
 					i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
@@ -1111,12 +1113,18 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 					p.ordered_date, p.dod, p.sales_order as salesOrder
 				FROM `tabPlanning Sheet Item` i
 				JOIN `tabPlanning sheet` p ON i.parent = p.name
-				WHERE DATE(i.custom_item_planned_date) = DATE(%s)
-				  AND i.color IS NOT NULL AND i.color != ''
-				  AND i.custom_quality IS NOT NULL AND i.custom_quality != ''
+				WHERE i.color IS NOT NULL AND i.color != ''
 				  AND p.docstatus < 2
+				  AND (
+				      DATE(i.custom_item_planned_date) = DATE(%s)
+				      OR (
+				          (i.custom_item_planned_date IS NULL OR i.custom_item_planned_date = '')
+				          AND DATE(p.ordered_date) = DATE(%s)
+				          AND REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql_pull})
+				      )
+				  )
 				ORDER BY i.unit, i.idx
-			""", (target_date,), as_dict=True)
+			""", (target_date, target_date), as_dict=True)
 		else:
 			# Fallback: use sheet-level date
 			sheet_date_col = "COALESCE(p.custom_planned_date, p.ordered_date)" if frappe.db.has_column("Planning sheet", "custom_planned_date") else "p.ordered_date"
@@ -1131,7 +1139,6 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				JOIN `tabPlanning sheet` p ON i.parent = p.name
 				WHERE {sheet_date_col} = %s
 				  AND i.color IS NOT NULL AND i.color != ''
-				  AND i.custom_quality IS NOT NULL AND i.custom_quality != ''
 				  AND p.docstatus < 2
 				ORDER BY i.unit, i.idx
 			""", (target_date,), as_dict=True)
@@ -1334,14 +1341,52 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		
 	fields_str = ", ".join(fields)
 	
-	planning_sheets = frappe.db.sql(f"""
-		SELECT {fields_str}, {eff} as effective_date
-		FROM `tabPlanning sheet` p
-		LEFT JOIN `tabCustomer` c ON p.customer = c.name
-		WHERE {date_condition} AND p.docstatus < 2
-		{plan_condition}
-		ORDER BY {eff} ASC, p.creation ASC
-	""", tuple(params), as_dict=True)
+	has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+
+	if cint(planned_only) and has_item_planned_col and not (start_date and end_date):
+		# For planned_only mode: also include sheets that have items with custom_item_planned_date
+		# matching target date (even if sheet's ordered_date is different).
+		# This handles items whose dates were manually overridden at item level.
+		if len(target_dates) == 1:
+			item_date_param = target_dates[0]
+		else:
+			item_date_param = None  # Only handle single target date case here
+		
+		if item_date_param:
+			planning_sheets = frappe.db.sql(f"""
+				SELECT {fields_str}, {eff} as effective_date
+				FROM `tabPlanning sheet` p
+				LEFT JOIN `tabCustomer` c ON p.customer = c.name
+				WHERE (
+					{date_condition}
+					OR EXISTS (
+						SELECT 1 FROM `tabPlanning Sheet Item` psi
+						WHERE psi.parent = p.name
+						AND DATE(psi.custom_item_planned_date) = DATE(%s)
+					)
+				)
+				AND p.docstatus < 2
+				{plan_condition}
+				ORDER BY {eff} ASC, p.creation ASC
+			""", tuple(params) + (item_date_param,), as_dict=True)
+		else:
+			planning_sheets = frappe.db.sql(f"""
+				SELECT {fields_str}, {eff} as effective_date
+				FROM `tabPlanning sheet` p
+				LEFT JOIN `tabCustomer` c ON p.customer = c.name
+				WHERE {date_condition} AND p.docstatus < 2
+				{plan_condition}
+				ORDER BY {eff} ASC, p.creation ASC
+			""", tuple(params), as_dict=True)
+	else:
+		planning_sheets = frappe.db.sql(f"""
+			SELECT {fields_str}, {eff} as effective_date
+			FROM `tabPlanning sheet` p
+			LEFT JOIN `tabCustomer` c ON p.customer = c.name
+			WHERE {date_condition} AND p.docstatus < 2
+			{plan_condition}
+			ORDER BY {eff} ASC, p.creation ASC
+		""", tuple(params), as_dict=True)
 
 	# Fetch delivery statuses for referenced Sales Orders
 	so_names = [d.sales_order for d in planning_sheets if d.sales_order]
