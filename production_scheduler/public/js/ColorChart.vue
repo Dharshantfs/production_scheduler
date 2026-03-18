@@ -3565,7 +3565,7 @@ async function pushToProductionBoard() {
                 args: { 
                     target_date: newTargetDate, 
                     plan_name: selectedPlan.value,
-                    exclude_items: JSON.stringify(masterSequence.map(s => s.name))
+                    exclude_items: JSON.stringify(masterSequence.filter(s => !s.pushed).map(s => s.name))
                 }
             });
             d.smartSeeds = rSeeds.message || {};
