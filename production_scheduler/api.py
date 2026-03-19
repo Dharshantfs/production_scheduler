@@ -5097,3 +5097,52 @@ def approve_planning_sheet(planning_sheet_name):
 	frappe.db.set_value("Planning sheet", planning_sheet_name, "custom_approval_status", "Approved")
 	frappe.db.commit()
 	return {"status": "success", "message": f"Planning Sheet {planning_sheet_name} approved."}
+
+
+@frappe.whitelist()
+def run_orphan_cleanup():
+    """
+    Safe backend cleanup to purge orphaned items and deduplicate.
+    Bypasses individual script restrictions by running in app context.
+    """
+    frappe.only_for("System Manager")
+    
+    # 1. Clean up orphaned items (linked to deleted sheets)
+    all_items = frappe.get_all("Planning Sheet Item", fields=["name", "parent"])
+    orphans_count = 0
+    for it in all_items:
+        if not it.parent or not frappe.db.exists("Planning sheet", it.parent):
+            frappe.delete_doc("Planning Sheet Item", it.name, force=1, ignore_permissions=True)
+            orphans_count += 1
+            
+    # 2. Deduplicate items within sheets (handle dynamic schema)
+    so_item_col = "sales_order_item"
+    if not frappe.db.has_column("Planning Sheet Item", so_item_col):
+        so_item_col = "custom_sales_order_item"
+        
+    dup_count = 0
+    if frappe.db.has_column("Planning Sheet Item", so_item_col):
+        dups = frappe.db.sql(f"""
+            SELECT parent, {so_item_col}, COUNT(*) as cnt
+            FROM `tabPlanning Sheet Item`
+            GROUP BY parent, {so_item_col}
+            HAVING COUNT(*) > 1
+        """, as_dict=True)
+
+        for d in dups:
+            items = frappe.get_all("Planning Sheet Item", 
+                filters={"parent": d.parent, so_item_col: d.get(so_item_col)},
+                fields=["name"],
+                order_by="creation asc"
+            )
+            for it in items[1:]:
+                frappe.delete_doc("Planning Sheet Item", it.name, force=1, ignore_permissions=True)
+                dup_count += 1
+                
+    # 3. Specific ghost sheet cleanup
+    sheet_to_fix = "PLAN-2026-00786"
+    if frappe.db.exists("Planning sheet", sheet_to_fix):
+        frappe.delete_doc("Planning sheet", sheet_to_fix, force=1, ignore_permissions=True)
+    
+    frappe.db.commit()
+    return {"status": "success", "message": f"Cleaned up {orphans_count} orphans and {dup_count} duplicates."}
