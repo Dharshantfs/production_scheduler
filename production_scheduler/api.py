@@ -4101,42 +4101,58 @@ def emergency_cleanup_all_pushed_status():
 def fix_recently_cleared_whites():
     """
     TEMPORARY: Restores white orders that were accidentally cleared.
-    Sets custom_planned_date = ordered_date for sheets with only white items
-    that were modified in the last 2 hours.
+    Sets custom_planned_date = ordered_date for sheets with AT LEAST ONE white item
+    that was recently modified.
     """
     from frappe.utils import getdate
     sheets = frappe.db.sql("""
-        SELECT name, ordered_date FROM `tabPlanning sheet`
-        WHERE modified > DATE_SUB(NOW(), INTERVAL 2 HOUR)
-          AND (custom_planned_date IS NULL OR custom_planned_date = '')
+        SELECT name, ordered_date, custom_planned_date, custom_pb_plan_name FROM `tabPlanning sheet`
+        WHERE modified > DATE_SUB(NOW(), INTERVAL 4 HOUR)
     """, as_dict=True)
     
     count = 0
     for s in sheets:
-        # Check if sheet contains ONLY white items
-        items = frappe.get_all("Planning Sheet Item", filters={"parent": s.name}, fields=["color"])
-        all_white = True
-        for it in items:
-            if (it.color or "").upper() not in [c.upper() for c in WHITE_COLORS]:
-                all_white = False
-                break
+        items = frappe.get_all("Planning Sheet Item", 
+                               filters={"parent": s.name}, 
+                               fields=["name", "color", "custom_item_planned_date"])
         
-        if all_white and items:
-            frappe.db.set_value("Planning sheet", s.name, "custom_planned_date", s.ordered_date)
-            # Use the canonical plan name for the month if it exists, otherwise "Default"
-            month_names = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"]
-            d = getdate(s.ordered_date)
-            prefix = f"{month_names[d.month-1]} {str(d.year)[2:]}"
-            best_plan = f"{prefix} PLAN 1"
+        has_white = False
+        restored_item_count = 0
+        
+        for it in items:
+            if _is_white_color(it.color):
+                has_white = True
+                # Bring back the item date if it was cleared
+                if not it.custom_item_planned_date:
+                    frappe.db.set_value("Planning Sheet Item", it.name, "custom_item_planned_date", s.ordered_date)
+                    restored_item_count += 1
+        
+        if has_white:
+            updates = {}
+            # Restore sheet date if missing
+            if not s.custom_planned_date:
+                updates["custom_planned_date"] = s.ordered_date
             
-            # Check if this plan name exists in any other sheet for this month
-            exists = frappe.db.exists("Planning sheet", {"custom_pb_plan_name": best_plan})
-            if not exists:
-                best_plan = "Default"
+            # Ensure plan name is canonical for the month
+            if not s.custom_pb_plan_name or s.custom_pb_plan_name == "Default":
+                month_names = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"]
+                d = getdate(s.ordered_date)
+                prefix = f"{month_names[d.month-1]} {str(d.year)[2:]}"
+                best_plan = f"{prefix} PLAN 1"
                 
-            frappe.db.set_value("Planning sheet", s.name, "custom_pb_plan_name", best_plan)
-            count += 1
+                # Use "Default" only if PLAN 1 doesn't exist anywhere
+                if not frappe.db.exists("Planning sheet", {"custom_pb_plan_name": best_plan}):
+                    best_plan = "Default"
+                
+                updates["custom_pb_plan_name"] = best_plan
             
+            if updates:
+                frappe.db.set_values("Planning sheet", s.name, updates)
+                count += 1
+            elif restored_item_count > 0:
+                # Even if sheet header was okay, we restored item dates
+                count += 1
+                
     frappe.db.commit()
     return {"status": "success", "restored_count": count}
 
