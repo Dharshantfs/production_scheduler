@@ -5117,8 +5117,8 @@ def run_orphan_cleanup():
             orphans_count += 1
             
     # 2. Deduplicate items within sheets (handle dynamic schema)
-    # Get actual table columns to avoid 1054 errors
-    columns = frappe.db.get_table_columns("tabPlanning Sheet Item")
+    # Get actual table columns to avoid 1054 errors - USE DOCTYPE NAME
+    columns = frappe.db.get_table_columns("Planning Sheet Item")
     
     so_item_col = None
     if "sales_order_item" in columns:
