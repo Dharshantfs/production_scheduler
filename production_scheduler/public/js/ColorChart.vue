@@ -990,13 +990,20 @@ const matrixData = computed(() => {
     });
 
     // 2. Prepare Rows (Unique Colors and Whites)
-    // ✅ IMPROVEMENT: Use rawData (All Plans) to seed the vertical legend
-    // This ensures that when you create a new plan, the color names from the Default plan 
-    // are still visible in the legend/rows.
+    // ✅ FIX: Filter by selected plan before building color legend
+    // This prevents deleted plans' colors from appearing as orphan rows with no data
     const allColors = new Set();
     const allWhites = new Set();
     
-    rawData.value.forEach(d => {
+    rawData.value.filter(d => {
+        // Apply same plan filter as baseData (columns)
+        if (selectedPlan.value && selectedPlan.value !== 'Default') {
+            if (d.planName !== selectedPlan.value && d.planName !== selectedPlanLabel.value) return false;
+        } else {
+            if (d.planName && d.planName !== '' && d.planName !== 'Default') return false;
+        }
+        return true;
+    }).forEach(d => {
         if (!d.color) return;
         const colorUpper = d.color.toUpperCase();
         
@@ -4846,6 +4853,13 @@ async function openPushColorDialog(color, inputTargetDate = null) {
     
     // ── Available options for filters ──
     const allForColor = rawData.value.filter(d => {
+        // ✅ FIX: Only push orders from selected plan
+        if (selectedPlan.value && selectedPlan.value !== 'Default') {
+            if (d.planName !== selectedPlan.value && d.planName !== selectedPlanLabel.value) return false;
+        } else {
+            if (d.planName && d.planName !== '' && d.planName !== 'Default') return false;
+        }
+        
         if ((d.color || "").toUpperCase().trim() !== color.toUpperCase().trim()) return false;
         const colorUpper = (d.color || "").toUpperCase().trim();
         if (colorUpper === "WHITE" || colorUpper === "BRIGHT WHITE") return false;
@@ -5068,8 +5082,15 @@ async function goToSequenceApprovals() {
 async function revertColorGroup(color) {
     if (!confirm(`Revert pushed items for color "${color}" back to the Color Chart?`)) return;
     
-    // Find all items of this color that are pushed
-    const itemsToRevert = rawData.value.filter(d => d.color === color && d.pbPlanName);
+    // ✅ FIX: Only revert items from the selected plan
+    const itemsToRevert = rawData.value.filter(d => {
+        if (selectedPlan.value && selectedPlan.value !== 'Default') {
+            if (d.planName !== selectedPlan.value && d.planName !== selectedPlanLabel.value) return false;
+        } else {
+            if (d.planName && d.planName !== '' && d.planName !== 'Default') return false;
+        }
+        return d.color === color && d.pbPlanName;
+    });
     
     if (itemsToRevert.length === 0) {
         frappe.msgprint(`No pushed orders found for ${color}.`);
