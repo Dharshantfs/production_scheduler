@@ -1357,6 +1357,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		return []
 
 	# Build SQL for date filtering ΓÇö support split dates (pushed vs unpushed)
+	eff = _effective_date_expr("p")
 	eff_pushed = "p.custom_planned_date" if _has_planned_date_column() else "p.ordered_date"
 	eff_ordered = "p.ordered_date"
 	
