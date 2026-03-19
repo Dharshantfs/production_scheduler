@@ -13,7 +13,7 @@
       </div>
       
       <div class="cc-filter-item" v-if="viewScope === 'daily'">
-        <label>Order Date</label>
+        <label>Planned Date</label>
         <input type="date" v-model="filterOrderDate" @change="fetchData" />
       </div>
       <div class="cc-filter-item" v-else-if="viewScope === 'weekly'">

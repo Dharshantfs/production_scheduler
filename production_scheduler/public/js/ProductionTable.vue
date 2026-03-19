@@ -12,7 +12,7 @@
       </div>
       
       <div class="cc-filter-item" v-if="viewScope === 'daily'">
-        <label>Order Date</label>
+        <label>Planned Date</label>
         <input type="date" v-model="filterOrderDate" @change="fetchData" />
       </div>
       <div class="cc-filter-item" v-else-if="viewScope === 'weekly'">
@@ -279,7 +279,7 @@ const tableData = computed(() => {
 
         const dateGroupsObj = {};
         items.forEach(item => {
-            const d = item.ordered_date || "No Date";
+            const d = item.plannedDate || "No Date";
             if (!dateGroupsObj[d]) dateGroupsObj[d] = { date: d, items: [], dailyTotal: 0 };
             dateGroupsObj[d].items.push(item);
             dateGroupsObj[d].dailyTotal += (item.qty || 0);

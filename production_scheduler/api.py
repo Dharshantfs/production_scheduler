@@ -3052,16 +3052,17 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
     Fetches Planning Sheet Items where the linked Sales Order is 'Confirmed'.
     Supports date, start_date/end_date range, delivery_date, and party_code filters.
     """
+    eff = _effective_date_expr("p")
     conditions = ["so.custom_production_status = 'Confirmed'", "p.docstatus < 2"]
     values = []
 
     # Date range support (weekly/monthly)
     if start_date and end_date:
-        conditions.append("((so.transaction_date BETWEEN %s AND %s) OR (so.transaction_date IS NULL AND DATE(p.creation) BETWEEN %s AND %s))")
-        values.extend([start_date, end_date, start_date, end_date])
+        conditions.append(f"{eff} BETWEEN %s AND %s")
+        values.extend([start_date, end_date])
     elif order_date:
-        conditions.append("((so.transaction_date IS NOT NULL AND so.transaction_date = %s) OR (so.transaction_date IS NULL AND DATE(p.creation) = %s))")
-        values.extend([order_date, order_date])
+        conditions.append(f"{eff} = %s")
+        values.append(order_date)
 
     # Filter by Delivery Date (DOD)
     if delivery_date:
@@ -3079,7 +3080,8 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
             i.name, i.item_code, i.item_name, i.qty, i.unit, i.color, 
             i.gsm, i.custom_quality as quality, i.width_inch, i.idx,
             p.name as planning_sheet, p.party_code, p.customer, p.dod, p.planning_status, p.creation,
-            so.transaction_date as so_date, so.custom_production_status, so.delivery_status
+            so.transaction_date as so_date, so.custom_production_status, so.delivery_status,
+            {eff} as effective_date
         FROM
             `tabPlanning Sheet Item` i
         JOIN
@@ -3089,7 +3091,7 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
         WHERE
             {where_clause}
         ORDER BY
-            so.transaction_date ASC, p.creation DESC, i.idx ASC
+            {eff} ASC, p.creation DESC, i.idx ASC
     """
     
     items = frappe.db.sql(sql, tuple(values), as_dict=True)
@@ -3111,7 +3113,7 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
             "width": flt(item.width_inch or 0),
             "unit": item.unit or "", 
             "dod": str(item.dod) if item.dod else "",
-            "order_date": str(item.so_date) if item.so_date else str(item.creation.date()),
+            "order_date": str(item.effective_date),
             "delivery_status": item.delivery_status or "Not Delivered"
         })
         
