@@ -4093,6 +4093,39 @@ def emergency_cleanup_all_pushed_status():
 	return {"status": "success", "message": "All color orders unlocked and returned to Color Chart. White orders preserved."}
 
 @frappe.whitelist()
+def fix_recently_cleared_whites():
+    """
+    TEMPORARY: Restores white orders that were accidentally cleared.
+    Sets custom_planned_date = ordered_date for sheets with only white items
+    that were modified in the last 2 hours.
+    """
+    from frappe.utils import getdate
+    sheets = frappe.db.sql("""
+        SELECT name, ordered_date FROM `tabPlanning sheet`
+        WHERE modified > DATE_SUB(NOW(), INTERVAL 2 HOUR)
+          AND (custom_planned_date IS NULL OR custom_planned_date = '')
+    """, as_dict=True)
+    
+    count = 0
+    for s in sheets:
+        # Check if sheet contains ONLY white items
+        items = frappe.get_all("Planning Sheet Item", filters={"parent": s.name}, fields=["color"])
+        all_white = True
+        for it in items:
+            if (it.color or "").upper() not in [c.upper() for c in WHITE_COLORS]:
+                all_white = False
+                break
+        
+        if all_white and items:
+            frappe.db.set_value("Planning sheet", s.name, "custom_planned_date", s.ordered_date)
+            # Find the best plan name (Default or similar)
+            frappe.db.set_value("Planning sheet", s.name, "custom_pb_plan_name", "Default")
+            count += 1
+            
+    frappe.db.commit()
+    return {"status": "success", "restored_count": count}
+
+@frappe.whitelist()
 def revert_items_to_color_chart(item_names):
 	"""
 	Reverts items back to the Color Chart by clearing their Planning Sheet's custom_planned_date.
