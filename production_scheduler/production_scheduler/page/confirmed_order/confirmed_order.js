@@ -5,9 +5,13 @@ frappe.pages["confirmed-order"].on_page_load = function (wrapper) {
         single_column: true,
     });
 
+    // Create the mount point for Vue (Proven pattern from color_chart.js)
+    $(page.body).html('<div id="confirmed-order-app"></div>');
+
     // Mount the Vue component
     new production_scheduler.ConfirmedOrderController(
-        page.body.querySelector("#confirmed-order-app")
+        document.getElementById("confirmed-order-app")
     );
 };
+
 
