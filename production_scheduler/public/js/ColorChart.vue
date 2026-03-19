@@ -5131,7 +5131,7 @@ async function revertColorGroup(color) {
             args: { item_names: JSON.stringify(itemNames) }
         });
         if (r.message && r.message.status === 'success') {
-            frappe.show_alert({ message: `✅ Reverted ${r.message.reverted_sheets} planning sheet(s) completely.`, indicator: 'green' });
+            frappe.show_alert({ message: `✅ Reverted ${r.message.reverted_items} item(s) across ${r.message.sheets_checked} planning sheet(s).`, indicator: 'green' });
             fetchData();
         } else {
             frappe.msgprint(r.message?.message || "Revert failed.");

@@ -551,28 +551,24 @@ def get_preferred_unit(quality):
 	if q_up in UNIT_QUALITY_MAP.get("Unit 4", []): return "Unit 4"
 	return "Unit 1"
 
-def generate_plan_code(date_str, unit, plan_name):
-	"""
-	Generates a readable plan code: {YY}{MonthLetter}{Unit}-{PlanName}
-	e.g. 26CU1-PLAN 1
-	"""
-	if not str(date_str) or not plan_name or not unit or unit in ["All Units", "MAIN"]:
+	if not str(date_str) or not plan_name or not unit:
 		return ""
 	
 	try:
+		# Robust unit normalization for code generation
+		u_clean = str(unit).upper().replace(" ", "")
+		if "UNIT1" in u_clean: u_code = "U1"
+		elif "UNIT2" in u_clean: u_code = "U2"
+		elif "UNIT3" in u_clean: u_code = "U3"
+		elif "UNIT4" in u_clean: u_code = "U4"
+		else: return ""
+
 		d = frappe.utils.getdate(str(date_str))
 		yy = str(d.year)[-2:]
 		# Month letters mapping (A-L)
 		month_letters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"]
 		month_char = month_letters[d.month - 1]
 		
-		# Unit translation
-		if unit == "Unit 1": u_code = "U1"
-		elif unit == "Unit 2": u_code = "U2"
-		elif unit == "Unit 3": u_code = "U3"
-		elif unit == "Unit 4": u_code = "U4"
-		else: return ""
-
 		# Strip Month/Week prefix (e.g., "MARCH W10 26 PLAN 1" -> "PLAN 1")
 		clean_plan = _strip_legacy_prefixes(plan_name)
 		
@@ -3837,15 +3833,16 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 			""", (pb_sheet_name,))[0][0]
 
 			# ΓöÇΓöÇ Move item to the PB sheet via raw SQL ΓöÇΓöÇ
+			# 1. Update parent link AND explicitly save the target unit to the DB
 			frappe.db.sql("""
 				UPDATE `tabPlanning Sheet Item`
-				SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items'
+				SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items', unit = %s
 				WHERE name = %s
-			""", (pb_sheet_name, name))
+			""", (pb_sheet_name, unit, name))
 
-			# Also set item-level planned date + plan code for consistency
+			# 2. Set item-level planned date + plan code for consistency
+			# This ensures ONLY the pushed item moves, staying granular.
 			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-				# Determine new plan code
 				new_plan_code = generate_plan_code(effective_date, unit, pb_plan_name)
 				
 				frappe.db.sql("""
@@ -4083,14 +4080,17 @@ def emergency_cleanup_all_pushed_status():
 	""")
 	
 	# 2. Clear Item-level flags
-	frappe.db.sql("""
+	# We exclude items with WHITE colors to avoid erasing auto-planned white orders
+	clean_white_sql = ", ".join([f"'{c.upper()}'" for c in WHITE_COLORS])
+	frappe.db.sql(f"""
 		UPDATE `tabPlanning Sheet Item` 
 		SET custom_item_planned_date = NULL, custom_plan_code = NULL
-		WHERE custom_item_planned_date IS NOT NULL OR custom_plan_code IS NOT NULL
+		WHERE (custom_item_planned_date IS NOT NULL OR custom_plan_code IS NOT NULL)
+		  AND UPPER(color) NOT IN ({clean_white_sql})
 	""")
 	
 	frappe.db.commit()
-	return {"status": "success", "message": "All orders unlocked and returned to Color Chart."}
+	return {"status": "success", "message": "All color orders unlocked and returned to Color Chart. White orders preserved."}
 
 @frappe.whitelist()
 def revert_items_to_color_chart(item_names):
@@ -4110,7 +4110,7 @@ def revert_items_to_color_chart(item_names):
 	updated_sheets = set()
 	for name in item_names:
 		try:
-			# Clean item-level tracking explicitly
+			# 1. Clean item-level tracking explicitly
 			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
 				frappe.db.sql("""
 					UPDATE `tabPlanning Sheet Item`
@@ -4118,20 +4118,28 @@ def revert_items_to_color_chart(item_names):
 					WHERE name = %s
 				""", (name,))
 
+			# 2. Check if parent sheet should be unlinked from PB
 			parent = frappe.db.get_value("Planning Sheet Item", name, "parent")
 			if parent and parent not in updated_sheets:
-				# Clean parent-level tracking
-				frappe.db.sql("""
-					UPDATE `tabPlanning sheet`
-					SET custom_planned_date = NULL, custom_pb_plan_name = NULL
-					WHERE name = %s
-				""", (parent,))
+				# Only clear parent-level tracking if NO OTHER items in this sheet are still pushed
+				still_pushed = frappe.db.sql("""
+					SELECT COUNT(*) FROM `tabPlanning Sheet Item`
+					WHERE parent = %s AND custom_item_planned_date IS NOT NULL
+				""", (parent,))[0][0]
+				
+				if still_pushed == 0:
+					frappe.db.sql("""
+						UPDATE `tabPlanning sheet`
+						SET custom_planned_date = NULL, custom_pb_plan_name = NULL
+						WHERE name = %s
+					""", (parent,))
+				
 				updated_sheets.add(parent)
 		except Exception as e:
 			frappe.log_error(f"revert error for {name}: {e}", "Revert to Color Chart")
 
 	frappe.db.commit()
-	return {"status": "success", "reverted_sheets": len(updated_sheets)}
+	return {"status": "success", "reverted_items": len(item_names), "sheets_checked": len(updated_sheets)}
 
 
 @frappe.whitelist()
@@ -4151,7 +4159,8 @@ def revert_pb_push(pb_plan_name, date=None):
 		"docstatus": ["<", 2]
 	}
 	if target_date:
-		filters["ordered_date"] = target_date
+		# Search by the date it was PUSHED to, not the original SO date
+		filters["custom_planned_date"] = target_date
 
 	pb_sheets = frappe.get_all("Planning sheet", filters=filters, fields=["name", "ordered_date", "party_code", "custom_plan_name"])
 
