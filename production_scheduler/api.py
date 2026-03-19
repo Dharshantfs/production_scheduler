@@ -1807,8 +1807,8 @@ def update_items_bulk(items, plan_name=None):
 	return {
 		"status": "success",
 		"count": count,
-		"skipped": skipped_already_pushed,
-		"dates": sorted(list(effective_dates_used))
+		"skipped": 0,
+		"dates": sorted(list(moved_dates))
 	}
 
 
