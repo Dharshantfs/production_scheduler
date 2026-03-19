@@ -492,14 +492,14 @@
                             <div class="flex items-center">
                                 <span class="w-3 h-3 rounded mr-2 border border-gray-300" :style="{backgroundColor: getHexColor(row.color)}"></span>
                                 {{ row.color }}
-                                <button v-if="row.isPushed" 
+                                <button v-if="row.anyPushed || row.isPushed" 
                                     @click.stop="revertColorGroup(row.color)"
                                     style="margin-left:8px; background: #16a34a; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:10px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(22,163,74,0.3); transition: all 0.2s;"
                                     title="Click to revert white orders"
                                     onmouseover="this.style.opacity='0.8'"
                                     onmouseout="this.style.opacity='1'"
                                 >
-                                    ✅ {{ row.pushedPlanName || 'Default' }}
+                                    ✅ {{ row.isPushed ? 'FULL' : 'PARTIAL' }} ({{ row.pushedPlanName || 'Default' }})
                                 </button>
                             </div>
                         </td>
