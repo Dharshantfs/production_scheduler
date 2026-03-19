@@ -5102,12 +5102,13 @@ def approve_planning_sheet(planning_sheet_name):
 @frappe.whitelist()
 def run_orphan_cleanup():
     """
-    Safe backend cleanup to purge orphaned items and deduplicate.
-    Bypasses individual script restrictions by running in app context.
+    Ultra-resilient backend cleanup to purge orphaned items and deduplicate.
+    Dynamically inspects database columns to avoid 'Unknown column' errors.
     """
     frappe.only_for("System Manager")
     
     # 1. Clean up orphaned items (linked to deleted sheets)
+    # Using get_all + delete_doc is slower but safer than raw SQL DELETE in Console
     all_items = frappe.get_all("Planning Sheet Item", fields=["name", "parent"])
     orphans_count = 0
     for it in all_items:
@@ -5116,12 +5117,17 @@ def run_orphan_cleanup():
             orphans_count += 1
             
     # 2. Deduplicate items within sheets (handle dynamic schema)
-    so_item_col = "sales_order_item"
-    if not frappe.db.has_column("Planning Sheet Item", so_item_col):
+    # Get actual table columns to avoid 1054 errors
+    columns = frappe.db.get_table_columns("tabPlanning Sheet Item")
+    
+    so_item_col = None
+    if "sales_order_item" in columns:
+        so_item_col = "sales_order_item"
+    elif "custom_sales_order_item" in columns:
         so_item_col = "custom_sales_order_item"
         
     dup_count = 0
-    if frappe.db.has_column("Planning Sheet Item", so_item_col):
+    if so_item_col:
         dups = frappe.db.sql(f"""
             SELECT parent, {so_item_col}, COUNT(*) as cnt
             FROM `tabPlanning Sheet Item`
@@ -5145,4 +5151,8 @@ def run_orphan_cleanup():
         frappe.delete_doc("Planning sheet", sheet_to_fix, force=1, ignore_permissions=True)
     
     frappe.db.commit()
-    return {"status": "success", "message": f"Cleaned up {orphans_count} orphans and {dup_count} duplicates."}
+    return {
+        "status": "success", 
+        "message": f"Cleaned up {orphans_count} orphans and {dup_count} duplicates.",
+        "columns_checked": columns
+    }
