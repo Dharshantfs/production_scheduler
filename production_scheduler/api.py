@@ -1623,8 +1623,9 @@ def _deduplicate_items(items):
 			# Priority 1: Specific Plan > Default
 			if e_plan == "Default" and i_plan != "Default":
 				replace = True
-			# Priority 2: If same plan, pick newest (loop order is often Creation ASC, so later is newer)
-			elif e_plan == i_plan:
+			# Priority 2: Newer Sheet wins if both are specific plans or both are Default
+			# Since items is ordered by creation, 'item' is newer than 'existing'
+			elif e_plan == i_plan or (e_plan != "Default" and i_plan != "Default"):
 				replace = True
 				
 			if replace:
@@ -4136,19 +4137,31 @@ def auto_create_planning_sheet(doc, method=None):
         frappe.msgprint(f"⚠️ All Color Chart plans are locked - Planning Sheet not created. Plans found: {plan_summary}", indicator="orange", alert=True)
         return None
 
-    # 2. CHECK IF AN UNLOCKED SHEET ALREADY EXISTS FOR THIS ORDER
+    # 2. CHECK IF ANY UNLOCKED SHEET EXISTS FOR THIS ORDER
+    # (Fix: Reuse existing unlocked sheet even if plan name differs, just update the plan)
     existing = frappe.get_all("Planning sheet",
-        filters={"sales_order": doc.name, "docstatus": ["<", 2]},
-        fields=["name", "custom_plan_name", "docstatus"]
+        filters={"sales_order": doc.name, "docstatus": 0},
+        fields=["name", "custom_plan_name"],
+        limit=1
     )
-    for s in existing:
-        if s.docstatus != 0:
-            continue
-        # Check matching base names to prevent duplicates if name was prefixed differently
-        existing_base = _strip_legacy_prefixes(s.custom_plan_name or "Default")
-        if existing_base == cc_plan:
-            # Sheet already exists for the unlocked plan - nothing to do
-            return frappe.get_doc("Planning sheet", s.name)
+    
+    if existing:
+        sheet = frappe.get_doc("Planning sheet", existing[0].name)
+        new_ctx_name = _get_contextual_plan_name(cc_plan, doc.transaction_date)
+        
+        # If plan is different, update it
+        if sheet.custom_plan_name != new_ctx_name:
+            sheet.custom_plan_name = new_ctx_name
+            sheet.db_set("custom_plan_name", new_ctx_name)
+        
+        # Refresh items (de-duplicate happens inside _populate)
+        _populate_planning_sheet_items(sheet, doc)
+        update_sheet_plan_codes(sheet)
+        sheet.save(ignore_permissions=True)
+        frappe.db.commit()
+        
+        frappe.msgprint(f"✅ Planning Sheet <b>{sheet.name}</b> updated to plan <b>{sheet.custom_plan_name}</b>")
+        return sheet
 
     # 3. CREATE PLANNING SHEET 
     generate_party_code(doc)
