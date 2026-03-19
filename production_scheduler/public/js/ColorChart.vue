@@ -115,6 +115,9 @@
       <button v-if="isAdmin" class="cc-clear-btn" style="color: #dc2626; border-color: #dc2626; margin-left: 8px;" @click="openRescueDialog" title="Rescue lost or stuck orders">
         🚑 Rescue Orders
       </button>
+      <button class="cc-clear-btn" style="color: #7c3aed; border-color: #7c3aed; margin-left: 8px; font-weight:600;" @click="syncAllPlanCodes" title="Recalculate Plan Codes for all existing sheets">
+        📂 Sync Plan Codes
+      </button>
       <button class="cc-clear-btn" style="background-color: #10b981; color: white; border: none; margin-left: auto;" @click="goToConfirmedOrders" title="View Confirmed Orders Page">
           ✅ Confirmed Orders
       </button>
@@ -137,8 +140,8 @@
             <div class="cc-col-header" :style="{ borderTopColor: headerColors[unit] }">
             <div class="cc-header-top">
                 <span class="cc-col-title">{{ unit === 'Mixed' ? 'Unassigned' : unit }}</span>
-                <span v-if="unit !== 'Mixed' && sequenceStatuses[unit]" :class="['cc-status-badge', sequenceStatuses[unit].toLowerCase().replace(' ', '-')]">
-                  {{ sequenceStatuses[unit] }}
+                <span v-if="unit !== 'Mixed' && sequenceStatuses.value[unit]" :class="['cc-status-badge', sequenceStatuses.value[unit].toLowerCase().replace(' ', '-')]">
+                  {{ sequenceStatuses.value[unit] }}
                 </span>
                 <!-- Sort Controls -->
                 <div class="cc-unit-controls">
@@ -156,8 +159,8 @@
                     ℹ️
                 </button>
                 </div>
-                <div class="cc-header-status-badge" :class="sequenceStatuses[unit] ? sequenceStatuses[unit].toLowerCase().replace(' ', '-') : 'draft'">
-                    {{ sequenceStatuses[unit] || 'Draft' }}
+                <div class="cc-header-status-badge" :class="sequenceStatuses.value[unit] ? sequenceStatuses.value[unit].toLowerCase().replace(' ', '-') : 'draft'">
+                    {{ sequenceStatuses.value[unit] || 'Draft' }}
                 </div>
             </div>
             <div class="cc-header-stats">
@@ -166,12 +169,12 @@
                     {{ getUnitTotal(unit).toFixed(2) }}T
                     </span>
                     <!-- Approval Actions -->
-                    <div class="cc-approval-actions" v-if="viewMode === 'kanban' && filterOrderDate && !filterOrderDate.includes(',')">
-                        <button v-if="(!sequenceStatuses[unit] || sequenceStatuses[unit] === 'Draft') && getUnitEntries(unit).length > 0" 
+                    <div class="cc-approval-actions" v-if="viewMode === 'kanban' && filterOrderDate && !filterOrderDate.value.includes(',')">
+                        <button v-if="(!sequenceStatuses.value[unit] || sequenceStatuses.value[unit] === 'Draft') && getUnitEntries(unit).length > 0" 
                                 class="cc-approve-btn request" @click.stop="requestApproval(unit)">
                             📤 Request Approval
                         </button>
-                        <button v-if="sequenceStatuses[unit] === 'Pending Approval' && currentUserRoles.includes('Manufacturing Manager')" 
+                        <button v-if="sequenceStatuses.value[unit] === 'Pending Approval' && currentUserRoles.value.includes('Manufacturing Manager')" 
                                 class="cc-approve-btn approve" @click.stop="approveSequence(unit)">
                             ✅ Approve
                         </button>
@@ -634,7 +637,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch, reactive } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from "vue";
 import Sortable from "sortablejs";
 
 // Color groups for keyword-based matching
@@ -866,13 +869,13 @@ const derivedPlanCode = computed(() => {
 });
 
 // Per-unit sort configuration
-const unitSortConfig = reactive({});
+const unitSortConfig = ref({});
 // Pre-initialize for all units
 units.forEach(u => {
-    unitSortConfig[u] = { mode: 'auto', color: 'asc', gsm: 'desc', priority: 'color' };
+    unitSortConfig.value[u] = { mode: 'auto', color: 'asc', gsm: 'desc', priority: 'color' };
 });
 const viewMode = ref('matrix'); // 'kanban' | 'matrix'
-const sequenceStatuses = reactive({}); // { "Unit 1": "Draft", ... }
+const sequenceStatuses = ref({}); // { "Unit 1": "Draft", ... }
 const currentUserRoles = computed(() => frappe.boot.user.roles || []);
 const isAdmin = computed(() => {
     const roles = currentUserRoles.value;
@@ -888,6 +891,29 @@ const monthlyCellRefs = ref(null);
 const matrixHeaderRow = ref(null); // Ref for Matrix Column sorting
 const matrixBody = ref(null);      // Ref for Matrix Row sorting
 const customRowOrder = ref([]);    // Store user-defined row order (List of Colors)
+async function syncAllPlanCodes() {
+    frappe.confirm(
+        'This will recalculate and sync Plan Codes for ALL existing Planning Sheets. It may take a few moments. Continue?',
+        async () => {
+            frappe.show_alert({ message: "Syncing Plan Codes...", indicator: "blue" });
+            try {
+                const res = await frappe.call({
+                    method: "production_scheduler.api.recalculate_all_plan_codes"
+                });
+                if (res.message && res.message.status === "success") {
+                    frappe.show_alert({ message: `Successfully synced plan codes for ${res.message.count} sheets`, indicator: "green" });
+                    await fetchData(); // Refresh current view
+                } else {
+                    frappe.msgprint("Sync completed but returned unexpected status.");
+                }
+            } catch (e) {
+                console.error(e);
+                frappe.msgprint("Error syncing plan codes. Check console for details.");
+            }
+        }
+    );
+}
+
 const renderKey = ref(0); // Force re-render for drag revert
 const matrixSortableInstances = []; // Track matrix sortable instances for cleanup
 const kanbanSortableInstances = [];
@@ -1338,7 +1364,7 @@ async function rebuildMixRolls() {
         } else {
             row.mix_id = "mix-" + Math.random().toString(36).substring(2, 9);
         }
-        return reactive(row);
+        return row;
     });
 
     mixRolls.value = merged;
@@ -1407,7 +1433,7 @@ function addMixRow() {
     // Add a blank manual row at the end
     const units = [...new Set(filteredData.value.map(d => d.unit || 'Unit 1'))];
     const unit = units[0] || 'Unit 1';
-    mixRolls.value.push(reactive({
+    mixRolls.value.push({
         unit,
         color1: '',
         color2: '',
@@ -1423,7 +1449,7 @@ function addMixRow() {
         _prevMixName: '',
         _isManual: true,
         mix_id: "mix-" + Math.random().toString(36).substring(2, 9)
-    }));
+    });
     saveMixRolls();
 }
 
@@ -2068,16 +2094,16 @@ async function handleMoveSuccess(res, newUnit) {
         } else {
              frappe.show_alert({ message: "Moved successfully", indicator: "green" });
         }
-        unitSortConfig[movedTo.unit].mode = 'manual';
+        unitSortConfig.value[movedTo.unit].mode = 'manual';
         await fetchData(); 
     }
 }
 
 function getUnitSortConfig(unit) {
-  if (!unitSortConfig[unit]) {
-    unitSortConfig[unit] = { mode: 'auto', color: 'asc', gsm: 'desc', priority: 'color' };
+  if (!unitSortConfig.value[unit]) {
+    unitSortConfig.value[unit] = { mode: 'auto', color: 'asc', gsm: 'desc', priority: 'color' };
   }
-  return unitSortConfig[unit];
+  return unitSortConfig.value[unit];
 }
 
 function toggleUnitColor(unit) {
@@ -2625,8 +2651,8 @@ async function persistSequence(unit) {
         // Reset status to Draft if it was Approved but then re-ordered? 
         // Or keep it? User said "after re order drag and drop the arrangement we and approved"
         // Usually, if you re-order an approved sequence, it should probably go back to Draft.
-        if (sequenceStatuses[unit] === 'Approved') {
-            sequenceStatuses[unit] = 'Draft';
+        if (sequenceStatuses.value[unit] === 'Approved') {
+            sequenceStatuses.value[unit] = 'Draft';
         }
     } catch(e) {
         console.error("Failed to persist sequence", e);
@@ -2647,7 +2673,7 @@ async function requestApproval(unit) {
             method: "production_scheduler.api.request_sequence_approval",
             args: { date: filterOrderDate.value, unit: unit, plan_name: selectedPlan.value }
         });
-        sequenceStatuses[unit] = 'Pending Approval';
+        sequenceStatuses.value[unit] = 'Pending Approval';
         frappe.show_alert(`Approval requested for ${unit}`, 2);
     } catch(e) { console.error(e); }
 }
@@ -2666,7 +2692,7 @@ async function approveSequence(unit) {
             method: "production_scheduler.api.approve_sequence",
             args: { date: filterOrderDate.value, unit: unit, plan_name: selectedPlan.value }
         });
-        sequenceStatuses[unit] = 'Approved';
+        sequenceStatuses.value[unit] = 'Approved';
         frappe.show_alert(`${unit} Sequence Approved`, 2);
     } catch(e) { console.error(e); }
 }
@@ -3043,7 +3069,7 @@ async function pushToProductionBoard() {
         if (a.pushed !== b.pushed) return a.pushed ? 1 : -1;
 
         // Within unit, use manager's saved sequence if available
-        const saved = unitSortConfig[unitA]?.savedSequence;
+        const saved = unitSortConfig.value[unitA]?.savedSequence;
         if (saved && saved.length) {
             const idxA = saved.indexOf(a.name);
             const idxB = saved.indexOf(b.name);
@@ -3063,7 +3089,7 @@ async function pushToProductionBoard() {
     // Re-assign sequence numbers based on final sorted order
     masterSequence.forEach((item, i) => { item.sequence_no = i + 1; });
     const relevantUnits = [...new Set(masterSequence.map(s => s.unit || 'Unit 1'))];
-    const unitStatuses = relevantUnits.map(u => sequenceStatuses[u] || 'Draft');
+    const unitStatuses = relevantUnits.map(u => sequenceStatuses.value[u] || 'Draft');
     const overallStatus = unitStatuses.some(s => s === 'Rejected') ? 'Rejected' :
                          (unitStatuses.every(s => s === 'Approved') ? 'Approved' : 
                           (unitStatuses.some(s => s === 'Pending Approval' || s === 'Draft') ? 
@@ -3550,7 +3576,7 @@ async function pushToProductionBoard() {
             if (msg.sequence && msg.sequence.length) {
                 try {
                     const names = msg.sequence;
-                    if (unitSortConfig[u]) unitSortConfig[u].savedSequence = names;
+                    if (unitSortConfig.value[u]) unitSortConfig.value[u].savedSequence = names;
                     combinedSequenceData = combinedSequenceData.concat(names);
                 } catch(e) {}
             }

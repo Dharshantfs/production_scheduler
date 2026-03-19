@@ -592,9 +592,17 @@ def update_sheet_plan_codes(sheet_doc):
 	unique_codes = set()
 	
 	for item in sheet_doc.get("items", []):
-		item_date = item.get("custom_item_planned_date") or sheet_date
-		item_unit = item.get("unit") or "MAIN"
+		item_unit = item.get("unit")
 		
+		# Robustness: ensure we use the canonical unit name
+		if item_unit:
+			iu_upper = item_unit.upper().replace(" ", "")
+			if "UNIT1" in iu_upper: item_unit = "Unit 1"
+			elif "UNIT2" in iu_upper: item_unit = "Unit 2"
+			elif "UNIT3" in iu_upper: item_unit = "Unit 3"
+			elif "UNIT4" in iu_upper: item_unit = "Unit 4"
+
+		item_date = item.get("custom_item_planned_date") or sheet_date
 		code = generate_plan_code(item_date, item_unit, active_plan)
 		item.custom_plan_code = code
 		if code:
@@ -935,7 +943,8 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 	# 3. Update Plan Codes for Affected Sheets
 	for sheet_name in set([source_parent.name, item_doc.parent]):
 		if frappe.db.exists("Planning sheet", sheet_name):
-			doc_sheet = frappe.get_doc("Planning sheet", sheet_name)
+			# Use ignore_cache=True to ensure we see the updated item units/dates
+			doc_sheet = frappe.get_doc("Planning sheet", sheet_name, ignore_cache=True)
 			update_sheet_plan_codes(doc_sheet)
 			frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s", (doc_sheet.custom_plan_code, doc_sheet.name))
 			for d in doc_sheet.items:
@@ -3794,12 +3803,10 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 				if cache_key in pb_sheet_cache:
 					pb_sheet_name = pb_sheet_cache[cache_key]
 				else:
-					# Match by SO instead of just party_code to ensure "One SO = One Sheet"
+					# ALWAYS Reuse ANY unlocked sheet for the same SO if it exists (regardless of its header date)
 					existing = frappe.get_all("Planning sheet", filters={
-						"custom_planned_date": effective_date,
 						"sales_order": parent_doc.sales_order or "",
-						"party_code": party_code,
-						"docstatus": ["<", 2]
+						"docstatus": 0
 					}, fields=["name"], limit=1)
 
 					if existing:
@@ -3887,7 +3894,7 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 			count += 1
 
 		except Exception as e:
-			frappe.log_error(f"push_items_to_pb error for {name}: {e}", "Push to PB")
+			frappe.log_error(f"Push to PB failed: {str(e)}", "Push to Board Error")
 
 	# Persist this PB plan name
 	persisted = get_persisted_plans("production_board")
