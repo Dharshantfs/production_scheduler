@@ -116,17 +116,45 @@ def _populate_planning_sheet_items(ps, doc):
                 break
 
         # QUALITY & COLOR detection
-        search_text = " " + " ".join(words) + " "
+        # Attempt code-based lookup first, then fallback to string matching
         qual = ""
-        for q in QUAL_LIST:
-            if (" " + q + " ") in search_text:
-                qual = q
-                break
         col = ""
-        for c in COL_LIST:
-            if (" " + c + " ") in search_text:
-                col = c
-                break
+        item_code_str = str(it.item_code or "").strip()
+        
+        # 16-digit logic: 100 [Qual:3] [Color:3] [GSM:3] [Width:4]
+        if len(item_code_str) >= 9 and item_code_str.startswith("100"):
+            q_code = item_code_str[3:6]
+            c_code = item_code_str[6:9]
+            
+            # Use specific fields for lookup based on get_master_code definitions
+            try:
+                qual_name = frappe.db.get_value("Quality Master", {"short_code": q_code}, "name") or \
+                           frappe.db.get_value("Quality Master", {"code": q_code}, "name") or \
+                           frappe.db.get_value("Quality Master", {"quality_code": q_code}, "name")
+                if qual_name:
+                    qual = qual_name
+                
+                color_name = frappe.db.get_value("Colour Master", {"colour_code": c_code}, "colour_name") or \
+                            frappe.db.get_value("Colour Master", {"color_code": c_code}, "color_name") or \
+                            frappe.db.get_value("Colour Master", {"custom_color_code": c_code}, "color_name") or \
+                            frappe.db.get_value("Colour Master", {"short_code": c_code}, "colour_name")
+                if color_name:
+                    col = color_name.upper().strip()
+            except Exception:
+                pass # Fallback to string matching if DB fails
+
+        # Fallback to String Matching
+        search_text = " " + " ".join(words) + " "
+        if not qual:
+            for q in QUAL_LIST:
+                if (" " + q + " ") in search_text:
+                    qual = q
+                    break
+        if not col:
+            for c in COL_LIST:
+                if (" " + c + " ") in search_text:
+                    col = c
+                    break
 
         # WEIGHT calculation
         m_roll = float(it.custom_meter_per_roll or 0)
