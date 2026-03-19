@@ -4305,11 +4305,13 @@ def run_global_cleanup():
         dup_sheet_names = [s.name for s in sheets[1:]]
 
         for dup_name in dup_sheet_names:
+            # Move items from duplicate to kept sheet using raw SQL
             frappe.db.sql(
                 "UPDATE `tabPlanning Sheet Item` SET parent = %s WHERE parent = %s",
                 (keep_sheet, dup_name)
             )
-            frappe.db.sql("DELETE FROM `tabPlanning sheet` WHERE name = %s", (dup_name,))
+            # PROPER DELETE: Use frappe.delete_doc to clean up child table records
+            frappe.delete_doc("Planning sheet", dup_name, force=1, ignore_permissions=True)
             removed_sheets += 1
 
         sheet_details.append({
