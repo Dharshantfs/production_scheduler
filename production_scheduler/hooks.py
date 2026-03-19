@@ -17,5 +17,8 @@ app_include_js = "production_scheduler.bundle.js"
 doc_events = {
     "Sales Order": {
         "on_submit": "production_scheduler.api.auto_create_planning_sheet"
+    },
+    "Planning sheet": {
+        "validate": "production_scheduler.api.validate_planning_sheet_duplicates"
     }
 }

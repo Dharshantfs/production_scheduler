@@ -4271,8 +4271,8 @@ def regenerate_planning_sheet(so_name):
 def run_global_cleanup():
     """
     Two-phase global cleanup:
-    Phase 1 ΓÇö Remove duplicate Planning Sheet headers per Sales Order (keeps OLDEST).
-    Phase 2 ΓÇö Remove duplicate Planning Sheet Items (if field exists).
+    Phase 1 — Remove duplicate Planning Sheet headers per Sales Order (keeps OLDEST).
+    Phase 2 — Remove duplicate Planning Sheet Items (if field exists).
     """
     frappe.only_for("System Manager")
 
@@ -4280,8 +4280,7 @@ def run_global_cleanup():
     removed_items = 0
     sheet_details = []
 
-    # ΓöÇΓöÇ PHASE 1: Deduplicate Planning Sheet HEADERS per Sales Order ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
-    # Use only standard fields: name, sales_order, creation
+    # —— PHASE 1: Deduplicate Planning Sheet HEADERS per Sales Order —————
     all_sheets = frappe.get_all(
         "Planning sheet",
         filters={"sales_order": ["is", "set"], "docstatus": ["<", 2]},
@@ -4291,7 +4290,6 @@ def run_global_cleanup():
         page_length=99999
     )
 
-    # Group by sales_order
     so_sheet_map = {}
     for sh in all_sheets:
         so = sh.get("sales_order") or ""
@@ -4303,17 +4301,14 @@ def run_global_cleanup():
         if len(sheets) <= 1:
             continue
 
-        # Keep oldest sheet, delete rest
         keep_sheet = sheets[0].name
         dup_sheet_names = [s.name for s in sheets[1:]]
 
         for dup_name in dup_sheet_names:
-            # Move items from duplicate to kept sheet using raw SQL (safe: only uses name/parent)
             frappe.db.sql(
                 "UPDATE `tabPlanning Sheet Item` SET parent = %s WHERE parent = %s",
                 (keep_sheet, dup_name)
             )
-            # Delete the duplicate Planning Sheet
             frappe.db.sql("DELETE FROM `tabPlanning sheet` WHERE name = %s", (dup_name,))
             removed_sheets += 1
 
@@ -4323,8 +4318,7 @@ def run_global_cleanup():
             "removed_sheets": dup_sheet_names
         })
 
-    # ΓöÇΓöÇ PHASE 2: Deduplicate Planning Sheet ITEMS by name within same parent ΓöÇΓöÇ
-    # Find items that share the same parent+item_name (catches logical duplicates)
+    # —— PHASE 2: Deduplicate Planning Sheet ITEMS by name within same parent ——
     dup_items_in_sheet = frappe.db.sql("""
         SELECT parent, item_name, COUNT(*) AS cnt
         FROM `tabPlanning Sheet Item`
@@ -4339,7 +4333,6 @@ def run_global_cleanup():
             ORDER BY creation ASC
         """, (row.parent, row.item_name), as_dict=True)
 
-        # Fallback: get all matching regardless of qty
         if not items:
             items = frappe.db.sql("""
                 SELECT name FROM `tabPlanning Sheet Item`
@@ -4359,6 +4352,63 @@ def run_global_cleanup():
         "removed_items_count": removed_items,
         "sheet_details": sheet_details
     }
+
+
+@frappe.whitelist()
+def validate_planning_sheet_duplicates(doc, method=None):
+    """
+    Prevents saving a Planning Sheet if another UNLOCKED sheet 
+    already exists for the same Sales Order.
+    """
+    if not doc.sales_order or doc.docstatus > 0:
+        return
+
+    # Check for other unlocked sheets for the same Sales Order
+    existing = frappe.get_all("Planning sheet", 
+        filters={
+            "sales_order": doc.sales_order,
+            "name": ["!=", doc.name],
+            "docstatus": 0
+        },
+        fields=["name"],
+        limit=1
+    )
+    if existing:
+        frappe.throw(
+            _(f"⚠️ An unlocked Planning Sheet <b>{existing[0].name}</b> already exists for Sales Order <b>{doc.sales_order}</b>. "
+              "Please reuse that sheet instead of creating a new one to avoid duplication errors.")
+        )
+
+
+@frappe.whitelist()
+def force_merge_order_sheets(sales_order):
+    """
+    Administrative tool to merge all Planning Sheets for a specific Sales Order into the newest one.
+    """
+    frappe.only_for("System Manager")
+    
+    sheets = frappe.get_all("Planning sheet", 
+        filters={"sales_order": sales_order, "docstatus": ["<", 2]},
+        fields=["name", "creation"],
+        order_by="creation desc"
+    )
+    
+    if len(sheets) <= 1:
+        return {"status": "success", "message": "No duplicates found."}
+    
+    target_sheet = sheets[0].name
+    source_sheets = [s.name for s in sheets[1:]]
+    
+    moved_count = 0
+    for src in source_sheets:
+        # Move items via SQL
+        frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET parent = %s WHERE parent = %s", (target_sheet, src))
+        # Delete source sheet
+        frappe.delete_doc("Planning sheet", src, force=1, ignore_permissions=True)
+        moved_count += 1
+        
+    frappe.db.commit()
+    return {"status": "success", "message": f"Merged {moved_count} sheets into {target_sheet}"}
 
 
 @frappe.whitelist()
