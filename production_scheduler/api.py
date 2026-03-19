@@ -604,6 +604,33 @@ def update_sheet_plan_codes(sheet_doc):
 	sheet_doc.custom_plan_code = ", ".join(sorted(unique_codes))
 
 @frappe.whitelist()
+def recalculate_all_plan_codes():
+	"""
+	Bulk recalculates plan codes for all unlocked Planning Sheets.
+	Useful for updating existing records after logic changes.
+	"""
+	sheets = frappe.get_all("Planning sheet", filters={"docstatus": 0})
+	count = 0
+	for s in sheets:
+		try:
+			doc = frappe.get_doc("Planning sheet", s.name)
+			update_sheet_plan_codes(doc)
+			
+			# Update parent
+			frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s", (doc.custom_plan_code, doc.name))
+			
+			# Update children
+			for i in doc.items:
+				frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET custom_plan_code = %s WHERE name = %s", (i.custom_plan_code, i.name))
+			
+			count += 1
+		except Exception:
+			pass
+			
+	frappe.db.commit()
+	return {"status": "success", "count": count}
+
+@frappe.whitelist()
 def update_sequence(items):
 	"""
 	Updates the 'idx' of items based on the provided list.

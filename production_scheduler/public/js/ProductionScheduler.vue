@@ -70,6 +70,9 @@
       <button class="cc-clear-btn" style="margin-left:8px;" @click="fetchData" title="Refresh Data">
         🔄
       </button>
+      <button class="cc-clear-btn" style="margin-left:8px; color: #7c3aed; border-color: #7c3aed;" @click="syncAllPlanCodes" title="Recalculate Plan Codes for all existing sheets">
+        📂 Sync Plan Codes
+      </button>
       
       <button class="cc-clear-btn" style="margin-left:auto; background-color: #10b981; color: white; border: none; margin-right: 8px;" @click="goToConfirmedOrders" title="View Confirmed Orders Page">
           ✅ Confirmed Orders
@@ -1918,6 +1921,27 @@ async function bulkConfirm() {
       }
     }
   );
+}
+async function syncAllPlanCodes() {
+    frappe.confirm('This will recalculate Plan Codes for ALL existing Unlocked Planning Sheets. Proceed?', async () => {
+        isLoading.value = true;
+        try {
+            const res = await frappe.call({
+                method: "production_scheduler.api.recalculate_all_plan_codes",
+                freeze: true,
+                freeze_message: "Updating Plan Codes..."
+            });
+            if (res.message && res.message.status === 'success') {
+                frappe.show_alert({ message: `Successfully updated ${res.message.count} sheets`, indicator: "green" });
+                await fetchData();
+            }
+        } catch (e) {
+            console.error(e);
+            frappe.show_alert({ message: "Sync failed", indicator: "red" });
+        } finally {
+            isLoading.value = false;
+        }
+    });
 }
 </script>
 
