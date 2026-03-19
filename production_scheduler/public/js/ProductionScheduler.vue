@@ -73,6 +73,9 @@
       <button class="cc-clear-btn" style="margin-left:8px; color: #7c3aed; border-color: #7c3aed;" @click="syncAllPlanCodes" title="Recalculate Plan Codes for all existing sheets">
         📂 Sync Plan Codes
       </button>
+      <button v-if="isAdmin" class="cc-clear-btn" style="margin-left:8px; color: #ca8a04; border-color: #ca8a04;" @click="restoreWhiteOrders" title="Restore accidentally cleared white orders">
+        🛠️ Restore Whites
+      </button>
       
       <button class="cc-clear-btn" style="margin-left:auto; background-color: #10b981; color: white; border: none; margin-right: 8px;" @click="goToConfirmedOrders" title="View Confirmed Orders Page">
           ✅ Confirmed Orders
@@ -1942,6 +1945,18 @@ async function syncAllPlanCodes() {
             isLoading.value = false;
         }
     });
+}
+
+async function restoreWhiteOrders() {
+    try {
+        const r = await frappe.call("production_scheduler.api.fix_recently_cleared_whites");
+        if (r.message && r.message.status === 'success') {
+            frappe.show_alert({ message: `✅ Restored ${r.message.restored_count} white orders to the Board.`, indicator: 'green' });
+            await fetchData();
+        }
+    } catch(e) {
+        console.error("Restoration Error", e);
+    }
 }
 </script>
 
