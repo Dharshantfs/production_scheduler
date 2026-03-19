@@ -1105,13 +1105,17 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		has_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
 		clean_white_sql_pull = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
 		
-		so_item_col = ""
-		if frappe.db.has_column("Planning Sheet Item", "sales_order_item"):
-			so_item_col = "i.sales_order_item as salesOrderItem,"
-		elif frappe.db.has_column("Planning Sheet Item", "custom_sales_order_item"):
-			so_item_col = "i.custom_sales_order_item as salesOrderItem,"
-		else:
+		# Dynamically detect Sales Order Item column
+		so_item_real_col = "sales_order_item"
+		if not frappe.db.has_column("Planning Sheet Item", so_item_real_col):
+			so_item_real_col = "custom_sales_order_item"
+		
+		# Only use the column if it's found in the physical table
+		columns = frappe.db.get_table_columns("Planning Sheet Item")
+		if so_item_real_col not in columns:
 			so_item_col = "'' as salesOrderItem,"
+		else:
+			so_item_col = f"i.{so_item_real_col} as salesOrderItem,"
 
 		split_col = ""
 		if frappe.db.has_column("Planning Sheet Item", "custom_is_split"):
@@ -1206,13 +1210,16 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		)
 		sheet_pushed = "" # No longer require sheet-level push check
 
-		so_item_col = ""
-		if frappe.db.has_column("Planning Sheet Item", "sales_order_item"):
-			so_item_col = "i.sales_order_item as salesOrderItem,"
-		elif frappe.db.has_column("Planning Sheet Item", "custom_sales_order_item"):
-			so_item_col = "i.custom_sales_order_item as salesOrderItem,"
-		else:
+		# Dynamically detect Sales Order Item column
+		so_item_real_col = "sales_order_item"
+		columns = frappe.db.get_table_columns("Planning Sheet Item")
+		if "sales_order_item" not in columns and "custom_sales_order_item" in columns:
+			so_item_real_col = "custom_sales_order_item"
+		
+		if so_item_real_col not in columns:
 			so_item_col = "'' as salesOrderItem,"
+		else:
+			so_item_col = f"i.{so_item_real_col} as salesOrderItem,"
 		split_col = "i.custom_is_split as isSplit," if frappe.db.has_column("Planning Sheet Item", "custom_is_split") else "0 as isSplit,"
 
 		clean_white_sql_pb = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
@@ -1583,7 +1590,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				"has_pp": sheet_has_pp,
 				"has_wo": sheet_has_wo,
 				"produced_qty": flt(produced_weight),
-				"salesOrderItem": item.get("sales_order_item"),
+				"salesOrderItem": item.get("sales_order_item") or item.get("custom_sales_order_item"),
 				"isSplit": item.get("custom_is_split")
 			})
 
