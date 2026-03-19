@@ -205,7 +205,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch, reactive } from "vue";
+import { ref, computed, onMounted, nextTick, watch } from "vue";
 import Sortable from "sortablejs";
 
 // Color groups for keyword-based matching
@@ -277,7 +277,7 @@ const COLOR_GROUPS = [
   { keywords: ["NO COLOR"], priority: 999, hex: "#e5e7eb" },
 ];
 
-const unitSequenceStore = reactive({});
+const unitSequenceStore = ref({});
 
 const units = ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"];
 const UNIT_TONNAGE_LIMITS = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5, "Mixed": 999 };
@@ -298,7 +298,7 @@ const filterPartyCode = ref("");
 const filterCustomer = ref("");
 const filterUnit = ref("");
 
-const unitSortConfig = reactive({});
+const unitSortConfig = ref({});
 const rawData = ref([]);
 const columnRefs = ref(null);
 const renderKey = ref(0);
@@ -511,7 +511,7 @@ function getSortLabel(unit) {
 
 function sortItems(unit, items) {
   // 1. If we have a saved sequence (Manual Sort / Approved Sequence) for this unit/date, use it primarily
-  const savedSeq = unitSequenceStore[unit];
+  const savedSeq = unitSequenceStore.value[unit];
   if (savedSeq && savedSeq.length) {
       const seqMap = {};
       savedSeq.forEach((name, i) => seqMap[name] = i);
@@ -554,10 +554,10 @@ function sortItems(unit, items) {
 }
 
 function getUnitSortConfig(unit) {
-  if (!unitSortConfig[unit]) {
-    unitSortConfig[unit] = { color: 'asc', gsm: 'desc', priority: 'color' };
+  if (!unitSortConfig.value[unit]) {
+    unitSortConfig.value[unit] = { color: 'asc', gsm: 'desc', priority: 'color' };
   }
-  return unitSortConfig[unit];
+  return unitSortConfig.value[unit];
 }
 
 function toggleUnitColor(unit) {
@@ -683,9 +683,9 @@ async function fetchData() {
                     args: { date: statusDate, unit: unit, plan_name: "__all__" }
                 });
                 if (seqRes.message && seqRes.message.sequence) {
-                    unitSequenceStore[unit] = seqRes.message.sequence;
+                    unitSequenceStore.value[unit] = seqRes.message.sequence;
                 } else {
-                    unitSequenceStore[unit] = null;
+                    unitSequenceStore.value[unit] = null;
                 }
             } catch (e) {
                 console.warn(`Failed to fetch sequence for ${unit}`, e);

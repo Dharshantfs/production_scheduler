@@ -306,10 +306,10 @@ const filterPartyCode = ref("");
 const filterCustomer = ref("");
 const filterUnit = ref("");
 const filterStatus = ref("");
-const unitSortConfig = reactive({});
+const unitSortConfig = ref({});
 // Pre-initialize for all units to prevent reactive loops during render
 units.forEach(u => {
-    unitSortConfig[u] = { mode: 'manual', color: 'asc', gsm: 'desc', priority: 'color' };
+    unitSortConfig.value[u] = { mode: 'manual', color: 'asc', gsm: 'desc', priority: 'color' };
 });
 
 const rawData = ref([]);
@@ -762,7 +762,7 @@ async function initSortable() {
                      showOverflowDialog(res.message, filterOrderDate.value, newUnit);
                 } else if (res.message && res.message.status === 'success') {
                     frappe.show_alert({ message: isSameUnit ? "Order resequenced" : "Successfully moved", indicator: "green" });
-                    unitSortConfig[newUnit].mode = 'manual';
+                    unitSortConfig.value[newUnit].mode = 'manual';
                     await fetchData(); 
                 }
              } catch (e) {
@@ -779,10 +779,10 @@ async function initSortable() {
 }
 
 function getUnitSortConfig(unit) {
-  if (!unitSortConfig[unit]) {
-      unitSortConfig[unit] = { mode: 'manual', color: 'asc', gsm: 'desc', priority: 'color' };
+  if (!unitSortConfig.value[unit]) {
+      unitSortConfig.value[unit] = { mode: 'manual', color: 'asc', gsm: 'desc', priority: 'color' };
   }
-  return unitSortConfig[unit];
+  return unitSortConfig.value[unit];
 }
 
 function resetToAutoSort(unit) {
@@ -868,7 +868,7 @@ const unitEntriesCache = computed(() => {
   // Explicitly read renderKey + all sort configs so Vue tracks them as reactive deps
   void renderKey.value;
   units.forEach(u => {
-    const cfg = unitSortConfig[u];
+    const cfg = unitSortConfig.value[u];
     if (cfg) { void cfg.color; void cfg.gsm; void cfg.priority; void cfg.mode; }
   });
 

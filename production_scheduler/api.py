@@ -4402,8 +4402,11 @@ def validate_planning_sheet_duplicates(doc, method=None):
     Prevents saving a Planning Sheet if another UNLOCKED sheet 
     already exists for the same Sales Order.
     """
-    if not doc.sales_order or doc.docstatus > 0:
+    if not doc.sales_order or doc.docstatus > 1:
         return
+        
+    # Recalculate plan codes whenever saved
+    update_sheet_plan_codes(doc)
 
     # Check for other unlocked sheets for the same Sales Order
     existing = frappe.get_all("Planning sheet", 
