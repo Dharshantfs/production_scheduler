@@ -2062,7 +2062,7 @@ async function initSortable() {
                          // Fix 3: Re-fetch data instead of silent splice for same-unit resequence
                          if (isSameUnit && res.message && res.message.status === 'success') {
                              frappe.show_alert({ message: "Order resequenced", indicator: "green" });
-                             unitSortConfig[newUnit].mode = 'manual';
+                             unitSortConfig.value[newUnit].mode = 'manual';
                              // Re-fetch to get correct order from server
                              fetchData();
                          } else {
@@ -4323,13 +4323,13 @@ async function fetchData() {
                 args: { date: statusDate, unit: unit, plan_name: selectedPlan.value }
             });
             if (seqRes.message) {
-                sequenceStatuses[unit] = seqRes.message.status;
+                sequenceStatuses.value[unit] = seqRes.message.status;
                 // If we have a saved sequence, we can store it in a temporary lookup
                 // to help sortItems later if mode is 'manual'
                 if (seqRes.message.sequence && seqRes.message.sequence.length) {
-                    unitSortConfig[unit].savedSequence = seqRes.message.sequence;
+                    unitSortConfig.value[unit].savedSequence = seqRes.message.sequence;
                 } else {
-                    unitSortConfig[unit].savedSequence = null;
+                    unitSortConfig.value[unit].savedSequence = null;
                 }
             }
         }
