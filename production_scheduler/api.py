@@ -134,10 +134,15 @@ def _populate_planning_sheet_items(ps, doc):
                 if qual_name:
                     qual = qual_name
                 
-                color_name = frappe.db.get_value("Colour Master", {"colour_code": c_code}, "colour_name") or \
-                            frappe.db.get_value("Colour Master", {"color_code": c_code}, "color_name") or \
-                            frappe.db.get_value("Colour Master", {"custom_color_code": c_code}, "color_name") or \
-                            frappe.db.get_value("Colour Master", {"short_code": c_code}, "colour_name")
+                # Color Lookup: Try all possible code fields and fetch 'name' (usually ID) or 'colour_name'
+                # From screenshot, 'name' column contains labels like 'BROWN 1.0'
+                color_name = None
+                for fld in ["colour_code", "color_code", "custom_color_code", "short_code", "code"]:
+                    res = frappe.db.get_value("Colour Master", {fld: c_code}, ["name", "colour_name", "color_name"], as_dict=True)
+                    if res:
+                        color_name = res.get("name") or res.get("colour_name") or res.get("color_name")
+                        break
+                
                 if color_name:
                     col = color_name.upper().strip()
             except Exception:
