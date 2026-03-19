@@ -4147,7 +4147,7 @@ def fix_recently_cleared_whites():
                 updates["custom_pb_plan_name"] = best_plan
             
             if updates:
-                frappe.db.set_values("Planning sheet", s.name, updates)
+                frappe.db.set_value("Planning sheet", s.name, updates)
                 count += 1
             elif restored_item_count > 0:
                 # Even if sheet header was okay, we restored item dates
