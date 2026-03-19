@@ -118,6 +118,9 @@
       <button class="cc-clear-btn" style="color: #7c3aed; border-color: #7c3aed; margin-left: 8px; font-weight:600;" @click="syncAllPlanCodes" title="Recalculate Plan Codes for all existing sheets">
         📂 Sync Plan Codes
       </button>
+      <button v-if="hasRecentlyReset" class="cc-clear-btn" style="color: #ca8a04; border-color: #ca8a04; margin-left: 8px; font-weight:600;" @click="restoreWhiteOrders" title="Restore accidentally cleared white orders">
+        🛠️ Restore Whites
+      </button>
       <button class="cc-clear-btn" style="background-color: #10b981; color: white; border: none; margin-left: auto;" @click="goToConfirmedOrders" title="View Confirmed Orders Page">
           ✅ Confirmed Orders
       </button>
@@ -722,6 +725,7 @@ const filterMonth = ref(frappe.datetime.get_today().substring(0, 7));
 const filterPartyCode = ref("");
 const filterCustomer = ref("");
 const filterUnit = ref("");
+const hasRecentlyReset = ref(false);
 const filterStatus = ref("");
 const selectedPlan = ref("Default");
 
@@ -5142,9 +5146,22 @@ async function revertColorGroup(color) {
     }
 }
 
+async function restoreWhiteOrders() {
+    try {
+        const r = await frappe.call("production_scheduler.api.fix_recently_cleared_whites");
+        if (r.message && r.message.status === 'success') {
+            frappe.show_alert({ message: `✅ Restored ${r.message.restored_count} white orders to the Board.`, indicator: 'green' });
+            hasRecentlyReset.value = false;
+            fetchData();
+        }
+    } catch(e) {
+        console.error("Restoration Error", e);
+    }
+}
+
 async function emergencyReset() {
     frappe.confirm(
-        "<b>⚠️ CRITICAL WARNING</b><br><br>This will find EVERY order currently marked as 'Pushed' and unlock them, returning them to the Color Chart.<br><br>Are you sure you want to perform a <b>FULL RESET</b>?",
+        "<b>⚠️ CRITICAL WARNING</b><br><br>This will find EVERY color order currently marked as 'Pushed' and unlock them, returning them to the Color Chart.<br><br>White orders will remain safely on the Board.<br><br>Are you sure you want to perform a <b>FULL RESET</b>?",
         async () => {
             try {
                 const r = await frappe.call({
@@ -5153,11 +5170,11 @@ async function emergencyReset() {
                 });
                 if (r.message && r.message.status === 'success') {
                     frappe.show_alert({ message: r.message.message, indicator: 'green' });
+                    hasRecentlyReset.value = true;
                     fetchData();
                 }
             } catch (e) {
-                console.error("Reset Error", e);
-                frappe.msgprint("Error during emergency reset.");
+                console.error("Emergency Reset Error", e);
             }
         }
     );
