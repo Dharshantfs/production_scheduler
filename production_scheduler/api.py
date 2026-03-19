@@ -1061,6 +1061,32 @@ def get_color_sequence(date, unit, plan_name="Default"):
 	return {"sequence": [], "status": "Draft", "modified": None, "modified_by": None}
 
 @frappe.whitelist()
+def get_color_sequences_range(start_date, end_date, unit=None, plan_name="__all__"):
+	"""Fetches all color sequences for a range of dates and units."""
+	filters = {
+		"date": ["between", [start_date, end_date]]
+	}
+	if unit and unit != "All Units":
+		filters["unit"] = _normalize_unit(unit)
+	if plan_name and plan_name != "__all__":
+		filters["plan_name"] = plan_name
+		
+	sequences = frappe.get_all("Color Sequence Approval", 
+		filters=filters, 
+		fields=["name", "date", "unit", "plan_name", "sequence_data", "status"]
+	)
+	
+	result = {}
+	for s in sequences:
+		# Key by unit-date for easy frontend lookup
+		key = f"{s.unit}-{s.date}"
+		result[key] = {
+			"sequence": json.loads(s.sequence_data) if s.sequence_data else [],
+			"status": s.status
+		}
+	return result
+
+@frappe.whitelist()
 def save_color_sequence(date, unit, sequence_data, plan_name="Default", new_date=None):
 	"""Saves the color arrangement. Handles date changes by renaming the document."""
 	unit = _normalize_unit(unit)

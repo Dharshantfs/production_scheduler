@@ -111,7 +111,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from "vue";
+import { ref, computed, onMounted, nextTick, watch, reactive } from "vue";
 
 // Color groups for keyword-based matching
 // Check MOST SPECIFIC (multi-word) first, then SINGLE-WORD catch-all groups
@@ -212,9 +212,10 @@ function compareGsm(a, b, direction) {
 // Track saved sequences from 'Color Sequence Approval' to match Board order exactly
 const unitSequenceStore = reactive({});
 
-function sortItems(unit, items) {
+function sortItems(unit, items, date) {
   // 1. If we have a saved sequence (Manual Sort / Approved Sequence) for this unit/date, use it primarily
-  const savedSeq = unitSequenceStore[unit];
+  const key = `${unit}-${date}`;
+  const savedSeq = unitSequenceStore[key]?.sequence;
   if (savedSeq && savedSeq.length) {
       const seqMap = {};
       savedSeq.forEach((name, i) => seqMap[name] = i);
@@ -309,9 +310,6 @@ const tableData = computed(() => {
     return visibleUnits.value.map(unit => {
         let items = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
         
-        // Sort items using Board's color-priority logic (synced)
-        items = sortItems(unit, items);
-
         const dateGroupsObj = {};
         items.forEach(item => {
             const d = item.plannedDate || "No Date";
@@ -321,6 +319,12 @@ const tableData = computed(() => {
         });
         
         const dates = Object.values(dateGroupsObj).sort((a, b) => new Date(a.date) - new Date(b.date));
+        
+        // Sort each date group individually using Board's exact queuing for that day
+        dates.forEach(group => {
+            group.items = sortItems(unit, group.items, group.date);
+        });
+
         const totalWeight = items.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
 
         return { unit, dates, totalWeight };
@@ -428,24 +432,37 @@ async function fetchData() {
       planCode: d.custom_plan_code || "",
     }));
 
-    // After loading raw data, fetch the exact sequence for each visible unit
-    // to match the Production Board's queuing.
-    const statusDate = args.date || args.start_date;
-    if (statusDate) {
+    // After loading raw data, fetch the exact sequence for the range 
+    // to match the Production Board's exact queuing flow for each day.
+    if (args.start_date && args.end_date) {
+        try {
+            const seqRes = await frappe.call({
+                method: "production_scheduler.api.get_color_sequences_range",
+                args: { 
+                    start_date: args.start_date, 
+                    end_date: args.end_date, 
+                    unit: filterUnit.value || "All Units",
+                    plan_name: "__all__" 
+                }
+            });
+            if (seqRes.message) {
+                Object.assign(unitSequenceStore, seqRes.message);
+            }
+        } catch (e) {
+            console.warn(`Failed to fetch sequence range`, e);
+        }
+    } else if (args.date) {
+        // Single day case
         for (const unit of units) {
             try {
                 const seqRes = await frappe.call({
                     method: "production_scheduler.api.get_color_sequence",
-                    args: { date: statusDate, unit: unit, plan_name: "__all__" }
+                    args: { date: args.date, unit, plan_name: "__all__" }
                 });
                 if (seqRes.message && seqRes.message.sequence) {
-                    unitSequenceStore[unit] = seqRes.message.sequence;
-                } else {
-                    unitSequenceStore[unit] = null;
+                    unitSequenceStore[`${unit}-${args.date}`] = seqRes.message;
                 }
-            } catch (e) {
-                console.warn(`Failed to fetch sequence for ${unit}`, e);
-            }
+            } catch (e) {}
         }
     }
       } catch (e) {
