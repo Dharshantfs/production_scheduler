@@ -1302,7 +1302,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				{so_item_col} {split_col}
 				p.name as planningSheet, p.party_code as partyCode, p.customer,
 				p.ordered_date, p.dod, p.sales_order as salesOrder,
-				'' as pbPlanName,
+				COALESCE(p.custom_pb_plan_name, '') as pbPlanName,
 				COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as planned_date
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
@@ -1416,7 +1416,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	
 	# Build SELECT fields ΓÇö include columns only if they exist
 	fields = ["p.name", "p.customer", "p.party_code", "c.customer_name as party_name", "p.dod", "p.ordered_date", 
-			  "p.planning_status", "p.docstatus", "p.sales_order", "p.custom_plan_name",
+			  "p.planning_status", "p.docstatus", "p.sales_order", "p.custom_plan_name", "p.custom_pb_plan_name",
 			  "COALESCE(p.custom_plan_name, 'Default') as planName"]
 	
 	if _has_planned_date_column():
