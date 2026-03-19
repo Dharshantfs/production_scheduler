@@ -1616,8 +1616,12 @@ def _deduplicate_items(items):
 			result.append(item)
 		else:
 			existing = seen[so_item]
-			e_plan = existing.get("planName") or existing.get("custom_plan_name") or "Default"
-			i_plan = item.get("planName") or item.get("custom_plan_name") or "Default"
+			e_plan_raw = existing.get("planName") or existing.get("custom_plan_name") or "Default"
+			i_plan_raw = item.get("planName") or item.get("custom_plan_name") or "Default"
+			
+			# Strip legacy prefixes for logic consistency (e.g. 'MARCH W12 26 PLAN 1' -> 'PLAN 1')
+			e_plan = _strip_legacy_prefixes(e_plan_raw)
+			i_plan = _strip_legacy_prefixes(i_plan_raw)
 			
 			replace = False
 			# Priority 1: Specific Plan > Default
