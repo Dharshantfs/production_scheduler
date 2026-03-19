@@ -1093,15 +1093,15 @@ const matrixData = computed(() => {
          }
     });
 
-    // Group Columns by Plan Code for Merged Headers (DAYS, SHEET, CODE, COLOURS)
+    // Group Columns by Planning Sheet for Merged Headers (DAYS, SHEET, CODE, COLOURS)
     const sheetHeaders = [];
     let lastSheetCode = null;
     let sheetSpan = 0;
     let sheetData = null;
 
     sortedGroups.forEach((g, index) => {
-        // Group by the actual plan code (which differs per unit) instead of the naked sheet name
-        const groupKey = g.planCode !== "-" ? g.planCode : g.code; 
+        // Use the individual sheet code as the group key to separate different orders
+        const groupKey = g.code; 
         
         if (groupKey !== lastSheetCode) {
             if (lastSheetCode !== null) {
