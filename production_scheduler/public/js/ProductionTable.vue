@@ -209,23 +209,50 @@ function compareGsm(a, b, direction) {
   return direction === 'asc' ? gsmA - gsmB : gsmB - gsmA;
 }
 
-function sortItems(unit, items) {
-  // Respect the database sequence (manual sort order) primarily
+// Track saved sequences from 'Color Sequence Approval' to match Board order exactly
+const unitSequenceStore = reactive({});
 
+function sortItems(unit, items) {
+  // 1. If we have a saved sequence (Manual Sort / Approved Sequence) for this unit/date, use it primarily
+  const savedSeq = unitSequenceStore[unit];
+  if (savedSeq && savedSeq.length) {
+      const seqMap = {};
+      savedSeq.forEach((name, i) => seqMap[name] = i);
+      
+      return [...items].sort((a, b) => {
+          const nameA = a.itemName || a.name;
+          const nameB = b.itemName || b.name;
+          
+          const idxA = seqMap[nameA] !== undefined ? seqMap[nameA] : 9999 + parseInt(a.idx || 0);
+          const idxB = seqMap[nameB] !== undefined ? seqMap[nameB] : 9999 + parseInt(b.idx || 0);
+          
+          if (idxA !== idxB) return idxA - idxB;
+          
+          // Fallback if not in sequence map
+          const pA = getColorPriority(a.color);
+          const pB = getColorPriority(b.color);
+          if (pA !== pB) return pA - pB;
+          return (parseFloat(b.gsm) || 0) - (parseFloat(a.gsm) || 0);
+      });
+  }
+
+  // 2. Default Auto Sort (Matches Board's default when no manual sequence): 
+  // Color Priority (Asc) -> GSM (Desc) -> DB Index
   return [...items].sort((a, b) => {
-    // 1. Primary Sort: Database Index (User Manual Sort)
-    // Force integer comparison to avoid string concatenation or lexicographical sort "10" < "2" issues
+    // A. Color Priority
+    const pA = getColorPriority(a.color);
+    const pB = getColorPriority(b.color);
+    if (pA !== pB) return pA - pB;
+
+    // B. GSM Descending (Heuristic: heavier first to minimize gaps)
+    const gsmA = parseFloat(a.gsm) || 0;
+    const gsmB = parseFloat(b.gsm) || 0;
+    if (gsmB !== gsmA) return gsmB - gsmA;
+
+    // C. Database Index (Initial Sequence)
     const idxA = parseInt(a.idx || 0);
     const idxB = parseInt(b.idx || 0);
-    let diff = idxA - idxB;
-
-    // 2. Secondary Sort: Color Logic (if idx is 0 or same)
-    if (diff === 0) diff = compareColor(a, b, 'asc');
-    
-    // 3. Tertiary Sort: GSM Descending
-    if (diff === 0) diff = compareGsm(a, b, 'desc');
-
-    return diff;
+    return idxA - idxB;
   });
 }
 // ─────────────────────────────────────────────────────────────────────────────
@@ -388,18 +415,39 @@ async function fetchData() {
         args.plan_name = "__all__";
         args.planned_only = 1;
 
-        const r = await frappe.call({
-          method: "production_scheduler.api.get_color_chart_data",
-          args: args,
-        });
-        rawData.value = (r.message || []).map(d => ({
-          ...d,
-          plannedDate: d.plannedDate || d.planned_date || "",
-          partyCode: d.partyCode || d.party_code || "",
-          itemName: d.itemName || d.item_name || "",
-          orderDate: d.orderDate || d.ordered_date || "",
-          planCode: d.custom_plan_code || "",
-        }));
+    const r = await frappe.call({
+      method: "production_scheduler.api.get_color_chart_data",
+      args: args,
+    });
+    rawData.value = (r.message || []).map(d => ({
+      ...d,
+      plannedDate: d.plannedDate || d.planned_date || "",
+      partyCode: d.partyCode || d.party_code || "",
+      itemName: d.itemName || d.item_name || "",
+      orderDate: d.orderDate || d.ordered_date || "",
+      planCode: d.custom_plan_code || "",
+    }));
+
+    // After loading raw data, fetch the exact sequence for each visible unit
+    // to match the Production Board's queuing.
+    const statusDate = args.date || args.start_date;
+    if (statusDate) {
+        for (const unit of units) {
+            try {
+                const seqRes = await frappe.call({
+                    method: "production_scheduler.api.get_color_sequence",
+                    args: { date: statusDate, unit: unit, plan_name: "__all__" }
+                });
+                if (seqRes.message && seqRes.message.sequence) {
+                    unitSequenceStore[unit] = seqRes.message.sequence;
+                } else {
+                    unitSequenceStore[unit] = null;
+                }
+            } catch (e) {
+                console.warn(`Failed to fetch sequence for ${unit}`, e);
+            }
+        }
+    }
       } catch (e) {
         frappe.msgprint("Error loading plan data");
         console.error(e);

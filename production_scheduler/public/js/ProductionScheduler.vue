@@ -227,67 +227,70 @@ const isLoading = ref(false);
 
 // Color groups 
 const COLOR_GROUPS = [
-  // ── 1. IVORY / CREAM / OFF WHITE (Priority 1-2) ──────────────────
-  { keywords: ["BRIGHT IVORY"],          priority: 1, hex: "#FFFFF0" },
-  { keywords: ["IVORY", "OFF WHITE", "CREAM"], priority: 2, hex: "#FFFFF0" },
-
-  // ── 2. WHITES (Priority 5-6) ───────────────────────────────────
+  // ── 1. WHITES (Priority 0) ───────────────────────────────────
   { keywords: ["BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE", "SUPER WHITE",
-               "BLEACH WHITE", "OPTICAL WHITE"], priority: 5, hex: "#FFFFFF" },
-  { keywords: ["WHITE"], priority: 6, hex: "#FFFFFF" },
+               "BLEACH WHITE", "OPTICAL WHITE"], priority: 0, hex: "#FFFFFF" },
+  { keywords: ["WHITE"], priority: 0, hex: "#FFFFFF" },
 
-  // ── 3. COLORS (Priority 10+) ───────────────────────────────────
-  { keywords: ["LEMON YELLOW"],          priority: 10, hex: "#FFF44F" },
-  { keywords: ["GOLDEN YELLOW"],         priority: 12, hex: "#FFD700" },
-  { keywords: ["GOLD"],                  priority: 12, hex: "#FFD700" },
-  { keywords: ["YELLOW"],               priority: 11, hex: "#FFFF00" },
+  // ── 2. BABY PINK (Priority 1) ───────────────────────────────────
+  { keywords: ["BABY PINK"], priority: 1, hex: "#FFB6C1" },
 
-  { keywords: ["LIGHT ORANGE", "PEACH"], priority: 15, hex: "#FFD580" },
-  { keywords: ["BRIGHT ORANGE"],         priority: 18, hex: "#FF8C00" },
-  { keywords: ["ORANGE"],               priority: 17, hex: "#FFA500" },
+  // ── 3. MEDICAL BLUE (Priority 2) ───────────────────────────────────
+  { keywords: ["MEDICAL BLUE"],          priority: 2, hex: "#0096FF" },
 
-  { keywords: ["BABY PINK", "LIGHT PINK"], priority: 25, hex: "#FFB6C1" },
-  { keywords: ["ROSE", "PINK"],          priority: 26, hex: "#FFC0CB" },
-  { keywords: ["DARK PINK", "HOT PINK"], priority: 28, hex: "#FF69B4" },
+  // ── 4. MEDICAL GREEN (Priority 3) ───────────────────────────────────
+  { keywords: ["MEDICAL GREEN"],         priority: 3, hex: "#00A36C" },
 
-  { keywords: ["BRIGHT RED", "SCARLET", "CRIMSON"], priority: 35, hex: "#FF2400" },
-  { keywords: ["RED"],                   priority: 36, hex: "#FF0000" },
-  { keywords: ["MAROON", "BURGUNDY", "DARK RED"],  priority: 37, hex: "#800000" },
+  // ── 5. IVORY / CREAM / OFF WHITE (Priority 4) ──────────────────
+  { keywords: ["BRIGHT IVORY", "IVORY", "OFF WHITE", "CREAM"], priority: 4, hex: "#FFFFF0" },
 
-  { keywords: ["SKY BLUE", "LIGHT BLUE"], priority: 45, hex: "#87CEEB" },
-  { keywords: ["ROYAL BLUE"],            priority: 46, hex: "#4169E1" },
-  { keywords: ["PEACOCK BLUE"],          priority: 47, hex: "#005F69" },
-  { keywords: ["MEDICAL BLUE"],          priority: 48, hex: "#0077B6" },
-  { keywords: ["NAVY BLUE", "DARK BLUE"],priority: 55, hex: "#000080" },
-  { keywords: ["BLUE"],                  priority: 46, hex: "#0000FF" },
+  // ── 6. YELLOWS (Priority 5-6): Lemon → Yellow → Golden
+  { keywords: ["LEMON YELLOW"],          priority: 5, hex: "#FFF44F" },
+  { keywords: ["GOLDEN YELLOW", "GOLD"], priority: 6, hex: "#FFD700" },
+  { keywords: ["YELLOW"],                priority: 5, hex: "#FFEA00" },
 
-  // VIOLET / PURPLE (58-59)
-  { keywords: ["VIOLET", "VOILET", "PURPLE"], priority: 58, hex: "#8B00FF" },
+  // ── 7. ORANGES (Priority 7)
+  { keywords: ["LIGHT ORANGE", "PEACH", "BRIGHT ORANGE", "ORANGE"], priority: 7, hex: "#FF8C00" },
 
-  { keywords: ["MEDICAL GREEN"],         priority: 60, hex: "#00897B" },
-  { keywords: ["PARROT GREEN", "LIGHT GREEN"], priority: 61, hex: "#57C84D" },
-  { keywords: ["RELIANCE GREEN"],        priority: 62, hex: "#228B22" },
-  { keywords: ["PEACOCK GREEN"],         priority: 63, hex: "#00A693" },
-  { keywords: ["AQUA GREEN", "AQUA"],    priority: 64, hex: "#00FFFF" },
-  { keywords: ["APPLE GREEN", "LIME GREEN"], priority: 65, hex: "#32CD32" },
-  { keywords: ["MINT GREEN", "MINT"],    priority: 66, hex: "#98FF98" },
-  { keywords: ["SEA GREEN"],             priority: 67, hex: "#2E8B57" },
-  { keywords: ["GRASS GREEN"],           priority: 68, hex: "#7CFC00" },
-  { keywords: ["BOTTLE GREEN"],          priority: 69, hex: "#006A4E" },
-  { keywords: ["POTHYS GREEN"],          priority: 70, hex: "#1A5C38" },
-  { keywords: ["DARK GREEN"],            priority: 71, hex: "#006400" },
-  { keywords: ["OLIVE GREEN", "OLIVE"],  priority: 72, hex: "#808000" },
-  { keywords: ["ARMY GREEN", "ARMY"],    priority: 75, hex: "#4B5320" },
-  { keywords: ["GREEN", "KELLY GREEN"],  priority: 62, hex: "#008000" },
+  // ── 8. PINKS (Priority 8)
+  { keywords: ["DARK PINK"],             priority: 8, hex: "#C71585" },
+  { keywords: ["PINK", "PINK 1.0", "PINK 2.0", "PINK 3.0", "PINK 5.0", "HOT PINK"], priority: 8, hex: "#FFC0CB" },
 
-  { keywords: ["SILVER", "LIGHT GREY", "GREY", "GRAY"], priority: 80, hex: "#808080" },
+  // ── 9. REDS / MAROONS (Priority 9)
+  { keywords: ["BRIGHT RED", "SCARLET", "CRIMSON", "RED"],  priority: 9, hex: "#D32F2F" },
+  { keywords: ["MAROON", "BURGUNDY", "DARK RED"],  priority: 9, hex: "#800000" },
 
-  { keywords: ["BLACK"],                 priority: 90, hex: "#000000" },
+  // ── 10. BLUES (Priority 10-12): Peacock → Royal → Navy
+  { keywords: ["LIGHT PEACOCK BLUE", "PEACOCK BLUE"], priority: 10, hex: "#008B8B" },
+  { keywords: ["SKY BLUE", "LIGHT BLUE"], priority: 11, hex: "#87CEEB" },
+  { keywords: ["ROYAL BLUE", "BLUE"], priority: 11, hex: "#2962FF" },
+  { keywords: ["NAVY BLUE", "DARK BLUE"], priority: 12, hex: "#1A237E" },
 
-  { keywords: ["DARK BEIGE", "KHAKI", "SAND"], priority: 95, hex: "#C2B280" },
-  { keywords: ["LIGHT BEIGE", "BEIGE", "BROWN", "CHOCOLATE"], priority: 96, hex: "#F5F5DC" },
+  // ── 11. VIOLET / PURPLE (Priority 13)
+  { keywords: ["VIOLET", "VOILET", "PURPLE"], priority: 13, hex: "#8B00FF" },
 
+  // ── 12. GREENS (Priority 14-17): Reliance / Parrot / Sea / Army
+  { keywords: ["GREEN 1.0 MINT", "MEDICAL GREEN"], priority: 14, hex: "#00897B" },
+  { keywords: ["PARROT GREEN", "RELIANCE GREEN", "GREEN"], priority: 15, hex: "#228B22" },
+  { keywords: ["SEA GREEN"],             priority: 16, hex: "#2E8B57" },
+  { keywords: ["ARMY GREEN", "ARMY"],    priority: 17, hex: "#4B5320" },
+
+  // ── 13. GREYS / SILVERS (Priority 18)
+  { keywords: ["SILVER", "LIGHT GREY", "GREY", "GRAY", "DARK GREY"], priority: 18, hex: "#808080" },
+
+  // ── 14. BROWNS (Priority 19)
+  { keywords: ["BROWN", "CHOCOLATE"], priority: 19, hex: "#8B4513" },
+
+  // ── 15. BLACK (Priority 20)
+  { keywords: ["BLACK"],                 priority: 20, hex: "#000000" },
+
+  // ── 16. BEIGES (Priority 21-22) ── Transition Rule: Run last to recover machine
+  { keywords: ["DARK BEIGE"], priority: 21, hex: "#C2B280" },
+  { keywords: ["LIGHT BEIGE", "BEIGE"], priority: 22, hex: "#F5F5DC" },
+
+  // ── MIX MARKERS (priority 199) ──
   { keywords: ["WHITE MIX", "BLACK MIX", "COLOR MIX", "BEIGE MIX"], priority: 199, hex: "#c0c0c0" },
+  { keywords: ["NO COLOR"], priority: 999, hex: "#e5e7eb" },
 ];
 
 const units = ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"];
@@ -487,17 +490,17 @@ function getMixRollQty(gap) {
 }
 
 function determineMixType(fromColor, toColor) {
-  const f = (fromColor || "").toUpperCase();
-  const t = (toColor || "").toUpperCase();
-  const fromGroup = findColorGroup(f);
-  const toGroup = findColorGroup(t);
+  const fromGroup = findColorGroup(fromColor);
+  const toGroup = findColorGroup(toColor);
   const fromPri = fromGroup ? fromGroup.priority : 50;
   const toPri = toGroup ? toGroup.priority : 50;
 
-  // New Priorities: White/Ivory = 1-6, Black = 90
-  if (fromPri <= 6 || toPri <= 6) return "WHITE MIX";
-  if (fromPri === 90 || toPri === 90) return "BLACK MIX";
-  if (f.includes("BEIGE") || t.includes("BEIGE")) return "BEIGE MIX";
+  // New Priorities: White/Ivory = 0-4, Black = 20
+  if (fromPri <= 4 || toPri <= 4) return "WHITE MIX";
+  if (fromPri === 20 || toPri === 20) return "BLACK MIX";
+  const from = (fromColor || "").toUpperCase();
+  const to = (toColor || "").toUpperCase();
+  if (from.includes("BEIGE") || to.includes("BEIGE")) return "BEIGE MIX";
   return "COLOR MIX";
 }
 
