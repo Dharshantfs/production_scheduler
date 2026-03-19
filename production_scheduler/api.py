@@ -1356,20 +1356,24 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	else:
 		return []
 
-	# Build SQL with effective date expression for date filtering
-	eff = _effective_date_expr("p")
+	# Build SQL for date filtering ΓÇö support split dates (pushed vs unpushed)
+	eff_pushed = "p.custom_planned_date" if _has_planned_date_column() else "p.ordered_date"
+	eff_ordered = "p.ordered_date"
+	
 	plan_condition = ""
 	params = []
 	if start_date and end_date:
-		date_condition = f"{eff} BETWEEN %s AND %s"
-		params.extend([query_start, query_end])
+		date_condition = f"({eff_ordered} BETWEEN %s AND %s OR {eff_pushed} BETWEEN %s AND %s)"
+		params.extend([query_start, query_end, query_start, query_end])
 	else:
 		if len(target_dates) > 1:
 			fmt = ','.join(['%s'] * len(target_dates))
-			date_condition = f"{eff} IN ({fmt})"
+			date_condition = f"({eff_ordered} IN ({fmt}) OR {eff_pushed} IN ({fmt}))"
+			params.extend(target_dates)
 			params.extend(target_dates)
 		else:
-			date_condition = f"{eff} = %s"
+			date_condition = f"({eff_ordered} = %s OR {eff_pushed} = %s)"
+			params.append(target_dates[0])
 			params.append(target_dates[0])
 	
 	if plan_name == "__all__":
@@ -1598,40 +1602,34 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 			
 			effective_date_str = str(item.get("ordered_date") or sheet.get("ordered_date") or "")
 			
-			# Production Board filtering: determine if item is "scheduled"
-			if cint(planned_only):
-				is_white = _is_white_color(color)
-				item_pdate = item.get("custom_item_planned_date")
+			# ΓöÇΓöÇ Granular filtering: determine if item belongs to the current date view ΓöÇΓöÇ
+			item_pdate = item.get("custom_item_planned_date")
+			is_white = _is_white_color(color)
+			
+			# Effective item date for filtering: 
+			# Unpushed non-white items stick to ordered_date.
+			# Pushed items (or auto-pushed whites) stick to their planned/pushed date.
+			i_eff_pdate = item_pdate or (sheet.get("custom_planned_date") if is_white else None) or sheet.get("ordered_date")
+			
+			if date or (start_date and end_date):
+				try:
+					it_pdt_norm = getdate(str(i_eff_pdate)) if i_eff_pdate else None
+				except Exception:
+					it_pdt_norm = None
 				
+				if it_pdt_norm:
+					if start_date and end_date:
+						if not (it_pdt_norm >= query_start and it_pdt_norm <= query_end):
+							continue
+					elif target_dates:
+						if it_pdt_norm not in target_dates:
+							continue
+
+			# Production Board special filtering: only show scheduled items if planned_only is requested
+			if cint(planned_only):
 				# NON-WHITE items MUST be explicitly pushed (have a planned date)
 				if not is_white and not item_pdate:
 					continue
-				
-				# WHITE items use ordered_date as default scheduled date if none set
-				eff_pdate = item_pdate or sheet.get("custom_planned_date") or sheet.get("ordered_date")
-				
-				# If filter is by single date or multiple dates
-				if date:
-					try:
-						it_pdt_normalized = getdate(str(eff_pdate)) if eff_pdate else None
-					except Exception:
-						it_pdt_normalized = None
-					if it_pdt_normalized not in target_dates:
-						continue
-				
-				# If filter is by date range
-				if start_date and end_date:
-					# Skip if it_pdate is none or outside range
-					from frappe.utils import getdate
-					if not item_pdate:
-						continue
-					try:
-						pdt = getdate(str(item_pdate))
-						if not (pdt >= query_start and pdt <= query_end):
-							continue
-					except Exception:
-						# If date parsing fails, treat as invalid and skip
-						continue
 
 			data.append({
 				"name": "{}-{}".format(sheet.name, item.get("idx", 0)),

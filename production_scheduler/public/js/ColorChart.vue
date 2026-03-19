@@ -3437,9 +3437,9 @@ async function pushToProductionBoard() {
             };
 
             if (currentStatus === 'Draft' || currentStatus === 'Rejected') {
-                const pendingItems = currentSequence.filter(s => !s.pushed);
+                const pendingItems = currentSequence.filter(s => !s.pushed && s.checked !== false);
                 if (pendingItems.length === 0) {
-                    frappe.msgprint('No pending items to request approval for.');
+                    frappe.msgprint('No pending items selected for approval.');
                     return;
                 }
                 const unitsToRequest = [...new Set(pendingItems.map(s => normalizeUnit(s.unit || 'Unit 1')))];
@@ -3461,8 +3461,17 @@ async function pushToProductionBoard() {
                 return;
             }
             if ((currentStatus === 'Pending Approval' || (currentStatus === 'Draft' && canApprove)) && canApprove) {
-                const unitsToApprove = [...new Set(currentSequence.map(s => normalizeUnit(s.unit || 'Unit 1')))];
+                const pendingItems = currentSequence.filter(s => !s.pushed && s.checked !== false);
+                const unitsToApprove = [...new Set(pendingItems.map(s => normalizeUnit(s.unit || 'Unit 1')))];
                 for (const u of unitsToApprove) {
+                    const unitItems = pendingItems.filter(s => normalizeUnit(s.unit || 'Unit 1') === u).map(s => s.name);
+                    
+                    // Always save the latest selection before approving
+                    await frappe.call({
+                        method: "production_scheduler.api.save_color_sequence",
+                        args: { date: targetDate, unit: u, sequence_data: unitItems, plan_name: selectedPlan.value }
+                    });
+
                     await frappe.call({
                         method: "production_scheduler.api.approve_sequence",
                         args: { date: targetDate, unit: u, plan_name: selectedPlan.value }
