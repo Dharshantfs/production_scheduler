@@ -667,6 +667,7 @@ function initSortable() {
 /* Function Removed as per User Request (Read Only Mode) */
 
 onMounted(() => {
+  console.log("ConfirmedOrder Vue Component Mounted");
   fetchData(); // Fetch all initially
 });
 </script>

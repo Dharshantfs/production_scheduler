@@ -222,15 +222,41 @@ def _get_standard_month_name(month_index):
 
 def _get_contextual_plan_name(base_name, date_val):
     """
-    Standardization: Returns the base name as-is.
-    The UI handles dynamic prefixing for display (e.g. MARCH W12 26 PLAN 1).
-    Use _strip_legacy_prefixes() for cleaning legacy prefixed names.
+    Returns the full contextual plan name with month/week prefix, matching the
+    frontend display logic in ColorChart.vue: currentMonthPrefix + ' ' + p.name
+    e.g. base_name='PLAN 1', date_val='2026-03-19' -> 'MARCH W12 26 PLAN 1'
+
+    If base_name already contains a month prefix (legacy), returns it as-is.
+    If base_name is 'Default', returns 'Default'.
     """
     if not base_name or base_name == "Default":
         return base_name
-    # Return as-is — no stripping needed. The base name (e.g. "PLAN 1")
-    # is already clean. Legacy prefix stripping is done by _strip_legacy_prefixes().
-    return base_name.strip()
+
+    clean = base_name.strip()
+
+    # If already prefixed (contains month name), return as-is
+    month_names = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE",
+                   "JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"]
+    upper = clean.upper()
+    if any(upper.startswith(m) for m in month_names):
+        return clean
+
+    # Build prefix from date_val (mirrors frontend currentMonthPrefix computed for weekly scope)
+    try:
+        import datetime as _dt
+        if date_val:
+            d = frappe.utils.getdate(date_val)
+            # ISO week number
+            iso = d.isocalendar()  # (year, week, weekday)
+            week_num = iso[1]
+            year_2 = str(d.year)[2:]
+            month_prefix = month_names[d.month - 1]
+            prefix = f"{month_prefix} W{week_num} {year_2}"
+            return f"{prefix} {clean}"
+    except Exception:
+        pass
+
+    return clean
 
 def _find_best_unlocked_plan(parsed_plans, doc_date):
     """
@@ -4152,7 +4178,7 @@ def auto_create_planning_sheet(doc, method=None):
     # 3. The _is_white_color check allows them through without custom_pb_plan_name
     # Non-white items stay in the Color Chart only (no custom_pb_plan_name, not white)
         
-    frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{cc_plan}</b>")
+    frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{ps.custom_plan_name}</b>")
     
     # RE-FETCH TO UPDATE HEADER PLAN CODES
     final_doc = frappe.get_doc("Planning sheet", ps.name)
@@ -4218,7 +4244,7 @@ def regenerate_planning_sheet(so_name):
     # 3. The _is_white_color check allows them through without custom_pb_plan_name
     # Non-white items stay in the Color Chart only (no custom_pb_plan_name, not white)
         
-    frappe.msgprint(f"✅ Regenerated Planning Sheet <b>{ps.name}</b> in unlocked plan <b>{cc_plan}</b>")
+    frappe.msgprint(f"✅ Regenerated Planning Sheet <b>{ps.name}</b> in unlocked plan <b>{ps.custom_plan_name}</b>")
     return ps
 
 
