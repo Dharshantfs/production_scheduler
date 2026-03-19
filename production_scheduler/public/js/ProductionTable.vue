@@ -113,48 +113,73 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from "vue";
 
-// ── Color Groups (synced from Production Board) ────────────────────────────
+// Color groups for keyword-based matching
+// Check MOST SPECIFIC (multi-word) first, then SINGLE-WORD catch-all groups
 const COLOR_GROUPS = [
-  { keywords: ["WHITE MIX"], priority: 99, hex: "#f0f0f0" }, 
-  { keywords: ["BLACK MIX"], priority: 99, hex: "#404040" },
-  { keywords: ["COLOR MIX"], priority: 99, hex: "#c0c0c0" },
-  { keywords: ["BEIGE MIX"], priority: 99, hex: "#e0d5c0" }, 
-  { keywords: ["WHITE", "BRIGHT WHITE"], priority: 10, hex: "#FFFFFF" },
-  { keywords: ["IVORY", "OFF WHITE", "CREAM"], priority: 11, hex: "#FFFFF0" },
-  { keywords: ["LEMON YELLOW"], priority: 20, hex: "#FFF44F" },
-  { keywords: ["YELLOW"], priority: 21, hex: "#FFFF00" },
-  { keywords: ["GOLDEN YELLOW", "GOLD"], priority: 22, hex: "#FFD700" },
-  { keywords: ["PEACH"], priority: 30, hex: "#FFDAB9" },
-  { keywords: ["ORANGE", "BRIGHT ORANGE"], priority: 31, hex: "#FFA500" },
-  { keywords: ["BABY PINK", "LIGHT PINK"], priority: 40, hex: "#FFB6C1" },
-  { keywords: ["PINK", "ROSE"], priority: 41, hex: "#FFC0CB" },
-  { keywords: ["DARK PINK", "HOT PINK"], priority: 42, hex: "#FF69B4" },
-  { keywords: ["RED", "BRIGHT RED"], priority: 50, hex: "#FF0000" },
-  { keywords: ["CRIMSON", "SCARLET"], priority: 51, hex: "#DC143C" },
-  { keywords: ["MAROON", "DARK RED", "BURGUNDY"], priority: 52, hex: "#800000" },
-  { keywords: ["LAVENDER", "LILAC"], priority: 60, hex: "#E6E6FA" },
-  { keywords: ["VIOLET"], priority: 61, hex: "#EE82EE" },
-  { keywords: ["PURPLE", "MAGENTA"], priority: 62, hex: "#800080" },
-  { keywords: ["SKY BLUE", "LIGHT BLUE"], priority: 70, hex: "#87CEEB" },
-  { keywords: ["MEDICAL BLUE"], priority: 71, hex: "#0077B6" },
-  { keywords: ["BLUE", "ROYAL BLUE"], priority: 72, hex: "#4169E1" },
-  { keywords: ["PEACOCK BLUE"], priority: 73, hex: "#005F69" },
-  { keywords: ["NAVY BLUE", "DARK BLUE"], priority: 74, hex: "#000080" },
-  { keywords: ["MINT GREEN"], priority: 80, hex: "#98FF98" },
-  { keywords: ["PARROT GREEN", "LIGHT GREEN"], priority: 81, hex: "#90EE90" },
-  { keywords: ["APPLE GREEN", "LIME GREEN"], priority: 82, hex: "#32CD32" },
-  { keywords: ["GREEN", "KELLY GREEN"], priority: 83, hex: "#008000" },
-  { keywords: ["SEA GREEN"], priority: 84, hex: "#2E8B57" },
-  { keywords: ["BOTTLE GREEN"], priority: 85, hex: "#006A4E" },
-  { keywords: ["OLIVE GREEN"], priority: 86, hex: "#808000" },
-  { keywords: ["ARMY GREEN"], priority: 87, hex: "#4B5320" },
-  { keywords: ["DARK GREEN"], priority: 88, hex: "#006400" },
-  { keywords: ["SILVER", "LIGHT GREY"], priority: 95, hex: "#C0C0C0" },
-  { keywords: ["GREY", "GRAY", "DARK GREY"], priority: 96, hex: "#808080" },
-  { keywords: ["BLACK"], priority: 98, hex: "#000000" },
-  { keywords: ["BEIGE", "LIGHT BEIGE", "CREAM"], priority: 99, hex: "#F5F5DC" },
-  { keywords: ["DARK BEIGE", "KHAKI", "SAND"], priority: 99, hex: "#C2B280" }, 
-  { keywords: ["BROWN", "CHOCOLATE", "COFFEE"], priority: 90, hex: "#A52A2A" }, 
+  // ── 1. WHITES (Priority 0) ───────────────────────────────────
+  { keywords: ["BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE", "SUPER WHITE",
+               "BLEACH WHITE", "OPTICAL WHITE"], priority: 0, hex: "#FFFFFF" },
+  { keywords: ["WHITE"], priority: 0, hex: "#FFFFFF" },
+
+  // ── 2. BABY PINK (Priority 1) ───────────────────────────────────
+  { keywords: ["BABY PINK"], priority: 1, hex: "#FFB6C1" },
+
+  // ── 3. MEDICAL BLUE (Priority 2) ───────────────────────────────────
+  { keywords: ["MEDICAL BLUE"],          priority: 2, hex: "#0096FF" },
+
+  // ── 4. MEDICAL GREEN (Priority 3) ───────────────────────────────────
+  { keywords: ["MEDICAL GREEN"],         priority: 3, hex: "#00A36C" },
+
+  // ── 5. IVORY / CREAM / OFF WHITE (Priority 4) ──────────────────
+  { keywords: ["BRIGHT IVORY", "IVORY", "OFF WHITE", "CREAM"], priority: 4, hex: "#FFFFF0" },
+
+  // ── 6. YELLOWS (Priority 5-6): Lemon → Yellow → Golden
+  { keywords: ["LEMON YELLOW"],          priority: 5, hex: "#FFF44F" },
+  { keywords: ["GOLDEN YELLOW", "GOLD"], priority: 6, hex: "#FFD700" },
+  { keywords: ["YELLOW"],                priority: 5, hex: "#FFEA00" },
+
+  // ── 7. ORANGES (Priority 7)
+  { keywords: ["LIGHT ORANGE", "PEACH", "BRIGHT ORANGE", "ORANGE"], priority: 7, hex: "#FF8C00" },
+
+  // ── 8. PINKS (Priority 8)
+  { keywords: ["DARK PINK"],             priority: 8, hex: "#C71585" },
+  { keywords: ["PINK", "PINK 1.0", "PINK 2.0", "PINK 3.0", "PINK 5.0", "HOT PINK"], priority: 8, hex: "#FFC0CB" },
+
+  // ── 9. REDS / MAROONS (Priority 9)
+  { keywords: ["BRIGHT RED", "SCARLET", "CRIMSON", "RED"],  priority: 9, hex: "#D32F2F" },
+  { keywords: ["MAROON", "BURGUNDY", "DARK RED"],  priority: 9, hex: "#800000" },
+
+  // ── 10. BLUES (Priority 10-12): Peacock → Royal → Navy
+  { keywords: ["LIGHT PEACOCK BLUE", "PEACOCK BLUE"], priority: 10, hex: "#008B8B" },
+  { keywords: ["SKY BLUE", "LIGHT BLUE"], priority: 11, hex: "#87CEEB" },
+  { keywords: ["ROYAL BLUE", "BLUE"], priority: 11, hex: "#2962FF" },
+  { keywords: ["NAVY BLUE", "DARK BLUE"], priority: 12, hex: "#1A237E" },
+
+  // ── 11. VIOLET / PURPLE (Priority 13)
+  { keywords: ["VIOLET", "VOILET", "PURPLE"], priority: 13, hex: "#8B00FF" },
+
+  // ── 12. GREENS (Priority 14-17): Reliance / Parrot / Sea / Army
+  { keywords: ["GREEN 1.0 MINT", "MEDICAL GREEN"], priority: 14, hex: "#00897B" },
+  { keywords: ["PARROT GREEN", "RELIANCE GREEN", "GREEN"], priority: 15, hex: "#228B22" },
+  { keywords: ["SEA GREEN"],             priority: 16, hex: "#2E8B57" },
+  { keywords: ["ARMY GREEN", "ARMY"],    priority: 17, hex: "#4B5320" },
+
+  // ── 13. GREYS / SILVERS (Priority 18)
+  { keywords: ["SILVER", "LIGHT GREY", "GREY", "GRAY", "DARK GREY"], priority: 18, hex: "#808080" },
+
+  // ── 14. BROWNS (Priority 19)
+  { keywords: ["BROWN", "CHOCOLATE"], priority: 19, hex: "#8B4513" },
+
+  // ── 15. BLACK (Priority 20)
+  { keywords: ["BLACK"],                 priority: 20, hex: "#000000" },
+
+  // ── 16. BEIGES (Priority 21-22) ── Transition Rule: Run last to recover machine
+  { keywords: ["DARK BEIGE"], priority: 21, hex: "#C2B280" },
+  { keywords: ["LIGHT BEIGE", "BEIGE"], priority: 22, hex: "#F5F5DC" },
+
+  // ── MIX MARKERS (priority 199) ──
+  { keywords: ["WHITE MIX", "BLACK MIX", "COLOR MIX", "BEIGE MIX"], priority: 199, hex: "#c0c0c0" },
+  { keywords: ["NO COLOR"], priority: 999, hex: "#e5e7eb" },
 ];
 
 function findColorGroup(color) {
@@ -237,23 +262,6 @@ const filteredData = computed(() => {
   });
   
   data = data.map(d => ({ ...d, unit: d.unit || "Mixed" }));
-
-  // ── 800kg color filter (Exempt Whites) ─────────────────────────
-  if (data.length > 0) {
-    const colorTotals = {};
-    data.forEach(d => {
-      const color = (d.color || "").toUpperCase().trim();
-      colorTotals[color] = (colorTotals[color] || 0) + (d.qty || 0);
-    });
-
-    const NO_RULE_WHITES = ["BRIGHT WHITE", "MILKY WHITE", "SUPER WHITE", "SUNSHINE WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"];
-    data = data.filter(d => {
-      const color = (d.color || "").toUpperCase().trim();
-      if (NO_RULE_WHITES.includes(color)) return true;
-      return (colorTotals[color] || 0) >= 800;
-    });
-  }
-  // ─────────────────────────────────────────────────────────────────────────
 
   if (filterPartyCode.value) {
     const search = filterPartyCode.value.toLowerCase();
