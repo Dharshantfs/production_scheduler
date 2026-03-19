@@ -551,6 +551,11 @@ def get_preferred_unit(quality):
 	if q_up in UNIT_QUALITY_MAP.get("Unit 4", []): return "Unit 4"
 	return "Unit 1"
 
+def generate_plan_code(date_str, unit, plan_name):
+	"""
+	Generates a readable plan code: {YY}{MonthLetter}{Unit}-{PlanName}
+	e.g. 26CU1-PLAN 1
+	"""
 	if not str(date_str) or not plan_name or not unit:
 		return ""
 	
@@ -4118,8 +4123,18 @@ def fix_recently_cleared_whites():
         
         if all_white and items:
             frappe.db.set_value("Planning sheet", s.name, "custom_planned_date", s.ordered_date)
-            # Find the best plan name (Default or similar)
-            frappe.db.set_value("Planning sheet", s.name, "custom_pb_plan_name", "Default")
+            # Use the canonical plan name for the month if it exists, otherwise "Default"
+            month_names = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"]
+            d = getdate(s.ordered_date)
+            prefix = f"{month_names[d.month-1]} {str(d.year)[2:]}"
+            best_plan = f"{prefix} PLAN 1"
+            
+            # Check if this plan name exists in any other sheet for this month
+            exists = frappe.db.exists("Planning sheet", {"custom_pb_plan_name": best_plan})
+            if not exists:
+                best_plan = "Default"
+                
+            frappe.db.set_value("Planning sheet", s.name, "custom_pb_plan_name", best_plan)
             count += 1
             
     frappe.db.commit()
