@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="cc-container">
     <!-- Filter Bar -->
     <div class="cc-filters">
@@ -9,7 +9,7 @@
             <input v-if="viewScope === 'monthly'" type="month" v-model="filterMonth" @change="fetchData" />
             
             <button class="cc-mini-btn" @click="toggleViewScope" :title="viewScope === 'weekly' ? 'Switch to Monthly View' : 'Switch to Weekly View'">
-                {{ viewScope === 'weekly' ? '📅 Month' : '🗓️ Week' }}
+                {{ viewScope === 'weekly' ? '≡ƒôà Month' : '≡ƒùô∩╕Å Week' }}
             </button>
         </div>
       </div>
@@ -36,17 +36,17 @@
         <div style="display:flex; gap:4px; align-items:center;">
             <select v-model="selectedPlan" @change="fetchData">
                 <option v-for="p in visiblePlans" :key="p.name" :value="p.name">
-                    {{ p.locked ? '🔒 ' : '' }}{{ p.name === 'Default' ? 'Default' : currentMonthPrefix + ' ' + p.name }}
+                    {{ p.locked ? '≡ƒöÆ ' : '' }}{{ p.name === 'Default' ? 'Default' : currentMonthPrefix + ' ' + p.name }}
                 </option>
             </select>
             <button v-if="selectedPlan" class="cc-mini-btn" @click="togglePlanLock" :title="isCurrentPlanLocked ? 'Unlock Plan' : 'Lock Plan'" style="margin-right:2px; padding: 2px 4px;font-size: 14px;">
-                {{ isCurrentPlanLocked ? '🔒' : '🔓' }}
+                {{ isCurrentPlanLocked ? '≡ƒöÆ' : '≡ƒöô' }}
             </button>
             <button class="cc-mini-btn" @click="createNewPlan" title="Create New Plan Tab" style="color:#2563eb; font-weight:bold;">
-                ➕ New
+                Γ₧ò New
             </button>
             <button v-if="selectedPlan !== 'Default'" class="cc-mini-btn" @click="deletePlan" title="Delete this Plan" style="color:#dc2626; font-weight:bold;">
-                🗑️
+                ≡ƒùæ∩╕Å
             </button>
         </div>
       </div>
@@ -81,7 +81,7 @@
             @click="viewMode = 'kanban'"
             title="Kanban Board View"
           >
-            📋 Kanban
+            ≡ƒôï Kanban
           </button>
           <button 
             class="cc-view-btn" 
@@ -89,43 +89,43 @@
             @click="viewMode = 'matrix'"
             title="Matrix Pivot View"
           >
-            📊 Matrix
+            ≡ƒôè Matrix
           </button>
       </div>
       
-      <button class="cc-clear-btn" @click="clearFilters">✕ Clear</button>
+      <button class="cc-clear-btn" @click="clearFilters">Γ£ò Clear</button>
       <button v-if="isAdmin" class="cc-clear-btn" style="color: #dc2626; border-color: #dc2626; margin-left: 8px;" @click="emergencyReset" title="FORCE UNLOCK: Returns all stuck orders to Color Chart">
-        🚑 Emergency Reset
+        ≡ƒÜæ Emergency Reset
       </button>
       <button class="cc-clear-btn" style="color: #6366f1; border-color: #6366f1; margin-left: 8px;" @click="showGlobalSortInfo" title="View Color Hierarchy Rules">
-        🎨 Sort Info
+        ≡ƒÄ¿ Sort Info
       </button>
       <button class="cc-clear-btn" style="color: #2563eb; border-color: #2563eb; margin-left: 8px;" @click="autoAllocate" title="Auto-assign orders based on Width & Quality">
-        🪄 Auto Alloc
+        ≡ƒ¬ä Auto Alloc
       </button>
       <button class="cc-clear-btn" style="color: #059669; border-color: #059669; margin-left: 8px;" @click="openPullOrdersDialog" title="Pull orders from a future date">
-        📥 Pull Orders
+        ≡ƒôÑ Pull Orders
       </button>
       <button class="cc-clear-btn" style="color: #7c3aed; border-color: #7c3aed; margin-left: 8px; font-weight:600;" @click="pushToProductionBoard" :disabled="!canPushToBoard" title="Push visible orders to Production Board plan">
-        📤 Push to Board
+        ≡ƒôñ Push to Board
       </button>
       <button class="cc-clear-btn" style="color: #ca8a04; border-color: #ca8a04; margin-left: 8px; font-weight:600;" @click="openMovePlanDialog" title="Move visible orders to another Color Chart plan">
-        📥 Move to Plan
+        ≡ƒôÑ Move to Plan
       </button>
       <button v-if="isAdmin" class="cc-clear-btn" style="color: #dc2626; border-color: #dc2626; margin-left: 8px;" @click="openRescueDialog" title="Rescue lost or stuck orders">
-        🚑 Rescue Orders
+        ≡ƒÜæ Rescue Orders
       </button>
       <button class="cc-clear-btn" style="color: #7c3aed; border-color: #7c3aed; margin-left: 8px; font-weight:600;" @click="syncAllPlanCodes" title="Recalculate Plan Codes for all existing sheets">
-        📂 Sync Plan Codes
+        ≡ƒôé Sync Plan Codes
       </button>
       <button v-if="hasRecentlyReset" class="cc-clear-btn" style="color: #ca8a04; border-color: #ca8a04; margin-left: 8px; font-weight:600;" @click="restoreWhiteOrders" title="Restore accidentally cleared white orders">
-        🛠️ Restore Whites
+        ≡ƒ¢á∩╕Å Restore Whites
       </button>
       <button class="cc-clear-btn" style="background-color: #10b981; color: white; border: none; margin-left: auto;" @click="goToConfirmedOrders" title="View Confirmed Orders Page">
-          ✅ Confirmed Orders
+          Γ£à Confirmed Orders
       </button>
       <button v-if="canAccessDashboard" class="cc-clear-btn" style="background-color: #f59e0b; color: white; border: none; margin-left: 8px;" @click="goToSequenceApprovals" title="View Sequence Approval Dashboard">
-          📋 Approval Dashboard
+          ≡ƒôï Approval Dashboard
       </button>
     </div>
 
@@ -149,17 +149,17 @@
                 <!-- Sort Controls -->
                 <div class="cc-unit-controls">
                 <span style="font-size:10px; color:#64748b; margin-right:4px;">{{ getSortLabel(unit) }}</span>
-                <button class="cc-mini-btn" @click="toggleUnitColor(unit)" :title="getUnitSortConfig(unit).color === 'asc' ? 'Currently: Light→Dark (click for Dark→Light)' : 'Currently: Dark→Light (click for Light→Dark)'">
-                    {{ getUnitSortConfig(unit).color === 'asc' ? '☀️→🌙' : '🌙→☀️' }}
+                <button class="cc-mini-btn" @click="toggleUnitColor(unit)" :title="getUnitSortConfig(unit).color === 'asc' ? 'Currently: LightΓåÆDark (click for DarkΓåÆLight)' : 'Currently: DarkΓåÆLight (click for LightΓåÆDark)'">
+                    {{ getUnitSortConfig(unit).color === 'asc' ? 'ΓÿÇ∩╕ÅΓåÆ≡ƒîÖ' : '≡ƒîÖΓåÆΓÿÇ∩╕Å' }}
                 </button>
-                <button class="cc-mini-btn" @click="toggleUnitGsm(unit)" :title="getUnitSortConfig(unit).gsm === 'desc' ? 'GSM: High→Low (click to reverse)' : 'GSM: Low→High (click to reverse)'">
-                    {{ getUnitSortConfig(unit).gsm === 'desc' ? '⬇️' : '⬆️' }}
+                <button class="cc-mini-btn" @click="toggleUnitGsm(unit)" :title="getUnitSortConfig(unit).gsm === 'desc' ? 'GSM: HighΓåÆLow (click to reverse)' : 'GSM: LowΓåÆHigh (click to reverse)'">
+                    {{ getUnitSortConfig(unit).gsm === 'desc' ? 'Γ¼ç∩╕Å' : 'Γ¼å∩╕Å' }}
                 </button>
                 <button class="cc-mini-btn" @click="toggleUnitPriority(unit)" :title="getUnitSortConfig(unit).priority === 'color' ? 'Priority: Color (click for GSM)' : 'Priority: GSM (click for Color)'">
-                    {{ getUnitSortConfig(unit).priority === 'color' ? '🎨' : '📏' }}
+                    {{ getUnitSortConfig(unit).priority === 'color' ? '≡ƒÄ¿' : '≡ƒôÅ' }}
                 </button>
                 <button class="cc-mini-btn" @click="showSortInfo(unit)" title="Show Sorting & Mixing Rules">
-                    ℹ️
+                    Γä╣∩╕Å
                 </button>
                 </div>
                 <div class="cc-header-status-badge" :class="sequenceStatuses.value[unit] ? sequenceStatuses.value[unit].toLowerCase().replace(' ', '-') : 'draft'">
@@ -175,16 +175,16 @@
                     <div class="cc-approval-actions" v-if="viewMode === 'kanban' && filterOrderDate && !filterOrderDate.value.includes(',')">
                         <button v-if="(!sequenceStatuses.value[unit] || sequenceStatuses.value[unit] === 'Draft') && getUnitEntries(unit).length > 0" 
                                 class="cc-approve-btn request" @click.stop="requestApproval(unit)">
-                            📤 Request Approval
+                            ≡ƒôñ Request Approval
                         </button>
                         <button v-if="sequenceStatuses.value[unit] === 'Pending Approval' && currentUserRoles.value.includes('Manufacturing Manager')" 
                                 class="cc-approve-btn approve" @click.stop="approveSequence(unit)">
-                            ✅ Approve
+                            Γ£à Approve
                         </button>
                     </div>
                 </div>
                 <span class="cc-stat-mix" v-if="getMixRollCount(unit) > 0">
-                ⚠️ {{ getMixRollCount(unit) }} mix{{ getMixRollCount(unit) > 1 ? 'es' : '' }}
+                ΓÜá∩╕Å {{ getMixRollCount(unit) }} mix{{ getMixRollCount(unit) > 1 ? 'es' : '' }}
                 ({{ getMixRollTotalWeight(unit) }} Kg)
                 </span>
             </div>
@@ -196,7 +196,7 @@
                 <div v-if="entry.type === 'mix'" class="cc-mix-marker">
                 <div class="cc-mix-line"></div>
             <span class="cc-mix-label" :class="entry.mixType.toLowerCase().replace(' ', '-')">
-                {{ entry.mixType }} — ~{{ entry.qty }} Kg
+                {{ entry.mixType }} ΓÇö ~{{ entry.qty }} Kg
             </span>
                 <div class="cc-mix-line"></div>
                 </div>
@@ -220,10 +220,10 @@
                     <div class="cc-card-color-name">{{ entry.color }}</div>
                     <div class="cc-card-customer">
                         <span style="font-weight:700; color:#111827;">{{ entry.partyCode }}</span>
-                        <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> · {{ entry.customer }}</span>
+                        <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> ┬╖ {{ entry.customer }}</span>
                     </div>
                     <div class="cc-card-details" style="display:flex; align-items:center;">
-                        {{ entry.quality }} · {{ entry.gsm }} GSM
+                        {{ entry.quality }} ┬╖ {{ entry.gsm }} GSM
                         <span v-if="entry.has_wo" style="font-size:9px; padding:1px 4px; background:#dcfce7; color:#166534; border-radius:3px; margin-left:4px; font-weight:bold; border:1px solid #bbf7d0;" title="Work Order Created">WO</span>
                         <span v-else-if="entry.has_pp" style="font-size:9px; padding:1px 4px; background:#dbeafe; color:#1e40af; border-radius:3px; margin-left:4px; font-weight:bold; border:1px solid #bfdbfe;" title="Production Plan Created">PP</span>
                         <span v-else style="font-size:9px; padding:1px 4px; background:#fef3c7; color:#92400e; border-radius:3px; margin-left:4px; font-weight:bold; border:1px solid #fde68a;" title="Planning Sheet">PS</span>
@@ -444,7 +444,7 @@
                                     style="margin-left:8px; background: #059669; color:white; border:none; padding:3px 10px; border-radius:12px; font-size:9px; font-weight:700; cursor:pointer; box-shadow: 0 2px 4px rgba(5,150,105,0.3); transition: all 0.2s;"
                                     title="Click to revert color group back to Color Chart"
                                 >
-                                    ✅ {{ row.isPushed ? 'FULL' : 'PARTIAL' }} ({{ row.pushedPlanName }})
+                                    Γ£à {{ row.isPushed ? 'FULL' : 'PARTIAL' }} ({{ row.pushedPlanName }})
                                 </button>
                                 <button v-if="!row.isPushed && row.total > 0" 
                                     @click.stop="openPushColorDialog(row.color)"
@@ -452,8 +452,8 @@
                                     onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 8px rgba(37,99,235,0.4)'"
                                     onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 4px rgba(37,99,235,0.3)'"
                                 >
-                                    <!-- 📤 Push {{ (row.anyPushed || row.isPushed) ? 'REM' : '' }} -->
-                                    📤 Push
+                                    <!-- ≡ƒôñ Push {{ (row.anyPushed || row.isPushed) ? 'REM' : '' }} -->
+                                    ≡ƒôñ Push
                                 </button>
                             </div>
                         </td>
@@ -499,7 +499,7 @@
                                     onmouseover="this.style.opacity='0.8'"
                                     onmouseout="this.style.opacity='1'"
                                 >
-                                    ✅ {{ row.isPushed ? 'FULL' : 'PARTIAL' }} ({{ row.pushedPlanName || 'Default' }})
+                                    Γ£à {{ row.isPushed ? 'FULL' : 'PARTIAL' }} ({{ row.pushedPlanName || 'Default' }})
                                 </button>
                             </div>
                         </td>
@@ -522,7 +522,7 @@
     <!-- MIX ROLL Manual Entry Section -->
     <div v-if="viewMode === 'matrix' && mixRolls && mixRolls.length > 0" class="mt-8 bg-white p-4 rounded-lg shadow border border-gray-200" style="margin-bottom: 30px;">
         <h3 class="text-sm font-bold mb-4 text-gray-800 flex items-center">
-            <span class="mr-2">♻️</span> MIX ROLL AREA (Manual Entry)
+            <span class="mr-2">ΓÖ╗∩╕Å</span> MIX ROLL AREA (Manual Entry)
         </h3>
         <table class="w-full text-left border-collapse border border-gray-200" style="font-size: 13px;">
             <thead class="bg-gray-100 text-gray-800" style="font-weight: 800;">
@@ -554,7 +554,7 @@
                     <!-- RECYCLE row: merge MIX NAME + QUALITY + COLOR + GSM + SHAFT + WEIGHT into one cell -->
                     <template v-if="mix.isRecycle">
                         <td class="p-2 border text-center font-bold" colspan="6" style="background: #fef3c7; font-size: 15px; letter-spacing: 2px; color: #92400e;">
-                            ♻️ RECYCLE
+                            ΓÖ╗∩╕Å RECYCLE
                         </td>
                     </template>
                     <!-- Normal row: show all fields -->
@@ -606,7 +606,7 @@
                             :class="mix.isRecycle ? 'recycle-btn-active' : 'recycle-btn'"
                             :title="mix.isRecycle ? 'Click to undo Recycle' : 'Click to mark as Recycle'"
                         >
-                            {{ mix.isRecycle ? '♻️ YES' : '⬜ No' }}
+                            {{ mix.isRecycle ? 'ΓÖ╗∩╕Å YES' : 'Γ¼£ No' }}
                         </button>
                     </td>
                     <td class="p-2 border text-center" style="white-space:nowrap;">
@@ -624,8 +624,8 @@
                             </button>
                         </div>
                         <div class="flex gap-1 justify-center mt-1">
-                            <button @click="revertMixRow(idx)" title="Revert to auto-generated values" style="background:#f0f9ff;border:1px solid #7dd3fc;color:#0369a1;padding:2px 6px;border-radius:4px;font-size:11px;cursor:pointer;">↺</button>
-                            <button @click="deleteMixRow(idx)" title="Delete this row" style="background:#fff1f2;border:1px solid #fca5a5;color:#dc2626;padding:2px 6px;border-radius:4px;font-size:11px;cursor:pointer;">✕</button>
+                            <button @click="revertMixRow(idx)" title="Revert to auto-generated values" style="background:#f0f9ff;border:1px solid #7dd3fc;color:#0369a1;padding:2px 6px;border-radius:4px;font-size:11px;cursor:pointer;">Γå║</button>
+                            <button @click="deleteMixRow(idx)" title="Delete this row" style="background:#fff1f2;border:1px solid #fca5a5;color:#dc2626;padding:2px 6px;border-radius:4px;font-size:11px;cursor:pointer;">Γ£ò</button>
                         </div>
                     </td>
                 </tr>
@@ -633,7 +633,7 @@
         </table>
         <div style="margin-top:8px; display:flex; gap:8px;">
             <button @click="addMixRow()" style="background:#f0fdf4;border:1px solid #86efac;color:#15803d;padding:4px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">+ Add Row</button>
-            <button @click="rebuildMixRolls()" style="background:#f0f9ff;border:1px solid #7dd3fc;color:#0369a1;padding:4px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">🔄 Rebuild Auto</button>
+            <button @click="rebuildMixRolls()" style="background:#f0f9ff;border:1px solid #7dd3fc;color:#0369a1;padding:4px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">≡ƒöä Rebuild Auto</button>
         </div>
     </div>
   </div>
@@ -646,68 +646,68 @@ import Sortable from "sortablejs";
 // Color groups for keyword-based matching
 // Check MOST SPECIFIC (multi-word) first, then SINGLE-WORD catch-all groups
 const COLOR_GROUPS = [
-  // ── 1. WHITES (Priority 0) ───────────────────────────────────
+  // ΓöÇΓöÇ 1. WHITES (Priority 0) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   { keywords: ["BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE", "SUPER WHITE",
                "BLEACH WHITE", "OPTICAL WHITE"], priority: 0, hex: "#FFFFFF" },
   { keywords: ["WHITE"], priority: 0, hex: "#FFFFFF" },
 
-  // ── 2. BABY PINK (Priority 1) ───────────────────────────────────
+  // ΓöÇΓöÇ 2. BABY PINK (Priority 1) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   { keywords: ["BABY PINK"], priority: 1, hex: "#FFB6C1" },
 
-  // ── 3. MEDICAL BLUE (Priority 2) ───────────────────────────────────
+  // ΓöÇΓöÇ 3. MEDICAL BLUE (Priority 2) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   { keywords: ["MEDICAL BLUE"],          priority: 2, hex: "#0096FF" },
 
-  // ── 4. MEDICAL GREEN (Priority 3) ───────────────────────────────────
+  // ΓöÇΓöÇ 4. MEDICAL GREEN (Priority 3) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   { keywords: ["MEDICAL GREEN"],         priority: 3, hex: "#00A36C" },
 
-  // ── 5. IVORY / CREAM / OFF WHITE (Priority 4) ──────────────────
+  // ΓöÇΓöÇ 5. IVORY / CREAM / OFF WHITE (Priority 4) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   { keywords: ["BRIGHT IVORY", "IVORY", "OFF WHITE", "CREAM"], priority: 4, hex: "#FFFFF0" },
 
-  // ── 6. YELLOWS (Priority 5-6): Lemon → Yellow → Golden
+  // ΓöÇΓöÇ 6. YELLOWS (Priority 5-6): Lemon ΓåÆ Yellow ΓåÆ Golden
   { keywords: ["LEMON YELLOW"],          priority: 5, hex: "#FFF44F" },
   { keywords: ["GOLDEN YELLOW", "GOLD"], priority: 6, hex: "#FFD700" },
   { keywords: ["YELLOW"],                priority: 5, hex: "#FFEA00" },
 
-  // ── 7. ORANGES (Priority 7)
+  // ΓöÇΓöÇ 7. ORANGES (Priority 7)
   { keywords: ["LIGHT ORANGE", "PEACH", "BRIGHT ORANGE", "ORANGE"], priority: 7, hex: "#FF8C00" },
 
-  // ── 8. PINKS (Priority 8)
+  // ΓöÇΓöÇ 8. PINKS (Priority 8)
   { keywords: ["DARK PINK"],             priority: 8, hex: "#C71585" },
   { keywords: ["PINK", "PINK 1.0", "PINK 2.0", "PINK 3.0", "PINK 5.0", "HOT PINK"], priority: 8, hex: "#FFC0CB" },
 
-  // ── 9. REDS / MAROONS (Priority 9)
+  // ΓöÇΓöÇ 9. REDS / MAROONS (Priority 9)
   { keywords: ["BRIGHT RED", "SCARLET", "CRIMSON", "RED"],  priority: 9, hex: "#D32F2F" },
   { keywords: ["MAROON", "BURGUNDY", "DARK RED"],  priority: 9, hex: "#800000" },
 
-  // ── 10. BLUES (Priority 10-12): Peacock → Royal → Navy
+  // ΓöÇΓöÇ 10. BLUES (Priority 10-12): Peacock ΓåÆ Royal ΓåÆ Navy
   { keywords: ["LIGHT PEACOCK BLUE", "PEACOCK BLUE"], priority: 10, hex: "#008B8B" },
   { keywords: ["SKY BLUE", "LIGHT BLUE"], priority: 11, hex: "#87CEEB" },
   { keywords: ["ROYAL BLUE", "BLUE"], priority: 11, hex: "#2962FF" },
   { keywords: ["NAVY BLUE", "DARK BLUE"], priority: 12, hex: "#1A237E" },
 
-  // ── 11. VIOLET / PURPLE (Priority 13)
+  // ΓöÇΓöÇ 11. VIOLET / PURPLE (Priority 13)
   { keywords: ["VIOLET", "VOILET", "PURPLE"], priority: 13, hex: "#8B00FF" },
 
-  // ── 12. GREENS (Priority 14-17): Reliance / Parrot / Sea / Army
+  // ΓöÇΓöÇ 12. GREENS (Priority 14-17): Reliance / Parrot / Sea / Army
   { keywords: ["GREEN 1.0 MINT", "MEDICAL GREEN"], priority: 14, hex: "#00897B" },
   { keywords: ["PARROT GREEN", "RELIANCE GREEN", "GREEN"], priority: 15, hex: "#228B22" },
   { keywords: ["SEA GREEN"],             priority: 16, hex: "#2E8B57" },
   { keywords: ["ARMY GREEN", "ARMY"],    priority: 17, hex: "#4B5320" },
 
-  // ── 13. GREYS / SILVERS (Priority 18)
+  // ΓöÇΓöÇ 13. GREYS / SILVERS (Priority 18)
   { keywords: ["SILVER", "LIGHT GREY", "GREY", "GRAY", "DARK GREY"], priority: 18, hex: "#808080" },
 
-  // ── 14. BROWNS (Priority 19)
+  // ΓöÇΓöÇ 14. BROWNS (Priority 19)
   { keywords: ["BROWN", "CHOCOLATE"], priority: 19, hex: "#8B4513" },
 
-  // ── 15. BLACK (Priority 20)
+  // ΓöÇΓöÇ 15. BLACK (Priority 20)
   { keywords: ["BLACK"],                 priority: 20, hex: "#000000" },
 
-  // ── 16. BEIGES (Priority 21-22) ── Transition Rule: Run last to recover machine
+  // ΓöÇΓöÇ 16. BEIGES (Priority 21-22) ΓöÇΓöÇ Transition Rule: Run last to recover machine
   { keywords: ["DARK BEIGE"], priority: 21, hex: "#C2B280" },
   { keywords: ["LIGHT BEIGE", "BEIGE"], priority: 22, hex: "#F5F5DC" },
 
-  // ── MIX MARKERS (priority 199) ──
+  // ΓöÇΓöÇ MIX MARKERS (priority 199) ΓöÇΓöÇ
   { keywords: ["WHITE MIX", "BLACK MIX", "COLOR MIX", "BEIGE MIX"], priority: 199, hex: "#c0c0c0" },
   { keywords: ["NO COLOR"], priority: 999, hex: "#e5e7eb" },
 ];
@@ -1020,7 +1020,7 @@ const matrixData = computed(() => {
     });
 
     // 2. Prepare Rows (Unique Colors and Whites)
-    // ✅ FIX: Filter by selected plan before building color legend
+    // Γ£à FIX: Filter by selected plan before building color legend
     // This prevents deleted plans' colors from appearing as orphan rows with no data
     const allColors = new Set();
     const allWhites = new Set();
@@ -1248,9 +1248,9 @@ const filteredData = computed(() => {
   return data;
 });
 
-// ═══════════════════════════════════════════════════════════════════════
-// MIX ROLL — with backend persistence
-// ═══════════════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+// MIX ROLL ΓÇö with backend persistence
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 const mixRolls = ref([]);
 let _mixSaveTimeout = null;
 
@@ -1487,7 +1487,7 @@ async function createMixItem(mix) {
             // Store multiple codes/names as strings
             mix.item_code = r.message.map(m => m.item_code).join(", ");
             mix.item_name = r.message.map(m => m.item_name).join(" | ");
-            frappe.show_alert({ message: `✅ Generated ${r.message.length} Item(s)`, indicator: 'green' });
+            frappe.show_alert({ message: `Γ£à Generated ${r.message.length} Item(s)`, indicator: 'green' });
             saveMixRolls();
         }
     } catch (e) {
@@ -1544,7 +1544,7 @@ async function createMixStockEntry(mix) {
                 mix.spr_name = r.message;
                 
                 frappe.show_alert({
-                    message: `✅ Shaft Production Run Created: ${r.message}. Redirecting...`,
+                    message: `Γ£à Shaft Production Run Created: ${r.message}. Redirecting...`,
                     indicator: 'green'
                 }, 3);
                 
@@ -1567,7 +1567,7 @@ async function createMixWO(mix) {
     createMixStockEntry(mix);
 }
 
-// Watch filteredData changes → rebuild mix rolls with saved state
+// Watch filteredData changes ΓåÆ rebuild mix rolls with saved state
 watch(filteredData, () => {
     rebuildMixRolls();
 }, { deep: false });
@@ -1643,7 +1643,7 @@ function getColorPriority(color) {
   return group ? group.priority : 50;
 }
 
-// Pure group priority — ALWAYS uses COLOR_GROUPS only, ignores customRowOrder.
+// Pure group priority ΓÇö ALWAYS uses COLOR_GROUPS only, ignores customRowOrder.
 // Use this for Kanban light/dark sorting so Matrix drag order doesn't interfere.
 function getGroupPriority(color) {
   const group = findColorGroup(color);
@@ -1722,9 +1722,9 @@ function getSortLabel(unit) {
     const config = getUnitSortConfig(unit);
     if (config.mode === 'manual') return 'Manual Sort';
     if (config.priority === 'color') {
-        return config.color === 'asc' ? 'Color (Light→Dark)' : 'Color (Dark→Light)';
+        return config.color === 'asc' ? 'Color (LightΓåÆDark)' : 'Color (DarkΓåÆLight)';
     } else if (config.priority === 'gsm') {
-        return config.gsm === 'desc' ? 'GSM (High→Low)' : 'GSM (Low→High)';
+        return config.gsm === 'desc' ? 'GSM (HighΓåÆLow)' : 'GSM (LowΓåÆHigh)';
     }
     return 'Color Sort';
 }
@@ -1763,14 +1763,14 @@ function getUnitCapacityStatus(unit) {
     if (total > limit) {
         return { 
             class: 'text-red-600 font-bold', 
-            warning: `⚠️ Over Limit (${(total - limit).toFixed(2)}T)!` 
+            warning: `ΓÜá∩╕Å Over Limit (${(total - limit).toFixed(2)}T)!` 
         };
     }
     // Warning (Orange) if near limit (within 10%)
     if (total > limit * 0.9) {
         return { 
             class: 'text-orange-600 font-bold', 
-            warning: `⚠️ Near Limit` 
+            warning: `ΓÜá∩╕Å Near Limit` 
         };
     }
     
@@ -1782,7 +1782,7 @@ function getUnitCapacityStatus(unit) {
 async function initSortable() {
   if (!columnRefs.value && !monthlyCellRefs.value) return;
 
-  // Cancel any pending matrix init — prevents race condition
+  // Cancel any pending matrix init ΓÇö prevents race condition
   if (matrixInitTimer !== null) {
       clearTimeout(matrixInitTimer);
       matrixInitTimer = null;
@@ -2003,7 +2003,7 @@ async function initSortable() {
                              const extraMsg = overflowData.message || '';
                              
                              const d = new frappe.ui.Dialog({
-                                title: '⚠️ Capacity Full',
+                                title: 'ΓÜá∩╕Å Capacity Full',
                                 fields: [{
                                      fieldtype: 'HTML', fieldname: 'msg',
                                      options: `<div style="text-align:center; padding:10px;">
@@ -2014,7 +2014,7 @@ async function initSortable() {
                                          <p class="mt-2 text-green-600 font-bold">Available Space: ${avail.toFixed(3)}T</p>
                                      </div>`
                                 }],
-                                primary_action_label: '🧠 Smart Move',
+                                primary_action_label: '≡ƒºá Smart Move',
                                 primary_action: async () => {
                                     d.hide();
                                     const res2 = await frappe.call({
@@ -2031,15 +2031,15 @@ async function initSortable() {
                                 secondary_action: () => { d.hide(); renderKey.value++; }
                              });
                              
-                             // Move to Next Day button (strict — same unit, next day)
-                             d.add_custom_action('📅 Next Day', async () => {
+                             // Move to Next Day button (strict ΓÇö same unit, next day)
+                             d.add_custom_action('≡ƒôà Next Day', async () => {
                                  d.hide();
                                  const res3 = await frappe.call({
                                      method: "production_scheduler.api.update_schedule",
                                      args: { item_name: itemName, unit: moveUnit, date: moveDate, index: 0, strict_next_day: 1 }
                                  });
                                  if (res3.message && res3.message.status === 'overflow') {
-                                     // Next day also full — show dialog again for that date
+                                     // Next day also full ΓÇö show dialog again for that date
                                      showOverflowDialog(res3.message, res3.message.target_date, res3.message.target_unit);
                                  } else if (res3.message && res3.message.status === 'success') {
                                      const dest = res3.message.moved_to;
@@ -2075,7 +2075,7 @@ async function initSortable() {
                     }
                  } catch (e) {
                      console.error(e);
-                     frappe.msgprint("❌ Move Failed");
+                     frappe.msgprint("Γ¥î Move Failed");
                      renderKey.value++;
                  }
                  }, 50);
@@ -2207,7 +2207,7 @@ function showGlobalSortInfo() {
         .join("");
 
     const d = new frappe.ui.Dialog({
-        title: `🎨 Global Sort & Mix Rules`,
+        title: `≡ƒÄ¿ Global Sort & Mix Rules`,
         fields: [{
             fieldtype: 'HTML',
             fieldname: 'info',
@@ -2215,12 +2215,12 @@ function showGlobalSortInfo() {
                 <div style="padding:10px;">
                     <div style="margin-bottom:15px; padding:8px; background:#f3f4f6; border-radius:4px;">
                         <p style="font-weight:bold; margin-bottom:4px;">Global Sorting Strategy</p>
-                        <p>All views enforce <b>Light → Dark</b> and <b>Low → High GSM</b> sorting by default.</p>
+                        <p>All views enforce <b>Light ΓåÆ Dark</b> and <b>Low ΓåÆ High GSM</b> sorting by default.</p>
                     </div>
                     
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
                         <div>
-                            <p style="font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;">Color Sequence (Light→Dark)</p>
+                            <p style="font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;">Color Sequence (LightΓåÆDark)</p>
                             <ul style="list-style:none; padding:0; height:200px; overflow-y:auto; border:1px solid #eee;">
                                 ${colorOrder}
                             </ul>
@@ -2264,7 +2264,7 @@ function showSortInfo(unit) {
         .join("");
 
     const d = new frappe.ui.Dialog({
-        title: `ℹ️ Sort & Mix Rules: ${unit}`,
+        title: `Γä╣∩╕Å Sort & Mix Rules: ${unit}`,
         fields: [{
             fieldtype: 'HTML',
             fieldname: 'info',
@@ -2273,12 +2273,12 @@ function showSortInfo(unit) {
                     <div style="margin-bottom:15px; padding:8px; background:#f3f4f6; border-radius:4px;">
                         <p style="font-weight:bold; margin-bottom:4px;">Current Strategy:</p>
                         <p>Priority: <b>${isColor ? 'Color' : 'GSM'}</b></p>
-                        <p>Direction: <b>${direction === 'asc' ? (isColor ? 'Light → Dark' : 'Low → High') : (isColor ? 'Dark → Light' : 'High → Low')}</b></p>
+                        <p>Direction: <b>${direction === 'asc' ? (isColor ? 'Light ΓåÆ Dark' : 'Low ΓåÆ High') : (isColor ? 'Dark ΓåÆ Light' : 'High ΓåÆ Low')}</b></p>
                     </div>
                     
                     <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
                         <div>
-                            <p style="font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;">Color Sequence (Light→Dark)</p>
+                            <p style="font-weight:bold; border-bottom:1px solid #ddd; margin-bottom:5px;">Color Sequence (LightΓåÆDark)</p>
                             <ul style="list-style:none; padding:0; height:200px; overflow-y:auto; border:1px solid #eee;">
                                 ${colorOrder}
                             </ul>
@@ -2735,29 +2735,29 @@ async function analyzePreviousFlow() {
 
             if (prevItems && prevItems.length > 0) {
                // Sort yesterday's items the same way they would have been displayed
-               // (by their stored idx — the actual run order saved to DB)
+               // (by their stored idx ΓÇö the actual run order saved to DB)
                const sorted = [...prevItems].sort((a, b) => (a.idx || 0) - (b.idx || 0));
                const lastItem = sorted[sorted.length - 1];
                
                // DARK/LIGHT threshold:
                // Dark = priority >= 50 (Red, Maroon, Purple, Blue, Green, Grey, Brown, Black)
                // Light = priority < 50 (White, Ivory, Yellow, Orange, Pink)
-               // Use getGroupPriority — NOT getColorPriority — so Matrix customRowOrder
+               // Use getGroupPriority ΓÇö NOT getColorPriority ΓÇö so Matrix customRowOrder
                // does not affect this decision
                const lastPri = getGroupPriority(lastItem.color);
                
                // Rule (as stated by user):
-               // Yesterday ended LIGHT (pri < 50)  → today start LIGHT → DARK ('asc')
-               // Yesterday ended DARK  (pri >= 50) → today start DARK  → LIGHT ('desc')
+               // Yesterday ended LIGHT (pri < 50)  ΓåÆ today start LIGHT ΓåÆ DARK ('asc')
+               // Yesterday ended DARK  (pri >= 50) ΓåÆ today start DARK  ΓåÆ LIGHT ('desc')
                if (lastPri >= 50) {
-                  config.color = 'desc'; // Ended Dark  → today: Dark → Light
+                  config.color = 'desc'; // Ended Dark  ΓåÆ today: Dark ΓåÆ Light
                } else {
-                  config.color = 'asc';  // Ended Light → today: Light → Dark
+                  config.color = 'asc';  // Ended Light ΓåÆ today: Light ΓåÆ Dark
                }
                config.mode = 'auto';
                config.priority = 'color';
                
-               console.log(`Unit ${unit}: Yesterday last color="${lastItem.color}" (pri=${lastPri}) → today sort: ${config.color}`);
+               console.log(`Unit ${unit}: Yesterday last color="${lastItem.color}" (pri=${lastPri}) ΓåÆ today sort: ${config.color}`);
                
                // GSM Logic - Smart Gap Minimization
                const lastGsm = parseFloat(lastItem.gsm || 0);
@@ -2772,10 +2772,10 @@ async function analyzePreviousFlow() {
                    const gapDesc = Math.abs(lastGsm - maxGsm); // Start High
                    
                    config.gsm = gapDesc < gapAsc ? 'desc' : 'asc';
-                   console.log(`Unit ${unit} GSM: Last=${lastGsm} Min=${minGsm} Max=${maxGsm} → ${config.gsm}`);
+                   console.log(`Unit ${unit} GSM: Last=${lastGsm} Min=${minGsm} Max=${maxGsm} ΓåÆ ${config.gsm}`);
                }
             } else {
-               // No data yesterday for this unit — default to Light→Dark
+               // No data yesterday for this unit ΓÇö default to LightΓåÆDark
                config.color = 'asc';
                config.mode = 'auto';
                config.priority = 'color';
@@ -2784,7 +2784,7 @@ async function analyzePreviousFlow() {
         
         
         frappe.show_alert({ message: "Sort updated from previous day", indicator: "blue" }, 3);
-        // Only force re-render for kanban — matrix is already reactive via rawData
+        // Only force re-render for kanban ΓÇö matrix is already reactive via rawData
         if (viewMode.value !== 'matrix') {
             renderKey.value++;
         }
@@ -2795,7 +2795,7 @@ async function analyzePreviousFlow() {
   }
 }
 
-// View Scope Logic — only weekly and monthly
+// View Scope Logic ΓÇö only weekly and monthly
 async function toggleViewScope() {
   if (viewScope.value === 'weekly') {
       viewScope.value = 'monthly';
@@ -3055,7 +3055,7 @@ async function pushToProductionBoard() {
         };
     });
 
-    // ✅ SORT: Apply the Saved Sequence from Approval Dashboard (Manager's arrangement)
+    // Γ£à SORT: Apply the Saved Sequence from Approval Dashboard (Manager's arrangement)
     masterSequence.sort((a, b) => {
         // Group by Unit first
         const unitNorm = (u) => (u || 'Unit 1').toUpperCase().trim();
@@ -3131,17 +3131,17 @@ async function pushToProductionBoard() {
                 lastUnit = currentNorm;
                 unitDivider = `<tr style="background:#f1f5f9;color:#1e293b;font-size:11px;font-weight:700;border-bottom:1px solid #e2e8f0;">
                     <td colspan="10" style="padding:4px 12px;display:flex;align-items:center;gap:6px;">
-                        <span style="font-size:14px;">📦</span> 
+                        <span style="font-size:14px;">≡ƒôª</span> 
                         <span style="letter-spacing:0.05em;text-transform:uppercase;">${esc(currentNorm)}</span>
                     </td>
                 </tr>`;
             }
-            const bridge = item.is_seed_bridge ? ' 🔗' : '';
+            const bridge = item.is_seed_bridge ? ' ≡ƒöù' : '';
             const isPushed = item.pushed;
             const rowBg = smartSequenceActive ? getPhaseColor(item.phase) : (isPushed ? '#f8fafc' : '#fff');
             const rowOpacity = isPushed ? '0.6' : '1';
             const checked = item.checked !== false;
-            const qty_str = item.qty ? parseFloat(item.qty).toFixed(0) + ' Kg' : '—';
+            const qty_str = item.qty ? parseFloat(item.qty).toFixed(0) + ' Kg' : 'ΓÇö';
             
             let actionHtml = '';
             if (item.pushed) {
@@ -3150,7 +3150,7 @@ async function pushToProductionBoard() {
                 actionHtml = `<input type="checkbox" data-idx="${i}" ${checked ? 'checked' : ''} style="cursor:pointer;width:16px;height:16px;accent-color:#2563eb;">`;
             }
 
-            const dragHandle = item.pushed ? '' : `<span class="drag-handle" style="cursor:grab;color:#94a3b8;font-size:16px;padding:0 8px;user-select:none;display:flex;align-items:center;" title="Drag to reorder">⠿</span>`;
+            const dragHandle = item.pushed ? '' : `<span class="drag-handle" style="cursor:grab;color:#94a3b8;font-size:16px;padding:0 8px;user-select:none;display:flex;align-items:center;" title="Drag to reorder">Γá┐</span>`;
             
             const statusBadge = item.approvalStatus === 'Approved' 
                 ? '<span style="color:#16a34a;background:#f0fdf4;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;">APPROVED</span>'
@@ -3161,7 +3161,7 @@ async function pushToProductionBoard() {
                         : '<span style="color:#64748b;background:#f1f5f9;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700;">DRAFT</span>'));
 
             const partyInfo = `
-                <div style="font-size:11px;font-weight:600;color:#1e293b;">${esc(item.partyName) || '—'}</div>
+                <div style="font-size:11px;font-weight:600;color:#1e293b;">${esc(item.partyName) || 'ΓÇö'}</div>
                 <div style="font-size:9px;color:#64748b;">${esc(item.partyCode)} | ${esc(item.customer)}</div>
             `;
 
@@ -3172,12 +3172,12 @@ async function pushToProductionBoard() {
                 </td>
                 <td style="padding:6px;font-weight:bold;color:#64748b;font-size:11px;text-align:center;">${item.sequence_no}${bridge}</td>
                 <td style="padding:6px;font-size:12px;font-weight:700;color:#1e293b;">
-                    <div>${esc(item.color) || '—'}</div>
+                    <div>${esc(item.color) || 'ΓÇö'}</div>
                     <div style="font-size:9px;font-weight:400;color:#64748b;">${esc(item.description || item.itemName || '')}</div>
                 </td>
-                <td style="padding:6px;font-size:11px;color:#475569;">${esc(item.quality) || '—'}</td>
-                <td style="padding:6px;font-size:11px;color:#475569;text-align:center;">${esc(item.gsm) || '—'}</td>
-                <td style="padding:6px;font-size:11px;color:#475569;">${esc(item.unit) || '—'}</td>
+                <td style="padding:6px;font-size:11px;color:#475569;">${esc(item.quality) || 'ΓÇö'}</td>
+                <td style="padding:6px;font-size:11px;color:#475569;text-align:center;">${esc(item.gsm) || 'ΓÇö'}</td>
+                <td style="padding:6px;font-size:11px;color:#475569;">${esc(item.unit) || 'ΓÇö'}</td>
                 <td style="padding:6px;">${partyInfo}</td>
                 <td style="padding:6px;text-align:center;">${statusBadge}</td>
                 <td style="padding:6px;font-size:11px;text-align:right;font-weight:700;color:#1e293b;">${qty_str}</td>
@@ -3188,7 +3188,7 @@ async function pushToProductionBoard() {
             <table style="width:100%;border-collapse:collapse;font-family:Inter,sans-serif;">
                 <thead style="background:#f8fafc;color:#64748b;position:sticky;top:0;z-index:2;border-bottom:2px solid #e2e8f0;">
                     <tr>
-                        <th style="padding:8px 6px;width:32px;text-align:center;">☰</th>
+                        <th style="padding:8px 6px;width:32px;text-align:center;">Γÿ░</th>
                         <th style="padding:8px 6px;width:36px;text-align:center;"><input type="checkbox" id="mtp-check-all" style="cursor:pointer;width:16px;height:16px;accent-color:#2563eb;"></th>
                         <th style="padding:8px 6px;width:34px;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">#</th>
                         <th style="padding:8px 6px;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;text-align:left;">Color</th>
@@ -3254,7 +3254,7 @@ async function pushToProductionBoard() {
                 </div>
                 ${isDateMismatch ? `
                     <div style="background:#fff7ed; border:1px solid #ffedd5; padding:4px 10px; border-radius:20px; color:#c2410c; font-size:10px; font-weight:700; display:flex; align-items:center; gap:5px;">
-                        <i class="fa fa-exchange"></i> Cross-Date: ${activeFetchDates.join(",")} ➔ ${activeTargetDate}
+                        <i class="fa fa-exchange"></i> Cross-Date: ${activeFetchDates.join(",")} Γ₧ö ${activeTargetDate}
                     </div>
                 ` : ''}
                 <div style="cursor:pointer; color:#2563eb; font-size:12px; margin-left: auto;" onclick="window.refreshPushStatus()" title="Refresh Status">
@@ -3279,7 +3279,7 @@ async function pushToProductionBoard() {
         <div style="margin-bottom:12px;display:flex;flex-direction:column;background:#fff;padding:4px 0;">
             <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
                 ${statusSummary}
-                ${smartSequenceActive ? '<span style="font-size:10px;color:#166534;background:#dcfce7;padding:5px 12px;border-radius:20px;font-weight:600;display:flex;align-items:center;gap:4px;">✨ Smart Sequenced</span>' : ''}
+                ${smartSequenceActive ? '<span style="font-size:10px;color:#166534;background:#dcfce7;padding:5px 12px;border-radius:20px;font-weight:600;display:flex;align-items:center;gap:4px;">Γ£¿ Smart Sequenced</span>' : ''}
             </div>
             ${smartSeedsHtml}
         </div>
@@ -3372,7 +3372,7 @@ async function pushToProductionBoard() {
                     <div style="padding:10px;border-radius:12px;border:1px solid ${isOver ? '#fecaca' : '#e2e8f0'};background:${isOver ? '#fef2f2' : (pDate === targetDate ? '#fff' : '#f8fafc')};box-shadow:0 1px 2px rgba(0,0,0,0.05);">
                         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                             <span style="font-weight:700;font-size:10px;color:${isOver ? '#dc2626' : '#64748b'};text-transform:uppercase;">${u} ${pDate === targetDate ? '' : '('+pDate+')'}</span>
-                            <span style="font-size:12px;">${isOver ? '⚠️' : '✅'}</span>
+                            <span style="font-size:12px;">${isOver ? 'ΓÜá∩╕Å' : 'Γ£à'}</span>
                         </div>
                         <div style="font-size:13px;font-weight:800;color:${isOver ? '#b91c1c' : '#1e293b'};">${totalDayLoad.toFixed(2)} / ${limit.toFixed(1)}T</div>
                         <div style="height:4px;background:#f1f5f9;border-radius:2px;margin:8px 0;overflow:hidden;">
@@ -3392,10 +3392,9 @@ async function pushToProductionBoard() {
     }
 
     var d = new frappe.ui.Dialog({
-        title: '🚀 Push to Production Board',
+        title: '≡ƒÜÇ Push to Production Board',
         fields: [
             { fieldname: 'fetch_dates', fieldtype: 'Data', label: 'Fetch Date(s)', default: (fetchDates.join(", ") || defaultTargetDate), read_only: 1 },
-            { fieldname: 'plan_name_display', fieldtype: 'Data', label: 'Current Plan', default: selectedPlanLabel.value, read_only: 1 },
             { fieldtype: 'Column Break' },
             { fieldname: 'target_date', fieldtype: 'Date', label: 'Target Date', default: defaultTargetDate, reqd: 1, description: 'Push start point.' },
             
@@ -3419,11 +3418,11 @@ async function pushToProductionBoard() {
             { fieldtype: 'Section Break', label: 'Capacity Preview' },
             { fieldname: 'global_capacity_info', fieldtype: 'HTML', label: '' }
         ],
-        primary_action_label: overallStatus === 'Approved' ? '🚀 Push to Board' : 
-                          (overallStatus === 'Rejected' ? '📤 Re-submit for Approval' :
+        primary_action_label: overallStatus === 'Approved' ? '≡ƒÜÇ Push to Board' : 
+                          (overallStatus === 'Rejected' ? '≡ƒôñ Re-submit for Approval' :
                           ((overallStatus === 'Pending Approval' || (overallStatus === 'Draft' && canApprove)) ? 
-                           (canApprove ? '✅ Approve Arrangement' : '⏳ Waiting for Approval') : 
-                           '📤 Request Arrangement Approval')),
+                           (canApprove ? 'Γ£à Approve Arrangement' : 'ΓÅ│ Waiting for Approval') : 
+                           '≡ƒôñ Request Arrangement Approval')),
         primary_action: async (values) => {
             const targetDate = (values.target_date || defaultTargetDate || today).trim();
             const currentStatus = dialogOverallStatus || d.overallStatus || overallStatus;
@@ -3496,20 +3495,8 @@ async function pushToProductionBoard() {
             if (checkedItems.length === 0) { frappe.msgprint('No items selected.'); return; }
 
             const pBtn = d.get_primary_btn();
+            pBtn.prop('disabled', true).text('ΓÅ│ Pushing...');
             
-            // CASCADE CONFIRMATION
-            if (d.capacityExceeded) {
-                const confirmed = await new Promise(resolve => {
-                    frappe.confirm(
-                        '<b>Capacity Warning:</b> Some items will be pushed to the next day due to capacity overflow. Continue?',
-                        () => resolve(true),
-                        () => resolve(false)
-                    );
-                });
-                if (!confirmed) return;
-            }
-
-            pBtn.prop('disabled', true).text('⏳ Pushing...');
             frappe.show_alert({ message: `Pushing ${checkedItems.length} items from fetch date(s) to ${targetDate}...`, indicator: 'blue' });
 
             try {
@@ -3535,7 +3522,7 @@ async function pushToProductionBoard() {
                     }
                 });
                 if (r.message && r.message.status === 'success') {
-                    pBtn.text('✅ Pushed').css({'background-color': '#059669', 'color': 'white'});
+                    pBtn.text('Γ£à Pushed').css({'background-color': '#059669', 'color': 'white'});
                     
                     const pushedCount = r.message.count || r.message.moved_items || itemsToMove.length;
                     let dateMsg = '';
@@ -3546,7 +3533,7 @@ async function pushToProductionBoard() {
                     }
 
                     frappe.show_alert({
-                        message: `✅ Pushed ${pushedCount} item(s)${dateMsg} to Production Board`,
+                        message: `Γ£à Pushed ${pushedCount} item(s)${dateMsg} to Production Board`,
                         indicator: 'green'
                     });
                     setTimeout(() => {
@@ -3554,7 +3541,7 @@ async function pushToProductionBoard() {
                         fetchData();
                     }, 1500);
                 } else {
-                    pBtn.prop('disabled', false).text('🚀 Push to Board');
+                    pBtn.prop('disabled', false).text('≡ƒÜÇ Push to Board');
                     frappe.msgprint(r.message?.message || 'Push failed.');
                 }
             } catch (e) {
@@ -3598,7 +3585,7 @@ async function pushToProductionBoard() {
                 }
             });
 
-            // ✅ Sync unitSortConfig so that 'Smart Auto-Tick' sees the same sequence
+            // Γ£à Sync unitSortConfig so that 'Smart Auto-Tick' sees the same sequence
             if (msg.sequence && msg.sequence.length) {
                 try {
                     const names = msg.sequence;
@@ -3666,11 +3653,11 @@ async function pushToProductionBoard() {
         d.set_df_property('sequence_html', 'options', buildDialogHtml(currentSequence, newOverallStatus));
         setTimeout(() => { wireCheckboxes(); updateCountLabel(); }, 50);
         
-        const label = newOverallStatus === 'Approved' ? '🚀 Push to Board' : 
-                     (newOverallStatus === 'Rejected' ? '📤 Re-submit for Approval' :
+        const label = newOverallStatus === 'Approved' ? '≡ƒÜÇ Push to Board' : 
+                     (newOverallStatus === 'Rejected' ? '≡ƒôñ Re-submit for Approval' :
                      ((newOverallStatus === 'Pending Approval' || (newOverallStatus === 'Draft' && canApprove)) ? 
-                      (canApprove ? '✅ Approve Arrangement' : '⏳ Waiting for Approval') : 
-                      '📤 Request Arrangement Approval'));
+                      (canApprove ? 'Γ£à Approve Arrangement' : 'ΓÅ│ Waiting for Approval') : 
+                      '≡ƒôñ Request Arrangement Approval'));
         
         const $btn = d.get_primary_btn();
         $btn.text(label);
@@ -3803,7 +3790,7 @@ async function pushToProductionBoard() {
             });
         });
 
-        // ── Drag-and-drop reorder using SortableJS ──
+        // ΓöÇΓöÇ Drag-and-drop reorder using SortableJS ΓöÇΓöÇ
         const tbody = container.querySelector('tbody');
         if (tbody && window.Sortable) {
             if (tbody._sortable) tbody._sortable.destroy();
@@ -3831,7 +3818,7 @@ async function pushToProductionBoard() {
                         d.overallStatus = 'Draft';
                         dialogApprovalMeta = null;
                         // Update button label and style immediately
-                        const label = '📤 Request Arrangement Approval';
+                        const label = '≡ƒôñ Request Arrangement Approval';
                         const $btn = d.get_primary_btn();
                         $btn.text(label).css({'background-color': '#d97706', 'border': 'none', 'box-shadow': '0 4px 6px -1px rgba(217, 119, 6, 0.2)'});
                     }
@@ -3856,12 +3843,12 @@ async function pushToProductionBoard() {
     }
 
     // Add Smart Push button to Dialog Footer
-    d.add_custom_action('🧠 Smart Auto-Tick', async () => {
+    d.add_custom_action('≡ƒºá Smart Auto-Tick', async () => {
         if (smartSequenceActive) return; // Already active
         
         d.get_close_btn().hide();
         const smartBtn = d.$wrapper.find('.btn-custom').last();
-        smartBtn.text('⏳ Sequencing...');
+        smartBtn.text('ΓÅ│ Sequencing...');
         smartBtn.prop('disabled', true);
         
         try {
@@ -3912,7 +3899,7 @@ async function pushToProductionBoard() {
                     d.overallStatus = 'Draft';
                     dialogApprovalMeta = null;
                     const $btn = d.get_primary_btn();
-                    $btn.text('📤 Request Arrangement Approval').css({'background-color': '#d97706', 'border': 'none', 'box-shadow': '0 4px 6px -1px rgba(217, 119, 6, 0.2)'});
+                    $btn.text('≡ƒôñ Request Arrangement Approval').css({'background-color': '#d97706', 'border': 'none', 'box-shadow': '0 4px 6px -1px rgba(217, 119, 6, 0.2)'});
                     
                     // Force update the UI status badge
                     const $statusWrapper = d.$wrapper.find('.modal-content [style*="background:#f1f5f9"]');
@@ -3977,7 +3964,7 @@ async function pushToProductionBoard() {
                     return mapped;
                 });
 
-                // ✅ SMART ORDER PRESERVED: We no longer re-sort by savedSequence here 
+                // Γ£à SMART ORDER PRESERVED: We no longer re-sort by savedSequence here 
                 // because the user explicitly requested a "Smart" sequence from the backend.
                 // Smart sequence only returns un-pushed items. 
                 // Pushed items (fixed seeds) MUST be at the BOTTOM.
@@ -3997,7 +3984,7 @@ async function pushToProductionBoard() {
             console.error('Smart sequence error', e);
             frappe.show_alert({ message: 'Smart sequence failed', indicator: 'red' });
         } finally {
-            smartBtn.text('✅ Smart Sequenced');
+            smartBtn.text('Γ£à Smart Sequenced');
             d.get_close_btn().show();
         }
     });
@@ -4019,13 +4006,13 @@ async function pushToProductionBoard() {
 // ---- MOVE TO PLAN ----
 async function openMovePlanDialog() {
     // 1. Get ALL items from the current plan (rawData filtered by plan)
-    //    Exclude white orders — they stay in the current plan
+    //    Exclude white orders ΓÇö they stay in the current plan
     const allItems = rawData.value.filter(d => {
         const planOk = selectedPlan.value === 'Default'
             ? (!d.planName || d.planName === '' || d.planName === 'Default')
             : d.planName === selectedPlan.value;
         if (!planOk) return false;
-        // Exclude white colors — only show color orders in move dialog
+        // Exclude white colors ΓÇö only show color orders in move dialog
         const colorUpper = (d.color || "").toUpperCase();
         if (EXCLUDED_WHITES.some(ex => colorUpper.includes(ex))) return false;
         return true;
@@ -4050,7 +4037,7 @@ async function openMovePlanDialog() {
     const moveableItems = allItems.filter(i => !i.has_wo);
     const lockedItems   = allItems.filter(i => i.has_wo);
 
-    // 4. Sort moveable items: Color (Light→Dark), then Unit, then GSM
+    // 4. Sort moveable items: Color (LightΓåÆDark), then Unit, then GSM
     const sorted = [...moveableItems].sort((a, b) => {
         const pA = getGroupPriority(a.color), pB = getGroupPriority(b.color);
         if (pA !== pB) return pA - pB;
@@ -4086,16 +4073,16 @@ async function openMovePlanDialog() {
                 <td style="padding:5px 6px;font-size:11px;text-align:center;">${item.gsm||'-'}</td>
                 <td style="padding:5px 6px;font-size:11px;text-align:right;font-weight:600;">${wt} T</td>
                 <td style="padding:5px 6px;font-size:11px;color:#888;">${item.partyCode||item.customer||'-'}</td>
-                <td style="padding:5px 6px;text-align:center;"><span style="color:#16a34a;font-size:10px;font-weight:600;">✓ FREE</span></td>
+                <td style="padding:5px 6px;text-align:center;"><span style="color:#16a34a;font-size:10px;font-weight:600;">Γ£ô FREE</span></td>
             </tr>`;
         }).join('');
 
-        // Locked rows (WO exists — stays in original plan)
+        // Locked rows (WO exists ΓÇö stays in original plan)
         const lockRows = lockedItems.map(item => {
             const hex = getHexColor(item.color);
             const wt = ((item.qty||0)/1000).toFixed(3);
             return `<tr style="border-bottom:1px solid #f1f5f9;opacity:0.5;background:#fef9c3;">
-                <td style="padding:5px 6px;text-align:center;">—</td>
+                <td style="padding:5px 6px;text-align:center;">ΓÇö</td>
                 <td style="padding:5px 6px;">
                     <div style="display:flex;align-items:center;gap:6px;">
                         <span style="width:12px;height:12px;background:${hex};border-radius:2px;border:1px solid #ccc;flex-shrink:0;display:inline-block;"></span>
@@ -4107,7 +4094,7 @@ async function openMovePlanDialog() {
                 <td style="padding:5px 6px;font-size:11px;text-align:center;">${item.gsm||'-'}</td>
                 <td style="padding:5px 6px;font-size:11px;text-align:right;font-weight:600;">${wt} T</td>
                 <td style="padding:5px 6px;font-size:11px;color:#888;">${item.partyCode||item.customer||'-'}</td>
-                <td style="padding:5px 6px;text-align:center;"><span style="color:#dc2626;font-size:10px;font-weight:600;">🔒 WO</span></td>
+                <td style="padding:5px 6px;text-align:center;"><span style="color:#dc2626;font-size:10px;font-weight:600;">≡ƒöÆ WO</span></td>
             </tr>`;
         }).join('');
 
@@ -4119,9 +4106,9 @@ async function openMovePlanDialog() {
             <div style="display:flex;gap:12px;margin-bottom:10px;align-items:center;background:#f8fafc;padding:10px 14px;border-radius:8px;border:1px solid #e2e8f0;">
                 <div>
                     <div style="font-size:10px;color:#64748b;margin-bottom:2px;">SOURCE PLAN</div>
-                    <div style="font-weight:700;color:#0f172a;font-size:13px;">📋 ${selectedPlan.value}</div>
+                    <div style="font-weight:700;color:#0f172a;font-size:13px;">≡ƒôï ${selectedPlan.value}</div>
                 </div>
-                <div style="font-size:20px;color:#94a3b8;padding:0 6px;">→</div>
+                <div style="font-size:20px;color:#94a3b8;padding:0 6px;">ΓåÆ</div>
                 <div>
                     <div style="font-size:10px;color:#64748b;margin-bottom:2px;">TARGET PLAN</div>
                     <select id="mtp-target-plan" style="font-weight:700;border:1px solid #7c3aed;padding:5px 8px;border-radius:6px;font-size:12px;color:#7c3aed;background:#faf5ff;">
@@ -4132,10 +4119,10 @@ async function openMovePlanDialog() {
 
             <!-- Summary badges -->
             <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;flex-wrap:wrap;">
-                <span style="background:#dcfce7;color:#16a34a;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;">✓ ${sorted.length} moveable (${totalMoveT} T)</span>
-                ${lockedItems.length>0?`<span style="background:#fef9c3;color:#b45309;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;">🔒 ${lockedItems.length} WO locked — stays in ${selectedPlan.value} (${totalLockT} T)</span>`:''}
-                <button onclick="document.querySelectorAll('.mtp-check').forEach(c=>c.checked=true)" style="font-size:10px;padding:3px 8px;cursor:pointer;border:1px solid #10b981;color:#10b981;background:#f0fdf4;border-radius:4px;margin-left:auto;">✅ All</button>
-                <button onclick="document.querySelectorAll('.mtp-check').forEach(c=>c.checked=false)" style="font-size:10px;padding:3px 8px;cursor:pointer;border:1px solid #ef4444;color:#ef4444;background:#fef2f2;border-radius:4px;">❌ None</button>
+                <span style="background:#dcfce7;color:#16a34a;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;">Γ£ô ${sorted.length} moveable (${totalMoveT} T)</span>
+                ${lockedItems.length>0?`<span style="background:#fef9c3;color:#b45309;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;">≡ƒöÆ ${lockedItems.length} WO locked ΓÇö stays in ${selectedPlan.value} (${totalLockT} T)</span>`:''}
+                <button onclick="document.querySelectorAll('.mtp-check').forEach(c=>c.checked=true)" style="font-size:10px;padding:3px 8px;cursor:pointer;border:1px solid #10b981;color:#10b981;background:#f0fdf4;border-radius:4px;margin-left:auto;">Γ£à All</button>
+                <button onclick="document.querySelectorAll('.mtp-check').forEach(c=>c.checked=false)" style="font-size:10px;padding:3px 8px;cursor:pointer;border:1px solid #ef4444;color:#ef4444;background:#fef2f2;border-radius:4px;">Γ¥î None</button>
             </div>
 
             <!-- Unit Filter Buttons -->
@@ -4169,14 +4156,14 @@ async function openMovePlanDialog() {
                     </tbody>
                 </table>
             </div>
-            ${lockedItems.length>0?`<p style="font-size:10px;color:#b45309;margin-top:6px;padding:6px 10px;background:#fef9c3;border-radius:4px;">⚠️ Yellow rows have Work Orders — they will <b>remain in "${selectedPlan.value}"</b> on the same date after the move.</p>`:''}
+            ${lockedItems.length>0?`<p style="font-size:10px;color:#b45309;margin-top:6px;padding:6px 10px;background:#fef9c3;border-radius:4px;">ΓÜá∩╕Å Yellow rows have Work Orders ΓÇö they will <b>remain in "${selectedPlan.value}"</b> on the same date after the move.</p>`:''}
         </div>`;
     };
 
     const d = new frappe.ui.Dialog({
-        title: `📥 Move Orders to Another Plan`,
+        title: `≡ƒôÑ Move Orders to Another Plan`,
         fields: [{ fieldtype: 'HTML', fieldname: 'move_table', options: buildTable() }],
-        primary_action_label: '🚀 Move Selected',
+        primary_action_label: '≡ƒÜÇ Move Selected',
         primary_action: async () => {
             const targetPlan = document.getElementById('mtp-target-plan')?.value;
             if (!targetPlan) { frappe.msgprint('Select a target plan.'); return; }
@@ -4239,13 +4226,13 @@ async function openMovePlanDialog() {
 
                 if (r.message) {
                     const { moved, errors, skipped } = r.message;
-                    if (moved > 0) frappe.show_alert({ message: `✅ Moved ${moved} items to "${targetPlan}"`, indicator: 'green' });
+                    if (moved > 0) frappe.show_alert({ message: `Γ£à Moved ${moved} items to "${targetPlan}"`, indicator: 'green' });
                     if (skipped?.length > 0) {
                         console.warn('Skipped (cancelled SO):', skipped);
                     }
                     if (errors?.length > 0) {
                         frappe.msgprint({
-                            title: '⚠️ Some items blocked',
+                            title: 'ΓÜá∩╕Å Some items blocked',
                             message: `<ul>${errors.map(e=>`<li>${e}</li>`).join('')}</ul>`,
                             indicator: 'orange'
                         });
@@ -4259,7 +4246,7 @@ async function openMovePlanDialog() {
 
             } catch (e) {
                 console.error('Move to plan failed', e);
-                frappe.msgprint('❌ Error moving orders.');
+                frappe.msgprint('Γ¥î Error moving orders.');
             }
         },
         secondary_action_label: 'Cancel',
@@ -4326,7 +4313,7 @@ async function fetchData() {
       args = { date: filterOrderDate.value };
   }
   
-  // ✅ IMPROVEMENT: Fetch ALL plans for the date range
+  // Γ£à IMPROVEMENT: Fetch ALL plans for the date range
   // This allows the Matrix View to maintain a consistent color legend 
   // even if the currently selected plan is empty.
   await fetchPlans(args); // Load plan names for the dropdown
@@ -4624,7 +4611,7 @@ watch(filterStatus, updateUrlParams);
 watch(selectedPlan, updateUrlParams);
 
 // Re-init Sortable when renderKey changes (forced re-render)
-// Skip if matrix — matrix init is handled by its own 150ms timer inside initSortable()
+// Skip if matrix ΓÇö matrix init is handled by its own 150ms timer inside initSortable()
 watch(renderKey, () => {
     nextTick(() => {
         if (viewMode.value !== 'matrix') {
@@ -4903,9 +4890,9 @@ async function openPushColorDialog(color, inputTargetDate = null) {
     // Determine the default target date based on what was passed in, falling back to the global filter or today
     const dialogTargetDate = inputTargetDate || filterOrderDate.value || frappe.datetime.get_today();
     
-    // ── Available options for filters ──
+    // ΓöÇΓöÇ Available options for filters ΓöÇΓöÇ
     const allForColor = rawData.value.filter(d => {
-        // ✅ FIX: Only push orders from selected plan
+        // Γ£à FIX: Only push orders from selected plan
         if (selectedPlan.value && selectedPlan.value !== 'Default') {
             if (d.planName !== selectedPlan.value && d.planName !== selectedPlanLabel.value) return false;
         } else {
@@ -4947,7 +4934,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
     const gsmOptions = [...new Set(allForColor.map(d => String(d.gsm || "").trim()).filter(Boolean))];
 
     const d = new frappe.ui.Dialog({
-        title: `📤 Push ${color} to Production Board`,
+        title: `≡ƒôñ Push ${color} to Production Board`,
         fields: [
             { fieldname: "target_date", label: "Target Date", fieldtype: "Date", reqd: 1, default: dialogTargetDate },
             { fieldname: "filters_info", label: "Filters", fieldtype: "HTML" },
@@ -4972,13 +4959,13 @@ async function openPushColorDialog(color, inputTargetDate = null) {
                      freeze: true
                  });
                  if (r.message && r.message.status === 'success') {
-                     d.get_primary_btn().text("✅ Pushed").css({"background-color": "#10b981", "color": "white"});
+                     d.get_primary_btn().text("Γ£à Pushed").css({"background-color": "#10b981", "color": "white"});
                      let dateMsg = '';
                     if (r.message.dates && r.message.dates.length > 0) {
                         dateMsg = ` to ${r.message.dates.join(', ')}`;
                     }
                     frappe.show_alert({
-                        message: `✅ Pushed ${r.message.count} order(s)${dateMsg} to Plan "${r.message.plan_name || pbPlan}" automatically.`,
+                        message: `Γ£à Pushed ${r.message.count} order(s)${dateMsg} to Plan "${r.message.plan_name || pbPlan}" automatically.`,
                         indicator: 'green'
                     });
                      setTimeout(() => { d.hide(); fetchData(); }, 1000);
@@ -5002,12 +4989,12 @@ async function openPushColorDialog(color, inputTargetDate = null) {
             <div style="max-height: 320px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;">
                 <div style="position: sticky; top: 0; background: #f8fafc; z-index: 10; padding: 10px; border-bottom: 1px solid #e2e8f0; display:flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 12px; color: #64748b;">
                     <div><input type="checkbox" checked class="push-select-all" /> Select All</div>
-                    ${smartActive ? '<span style="font-size:11px;color:#1b5e20;background:#e8f5e9;padding:3px 8px;border-radius:10px;">✅ Smart Sequence Active</span>' : ''}
+                    ${smartActive ? '<span style="font-size:11px;color:#1b5e20;background:#e8f5e9;padding:3px 8px;border-radius:10px;">Γ£à Smart Sequence Active</span>' : ''}
                 </div>
                 <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
                     <thead style="background:#f1f5f9; color:#475569; border-bottom:1px solid #cbd5e1; text-align:left;">
                         <tr>
-                            <th style="padding:6px;width:30px;text-align:center;">✓</th>
+                            <th style="padding:6px;width:30px;text-align:center;">Γ£ô</th>
                             <th style="padding:6px;">Order Details</th>
                             <th style="padding:6px;width:110px;">Unit</th>
                             <th style="padding:6px;text-align:right;width:80px;">Qty</th>
@@ -5026,7 +5013,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
                     </td>
                     <td style="padding: 8px;">
                         <div><b style="color:#1e293b;">${item.partyCode}</b></div>
-                        <div style="color:#64748b; font-size:10px; margin-top:2px;">${item.quality} · ${item.gsm} GSM · ${item.color}</div>
+                        <div style="color:#64748b; font-size:10px; margin-top:2px;">${item.quality} ┬╖ ${item.gsm} GSM ┬╖ ${item.color}</div>
                     </td>
                     <td style="padding: 8px; width: 110px;">
                         <select class="push-unit-sel" data-item="${item.itemName}" style="width:100%; padding:4px; font-size:11px; border:1px solid #cbd5e1; border-radius:4px; background:#fff; cursor:pointer;">
@@ -5134,7 +5121,7 @@ async function goToSequenceApprovals() {
 async function revertColorGroup(color) {
     if (!confirm(`Revert pushed items for color "${color}" back to the Color Chart?`)) return;
     
-    // ✅ FIX: Only revert items from the selected plan
+    // Γ£à FIX: Only revert items from the selected plan
     const itemsToRevert = rawData.value.filter(d => {
         if (selectedPlan.value && selectedPlan.value !== 'Default') {
             if (d.planName !== selectedPlan.value && d.planName !== selectedPlanLabel.value) return false;
@@ -5157,7 +5144,7 @@ async function revertColorGroup(color) {
             args: { item_names: JSON.stringify(itemNames) }
         });
         if (r.message && r.message.status === 'success') {
-            frappe.show_alert({ message: `✅ Reverted ${r.message.reverted_items} item(s) across ${r.message.sheets_checked} planning sheet(s).`, indicator: 'green' });
+            frappe.show_alert({ message: `Γ£à Reverted ${r.message.reverted_items} item(s) across ${r.message.sheets_checked} planning sheet(s).`, indicator: 'green' });
             fetchData();
         } else {
             frappe.msgprint(r.message?.message || "Revert failed.");
@@ -5172,7 +5159,7 @@ async function restoreWhiteOrders() {
     try {
         const r = await frappe.call("production_scheduler.api.fix_recently_cleared_whites");
         if (r.message && r.message.status === 'success') {
-            frappe.show_alert({ message: `✅ Restored ${r.message.restored_count} white orders to the Board.`, indicator: 'green' });
+            frappe.show_alert({ message: `Γ£à Restored ${r.message.restored_count} white orders to the Board.`, indicator: 'green' });
             hasRecentlyReset.value = false;
             fetchData();
         }
@@ -5183,7 +5170,7 @@ async function restoreWhiteOrders() {
 
 async function emergencyReset() {
     frappe.confirm(
-        "<b>⚠️ CRITICAL WARNING</b><br><br>This will find EVERY color order currently marked as 'Pushed' and unlock them, returning them to the Color Chart.<br><br>White orders will remain safely on the Board.<br><br>Are you sure you want to perform a <b>FULL RESET</b>?",
+        "<b>ΓÜá∩╕Å CRITICAL WARNING</b><br><br>This will find EVERY color order currently marked as 'Pushed' and unlock them, returning them to the Color Chart.<br><br>White orders will remain safely on the Board.<br><br>Are you sure you want to perform a <b>FULL RESET</b>?",
         async () => {
             try {
                 const r = await frappe.call({
@@ -5208,7 +5195,7 @@ function openPullOrdersDialog() {
     
     // Create Dialog
     const d = new frappe.ui.Dialog({
-        title: '📥 Pull Orders from Date',
+        title: '≡ƒôÑ Pull Orders from Date',
         fields: [
             {
                 label: 'Source Date',
@@ -5381,7 +5368,7 @@ function updateSelection(d) {
 
 function openRescueDialog() {
     const d = new frappe.ui.Dialog({
-        title: '🚑 Rescue / Re-Queue Orders',
+        title: '≡ƒÜæ Rescue / Re-Queue Orders',
         fields: [
             {
                 label: 'Source Planning Sheet',
