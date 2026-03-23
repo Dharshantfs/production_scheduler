@@ -1242,7 +1242,9 @@ const filteredData = computed(() => {
   }
   
   if (selectedPlan.value && selectedPlan.value !== "Default") {
-      data = data.filter((d) => d.planName === selectedPlan.value);
+      data = data.filter((d) => d.planName === selectedPlan.value || d.planName === selectedPlanLabel.value);
+  } else {
+      data = data.filter((d) => !d.planName || d.planName === '' || d.planName === "Default");
   }
 
   return data;
