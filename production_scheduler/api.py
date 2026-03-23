@@ -75,7 +75,7 @@ def generate_party_code(doc):
 UNIT_1 = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER"]
 UNIT_2 = ["GOLD", "SILVER", "BRONZE", "CLASSIC", "SUPER CLASSIC", "LIFE STYLE", "ECO SPECIAL", "ECO GREEN", "SUPER ECO", "ULTRA", "DELUXE"]
 UNIT_3 = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER", "BRONZE"]
-UNIT_4 = ["PREMIUM", "GOLD", "SILVER", "BRONZE"]
+UNIT_4 = ["PREMIUM", "PLATINUM", "GOLD", "SILVER", "BRONZE"]
 
 QUAL_LIST = ["SUPER PLATINUM", "SUPER CLASSIC", "SUPER ECO", "ECO SPECIAL", "ECO GREEN",
              "ECO SPL", "LIFE STYLE", "LIFESTYLE", "PREMIUM", "PLATINUM", "CLASSIC",
@@ -197,7 +197,7 @@ def _populate_planning_sheet_items(ps, doc):
                   "LIFESTYLE": 9, "ECOSPECIAL": 10, "ECOGREEN": 11, "SUPERECO": 12, "ULTRA": 13, "DELUXE": 14 
               },
               "Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
-              "Unit 4": { "PREMIUM": 1, "GOLD": 2, "SILVER": 3, "BRONZE": 4 }
+              "Unit 4": { "PREMIUM": 1, "PLATINUM": 2, "GOLD": 3, "SILVER": 4, "BRONZE": 5 }
             }
             
             best_unit = "Unit 1"

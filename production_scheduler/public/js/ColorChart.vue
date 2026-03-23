@@ -1697,7 +1697,7 @@ const QUALITY_PRIORITY = {
       "LIFESTYLE": 9, "ECOSPECIAL": 10, "ECOGREEN": 11, "SUPERECO": 12, "ULTRA": 13, "DELUXE": 14 
   },
   "Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
-  "Unit 4": { "PREMIUM": 1, "GOLD": 2, "SILVER": 3, "BRONZE": 4 },
+  "Unit 4": { "PREMIUM": 1, "PLATINUM": 2, "GOLD": 3, "SILVER": 4, "BRONZE": 5 },
 };
 
 function getQualityPriority(unit, quality) {
