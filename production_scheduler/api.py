@@ -1189,6 +1189,7 @@ def reject_sequence(date, unit, plan_name="Default"):
 def get_pending_approvals():
 	"""Returns color sequence arrangements for history and approval dashboard."""
 	return frappe.get_all("Color Sequence Approval", 
+		filters={"status": ["!=", "Approved"]},
 		fields=["name", "date", "unit", "status", "plan_name", "sequence_data", "modified", "owner"],
 		order_by="modified desc",
 		limit=100

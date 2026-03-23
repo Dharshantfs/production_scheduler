@@ -3437,62 +3437,70 @@ async function pushToProductionBoard() {
                 return 'Mixed';
             };
 
+            const checkedItems = currentSequence.filter(i => i.checked !== false && !i.pushed);
+            const allApproved = checkedItems.length > 0 && checkedItems.every(i => i.approvalStatus === 'Approved');
+
             if (currentStatus === 'Draft' || currentStatus === 'Rejected') {
-                const pendingItems = currentSequence.filter(s => !s.pushed && s.checked !== false);
-                if (pendingItems.length === 0) {
-                    frappe.msgprint('No pending items selected for approval.');
+                if (allApproved) {
+                    // Force pushing despite overall draft/rejected status 
+                } else {
+                    if (checkedItems.length === 0) {
+                        frappe.msgprint('No pending items selected for approval.');
+                        return;
+                    }
+                    const unitsToRequest = [...new Set(checkedItems.map(s => normalizeUnit(s.unit || 'Unit 1')))];
+                    for (const u of unitsToRequest) {
+                        const unitItems = checkedItems.filter(s => normalizeUnit(s.unit || 'Unit 1') === u).map(s => s.name);
+                        await frappe.call({
+                            method: "production_scheduler.api.save_color_sequence",
+                            args: { date: targetDate, unit: u, sequence_data: unitItems, plan_name: selectedPlan.value }
+                        });
+                        
+                        await frappe.call({
+                            method: "production_scheduler.api.request_sequence_approval",
+                            args: { date: targetDate, unit: u, plan_name: selectedPlan.value }
+                        });
+                    }
+                    frappe.show_alert({ message: 'Arrangement approval requested', indicator: 'orange' });
+                    d.hide();
+                    fetchData();
                     return;
                 }
-                const unitsToRequest = [...new Set(pendingItems.map(s => normalizeUnit(s.unit || 'Unit 1')))];
-                for (const u of unitsToRequest) {
-                    const unitItems = pendingItems.filter(s => normalizeUnit(s.unit || 'Unit 1') === u).map(s => s.name);
-                    await frappe.call({
-                        method: "production_scheduler.api.save_color_sequence",
-                        args: { date: targetDate, unit: u, sequence_data: unitItems, plan_name: selectedPlan.value }
-                    });
-                    
-                    await frappe.call({
-                        method: "production_scheduler.api.request_sequence_approval",
-                        args: { date: targetDate, unit: u, plan_name: selectedPlan.value }
-                    });
-                }
-                frappe.show_alert({ message: 'Arrangement approval requested', indicator: 'orange' });
-                d.hide();
-                fetchData();
-                return;
             }
             if ((currentStatus === 'Pending Approval' || (currentStatus === 'Draft' && canApprove)) && canApprove) {
-                const pendingItems = currentSequence.filter(s => !s.pushed && s.checked !== false);
-                const unitsToApprove = [...new Set(pendingItems.map(s => normalizeUnit(s.unit || 'Unit 1')))];
-                for (const u of unitsToApprove) {
-                    const unitItems = pendingItems.filter(s => normalizeUnit(s.unit || 'Unit 1') === u).map(s => s.name);
-                    
-                    // Always save the latest selection before approving
-                    await frappe.call({
-                        method: "production_scheduler.api.save_color_sequence",
-                        args: { date: targetDate, unit: u, sequence_data: unitItems, plan_name: selectedPlan.value }
-                    });
+                if (allApproved) {
+                    // Force pushing despite pending status
+                } else {
+                    const unitsToApprove = [...new Set(checkedItems.map(s => normalizeUnit(s.unit || 'Unit 1')))];
+                    for (const u of unitsToApprove) {
+                        const unitItems = checkedItems.filter(s => normalizeUnit(s.unit || 'Unit 1') === u).map(s => s.name);
+                        
+                        // Always save the latest selection before approving
+                        await frappe.call({
+                            method: "production_scheduler.api.save_color_sequence",
+                            args: { date: targetDate, unit: u, sequence_data: unitItems, plan_name: selectedPlan.value }
+                        });
 
-                    await frappe.call({
-                        method: "production_scheduler.api.approve_sequence",
-                        args: { date: targetDate, unit: u, plan_name: selectedPlan.value }
-                    });
+                        await frappe.call({
+                            method: "production_scheduler.api.approve_sequence",
+                            args: { date: targetDate, unit: u, plan_name: selectedPlan.value }
+                        });
+                    }
+                    frappe.show_alert({ message: 'Arrangement Approved', indicator: 'green' });
+                    d.hide();
+                    fetchData();
+                    return;
                 }
-                frappe.show_alert({ message: 'Arrangement Approved', indicator: 'green' });
-                d.hide();
-                fetchData();
-                return;
             }
-            if (currentStatus !== 'Approved') {
-                frappe.msgprint(__('The color arrangement must be Approved before pushing.'));
+            if (currentStatus !== 'Approved' && !allApproved) {
+                frappe.msgprint(__('The selected color arrangement must be Approved before pushing.'));
                 return;
             }
 
 
-            // PUSH LOGIC (Only if overallStatus is Approved)
+            // PUSH LOGIC (Only if we are explicitly pushing now)
             const fetchDatesValue = values.fetch_dates || fetchDates.join(",");
 
-            const checkedItems = currentSequence.filter(i => i.checked !== false);
             if (checkedItems.length === 0) { frappe.msgprint('No items selected.'); return; }
 
             const pBtn = d.get_primary_btn();
@@ -3592,9 +3600,14 @@ async function pushToProductionBoard() {
             unitStatuses.push(st);
             
             // Sync individual row statuses for this unit
+            const approvedSequence = msg.sequence || [];
             currentSequence.forEach(it => {
                 if ((it.unit || 'Unit 1') === u) {
-                    it.approvalStatus = st;
+                    if (approvedSequence.includes(it.name) && st !== 'Draft') {
+                        it.approvalStatus = st;
+                    } else {
+                        it.approvalStatus = 'Draft';
+                    }
                 }
             });
 
@@ -3845,11 +3858,28 @@ async function pushToProductionBoard() {
 
 
     function updateCountLabel() {
-        const total = currentSequence.filter(i => i.checked !== false && !i.pushed).length;
+        const checkedItems = currentSequence.filter(i => i.checked !== false && !i.pushed);
+        const total = checkedItems.length;
         const wrapperEl = $(d.wrapper || d.$wrapper).get(0);
         if (wrapperEl) {
             const countSpan = wrapperEl.querySelector('#seq-count-label');
             if (countSpan) countSpan.textContent = total;
+        }
+
+        if (total > 0) {
+            const allApproved = checkedItems.every(i => i.approvalStatus === 'Approved');
+            const pBtn = d.get_primary_btn();
+            if (allApproved) {
+                pBtn.text('🚀 Push to Board').css({'background-color': '#2563eb', 'color': 'white', 'opacity': '1'});
+            } else {
+                if (dialogOverallStatus === 'Rejected') {
+                    pBtn.text('📤 Re-submit for Approval').css({'background-color': '#dc2626', 'color': 'white'});
+                } else if (canApprove) {
+                    pBtn.text('✅ Approve Arrangement').css({'background-color': '#ca8a04', 'color': 'white'});
+                } else {
+                    pBtn.text('📤 Request Arrangement Approval').css({'background-color': '#d97706', 'color': 'white'});
+                }
+            }
         }
         
         loadGlobalCapacityPreview(d, currentSequence);
