@@ -1126,58 +1126,153 @@ async function loadOrders(d) {
             return;
         }
 
+        // --- FE FILTERS ---
+        const uniqueUnits = [...new Set(items.map(i => i.unit || 'UNASSIGNED'))].sort();
+        const uniqueQualities = [...new Set(items.map(i => i.quality || 'STD'))].sort();
+        const uniqueParties = [...new Set(items.map(i => i.partyCode || i.customer || ''))].filter(Boolean).sort();
         
-        let html = `
-            <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;">
-                <div style="position: sticky; top: 0; background: #f8fafc; z-index: 10; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; display: grid; grid-template-columns: 40px 80px 1fr 100px 100px; gap: 8px; font-weight: 600; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
-                    <div style="display:flex; align-items:center; justify-content:center;"><input type="checkbox" id="select-all-pull" style="cursor:pointer;" /></div>
-                    <div>Unit</div>
-                    <div>Order Details</div>
-                    <div style="text-align:right;">Total Qty</div>
-                    <div style="text-align:right;">Pull Qty (KG)</div>
+        let activeFilters = { unit: '', quality: '', party: '', color: '' };
+        
+        function buildFilterBar() {
+            return `
+            <div id="pull-filter-bar" style="background:#f8fafc; border:1px solid #e5e7eb; border-radius:6px; padding:10px 12px; margin-bottom:10px;">
+                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <span style="font-size:11px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:.5px;">Filter</span>
+                    
+                    <select id="pull-filter-unit" style="font-size:11px; padding:2px 6px; border-radius:4px; border:1px solid #cbd5e1; background:#fff;">
+                        <option value="">All Units</option>
+                        ${uniqueUnits.map(u => `<option value="${u}">${u}</option>`).join('')}
+                    </select>
+                    
+                    <select id="pull-filter-quality" style="font-size:11px; padding:2px 6px; border-radius:4px; border:1px solid #cbd5e1; background:#fff;">
+                        <option value="">All Qualities</option>
+                        ${uniqueQualities.map(q => `<option value="${q}">${q}</option>`).join('')}
+                    </select>
+
+                    <select id="pull-filter-party" style="font-size:11px; padding:2px 6px; border-radius:4px; border:1px solid #cbd5e1; background:#fff;">
+                        <option value="">All Parties</option>
+                        ${uniqueParties.map(p => `<option value="${p}">${p}</option>`).join('')}
+                    </select>
+                    
+                    <input id="pull-filter-color" type="text" placeholder="Color..." style="font-size:11px; padding:2px 8px; border-radius:4px; border:1px solid #cbd5e1; width:110px;">
+                    
+                    <button id="pull-filter-reset" style="font-size:11px; padding:2px 8px; border-radius:4px; border:1px solid #cbd5e1; background:#fff; color:#dc2626; cursor:pointer;">✕ Reset</button>
                 </div>
-                <div style="display: flex; flex-direction: column;">
-        `;
+            </div>`;
+        }
         
-        items.forEach(item => {
-            html += `
-                <div class="pull-item-row" style="display: grid; grid-template-columns: 40px 80px 1fr 100px 100px; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; align-items: center;">
-                    <div style="display:flex; align-items:center; justify-content:center;">
-                        <input type="checkbox" class="pull-item-cb" data-name="${item.itemName}" style="cursor:pointer; transform: scale(1.1);" />
+        function applyFilters() {
+            return items.filter(i => {
+                if (activeFilters.unit) {
+                    let u = i.unit || 'UNASSIGNED';
+                    if (u !== activeFilters.unit) return false;
+                }
+                if (activeFilters.quality) {
+                    let q = i.quality || 'STD';
+                    if (q !== activeFilters.quality) return false;
+                }
+                if (activeFilters.party) {
+                    let p = i.partyCode || i.customer || '';
+                    if (p !== activeFilters.party) return false;
+                }
+                if (activeFilters.color) {
+                    let c = (i.color || '').toLowerCase();
+                    if (!c.includes(activeFilters.color.toLowerCase())) return false;
+                }
+                return true;
+            });
+        }
+        
+        function renderItemsList() {
+            let filtered = applyFilters();
+            
+            let html = buildFilterBar();
+            
+            if (filtered.length === 0) {
+                html += '<div style="padding: 20px; text-align: center; color: #94a3b8; font-style: italic;">No orders match the current filters.</div>';
+            } else {
+                html += `
+                <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;">
+                    <div style="position: sticky; top: 0; background: #f8fafc; z-index: 10; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; display: grid; grid-template-columns: 40px 80px 1fr 100px 100px; gap: 8px; font-weight: 600; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
+                        <div style="display:flex; align-items:center; justify-content:center;"><input type="checkbox" id="select-all-pull" style="cursor:pointer;" /></div>
+                        <div>Unit</div>
+                        <div>Order Details</div>
+                        <div style="text-align:right;">Total Qty</div>
+                        <div style="text-align:right;">Pull Qty (KG)</div>
                     </div>
-                    <div><span style="font-size: 11px; font-weight: 700; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">${item.unit || 'UNASSIGNED'}</span></div>
-                    <div style="display: flex; flex-direction: column; gap: 2px;">
-                        <span style="font-size: 13px; font-weight: 600; color: #1e293b;">${item.color || 'No Color'} <span style="font-weight: 400; color: #94a3b8; font-size: 12px;">&bull; ${item.partyCode || item.customer || '-'}</span></span>
-                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                            <span style="display: inline-flex; align-items: center; gap: 4px; border: 1px solid #e2e8f0; padding: 1px 6px; border-radius: 99px; font-size: 11px; background: #fff;">
-                                <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color: ${getHexColor(item.color)};"></span>${item.color || 'No Color'}
-                            </span>
-                             <span style="font-size: 10px; font-weight: 600; background: #e2e8f0; color: #475569; padding: 1px 6px; border-radius: 4px;">${item.quality || 'STD'}</span>
-                             <span style="font-size: 10px; font-weight: 600; background: #f3f4f6; color: #4b5563; padding: 1px 6px; border-radius: 4px;">${item.gsm ? item.gsm + ' GSM' : 'N/A'}</span>
+                    <div style="display: flex; flex-direction: column;">
+                `;
+                
+                filtered.forEach(item => {
+                    const isChecked = d.calc_selected_items && d.calc_selected_items.find(s => s.itemName === item.itemName) ? "checked" : "";
+                    const prevQtyObj = d.calc_selected_items && d.calc_selected_items.find(s => s.itemName === item.itemName);
+                    const prevQty = prevQtyObj ? prevQtyObj.qty : item.qty;
+                    
+                    html += `
+                    <div class="pull-item-row" style="display: grid; grid-template-columns: 40px 80px 1fr 100px 100px; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; align-items: center;">
+                        <div style="display:flex; align-items:center; justify-content:center;">
+                            <input type="checkbox" class="pull-item-cb" data-name="${item.itemName}" style="cursor:pointer; transform: scale(1.1);" ${isChecked} />
                         </div>
+                        <div><span style="font-size: 11px; font-weight: 700; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">${item.unit || 'UNASSIGNED'}</span></div>
+                        <div style="display: flex; flex-direction: column; gap: 2px;">
+                            <span style="font-size: 13px; font-weight: 600; color: #1e293b;">${item.color || 'No Color'} <span style="font-weight: 400; color: #94a3b8; font-size: 12px;">&bull; ${item.partyCode || item.customer || '-'}</span></span>
+                            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                <span style="display: inline-flex; align-items: center; gap: 4px; border: 1px solid #e2e8f0; padding: 1px 6px; border-radius: 99px; font-size: 11px; background: #fff;">
+                                    <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background-color: ${getHexColor(item.color)};"></span>${item.color || 'No Color'}
+                                </span>
+                                 <span style="font-size: 10px; font-weight: 600; background: #e2e8f0; color: #475569; padding: 1px 6px; border-radius: 4px;">${item.quality || 'STD'}</span>
+                                 <span style="font-size: 10px; font-weight: 600; background: #f3f4f6; color: #4b5563; padding: 1px 6px; border-radius: 4px;">${item.gsm ? item.gsm + ' GSM' : 'N/A'}</span>
+                            </div>
+                        </div>
+                        <div style="text-align: right;"><span style="display: block; font-size: 13px; font-weight: 700; color: #0f172a;">${item.qty < 1000 ? item.qty + ' KG' : (item.qty/1000).toFixed(2) + ' T'}</span></div>
+                        <div style="text-align: right;"><input type="number" class="pull-qty-input" data-name="${item.itemName}" data-max="${item.qty}" value="${prevQty}" style="width: 80px; text-align: right; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; color: #2563eb; font-weight: 700;" /></div>
                     </div>
-                    <div style="text-align: right;"><span style="display: block; font-size: 13px; font-weight: 700; color: #0f172a;">${item.qty < 1000 ? item.qty + ' KG' : (item.qty/1000).toFixed(2) + ' T'}</span></div>
-                    <div style="text-align: right;"><input type="number" class="pull-qty-input" data-name="${item.itemName}" data-max="${item.qty}" value="${item.qty}" style="width: 80px; text-align: right; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; color: #2563eb; font-weight: 700;" /></div>
-                </div>
-            `;
-        });
+                    `;
+                });
+                html += `</div></div>`;
+            }
+            
+            html += `<div style="margin-top:8px; text-align:right; font-weight:600; font-size:12px; color:#64748b;">Filtered Orders: ${filtered.length} / ${items.length}</div>`;
+            d.set_value('preview_html', html);
+            
+            d.$wrapper.find('#pull-filter-unit').val(activeFilters.unit);
+            d.$wrapper.find('#pull-filter-quality').val(activeFilters.quality);
+            d.$wrapper.find('#pull-filter-party').val(activeFilters.party);
+            d.$wrapper.find('#pull-filter-color').val(activeFilters.color);
+            d.$wrapper.find('#pull-filter-color').get(0)?.focus();
+            
+            bindListeners();
+        }
         
-        html += `</div></div>`;
-        html += `<div style="margin-top:8px; text-align:right; font-weight:600; font-size:12px; color:#64748b;">Total Orders: ${items.length}</div>`;
-        
-        d.set_value('preview_html', html);
-        
-        d.$wrapper.find('#select-all-pull').on('change', function() {
-            const checked = $(this).prop('checked');
-            d.$wrapper.find('.pull-item-cb').prop('checked', checked);
-            updateSelection(d);
-        });
-        
-        d.$wrapper.find('.pull-item-cb, .pull-qty-input').on('change', function() {
-            updateSelection(d);
-        });
+        function bindListeners() {
+            d.$wrapper.find('#pull-filter-unit, #pull-filter-quality, #pull-filter-party').on('change', function() {
+                activeFilters.unit = d.$wrapper.find('#pull-filter-unit').val();
+                activeFilters.quality = d.$wrapper.find('#pull-filter-quality').val();
+                activeFilters.party = d.$wrapper.find('#pull-filter-party').val();
+                renderItemsList();
+            });
+            d.$wrapper.find('#pull-filter-color').on('input', function() {
+                activeFilters.color = $(this).val();
+                renderItemsList();
+            });
+            d.$wrapper.find('#pull-filter-reset').on('click', function(e) {
+                e.preventDefault();
+                activeFilters = { unit: '', quality: '', party: '', color: '' };
+                renderItemsList();
+            });
+            
+            d.$wrapper.find('#select-all-pull').on('change', function() {
+                const checked = $(this).prop('checked');
+                d.$wrapper.find('.pull-item-cb').prop('checked', checked);
+                updateSelection(d);
+            });
+            d.$wrapper.find('.pull-item-cb, .pull-qty-input').on('change', function() {
+                updateSelection(d);
+            });
+        }
         
         d.calc_selected_items = [];
+        renderItemsList();
         
     } catch (e) {
         console.error(e);
@@ -1186,14 +1281,23 @@ async function loadOrders(d) {
 }
 
 function updateSelection(d) {
-    const selected = [];
+    let currentHtmlNames = new Set();
+    d.$wrapper.find('.pull-item-cb').each(function() {
+        currentHtmlNames.add($(this).data('name'));
+    });
+    
+    const visibleSelected = [];
     d.$wrapper.find('.pull-item-cb:checked').each(function() {
         const name = $(this).data('name');
         const qty = parseFloat(d.$wrapper.find(`.pull-qty-input[data-name="${name}"]`).val()) || 0;
-        selected.push({ itemName: name, qty: qty });
+        visibleSelected.push({ itemName: name, qty: qty });
     });
-    d.calc_selected_items = selected;
-    d.get_primary_btn().text(`Move ${selected.length} to Today`);
+    
+    // Retain hidden selections
+    const hiddenSelected = (d.calc_selected_items || []).filter(s => !currentHtmlNames.has(s.itemName));
+    
+    d.calc_selected_items = [...hiddenSelected, ...visibleSelected];
+    d.get_primary_btn().text(`Move ${d.calc_selected_items.length} to Today`);
 }
 
 function openRescueDialog() {
