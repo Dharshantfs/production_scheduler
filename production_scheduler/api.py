@@ -1408,8 +1408,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 		return []
 
 	# Build SQL for date filtering ΓÇö support split dates (pushed vs unpushed)
-	# IMPORTANT: We MUST use item-level Coalesce here to match actual Production Board visibility
-	eff_pushed = "COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)"
+	# IMPORTANT: For sheet fetching, we must use sheet-level fields. Item-level overrides
+	# are handled via EXISTS later in planned_only mode.
+	eff_pushed = "COALESCE(p.custom_planned_date, p.ordered_date)"
 	eff_ordered = "p.ordered_date"
 	
 	plan_condition = ""
