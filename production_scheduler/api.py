@@ -1356,19 +1356,30 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	
 	plan_condition = ""
 	params = []
+	has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+	
 	if start_date and end_date:
 		date_condition = f"({eff_ordered} BETWEEN %s AND %s OR {eff_pushed} BETWEEN %s AND %s)"
 		params.extend([query_start, query_end, query_start, query_end])
+		if has_item_planned_col:
+			date_condition = f"({date_condition} OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi WHERE psi.parent = p.name AND psi.custom_item_planned_date BETWEEN %s AND %s))"
+			params.extend([query_start, query_end])
 	else:
 		if len(target_dates) > 1:
 			fmt = ','.join(['%s'] * len(target_dates))
 			date_condition = f"({eff_ordered} IN ({fmt}) OR {eff_pushed} IN ({fmt}))"
 			params.extend(target_dates)
 			params.extend(target_dates)
+			if has_item_planned_col:
+				date_condition = f"({date_condition} OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi WHERE psi.parent = p.name AND psi.custom_item_planned_date IN ({fmt})))"
+				params.extend(target_dates)
 		else:
 			date_condition = f"({eff_ordered} = %s OR {eff_pushed} = %s)"
 			params.append(target_dates[0])
 			params.append(target_dates[0])
+			if has_item_planned_col:
+				date_condition = f"({date_condition} OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi WHERE psi.parent = p.name AND DATE(psi.custom_item_planned_date) = DATE(%s)))"
+				params.append(target_dates[0])
 	
 	if plan_name == "__all__":
 		plan_condition = ""  # No plan filter ΓÇö return all items
