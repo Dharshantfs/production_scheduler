@@ -4566,6 +4566,9 @@ def validate_planning_sheet_duplicates(doc, method=None):
     update_sheet_plan_codes(doc)
 
     # Check for other sheets in the SAME plan for the same Sales Order
+    # DISABLED PER USER REQUEST to allow items to move to new dates natively.
+    return
+    
     filters = {
         "sales_order": doc.sales_order,
         "name": ["!=", doc.name],
