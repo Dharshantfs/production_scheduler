@@ -143,8 +143,8 @@
             <div class="cc-col-header" :style="{ borderTopColor: headerColors[unit] }">
             <div class="cc-header-top">
                 <span class="cc-col-title">{{ unit === 'Mixed' ? 'Unassigned' : unit }}</span>
-                <span v-if="unit !== 'Mixed' && sequenceStatuses.value[unit]" :class="['cc-status-badge', sequenceStatuses.value[unit].toLowerCase().replace(' ', '-')]">
-                  {{ sequenceStatuses.value[unit] }}
+                <span v-if="unit !== 'Mixed' && sequenceStatuses[unit]" :class="['cc-status-badge', sequenceStatuses[unit].toLowerCase().replace(' ', '-')]">
+                  {{ sequenceStatuses[unit] }}
                 </span>
                 <!-- Sort Controls -->
                 <div class="cc-unit-controls">
@@ -162,8 +162,8 @@
                     ℹ️
                 </button>
                 </div>
-                <div class="cc-header-status-badge" :class="sequenceStatuses.value[unit] ? sequenceStatuses.value[unit].toLowerCase().replace(' ', '-') : 'draft'">
-                    {{ sequenceStatuses.value[unit] || 'Draft' }}
+                <div class="cc-header-status-badge" :class="sequenceStatuses[unit] ? sequenceStatuses[unit].toLowerCase().replace(' ', '-') : 'draft'">
+                    {{ sequenceStatuses[unit] || 'Draft' }}
                 </div>
             </div>
             <div class="cc-header-stats">
@@ -173,11 +173,11 @@
                     </span>
                     <!-- Approval Actions -->
                     <div class="cc-approval-actions" v-if="viewMode === 'kanban' && filterOrderDate && !filterOrderDate.value.includes(',')">
-                        <button v-if="(!sequenceStatuses.value[unit] || sequenceStatuses.value[unit] === 'Draft') && getUnitEntries(unit).length > 0" 
+                        <button v-if="(!sequenceStatuses[unit] || sequenceStatuses[unit] === 'Draft') && getUnitEntries(unit).length > 0" 
                                 class="cc-approve-btn request" @click.stop="requestApproval(unit)">
                             📤 Request Approval
                         </button>
-                        <button v-if="sequenceStatuses.value[unit] === 'Pending Approval' && currentUserRoles.value.includes('Manufacturing Manager')" 
+                        <button v-if="sequenceStatuses[unit] === 'Pending Approval' && currentUserRoles.includes('Manufacturing Manager')" 
                                 class="cc-approve-btn approve" @click.stop="approveSequence(unit)">
                             ✅ Approve
                         </button>
