@@ -5175,7 +5175,7 @@ async function revertColorGroup(color) {
         } else {
             if (d.planName && d.planName !== '' && d.planName !== 'Default') return false;
         }
-        return d.color === color && d.pbPlanName;
+        return d.color === color && d.plannedDate;
     });
     
     if (itemsToRevert.length === 0) {
