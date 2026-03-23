@@ -60,7 +60,10 @@ def generate_party_code(doc):
 
     # Persist back to Sales Order if generated for one
     if doc.doctype == "Sales Order" and doc.name and doc.party_code:
-        frappe.db.set_value("Sales Order", doc.name, "party_code", doc.party_code)
+        if frappe.db.has_column("Sales Order", "custom_party_code"):
+            frappe.db.set_value("Sales Order", doc.name, "custom_party_code", doc.party_code)
+        elif frappe.db.has_column("Sales Order", "party_code"):
+            frappe.db.set_value("Sales Order", doc.name, "party_code", doc.party_code)
     # Copy to child items if any
     if doc.get("items"):
         for item_row in doc.items:
