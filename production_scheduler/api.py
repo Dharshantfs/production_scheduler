@@ -487,7 +487,7 @@ def get_unit_load(date, unit, plan_name=None, pb_only=0):
 	
 	# MIX WASTE EXCLUSION:
 	# Matches frontend logic (is_mix_roll || itemName.startsWith('MIX'))
-	mix_cond = "AND i.item_name NOT LIKE 'MIX%'"
+	mix_cond = "AND i.item_name NOT LIKE 'MIX%%'"
 	
 	sql = f"""
 		SELECT SUM(i.qty) as total_qty
