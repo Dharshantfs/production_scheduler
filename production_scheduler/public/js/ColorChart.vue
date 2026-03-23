@@ -520,7 +520,7 @@
     </div>
     
     <!-- MIX ROLL Manual Entry Section -->
-    <div v-if="viewMode === 'matrix' && mixRolls && mixRolls.length > 0" class="mt-8 bg-white p-4 rounded-lg shadow border border-gray-200" style="margin-bottom: 30px;">
+    <div v-if="viewMode === 'matrix'" class="mt-8 bg-white p-4 rounded-lg shadow border border-gray-200" style="margin-bottom: 30px;">
         <h3 class="text-sm font-bold mb-4 text-gray-800 flex items-center">
             <span class="mr-2">♻️</span> MIX ROLL AREA (Manual Entry)
         </h3>
@@ -1256,9 +1256,13 @@ let _mixSaveTimeout = null;
 
 // Unique key for the current date context (daily / weekly / monthly)
 function getMixRollDateKey() {
-    if (viewScope.value === 'monthly') return 'month-' + (filterMonth.value || 'none');
-    if (viewScope.value === 'weekly') return 'week-' + (filterWeek.value || 'none');
-    return 'day-' + (filterOrderDate.value || 'none');
+    let base = 'day-' + (filterOrderDate.value || 'none');
+    if (viewScope.value === 'monthly') base = 'month-' + (filterMonth.value || 'none');
+    else if (viewScope.value === 'weekly') base = 'week-' + (filterWeek.value || 'none');
+    
+    // Ensure separate persistence per plan
+    const planStr = (selectedPlan.value && selectedPlan.value !== 'Default') ? `-${selectedPlan.value}` : '';
+    return base + planStr;
 }
 
 // Build mix rolls from current filteredData
