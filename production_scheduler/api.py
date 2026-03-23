@@ -847,73 +847,10 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 	
 	source_effective_date = getdate(source_parent.get("custom_planned_date") or source_parent.ordered_date)
 	
-	# 1. Reparent if date is changing
-	if source_effective_date != target_date:
-		# Find existing sheet for this Sales Order on target date
-		has_col = _has_planned_date_column()
-		date_cond = "COALESCE(custom_planned_date, ordered_date) = %(target)s" if has_col else "ordered_date = %(target)s"
-		so_cond = "sales_order = %(so)s" if source_parent.sales_order else "party_code = %(party)s"
-		
-		# Match custom_plan_name to ensure items stay on correct sheets
-		cc_plan = source_parent.get("custom_plan_name") or "Default"
-		plan_cond = "AND custom_plan_name = %(cc_plan)s"
-		
-		existing = frappe.db.sql(f"""
-			SELECT name FROM `tabPlanning sheet`
-			WHERE {so_cond}
-			  AND {date_cond}
-			  AND docstatus < 2
-			  AND name != %(source)s
-			  {plan_cond}
-			LIMIT 1
-		""", {
-			"so": source_parent.sales_order,
-			"party": source_parent.party_code,
-			"target": target_date,
-			"source": source_parent.name,
-			"cc_plan": cc_plan
-		})
-		
-		if existing:
-			new_parent_name = existing[0][0]
-			# Ensure the existing sheet has custom_planned_date set to target_date
-			if has_col:
-				frappe.db.sql(
-					"UPDATE `tabPlanning sheet` SET custom_planned_date = %s WHERE name = %s",
-					(target_date, new_parent_name)
-				)
-		else:
-			# Create new sheet for the target date
-			new_sheet = frappe.copy_doc(source_parent)
-			new_sheet.name = None
-			new_sheet.docstatus = 0  # Reset docstatus ΓÇö copied doc must be Draft
-			new_sheet.amended_from = None
-			new_sheet.set("items", []) # clear items
-			if has_col:
-				new_sheet.custom_planned_date = target_date
-			else:
-				new_sheet.ordered_date = target_date
-			new_sheet.insert(ignore_permissions=True)
-			new_parent_name = new_sheet.name
-		
-		# Reparent the item using raw SQL (works even for submitted sheets)
-		frappe.db.sql("""
-			UPDATE `tabPlanning Sheet Item`
-			SET parent = %s, parentfield = 'items'
-			WHERE name = %s
-		""", (new_parent_name, item_doc.name))
-		item_doc.parent = new_parent_name
-		
-		# Clean up source parent if empty
-		if frappe.db.count("Planning Sheet Item", {"parent": source_parent.name}) == 0:
-			try:
-				# Cancel submitted sheets before deleting
-				src_docstatus = frappe.db.get_value("Planning sheet", source_parent.name, "docstatus")
-				if src_docstatus == 1:
-					frappe.db.sql("UPDATE `tabPlanning sheet` SET docstatus = 2 WHERE name = %s", source_parent.name)
-				frappe.delete_doc("Planning sheet", source_parent.name, ignore_permissions=True, force=True)
-			except Exception:
-				pass  # Ignore if linked to Production Plan or other constraints
+	# 1. Date Reparenting (Disabled Per User Request)
+	# The user explicitly requested "NEVER ALLOW NEW PLANNING SHEET" and "ALWASY USE EXISTING PLANNING SHEET".
+	# Therefore, we do not reparent items to new sheets when their date changes.
+	# We rely solely on updating the `custom_item_planned_date` at the item level below.
 
 	# 2. Handle IDX Shifting if inserting at specific position
 	# Update Item unit and parent first ΓÇö use raw SQL to bypass docstatus immutability
@@ -4566,9 +4503,6 @@ def validate_planning_sheet_duplicates(doc, method=None):
     update_sheet_plan_codes(doc)
 
     # Check for other sheets in the SAME plan for the same Sales Order
-    # DISABLED PER USER REQUEST to allow items to move to new dates natively.
-    return
-    
     filters = {
         "sales_order": doc.sales_order,
         "name": ["!=", doc.name],
