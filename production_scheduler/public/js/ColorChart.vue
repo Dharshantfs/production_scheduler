@@ -1689,17 +1689,19 @@ function determineMixType(fromColor, toColor) {
 
 // Per-unit quality priorities (lower number = higher priority)
 const QUALITY_PRIORITY = {
-  "Unit 1": { "PREMIUM": 1, "PLATINUM": 2, "SUPER PLATINUM": 3, "GOLD": 4, "SILVER": 5 },
+  "Unit 1": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5 },
   "Unit 2": { 
-      "GOLD": 1, "SILVER": 2, "BRONZE": 3, "CLASSIC": 4, "SUPER CLASSIC": 5, 
-      "LIFE STYLE": 6, "ECO SPECIAL": 7, "ECO GREEN": 8, "SUPER ECO": 9, "ULTRA": 10, "DELUXE": 11 
+      // Unit 2 allows ALL qualities per user request, sorted by priority
+      "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3,
+      "GOLD": 4, "SILVER": 5, "BRONZE": 6, "CLASSIC": 7, "SUPERCLASSIC": 8, 
+      "LIFESTYLE": 9, "ECOSPECIAL": 10, "ECOGREEN": 11, "SUPERECO": 12, "ULTRA": 13, "DELUXE": 14 
   },
-  "Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPER PLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
+  "Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
   "Unit 4": { "PREMIUM": 1, "GOLD": 2, "SILVER": 3, "BRONZE": 4 },
 };
 
 function getQualityPriority(unit, quality) {
-  const upper = (quality || "").toUpperCase().trim();
+  const upper = (quality || "").toUpperCase().replace(/\s+/g, "");
   const unitMap = QUALITY_PRIORITY[unit] || {};
   return unitMap[upper] || 99; // Unknown quality = lowest priority
 }

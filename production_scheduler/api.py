@@ -187,15 +187,16 @@ def _populate_planning_sheet_items(ps, doc):
         # UNIT determination based STRICTLY on quality priority
         unit = "Unit 1"
         if qual:
-            q_up = qual.upper()
+            q_up = qual.upper().replace(" ", "")
             
             QUALITY_PRIORITY = {
-              "Unit 1": { "PREMIUM": 1, "PLATINUM": 2, "SUPER PLATINUM": 3, "GOLD": 4, "SILVER": 5 },
+              "Unit 1": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5 },
               "Unit 2": { 
-                  "GOLD": 1, "SILVER": 2, "BRONZE": 3, "CLASSIC": 4, "SUPER CLASSIC": 5, 
-                  "LIFE STYLE": 6, "ECO SPECIAL": 7, "ECO GREEN": 8, "SUPER ECO": 9, "ULTRA": 10, "DELUXE": 11 
+                  "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3,
+                  "GOLD": 4, "SILVER": 5, "BRONZE": 6, "CLASSIC": 7, "SUPERCLASSIC": 8, 
+                  "LIFESTYLE": 9, "ECOSPECIAL": 10, "ECOGREEN": 11, "SUPERECO": 12, "ULTRA": 13, "DELUXE": 14 
               },
-              "Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPER PLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
+              "Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
               "Unit 4": { "PREMIUM": 1, "GOLD": 2, "SILVER": 3, "BRONZE": 4 }
             }
             
@@ -386,10 +387,12 @@ UNIT_QUALITY_MAP = {
 def is_quality_allowed(unit, quality):
 	"""Checks if a quality is allowed for a unit."""
 	if not quality or not unit: return True
+	if unit == "Unit 2": return True # As per user request, all qualities allowed in Unit 2
 	if unit not in UNIT_QUALITY_MAP: return True
-	# Match with stripping and upper
-	q_match = quality.upper().strip()
-	allowed = [q.upper().strip() for q in UNIT_QUALITY_MAP[unit]]
+	
+	# Match with stripping and upper, removing spaces to handle "LIFE STYLE" vs "LIFESTYLE"
+	q_match = quality.upper().replace(" ", "")
+	allowed = [q.upper().replace(" ", "") for q in UNIT_QUALITY_MAP[unit]]
 	return q_match in allowed
 
 def is_sheet_locked(sheet_name):
