@@ -1281,8 +1281,8 @@ function _buildRawMixRolls() {
 
     function sortUnitItems(items) {
         return items.sort((a, b) => {
-            const pA = a.color ? getColorPriority(a.color) : 999;
-            const pB = b.color ? getColorPriority(b.color) : 999;
+            const pA = a.color ? getGroupPriority(a.color) : 999;
+            const pB = b.color ? getGroupPriority(b.color) : 999;
             if (pA !== pB) return pA - pB;
             const gsmA = parseFloat(a.gsm) || 0;
             const gsmB = parseFloat(b.gsm) || 0;
