@@ -4570,8 +4570,7 @@ def validate_planning_sheet_duplicates(doc, method=None):
         "sales_order": doc.sales_order,
         "name": ["!=", doc.name],
         "docstatus": 0,
-        "custom_plan_name": doc.custom_plan_name,
-        "custom_pb_plan_name": doc.custom_pb_plan_name
+        "custom_plan_name": doc.custom_plan_name
     }
     existing = frappe.get_all("Planning sheet", filters=filters, fields=["name"], limit=1)
     if existing:
