@@ -2163,7 +2163,7 @@ def migrate_to_full_plan_names():
 
 @frappe.whitelist()
 def cleanup_legacy_plans():
-...
+	pass
 
 @frappe.whitelist()
 def create_plan_name_field():
