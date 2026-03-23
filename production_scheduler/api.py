@@ -1488,6 +1488,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 	fields_str = ", ".join(fields)
 	
 	has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+	eff = _effective_date_expr("p")
 
 	if cint(planned_only) and has_item_planned_col and not (start_date and end_date):
 		# For planned_only mode: also include sheets that have items with custom_item_planned_date
