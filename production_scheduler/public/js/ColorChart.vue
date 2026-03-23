@@ -545,11 +545,17 @@
                     <td class="p-2 border font-bold text-gray-700 text-center">{{ mix.unit }}</td>
                     <!-- COLOR 1 with background badge -->
                     <td class="p-2 border">
-                        <span class="mix-color-badge" :style="getMixColorBadgeStyle(mix.color1)">{{ mix.color1 }}</span>
+                        <span style="display: inline-flex; align-items: center; gap: 4px; border: 1px solid #e2e8f0; padding: 2px 8px; border-radius: 99px; font-size: 11px; background: #fff; font-weight: 600; color: #334155; text-transform: uppercase;">
+                            <span :style="'display:inline-block; width:8px; height:8px; border-radius:50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.1); background-color: ' + getHexColor(mix.color1)"></span>
+                            {{ mix.color1 }}
+                        </span>
                     </td>
                     <!-- COLOR 2 with background badge -->
                     <td class="p-2 border">
-                        <span class="mix-color-badge" :style="getMixColorBadgeStyle(mix.color2)">{{ mix.color2 }}</span>
+                        <span style="display: inline-flex; align-items: center; gap: 4px; border: 1px solid #e2e8f0; padding: 2px 8px; border-radius: 99px; font-size: 11px; background: #fff; font-weight: 600; color: #334155; text-transform: uppercase;">
+                            <span :style="'display:inline-block; width:8px; height:8px; border-radius:50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.1); background-color: ' + getHexColor(mix.color2)"></span>
+                            {{ mix.color2 }}
+                        </span>
                     </td>
                     <!-- RECYCLE row: merge MIX NAME + QUALITY + COLOR + GSM + SHAFT + WEIGHT into one cell -->
                     <template v-if="mix.isRecycle">
