@@ -19,7 +19,7 @@ def generate_party_code(doc):
     existing_party_code = None
     if so_ref:
         # 1. Look in Sales Order database
-        existing_party_code = frappe.db.get_value("Sales Order", so_ref, "party_code") if frappe.db.has_column("Sales Order", "party_code") else None
+        existing_party_code = frappe.db.get_value("Sales Order", so_ref, "custom_party_code") if frappe.db.has_column("Sales Order", "custom_party_code") else frappe.db.get_value("Sales Order", so_ref, "party_code") if frappe.db.has_column("Sales Order", "party_code") else None
         
         # 2. Look in other Planning Sheets for the same SO
         if not existing_party_code:
