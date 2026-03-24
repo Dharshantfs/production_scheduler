@@ -3704,12 +3704,13 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
 
 
 @frappe.whitelist()
-def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_date=None):
+def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_date=None, strict_target_date=0):
 	"""
 	Pushes Planning Sheet Items to a Production Board plan.
 	Re-parents each item to a PB Planning Sheet (with custom_planned_date set)
 	so the Production Board can find them via the sheet-level filter.
-	items_data: list of dicts [{"name": "...", "target_date": "...", "target_unit": "..."}]
+	items_data: list of dicts [{"name": "...", "target_date": "...", "target_unit": "...", "strict_target_date": 1}]
+	strict_target_date: when true, keep item exactly on selected target date (no auto-cascade).
 	"""
 	import json
 	if isinstance(items_data, str):
@@ -3731,6 +3732,7 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 		target_date_raw = item.get("target_dates") or item.get("target_date") if isinstance(item, dict) else None
 		target_unit = item.get("target_unit") if isinstance(item, dict) else None
 		sequence_no = item.get("sequence_no") if isinstance(item, dict) else None
+		item_strict_target = cint(item.get("strict_target_date")) if isinstance(item, dict) else 0
 
 		try:
 			# Get item + parent sheet info
@@ -3757,24 +3759,33 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 			
 			from frappe.utils import getdate, add_days
 			current_check_date = target_dates[0] if target_dates else str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
-			
-			while True:
-				load_key = (current_check_date, unit)
+
+			# Individual push can force exact selected date, skipping auto-next-day cascade.
+			strict_keep_date = cint(strict_target_date) or cint(item_strict_target)
+			if strict_keep_date:
+				effective_date = current_check_date
+				load_key = (effective_date, unit)
 				if load_key not in local_loads:
-					local_loads[load_key] = get_unit_load(current_check_date, unit, "__all__", pb_only=1)
-				
-				load = local_loads[load_key]
-				
-				# Allow placement if it fits within the limit (with 5% buffer)
-				# OR if the day is completely empty but the item itself is larger than the limit (prevents infinite loop)
-				if (load + item_wt <= limit * 1.05) or (load == 0 and item_wt >= limit):
-					effective_date = current_check_date
-					local_loads[load_key] = load + item_wt
-					break
-				
-				# Otherwise, capacity is full for this date -> Cascade to the next day
-				next_d = add_days(current_check_date, 1)
-				current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+					local_loads[load_key] = get_unit_load(effective_date, unit, "__all__", pb_only=1)
+				local_loads[load_key] = local_loads[load_key] + item_wt
+			else:
+				while True:
+					load_key = (current_check_date, unit)
+					if load_key not in local_loads:
+						local_loads[load_key] = get_unit_load(current_check_date, unit, "__all__", pb_only=1)
+					
+					load = local_loads[load_key]
+					
+					# Allow placement if it fits within the limit (with 5% buffer)
+					# OR if the day is completely empty but the item itself is larger than the limit (prevents infinite loop)
+					if (load + item_wt <= limit * 1.05) or (load == 0 and item_wt >= limit):
+						effective_date = current_check_date
+						local_loads[load_key] = load + item_wt
+						break
+					
+					# Otherwise, capacity is full for this date -> Cascade to the next day
+					next_d = add_days(current_check_date, 1)
+					current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
 			# ------------------------------------------------
 
 			party_code = parent_doc.party_code or ""

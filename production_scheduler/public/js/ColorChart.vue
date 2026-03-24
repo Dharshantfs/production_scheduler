@@ -5014,7 +5014,12 @@ async function openPushColorDialog(color, inputTargetDate = null) {
              const targetDate = d.get_value("target_date");
              const pbPlan = selectedPlanLabel.value;
              
-             const payload = selected.map(s => ({ name: s.name, target_unit: s.target_unit, target_date: targetDate }));
+             const payload = selected.map(s => ({
+                 name: s.name,
+                 target_unit: s.target_unit,
+                 target_date: targetDate,
+                 strict_target_date: 1
+             }));
              
              d.get_primary_btn().prop("disabled", true).text("Pushing...");
              try {
