@@ -6046,17 +6046,36 @@ def get_planning_sheet_pp_id(planning_sheet_name):
                         break
         
         # ===== STRATEGY 2: Fallback - search by Sales Order =====
-        # If no direct link, try to find PP by Sales Order
+        # If no direct link, try to find PP by matching items' sales order
         if not pp_id and sheet.sales_order:
-            pps = frappe.db.sql("""
-                SELECT name FROM `tabProduction Plan`
-                WHERE sales_order = %s AND docstatus = 1
-                ORDER BY creation DESC
-                LIMIT 1
-            """, (sheet.sales_order,), as_dict=True)
-            
-            if pps:
-                pp_id = pps[0]['name']
+            # Check if Production Plan has sales_order field
+            if frappe.db.has_column("Production Plan", "sales_order"):
+                pps = frappe.db.sql("""
+                    SELECT name FROM `tabProduction Plan`
+                    WHERE sales_order = %s AND docstatus = 1
+                    ORDER BY creation DESC
+                    LIMIT 1
+                """, (sheet.sales_order,), as_dict=True)
+                
+                if pps:
+                    pp_id = pps[0]['name']
+            else:
+                # Fallback: search through PO items for matching Sales Order
+                try:
+                    pps = frappe.db.sql("""
+                        SELECT DISTINCT pp.name
+                        FROM `tabProduction Plan` pp
+                        LEFT JOIN `tabProduction Plan Item` ppi ON pp.name = ppi.parent
+                        WHERE (ppi.sales_order = %s OR pp.name LIKE CONCAT('%%', %s, '%%'))
+                        AND pp.docstatus = 1
+                        ORDER BY pp.creation DESC
+                        LIMIT 1
+                    """, (sheet.sales_order, sheet.sales_order), as_dict=True)
+                    
+                    if pps:
+                        pp_id = pps[0]['name']
+                except Exception as e:
+                    frappe.log_error(f"Error searching PP by items: {str(e)}", "get_planning_sheet_pp_id")
         
         # ===== STRATEGY 3: Search by Planning Sheet name reference =====
         # Some PPs might reference the planning sheet directly

@@ -4,7 +4,7 @@
     <div class="cc-filters">
       <div class="cc-filter-item">
         <label>View Scope</label>
-        <select v-model="viewScope" @change="toggleViewScope" :disabled="isManufactureUser" style="font-weight: bold; color: #4f46e5;" :style="isManufactureUser ? { opacity: '0.5', cursor: 'not-allowed' } : {}">
+        <select v-model="viewScope" @change="toggleViewScope" :disabled="isManufactureUser" style="font-weight: bold; color: #4f46e5;" :style="isManufactureUser ? { opacity: '0.3', cursor: 'not-allowed', pointerEvents: 'none' } : {}">
           <option value="daily">Daily</option>
           <option value="weekly">Weekly</option>
           <option value="monthly">Monthly</option>
@@ -659,12 +659,15 @@ function goToBoard() {
 }
 
 function toggleViewScope() {
-    // Prevent manufacture users from changing view scope
+    // Prevent manufacture users from changing view scope - force back to daily
     if (isManufactureUser.value) {
         viewScope.value = "daily";
+        filterOrderDate.value = frappe.datetime.get_today();
+        console.warn("Manufacture users cannot change view scope");
         return;
     }
     
+    // Normal users can change scope
     if (viewScope.value === 'monthly' && !filterMonth.value) {
         filterMonth.value = frappe.datetime.get_today().substring(0, 7);
     } else if (viewScope.value === 'weekly' && !filterWeek.value) {
@@ -784,7 +787,15 @@ function updateUrlParams() {
     window.history.replaceState({path: newUrl}, '', newUrl);
 }
 
-watch(viewScope, updateUrlParams);
+watch(viewScope, (newVal) => {
+  // Manufacture users are locked to "daily" view
+  if (isManufactureUser.value && newVal !== "daily") {
+    console.warn("Manufacture users cannot change view scope - resetting to daily");
+    viewScope.value = "daily";
+    return;
+  }
+  updateUrlParams();
+});
 watch(filterOrderDate, (newVal) => {
   // Prevent manufacture users from changing the date - force today
   if (isManufactureUser.value && newVal !== frappe.datetime.get_today()) {
