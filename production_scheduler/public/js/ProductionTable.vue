@@ -810,7 +810,8 @@ watch(filterMonth, updateUrlParams);
 onMounted(() => {
   // Check user role for visibility control
   try {
-    isManufactureUser.value = frappe.has_role("Manufacture User");
+    // Check for both "Manufacturing User" and "Manufacture User" role names
+    isManufactureUser.value = frappe.has_role("Manufacturing User") || frappe.has_role("Manufacture User");
   } catch (e) {
     console.log("Could not detect user role", e);
     isManufactureUser.value = false;

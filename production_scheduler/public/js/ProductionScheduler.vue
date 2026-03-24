@@ -5,7 +5,7 @@
     <div class="cc-filters">
       <div class="cc-filter-item">
         <label>View Scope</label>
-        <select v-model="viewScope" @change="toggleViewScope" style="font-weight: bold; color: #4f46e5;">
+        <select v-model="viewScope" @change="toggleViewScope" :disabled="isManufactureUser" style="font-weight: bold; color: #4f46e5;" :style="isManufactureUser ? { opacity: '0.3', cursor: 'not-allowed', pointerEvents: 'none' } : {}">
           <option value="daily">Daily</option>
           <option value="weekly">Weekly</option>
           <option value="monthly">Monthly</option>
@@ -14,7 +14,7 @@
       
       <div class="cc-filter-item" v-if="viewScope === 'daily'">
         <label>Planned Date</label>
-        <input type="date" v-model="filterOrderDate" @change="fetchData" />
+        <input type="date" v-model="filterOrderDate" @change="fetchData" :disabled="isManufactureUser" :style="isManufactureUser ? { opacity: '0.3', cursor: 'not-allowed', pointerEvents: 'none' } : {}" />
       </div>
       <div class="cc-filter-item" v-else-if="viewScope === 'weekly'">
         <label>Select Week</label>
@@ -322,6 +322,9 @@ const filterWeek = ref("");
 const filterMonth = ref("");
 const viewScope = ref("daily");
 
+// ===== ROLE-BASED VISIBILITY CONTROL =====
+const isManufactureUser = ref(false);
+
 const filterPartyCode = ref("");
 const filterCustomer = ref("");
 const filterUnit = ref("");
@@ -463,6 +466,15 @@ function goToConfirmedOrders() {
 }
 
 function toggleViewScope() {
+    // Prevent manufacture users from changing view scope - force back to daily
+    if (isManufactureUser.value) {
+        viewScope.value = "daily";
+        filterOrderDate.value = frappe.datetime.get_today();
+        console.warn("Manufacture users cannot change view scope");
+        return;
+    }
+    
+    // Normal users can change scope
     if (viewScope.value === 'monthly' && !filterMonth.value) {
         filterMonth.value = frappe.datetime.get_today().substring(0, 7);
     } else if (viewScope.value === 'weekly' && !filterWeek.value) {
@@ -1888,10 +1900,25 @@ function updateUrlParams() {
 }
 
 // Watchers to sync state to URL
-watch(filterOrderDate, updateUrlParams);
+watch(filterOrderDate, (newVal) => {
+  // Prevent manufacture users from changing the date - force today
+  if (isManufactureUser.value && newVal !== frappe.datetime.get_today()) {
+    filterOrderDate.value = frappe.datetime.get_today();
+    return;
+  }
+  updateUrlParams();
+});
 watch(filterUnit, updateUrlParams);
 watch(filterStatus, updateUrlParams);
-watch(viewScope, updateUrlParams);
+watch(viewScope, (newVal) => {
+  // Manufacture users are locked to "daily" view
+  if (isManufactureUser.value && newVal !== "daily") {
+    console.warn("Manufacture users cannot change view scope - resetting to daily");
+    viewScope.value = "daily";
+    return;
+  }
+  updateUrlParams();
+});
 watch(filterWeek, () => {
     updateUrlParams();
     fetchData();
@@ -1942,20 +1969,36 @@ onMounted(() => {
     const monthParam = qParams.get("month");
     const weekParam = qParams.get("week");
     
-    // Fallbacks
-    if (dateParam) {
-        filterOrderDate.value = dateParam;
-    } else if (monthParam) {
-        filterMonth.value = monthParam;
-    } else if (weekParam) {
-        filterWeek.value = weekParam;
+    // Check user role for visibility control
+    try {
+        // Check for both "Manufacturing User" and "Manufacture User" role names
+        isManufactureUser.value = frappe.has_role("Manufacturing User") || frappe.has_role("Manufacture User");
+    } catch (e) {
+        console.log("Could not detect user role", e);
+        isManufactureUser.value = false;
     }
-
-    const scopeParam = qParams.get("scope");
-    if (scopeParam && ["daily", "weekly", "monthly"].includes(scopeParam)) {
-        viewScope.value = scopeParam;
+    
+    // For manufacture users: FORCE daily view with today's date only
+    if (isManufactureUser.value) {
+        viewScope.value = "daily";
+        filterOrderDate.value = frappe.datetime.get_today();
     } else {
-        viewScope.value = 'daily';
+        // For other users: respect URL parameters
+        // Fallbacks
+        if (dateParam) {
+            filterOrderDate.value = dateParam;
+        } else if (monthParam) {
+            filterMonth.value = monthParam;
+        } else if (weekParam) {
+            filterWeek.value = weekParam;
+        }
+
+        const scopeParam = qParams.get("scope");
+        if (scopeParam && ["daily", "weekly", "monthly"].includes(scopeParam)) {
+            viewScope.value = scopeParam;
+        } else {
+            viewScope.value = 'daily';
+        }
     }
 
     if (viewScope.value === 'daily' && !filterOrderDate.value) {
