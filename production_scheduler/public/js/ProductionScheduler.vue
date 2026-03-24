@@ -326,10 +326,7 @@ const viewScope = ref("daily");
 const isManufactureUser = ref(false);
 const RESTRICTED_ROLE_NAMES = [
   "Manufacturing User",
-  "Manufacture User",
-  "Operator",
-  "Supervisor",
-  "operator/supervisor"
+  "Manufacture User"
 ];
 
 function getCurrentUserRoles() {
