@@ -130,7 +130,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from "vue";
+import { ref, computed, onMounted, nextTick, watch, reactive } from "vue";
 
 // ===== MAINTENANCE DATA =====
 const maintenanceRecords = ref([]);
