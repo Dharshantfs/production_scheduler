@@ -529,6 +529,54 @@ const rawData = ref([]);
 // ===== ROLE-BASED VISIBILITY CONTROL =====
 const isManufactureUser = ref(false);
 
+const RESTRICTED_ROLE_NAMES = [
+  "Manufacturing User",
+  "Manufacture User",
+  "Operator",
+  "Supervisor",
+  "operator/supervisor"
+];
+
+function getCurrentUserRoles() {
+  const roleSet = new Set();
+
+  if (Array.isArray(frappe?.user_roles)) {
+    frappe.user_roles.forEach((r) => roleSet.add(String(r || "").trim()));
+  }
+
+  const bootRoles = frappe?.boot?.user?.roles;
+  if (Array.isArray(bootRoles)) {
+    bootRoles.forEach((r) => {
+      if (typeof r === "string") roleSet.add(r.trim());
+      else if (r && typeof r === "object" && r.role) roleSet.add(String(r.role).trim());
+    });
+  }
+
+  return Array.from(roleSet);
+}
+
+function detectRestrictedUser() {
+  const roles = getCurrentUserRoles();
+  if (roles.length) {
+    const lower = roles.map((r) => r.toLowerCase());
+    return RESTRICTED_ROLE_NAMES.some((r) => lower.includes(r.toLowerCase()));
+  }
+
+  try {
+    if (frappe?.user?.has_role) {
+      return RESTRICTED_ROLE_NAMES.some((r) => frappe.user.has_role(r));
+    }
+  } catch (e) {}
+
+  try {
+    if (frappe?.has_role) {
+      return RESTRICTED_ROLE_NAMES.some((r) => frappe.has_role(r));
+    }
+  } catch (e) {}
+
+  return false;
+}
+
 const visibleUnits = computed(() => {
   if (!filterUnit.value) return units;
   return units.filter((u) => u === filterUnit.value);
@@ -642,8 +690,8 @@ async function openProductionPlanView(planningSheetName) {
     
     if (res.message && res.message.status === "ok") {
       const ppId = res.message.pp_id;
-      // Open Production Plan PRINT FORMAT in new tab
-      window.open(`/app/production-plan/${ppId}?print`, '_blank');
+      const printUrl = `/printview?doctype=${encodeURIComponent("Production Plan")}&name=${encodeURIComponent(ppId)}&trigger_print=0`;
+      window.open(printUrl, '_blank');
     } else {
       const errorMsg = res.message?.message || "Error fetching Production Plan";
       frappe.msgprint(errorMsg);
@@ -792,6 +840,7 @@ watch(viewScope, (newVal) => {
   if (isManufactureUser.value && newVal !== "daily") {
     console.warn("Manufacture users cannot change view scope - resetting to daily");
     viewScope.value = "daily";
+    fetchData();
     return;
   }
   updateUrlParams();
@@ -810,8 +859,7 @@ watch(filterMonth, updateUrlParams);
 onMounted(() => {
   // Check user role for visibility control
   try {
-    // Check for both "Manufacturing User" and "Manufacture User" role names
-    isManufactureUser.value = frappe.has_role("Manufacturing User") || frappe.has_role("Manufacture User");
+    isManufactureUser.value = detectRestrictedUser();
   } catch (e) {
     console.log("Could not detect user role", e);
     isManufactureUser.value = false;
