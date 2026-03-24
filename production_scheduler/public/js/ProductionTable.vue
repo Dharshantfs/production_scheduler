@@ -690,7 +690,7 @@ async function openProductionPlanView(planningSheetName) {
     
     if (res.message && res.message.status === "ok") {
       const ppId = res.message.pp_id;
-      const printUrl = `/printview?doctype=${encodeURIComponent("Production Plan")}&name=${encodeURIComponent(ppId)}&trigger_print=0`;
+      const printUrl = `/printview?doctype=${encodeURIComponent("Production Plan")}&name=${encodeURIComponent(ppId)}&format=${encodeURIComponent("Assembly Item - Raw Material")}&trigger_print=0`;
       window.open(printUrl, '_blank');
     } else {
       const errorMsg = res.message?.message || "Error fetching Production Plan";
