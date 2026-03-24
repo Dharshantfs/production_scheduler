@@ -190,6 +190,12 @@
             </div>
             </div>
 
+            <!-- Maintenance Indicator -->
+            <div v-if="getMaintenanceForDateAndUnit(filterOrderDate, unit)" class="cc-maintenance-indicator">
+                🔧 {{ getMaintenanceForDateAndUnit(filterOrderDate, unit)[0].type }}
+                <br><span style="font-size: 10px; font-weight: normal;">{{ getMaintenanceForDateAndUnit(filterOrderDate, unit)[0].start }} - {{ getMaintenanceForDateAndUnit(filterOrderDate, unit)[0].end }}</span>
+            </div>
+
             <div class="cc-col-body" :data-unit="unit" ref="columnRefs">
             <template v-for="(entry, idx) in getUnitEntries(unit)" :key="entry.uniqueKey">
                 <!-- Mix Roll Marker -->
@@ -914,11 +920,52 @@ const canAccessDashboard = computed(() => {
     return isAdmin.value || roles.includes('Manufacturing Manager');
 });
 const rawData = ref([]);
+const maintenanceRecords = ref([]);
+const maintenanceData = reactive({});
+
 const columnRefs = ref(null);
 const monthlyCellRefs = ref(null);
 const matrixHeaderRow = ref(null); // Ref for Matrix Column sorting
 const matrixBody = ref(null);      // Ref for Matrix Row sorting
 const customRowOrder = ref([]);    // Store user-defined row order (List of Colors)
+
+async function fetchMaintenanceRecords() {
+	try {
+		const res = await frappe.call({
+			method: "production_scheduler.api.get_all_equipment_maintenance"
+		});
+		if (res.message) {
+			maintenanceRecords.value = res.message;
+			// Map by date and unit for quick lookup
+			maintenanceData.value = {};
+			res.message.forEach(rec => {
+				const startD = new Date(rec.start_date);
+				const endD = new Date(rec.end_date);
+				for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+					const dateStr = d.toISOString().split('T')[0];
+					if (!maintenanceData[dateStr]) maintenanceData[dateStr] = {};
+					if (!maintenanceData[dateStr][rec.unit]) maintenanceData[dateStr][rec.unit] = [];
+					maintenanceData[dateStr][rec.unit].push({
+						type: rec.maintenance_type,
+						start: rec.start_date,
+						end: rec.end_date,
+						status: rec.status
+					});
+				}
+			});
+		}
+	} catch (e) {
+		console.error("Failed to fetch maintenance records", e);
+	}
+}
+
+function getMaintenanceForDateAndUnit(date, unit) {
+	if (!date) return null;
+	const dateStr = new Date(date).toISOString().split('T')[0];
+	if (!maintenanceData[dateStr]) return null;
+	return maintenanceData[dateStr][unit];
+}
+
 async function syncAllPlanCodes() {
     frappe.confirm(
         'This will recalculate and sync Plan Codes for ALL existing Planning Sheets. It may take a few moments. Continue?',
@@ -4455,6 +4502,9 @@ async function fetchData() {
         customRowOrder.value = orderRes.message || [];
     } catch(e) { console.error("Failed to load color order", e); }
 
+    // Fetch Maintenance Records
+    await fetchMaintenanceRecords();
+
     // Re-init sortable for fresh DOM (all view modes)
     await nextTick();
     // Small delay ensures monthly refs are ready
@@ -5938,6 +5988,18 @@ function updateRescueSelection(d) {
 .cc-approve-btn.request:hover { background: #dbeafe; }
 .cc-approve-btn.approve { background: #10b981; color: white; }
 .cc-approve-btn.approve:hover { background: #059669; }
+
+.cc-maintenance-indicator {
+  padding: 8px 12px;
+  background-color: #fee2e2;
+  border: 2px solid #dc2626;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #991b1b;
+  text-align: center;
+  margin: 0 10px;
+}
 
 .cc-col-body {
   padding: 10px;
