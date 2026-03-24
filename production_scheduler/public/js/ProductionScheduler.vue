@@ -138,6 +138,20 @@
           </div>
 
         <div class="cc-col-body" :data-unit="unit" ref="columnRefs" :key="'col-' + unit + '-' + renderKey">
+          <div v-if="getMaintenanceForBoardDate(unit)" class="cc-maint-board-alert">
+            <span>
+              🔧 MAINTENANCE: {{ getMaintenanceForBoardDate(unit).type }}
+              ({{ getMaintenanceForBoardDate(unit).startDate }} - {{ getMaintenanceForBoardDate(unit).endDate }})
+            </span>
+            <button
+              class="cc-maint-remove-btn"
+              @click.stop="deleteMaintenanceRecordFromBoard(getMaintenanceForBoardDate(unit).name)"
+              title="Remove maintenance"
+            >
+              Remove
+            </button>
+          </div>
+
           <template v-for="(entry, idx) in getUnitEntries(unit)" :key="entry.uniqueKey">
             <!-- Mix Roll Marker (HIDDEN as per user request, but handled correctly) -->
             <div v-if="entry.type === 'mix'" class="cc-mix-marker" style="display:none;">
@@ -320,6 +334,8 @@ units.forEach(u => {
 
 const rawData = ref([]);
 const selectedItems = ref([]); // Names of Planning Sheet Items selected for bulk actions
+const maintenanceRecords = ref([]);
+const maintenanceData = ref({});
 
 const columnRefs = ref([]);
 
@@ -331,6 +347,67 @@ function handleRealtimeBoardUpdate(payload) {
   // Optional optimisation: only refresh if date matches current view.
   // For now, keep it simple and always refresh so supervisors see changes.
   fetchData();
+  fetchMaintenanceRecords();
+}
+
+async function fetchMaintenanceRecords() {
+  try {
+    const res = await frappe.call({
+      method: "production_scheduler.api.get_all_equipment_maintenance"
+    });
+
+    maintenanceRecords.value = res.message || [];
+    maintenanceData.value = {};
+
+    maintenanceRecords.value.forEach(rec => {
+      const startD = new Date(rec.start_date);
+      const endD = new Date(rec.end_date);
+      for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+        const dateStr = d.toISOString().split('T')[0];
+        if (!maintenanceData.value[dateStr]) maintenanceData.value[dateStr] = {};
+        if (!maintenanceData.value[dateStr][rec.unit]) maintenanceData.value[dateStr][rec.unit] = [];
+        maintenanceData.value[dateStr][rec.unit].push({
+          name: rec.name,
+          type: rec.maintenance_type,
+          startDate: rec.start_date,
+          endDate: rec.end_date,
+          status: rec.status
+        });
+      }
+    });
+  } catch (e) {
+    console.error("Failed to fetch maintenance records", e);
+  }
+}
+
+function getMaintenanceForBoardDate(unit) {
+  if (viewScope.value !== 'daily') return null;
+  const date = filterOrderDate.value;
+  if (!date || !maintenanceData.value[date] || !maintenanceData.value[date][unit]) return null;
+  return maintenanceData.value[date][unit][0] || null;
+}
+
+async function deleteMaintenanceRecordFromBoard(recordName) {
+  if (!recordName) return;
+  if (!confirm('Remove this maintenance record? Orders moved for this maintenance will be restored to original dates.')) return;
+
+  try {
+    const res = await frappe.call({
+      method: "production_scheduler.api.delete_maintenance_and_cascade",
+      args: { maintenance_record_name: recordName }
+    });
+
+    if (res.message && res.message.status === 'success') {
+      frappe.show_alert({ message: res.message.message, indicator: 'green' });
+      await fetchMaintenanceRecords();
+      await fetchData();
+    } else {
+      frappe.msgprint((res.message && res.message.message) || 'Error deleting maintenance record');
+    }
+  } catch (e) {
+    console.error(e);
+    frappe.msgprint('Error deleting maintenance record');
+  }
 }
 
 // Proper cleanup on unmount only (NOT on every update — that caused freeze loops)
@@ -1896,6 +1973,7 @@ onMounted(() => {
     // 3. Load flatpickr JS and init
     frappe.require('https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.js', () => {
         initFlatpickr();
+      fetchMaintenanceRecords();
         fetchData();
     });
 
@@ -2150,6 +2228,32 @@ async function restoreWhiteOrders() {
   overflow-y: auto;
   padding: 8px;
   background-color: #f9fafb; /* Light gray info background inside column */
+}
+
+.cc-maint-board-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #fee2e2;
+  border: 1px solid #dc2626;
+  color: #991b1b;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.cc-maint-remove-btn {
+  border: none;
+  background: #dc2626;
+  color: #ffffff;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  cursor: pointer;
+  font-weight: 700;
 }
 .cc-empty { 
     text-align: center; color: #9ca3af; font-size: 13px; margin-top: 20px; font-style: italic; 

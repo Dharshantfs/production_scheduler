@@ -72,42 +72,52 @@
                 </thead>
                 <tbody>
                     <template v-for="dateGroup in unitGroup.dates" :key="dateGroup.date">
+                      <!-- Maintenance Row (shown once for the date group, even if no orders) -->
+                      <tr v-if="getMaintenanceForDate(dateGroup.date, unitGroup.unit)" style="background-color: #fee2e2; border: 2px solid #dc2626;">
+                        <td colspan="11" style="padding: 8px 12px; font-weight: 700; color: #991b1b; display: flex; justify-content: space-between; align-items: center;">
+                          <span>🔧 MAINTENANCE: {{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].type }} ({{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].startDate }} - {{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].endDate }})</span>
+                          <button @click="deleteMaintenanceRecord(getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].name)" style="background: #dc2626; color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Remove</button>
+                        </td>
+                      </tr>
+
+                      <template v-if="dateGroup.items.length">
                         <template v-for="(item, idx) in dateGroup.items" :key="item.itemName">
-                            <!-- Maintenance Row (shown once at the beginning of date group) -->
-                            <tr v-if="idx === 0 && getMaintenanceForDate(dateGroup.date, unitGroup.unit)" style="background-color: #fee2e2; border: 2px solid #dc2626;">
-                                <td colspan="11" style="padding: 8px 12px; font-weight: 700; color: #991b1b; display: flex; justify-content: space-between; align-items: center;">
-                                    <span>🔧 MAINTENANCE: {{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].type }} ({{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].startDate }} - {{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].endDate }})</span>
-                                    <button @click="deleteMaintenanceRecord(getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].name)" style="background: #dc2626; color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Remove</button>
-                                </td>
-                            </tr>
-                            
-                            <tr>
-                                <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center font-bold">
-                                    {{ formatDate(dateGroup.date) }}
-                                </td>
-                                <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center">
-                                    {{ getDayName(dateGroup.date) }}
-                                </td>
-                                
-                                <td class="cell-center">{{ item.partyCode }}</td>
-                                <td>{{ item.customer }}</td>
-                                <td class="cell-center font-mono font-bold" style="font-size:11px; color:#4f46e5;">{{ item.planCode }}</td>
-                                <td class="cell-center">{{ item.quality }}</td>
-                                <td class="cell-center font-bold">{{ item.color }}</td>
-                                <td class="cell-center">{{ item.gsm }}</td>
-                                <td class="cell-right font-bold">{{ item.qty }}</td>
-                                
-                                <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center font-bold bg-yellow-50">
-                                    {{ dateGroup.dailyTotal.toFixed(0) }}
-                                </td>
-                                
-                                <td class="cell-center">
-                                    <span class="status-badge" :class="getDispatchStatusClass(item.delivery_status)">
-                                        {{ formatDispatchStatus(item.delivery_status) }}
-                                    </span>
-                                </td>
-                            </tr>
+                          <tr>
+                            <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center font-bold">
+                              {{ formatDate(dateGroup.date) }}
+                            </td>
+                            <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center">
+                              {{ getDayName(dateGroup.date) }}
+                            </td>
+                                    
+                            <td class="cell-center">{{ item.partyCode }}</td>
+                            <td>{{ item.customer }}</td>
+                            <td class="cell-center font-mono font-bold" style="font-size:11px; color:#4f46e5;">{{ item.planCode }}</td>
+                            <td class="cell-center">{{ item.quality }}</td>
+                            <td class="cell-center font-bold">{{ item.color }}</td>
+                            <td class="cell-center">{{ item.gsm }}</td>
+                            <td class="cell-right font-bold">{{ item.qty }}</td>
+                                    
+                            <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center font-bold bg-yellow-50">
+                              {{ dateGroup.dailyTotal.toFixed(0) }}
+                            </td>
+                                    
+                            <td class="cell-center">
+                              <span class="status-badge" :class="getDispatchStatusClass(item.delivery_status)">
+                                {{ formatDispatchStatus(item.delivery_status) }}
+                              </span>
+                            </td>
+                          </tr>
                         </template>
+                      </template>
+
+                      <tr v-else>
+                        <td class="cell-center font-bold">{{ formatDate(dateGroup.date) }}</td>
+                        <td class="cell-center">{{ getDayName(dateGroup.date) }}</td>
+                        <td colspan="7" style="text-align:center; color:#94a3b8; font-style:italic;">No orders (maintenance day)</td>
+                        <td class="cell-center font-bold bg-yellow-50">0</td>
+                        <td class="cell-center">-</td>
+                      </tr>
                     </template>
                     <tr v-if="unitGroup.dates.length === 0">
                         <td colspan="10" style="text-align:center; padding: 20px; color:#999;">No production planned for this unit</td>
@@ -120,11 +130,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch, reactive } from "vue";
+import { ref, computed, onMounted, nextTick, watch } from "vue";
 
 // ===== MAINTENANCE DATA =====
 const maintenanceRecords = ref([]);
-const maintenanceData = reactive({});
+const maintenanceData = ref({});
 
 async function fetchMaintenanceRecords() {
 	try {
@@ -140,9 +150,9 @@ async function fetchMaintenanceRecords() {
 				const endD = new Date(rec.end_date);
 				for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
 					const dateStr = d.toISOString().split('T')[0];
-					if (!maintenanceData[dateStr]) maintenanceData[dateStr] = {};
-					if (!maintenanceData[dateStr][rec.unit]) maintenanceData[dateStr][rec.unit] = [];
-					maintenanceData[dateStr][rec.unit].push({
+          if (!maintenanceData.value[dateStr]) maintenanceData.value[dateStr] = {};
+          if (!maintenanceData.value[dateStr][rec.unit]) maintenanceData.value[dateStr][rec.unit] = [];
+          maintenanceData.value[dateStr][rec.unit].push({
 						name: rec.name,
 						type: rec.maintenance_type,
 						startDate: rec.start_date,
@@ -178,8 +188,55 @@ async function deleteMaintenanceRecord(recordName) {
 }
 
 function getMaintenanceForDate(date, unit) {
-	if (!date || !maintenanceData[date]) return null;
-	return maintenanceData[date][unit];
+  if (!date || !maintenanceData.value[date]) return null;
+  return maintenanceData.value[date][unit];
+}
+
+function getCurrentScopeDateRange() {
+  if (viewScope.value === 'monthly') {
+    if (!filterMonth.value) return null;
+    const [year, month] = filterMonth.value.split('-').map(v => parseInt(v, 10));
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 0);
+    return { start, end };
+  }
+
+  if (viewScope.value === 'weekly') {
+    if (!filterWeek.value) return null;
+    const [yearStr, weekStr] = filterWeek.value.split('-W');
+    const year = parseInt(yearStr, 10);
+    const week = parseInt(weekStr, 10);
+    const simple = new Date(year, 0, 1 + (week - 1) * 7);
+    const dow = simple.getDay();
+    const start = new Date(simple);
+    if (dow <= 4) start.setDate(simple.getDate() - dow + 1);
+    else start.setDate(simple.getDate() + 8 - dow);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    return { start, end };
+  }
+
+  if (!filterOrderDate.value) return null;
+  const d = new Date(filterOrderDate.value);
+  return { start: d, end: d };
+}
+
+function getScopeMaintenanceDates(unit) {
+  const range = getCurrentScopeDateRange();
+  if (!range) return [];
+
+  const out = [];
+  const cur = new Date(range.start);
+  while (cur <= range.end) {
+    const y = cur.getFullYear();
+    const m = String(cur.getMonth() + 1).padStart(2, '0');
+    const d = String(cur.getDate()).padStart(2, '0');
+    const dateStr = `${y}-${m}-${d}`;
+    if (getMaintenanceForDate(dateStr, unit)) out.push(dateStr);
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  return out;
 }
 
 async function openMaintenanceDialog() {
@@ -251,13 +308,8 @@ async function openMaintenanceDialog() {
 				if (res.message && res.message.status === 'success') {
 					frappe.show_alert({ message: res.message.message, indicator: 'green' });
 					await fetchMaintenanceRecords();
-					d.set_value('records_display', getMaintenanceRecordsHTML());
-					// Reset form
-					d.set_value('new_unit', '');
-					d.set_value('maint_type', '');
-					d.set_value('start_date', '');
-					d.set_value('end_date', '');
-					d.set_value('notes', '');
+          await fetchData();
+          d.hide();
 				}
 			} catch (e) {
 				frappe.msgprint("Error adding maintenance record");
@@ -503,6 +555,13 @@ const tableData = computed(() => {
             dateGroupsObj[d].items.push(item);
             dateGroupsObj[d].dailyTotal += (item.qty || 0);
         });
+
+    // Ensure maintenance dates are visible even when there are zero orders on those dates.
+    for (const maintenanceDate of getScopeMaintenanceDates(unit)) {
+      if (!dateGroupsObj[maintenanceDate]) {
+        dateGroupsObj[maintenanceDate] = { date: maintenanceDate, items: [], dailyTotal: 0 };
+      }
+    }
         
         const dates = Object.values(dateGroupsObj).sort((a, b) => new Date(a.date) - new Date(b.date));
         
