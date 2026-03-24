@@ -328,6 +328,7 @@ const RESTRICTED_ROLE_NAMES = [
   "Manufacturing User",
   "Manufacture User"
 ];
+const PRIVILEGED_ROLE_NAMES = ["System Manager"];
 
 function getCurrentUserRoles() {
   const roleSet = new Set();
@@ -348,20 +349,27 @@ function getCurrentUserRoles() {
 }
 
 function detectRestrictedUser() {
+  const currentUser = String(frappe?.session?.user || "").toLowerCase();
+  if (currentUser === "administrator") return false;
+
   const roles = getCurrentUserRoles();
   if (roles.length) {
     const lower = roles.map((r) => r.toLowerCase());
+    const isPrivileged = PRIVILEGED_ROLE_NAMES.some((r) => lower.includes(r.toLowerCase()));
+    if (isPrivileged) return false;
     return RESTRICTED_ROLE_NAMES.some((r) => lower.includes(r.toLowerCase()));
   }
 
   try {
     if (frappe?.user?.has_role) {
+      if (PRIVILEGED_ROLE_NAMES.some((r) => frappe.user.has_role(r))) return false;
       return RESTRICTED_ROLE_NAMES.some((r) => frappe.user.has_role(r));
     }
   } catch (e) {}
 
   try {
     if (frappe?.has_role) {
+      if (PRIVILEGED_ROLE_NAMES.some((r) => frappe.has_role(r))) return false;
       return RESTRICTED_ROLE_NAMES.some((r) => frappe.has_role(r));
     }
   } catch (e) {}
