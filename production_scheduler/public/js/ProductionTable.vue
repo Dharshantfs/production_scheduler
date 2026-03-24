@@ -39,6 +39,7 @@
         </select>
       </div>
       <button class="cc-clear-btn" @click="fetchData">🔄 Refresh</button>
+      <button class="cc-maint-btn" @click="openMaintenanceDialog" title="Manage equipment maintenance schedules">⚙️ Maintenance</button>
       
       <div class="cc-filter-item" style="margin-left: auto;">
           <button class="cc-view-btn" @click="goToBoard">📊 Back to Board</button>
@@ -72,6 +73,14 @@
                 <tbody>
                     <template v-for="dateGroup in unitGroup.dates" :key="dateGroup.date">
                         <template v-for="(item, idx) in dateGroup.items" :key="item.itemName">
+                            <!-- Maintenance Row (shown once at the beginning of date group) -->
+                            <tr v-if="idx === 0 && getMaintenanceForDate(dateGroup.date, unitGroup.unit)" style="background-color: #fee2e2; border: 2px solid #dc2626;">
+                                <td colspan="10" style="padding: 8px 12px; font-weight: 700; color: #991b1b;">
+                                    🔧 MAINTENANCE: {{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].type }} 
+                                    ({{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].startDate }} - {{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].endDate }})
+                                </td>
+                            </tr>
+                            
                             <tr>
                                 <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center font-bold">
                                     {{ formatDate(dateGroup.date) }}
@@ -112,6 +121,162 @@
 
 <script setup>
 import { ref, computed, onMounted, nextTick, watch, reactive } from "vue";
+
+// ===== MAINTENANCE DATA =====
+const maintenanceRecords = ref([]);
+const maintenanceData = reactive({});
+
+async function fetchMaintenanceRecords() {
+	try {
+		const res = await frappe.call({
+			method: "production_scheduler.api.get_all_equipment_maintenance"
+		});
+		if (res.message) {
+			maintenanceRecords.value = res.message;
+			// Map by date and unit for quick lookup
+			maintenanceData.value = {};
+			res.message.forEach(rec => {
+				const startD = new Date(rec.start_date);
+				const endD = new Date(rec.end_date);
+				for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+					const dateStr = d.toISOString().split('T')[0];
+					if (!maintenanceData[dateStr]) maintenanceData[dateStr] = {};
+					if (!maintenanceData[dateStr][rec.unit]) maintenanceData[dateStr][rec.unit] = [];
+					maintenanceData[dateStr][rec.unit].push({
+						type: rec.maintenance_type,
+						startDate: rec.start_date,
+						endDate: rec.end_date,
+						status: rec.status
+					});
+				}
+			});
+		}
+	} catch (e) {
+		console.error("Failed to fetch maintenance records", e);
+	}
+}
+
+function getMaintenanceForDate(date, unit) {
+	if (!date || !maintenanceData[date]) return null;
+	return maintenanceData[date][unit];
+}
+
+async function openMaintenanceDialog() {
+	const d = new frappe.ui.Dialog({
+		title: "⚙️ Equipment Maintenance Management",
+		fields: [
+			{
+				fieldtype: "Section Break",
+				label: "Add New Maintenance"
+			},
+			{
+				fieldtype: "Select",
+				fieldname: "new_unit",
+				label: "Unit",
+				options: "Unit 1\nUnit 2\nUnit 3\nUnit 4",
+				reqd: 1
+			},
+			{
+				fieldtype: "Select",
+				fieldname: "maint_type",
+				label: "Maintenance Type",
+				options: "Mesh Change\nDie Change",
+				reqd: 1
+			},
+			{
+				fieldtype: "Date",
+				fieldname: "start_date",
+				label: "Start Date",
+				reqd: 1
+			},
+			{
+				fieldtype: "Date",
+				fieldname: "end_date",
+				label: "End Date",
+				reqd: 1
+			},
+			{
+				fieldtype: "Small Text",
+				fieldname: "notes",
+				label: "Notes"
+			},
+			{
+				fieldtype: "Section Break",
+				label: "Existing Maintenance Records"
+			},
+			{
+				fieldtype: "HTML",
+				fieldname: "records_display",
+				options: getMaintenanceRecordsHTML()
+			}
+		],
+		primary_action_label: "Add Maintenance",
+		primary_action: async (vals) => {
+			if (!vals.new_unit || !vals.maint_type || !vals.start_date || !vals.end_date) {
+				frappe.msgprint("Please fill all required fields");
+				return;
+			}
+			try {
+				const res = await frappe.call({
+					method: "production_scheduler.api.add_equipment_maintenance",
+					args: {
+						unit: vals.new_unit,
+						maintenance_type: vals.maint_type,
+						start_date: vals.start_date,
+						end_date: vals.end_date,
+						notes: vals.notes || ""
+					}
+				});
+				if (res.message && res.message.status === 'success') {
+					frappe.show_alert({ message: res.message.message, indicator: 'green' });
+					await fetchMaintenanceRecords();
+					d.set_value('records_display', getMaintenanceRecordsHTML());
+					// Reset form
+					d.set_value('new_unit', '');
+					d.set_value('maint_type', '');
+					d.set_value('start_date', '');
+					d.set_value('end_date', '');
+					d.set_value('notes', '');
+				}
+			} catch (e) {
+				frappe.msgprint("Error adding maintenance record");
+				console.error(e);
+			}
+		}
+	});
+	d.show();
+	await fetchMaintenanceRecords();
+}
+
+function getMaintenanceRecordsHTML() {
+	if (!maintenanceRecords.value || maintenanceRecords.value.length === 0) {
+		return '<p style="color: #999; text-align: center;">No maintenance records scheduled</p>';
+	}
+	
+	let html = '<table style="width:100%; border-collapse: collapse; font-size: 12px;"><tr style="background: #f1f5f9; font-weight: 600;">';
+	html += '<th style="border: 1px solid #ddd; padding: 6px;">Unit</th>';
+	html += '<th style="border: 1px solid #ddd; padding: 6px;">Type</th>';
+	html += '<th style="border: 1px solid #ddd; padding: 6px;">Start</th>';
+	html += '<th style="border: 1px solid #ddd; padding: 6px;">End</th>';
+	html += '<th style="border: 1px solid #ddd; padding: 6px;">Status</th>';
+	html += '</tr>';
+	
+	maintenanceRecords.value.forEach(rec => {
+		html += `<tr style="border: 1px solid #ddd;">`;
+		html += `<td style="border: 1px solid #ddd; padding: 6px; text-align: center; font-weight: 600;">${rec.unit}</td>`;
+		html += `<td style="border: 1px solid #ddd; padding: 6px; text-align: center;">${rec.maintenance_type}</td>`;
+		html += `<td style="border: 1px solid #ddd; padding: 6px; text-align: center;">${rec.start_date}</td>`;
+		html += `<td style="border: 1px solid #ddd; padding: 6px; text-align: center;">${rec.end_date}</td>`;
+		html += `<td style="border: 1px solid #ddd; padding: 6px; text-align: center;">`;
+		const statusColor = rec.status === 'Completed' ? '#10b981' : rec.status === 'In Progress' ? '#f59e0b' : '#999';
+		html += `<span style="background: ${statusColor}20; color: ${statusColor}; padding: 2px 6px; border-radius: 4px; font-weight: 600;">${rec.status}</span>`;
+		html += `</td>`;
+		html += `</tr>`;
+	});
+	
+	html += '</table>';
+	return html;
+}
 
 // Color groups for keyword-based matching
 // Check MOST SPECIFIC (multi-word) first, then SINGLE-WORD catch-all groups
@@ -502,6 +667,7 @@ onMounted(() => {
   if (weekParam) filterWeek.value = weekParam;
   if (monthParam) filterMonth.value = monthParam;
   
+  fetchMaintenanceRecords();
   fetchData();
 });
 </script>
@@ -554,6 +720,21 @@ onMounted(() => {
     background-color: #3b82f6;
     color: white;
     border: none;
+}
+.cc-maint-btn {
+    padding: 8px 16px;
+    background-color: #f97316;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+.cc-maint-btn:hover {
+    background-color: #ea580c;
+    box-shadow: 0 2px 4px rgba(249, 115, 22, 0.3);
 }
 
 .cc-table-container {
