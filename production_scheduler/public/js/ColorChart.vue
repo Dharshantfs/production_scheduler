@@ -815,6 +815,30 @@ const selectedPlanLabel = computed(() => {
     return currentMonthPrefix.value + ' ' + selectedPlan.value;
 });
 
+function stripPlanPrefix(name) {
+    if (!name) return '';
+    let s = String(name).trim();
+    // Pattern 1: MARCH W10 26 PLAN 1
+    s = s.replace(/^(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\s+W\d+\s+\d{2}\s+/i, '');
+    // Pattern 2: MAR-26 PLAN 1
+    s = s.replace(/^[A-Z]{3}-\d{2}\s+/i, '');
+    // Pattern 3: MARCH 26 PLAN 1
+    s = s.replace(/^(JANUARY|FEBRUARY|MARCH|APRIL|MAY|JUNE|JULY|AUGUST|SEPTEMBER|OCTOBER|NOVEMBER|DECEMBER)\s+\d{2}\s+/i, '');
+    return s.trim();
+}
+
+function isPlanSelected(planName) {
+    const selected = (selectedPlan.value || 'Default').trim();
+    const plan = (planName || 'Default').trim();
+
+    if (selected === 'Default') {
+        // Treat empty/legacy-default-like values as Default bucket.
+        return !plan || plan === 'Default' || stripPlanPrefix(plan) === 'Default';
+    }
+
+    return stripPlanPrefix(plan) === stripPlanPrefix(selected);
+}
+
 // Only show plans that belong to the current month (or have no month prefix like "Default")
 // All plans are now global "slots" and visible regardless of month
 const visiblePlans = computed(() => {
@@ -933,13 +957,7 @@ const matrixData = computed(() => {
     // baseData = only the selected plan's items (for columns)
     const baseData = rawData.value.filter(d => {
         // ---- PLAN FILTER (columns show only selected plan) ----
-        if (selectedPlan.value && selectedPlan.value !== 'Default') {
-            // Match either the short name (legacy) or the full labeled name (new)
-            if (d.planName !== selectedPlan.value && d.planName !== selectedPlanLabel.value) return false;
-        } else {
-            // Default plan: include items with no plan or explicit Default
-            if (d.planName && d.planName !== '' && d.planName !== 'Default') return false;
-        }
+        if (!isPlanSelected(d.planName)) return false;
 
         // UNIT FILTER
         if (filterUnit.value && (d.unit || "Mixed").toUpperCase() !== filterUnit.value.toUpperCase()) return false;
@@ -1027,11 +1045,7 @@ const matrixData = computed(() => {
     
     rawData.value.filter(d => {
         // Apply same plan filter as baseData (columns)
-        if (selectedPlan.value && selectedPlan.value !== 'Default') {
-            if (d.planName !== selectedPlan.value && d.planName !== selectedPlanLabel.value) return false;
-        } else {
-            if (d.planName && d.planName !== '' && d.planName !== 'Default') return false;
-        }
+        if (!isPlanSelected(d.planName)) return false;
         return true;
     }).forEach(d => {
         if (!d.color) return;
@@ -1242,9 +1256,9 @@ const filteredData = computed(() => {
   }
   
   if (selectedPlan.value && selectedPlan.value !== "Default") {
-      data = data.filter((d) => d.planName === selectedPlan.value || d.planName === selectedPlanLabel.value);
+      data = data.filter((d) => isPlanSelected(d.planName));
   } else {
-      data = data.filter((d) => !d.planName || d.planName === '' || d.planName === "Default");
+      data = data.filter((d) => isPlanSelected(d.planName));
   }
 
   return data;
