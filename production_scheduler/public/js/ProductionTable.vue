@@ -72,11 +72,13 @@
                 </thead>
                 <tbody>
                     <template v-for="dateGroup in unitGroup.dates" :key="dateGroup.date">
-                      <!-- Maintenance Row (shown once for the date group, even if no orders) -->
-                      <tr v-if="getMaintenanceForDate(dateGroup.date, unitGroup.unit)" style="background-color: #fee2e2; border: 2px solid #dc2626;">
-                        <td colspan="11" style="padding: 8px 12px; font-weight: 700; color: #991b1b; display: flex; justify-content: space-between; align-items: center;">
-                          <span>🔧 MAINTENANCE: {{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].type }} ({{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].startDate }} - {{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].endDate }})</span>
-                          <button @click="deleteMaintenanceRecord(getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].name)" style="background: #dc2626; color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Remove</button>
+                      <!-- Maintenance Row (show once at maintenance start date, centered) -->
+                      <tr v-if="getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit)" style="background-color: #fee2e2; border: 2px solid #dc2626;">
+                        <td colspan="11" style="padding: 8px 12px; font-weight: 700; color: #991b1b; text-align: center;">
+                          <div style="display: inline-flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;">
+                            <span>🔧 MAINTENANCE: {{ getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).type }} ({{ getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).startDate }} - {{ getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).endDate }})</span>
+                            <button @click="deleteMaintenanceRecord(getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).name)" style="background: #dc2626; color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Remove</button>
+                          </div>
                         </td>
                       </tr>
 
@@ -190,6 +192,16 @@ async function deleteMaintenanceRecord(recordName) {
 function getMaintenanceForDate(date, unit) {
   if (!date || !maintenanceData.value[date]) return null;
   return maintenanceData.value[date][unit];
+}
+
+function normalizeDateString(dateValue) {
+  if (!dateValue) return "";
+  return String(dateValue).split(' ')[0].split('T')[0];
+}
+
+function getMaintenanceBannerForDate(date, unit) {
+  const records = getMaintenanceForDate(date, unit) || [];
+  return records.find(rec => normalizeDateString(rec.startDate) === date) || null;
 }
 
 function getCurrentScopeDateRange() {

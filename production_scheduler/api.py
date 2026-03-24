@@ -669,6 +669,7 @@ def add_equipment_maintenance(unit, maintenance_type, start_date, end_date, note
 		log_line = marker + json.dumps(movement_log, separators=(",", ":"))
 		stored_notes = f"{user_notes}\n\n{log_line}" if user_notes else log_line
 		frappe.db.set_value("Equipment Maintenance", doc.name, "notes", stored_notes, update_modified=False)
+		frappe.cache().set_value(f"maintenance_cascade_log::{doc.name}", movement_log)
 
 	frappe.db.commit()
 	
@@ -826,8 +827,9 @@ def _restore_orders_to_original_dates(unit, movement_log):
 		current_unit = row[0].get("unit")
 		current_effective = str(getdate(row[0].get("effective_planned_date")))
 
-		# Restore only if item is still on the date where maintenance moved it.
-		if current_unit != unit or current_effective != str(getdate(to_date)):
+		# Restore if item is still on or after the maintenance-shifted date.
+		# This allows rollback even when later logic pushed it further forward.
+		if current_unit != unit or current_effective < str(getdate(to_date)):
 			skipped_count += 1
 			continue
 
@@ -845,6 +847,73 @@ def _restore_orders_to_original_dates(unit, movement_log):
 
 	frappe.db.commit()
 	return {"restored_count": restored_count, "skipped_count": skipped_count}
+
+def _fallback_restore_by_range(unit, maint_start_date, maint_end_date):
+	"""Fallback restore when movement log is missing/corrupted: pull next-day shifted items back into the maintenance window dates."""
+	from frappe.utils import getdate, add_days
+
+	if not frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+		return {"restored_count": 0, "skipped_count": 0}
+
+	start_dt = getdate(maint_start_date)
+	end_dt = getdate(maint_end_date)
+	window_days = (end_dt - start_dt).days + 1
+	search_end = add_days(end_dt, max(3, window_days + 2))
+
+	rows = frappe.db.sql("""
+		SELECT i.name, i.unit, i.qty,
+		       DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) AS effective_planned_date
+		FROM `tabPlanning Sheet Item` i
+		JOIN `tabPlanning sheet` p ON p.name = i.parent
+		WHERE i.unit = %s
+		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) > %s
+		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= %s
+		  AND p.docstatus < 2
+		  AND i.docstatus < 2
+		ORDER BY DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) ASC, i.idx ASC
+	""", (unit, end_dt, search_end), as_dict=True)
+
+	if not rows:
+		return {"restored_count": 0, "skipped_count": 0}
+
+	local_loads = {}
+	restored = 0
+	skipped = 0
+	unit_limit = HARD_LIMITS.get(unit, 999.0)
+
+	for r in rows:
+		item_name = r.get("name")
+		qty_tons = flt(r.get("qty")) / 1000.0
+
+		placed = False
+		for day_offset in range(window_days):
+			candidate = add_days(start_dt, day_offset)
+			candidate_str = candidate if isinstance(candidate, str) else candidate.strftime("%Y-%m-%d")
+
+			if is_date_under_maintenance(unit, candidate_str):
+				continue
+
+			load_key = (candidate_str, unit)
+			if load_key not in local_loads:
+				local_loads[load_key] = get_unit_load(candidate_str, unit, "__all__", pb_only=1)
+
+			current_load = local_loads[load_key]
+			if (current_load + qty_tons <= unit_limit * 1.05) or (current_load == 0 and qty_tons >= unit_limit):
+				frappe.db.sql("""
+					UPDATE `tabPlanning Sheet Item`
+					SET custom_item_planned_date = %s
+					WHERE name = %s
+				""", (candidate_str, item_name))
+				local_loads[load_key] = current_load + qty_tons
+				restored += 1
+				placed = True
+				break
+
+		if not placed:
+			skipped += 1
+
+	frappe.db.commit()
+	return {"restored_count": restored, "skipped_count": skipped}
 
 @frappe.whitelist()
 def delete_maintenance_and_cascade(maintenance_record_name):
@@ -867,13 +936,24 @@ def delete_maintenance_and_cascade(maintenance_record_name):
 		return {"status": "error", "message": "Maintenance record not found"}
 	
 	unit = maint_doc.get("unit")
+	start_date = maint_doc.get("start_date")
+	end_date = maint_doc.get("end_date")
 	notes = maint_doc.get("notes")
-	movement_log = _extract_maintenance_cascade_log(notes)
+	movement_log = frappe.cache().get_value(f"maintenance_cascade_log::{maintenance_record_name}") or _extract_maintenance_cascade_log(notes)
 	
 	# Delete the maintenance record
 	frappe.delete_doc("Equipment Maintenance", maintenance_record_name)
 
 	restore_result = _restore_orders_to_original_dates(unit, movement_log)
+	if restore_result.get("restored_count", 0) == 0:
+		fallback = _fallback_restore_by_range(unit, start_date, end_date)
+		restore_result["restored_count"] = restore_result.get("restored_count", 0) + fallback.get("restored_count", 0)
+		restore_result["skipped_count"] = restore_result.get("skipped_count", 0) + fallback.get("skipped_count", 0)
+
+	try:
+		frappe.cache().delete_value(f"maintenance_cascade_log::{maintenance_record_name}")
+	except Exception:
+		pass
 
 	return {
 		"status": "success",
