@@ -664,6 +664,88 @@ def add_equipment_maintenance(unit, maintenance_type, start_date, end_date, note
 	}
 
 @frappe.whitelist()
+def cascade_orders_after_maintenance_removal(unit, maint_start_date, maint_end_date):
+	"""
+	When maintenance is removed, re-cascade orders that were blocked on those dates
+	to the next available dates with capacity.
+	"""
+	from frappe.utils import getdate, add_days
+	
+	if not unit or not maint_start_date or not maint_end_date:
+		return {"status": "error", "message": "Missing parameters"}
+	
+	start_dt = getdate(maint_start_date)
+	end_dt = getdate(maint_end_date)
+	
+	# Find all items planned between maintenance start and end dates
+	items = frappe.db.sql("""
+		SELECT i.name, i.qty, i.unit, COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as current_date
+		FROM `tabPlanning Sheet Item` i
+		JOIN `tabPlanning sheet` p ON i.parent = p.name
+		WHERE i.unit = %s
+		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) >= %s
+		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= %s
+		  AND p.docstatus < 2
+		  AND i.docstatus < 2
+	""", (unit, start_dt, end_dt), as_dict=True)
+	
+	if not items:
+		return {"status": "success", "message": "No items to cascade", "cascaded_count": 0}
+	
+	has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+	cascaded_count = 0
+	local_loads = {}
+	
+	for item in items:
+		if not has_item_planned_col:
+			continue
+		
+		item_name = item.get("name")
+		qty_tons = flt(item.get("qty")) / 1000.0
+		unit_limit = HARD_LIMITS.get(unit, 999.0)
+		current_date = getdate(item.get("current_date"))
+		
+		# Find next available date (skipping maintenance)
+		candidate = add_days(current_date, 1)
+		found_slot = False
+		
+		for i in range(30):  # Look ahead 30 days
+			candidate_str = candidate if isinstance(candidate, str) else candidate.strftime("%Y-%m-%d")
+			
+			# Skip if under maintenance
+			if is_date_under_maintenance(unit, candidate_str):
+				candidate = add_days(candidate, 1)
+				continue
+			
+			load_key = (candidate_str, unit)
+			if load_key not in local_loads:
+				local_loads[load_key] = get_unit_load(candidate_str, unit, "__all__", pb_only=1)
+			
+			current_load = local_loads[load_key]
+			
+			if (current_load + qty_tons <= unit_limit * 1.05) or (current_load == 0 and qty_tons >= unit_limit):
+				local_loads[load_key] = current_load + qty_tons
+				# Update item's planned date
+				frappe.db.sql("""
+					UPDATE `tabPlanning Sheet Item`
+					SET custom_item_planned_date = %s
+					WHERE name = %s
+				""", (candidate_str, item_name))
+				cascaded_count += 1
+				found_slot = True
+				break
+			
+			candidate = add_days(candidate, 1)
+	
+	frappe.db.commit()
+	
+	return {
+		"status": "success",
+		"message": f"Cascaded {cascaded_count} items to next available dates",
+		"cascaded_count": cascaded_count
+	}
+
+@frappe.whitelist()
 def get_all_equipment_maintenance(start_date=None, end_date=None):
 	"""Get all maintenance records, optionally filtered by date range."""
 	if not frappe.db.exists("DocType", "Equipment Maintenance"):
