@@ -6011,6 +6011,11 @@ def get_planning_sheet_pp_id(planning_sheet_name):
     """
     Fetch the Production Plan ID linked to a Planning Sheet.
     Returns the PP ID so it can be viewed in a new tab.
+    
+    Search strategy:
+    1. Check for direct link in Planning Sheet fields
+    2. If not found, search for PP by matching Sales Order
+    3. Return most recent PP if found
     """
     if not planning_sheet_name:
         return {"status": "error", "message": "Planning sheet name is required"}
@@ -6020,10 +6025,10 @@ def get_planning_sheet_pp_id(planning_sheet_name):
         if not frappe.db.exists("Planning sheet", planning_sheet_name):
             return {"status": "error", "message": "Planning sheet not found"}
         
-        # Try to fetch production_plan from planning sheet
-        # Try different possible field names
+        sheet = frappe.get_doc("Planning sheet", planning_sheet_name)
         pp_id = None
         
+        # ===== STRATEGY 1: Direct field lookup =====
         # Try custom_production_plan first
         if frappe.db.has_column("Planning sheet", "custom_production_plan"):
             pp_id = frappe.db.get_value("Planning sheet", planning_sheet_name, "custom_production_plan")
@@ -6032,14 +6037,40 @@ def get_planning_sheet_pp_id(planning_sheet_name):
         if not pp_id and frappe.db.has_column("Planning sheet", "production_plan"):
             pp_id = frappe.db.get_value("Planning sheet", planning_sheet_name, "production_plan")
         
-        # Try other possible field names
+        # Try other possible field names on the doc
         if not pp_id:
-            sheet = frappe.get_doc("Planning sheet", planning_sheet_name)
             for field_name in ["custom_production_plan", "production_plan", "production_plan_id", "pp_id"]:
                 if hasattr(sheet, field_name):
                     pp_id = getattr(sheet, field_name, None)
                     if pp_id:
                         break
+        
+        # ===== STRATEGY 2: Fallback - search by Sales Order =====
+        # If no direct link, try to find PP by Sales Order
+        if not pp_id and sheet.sales_order:
+            pps = frappe.db.sql("""
+                SELECT name FROM `tabProduction Plan`
+                WHERE sales_order = %s AND docstatus = 1
+                ORDER BY creation DESC
+                LIMIT 1
+            """, (sheet.sales_order,), as_dict=True)
+            
+            if pps:
+                pp_id = pps[0]['name']
+        
+        # ===== STRATEGY 3: Search by Planning Sheet name reference =====
+        # Some PPs might reference the planning sheet directly
+        if not pp_id:
+            pps = frappe.db.sql("""
+                SELECT name FROM `tabProduction Plan`
+                WHERE (custom_planning_sheet = %s OR planning_sheet = %s)
+                AND docstatus = 1
+                ORDER BY creation DESC
+                LIMIT 1
+            """, (planning_sheet_name, planning_sheet_name), as_dict=True)
+            
+            if pps:
+                pp_id = pps[0]['name']
         
         if not pp_id:
             return {"status": "error", "message": "No Production Plan linked to this order sheet"}
