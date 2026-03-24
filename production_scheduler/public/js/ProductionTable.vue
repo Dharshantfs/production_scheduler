@@ -75,9 +75,9 @@
                         <template v-for="(item, idx) in dateGroup.items" :key="item.itemName">
                             <!-- Maintenance Row (shown once at the beginning of date group) -->
                             <tr v-if="idx === 0 && getMaintenanceForDate(dateGroup.date, unitGroup.unit)" style="background-color: #fee2e2; border: 2px solid #dc2626;">
-                                <td colspan="10" style="padding: 8px 12px; font-weight: 700; color: #991b1b;">
-                                    🔧 MAINTENANCE: {{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].type }} 
-                                    ({{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].startDate }} - {{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].endDate }})
+                                <td colspan="11" style="padding: 8px 12px; font-weight: 700; color: #991b1b; display: flex; justify-content: space-between; align-items: center;">
+                                    <span>🔧 MAINTENANCE: {{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].type }} ({{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].startDate }} - {{ getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].endDate }})</span>
+                                    <button @click="deleteMaintenanceRecord(getMaintenanceForDate(dateGroup.date, unitGroup.unit)[0].name)" style="background: #dc2626; color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Remove</button>
                                 </td>
                             </tr>
                             
@@ -143,6 +143,7 @@ async function fetchMaintenanceRecords() {
 					if (!maintenanceData[dateStr]) maintenanceData[dateStr] = {};
 					if (!maintenanceData[dateStr][rec.unit]) maintenanceData[dateStr][rec.unit] = [];
 					maintenanceData[dateStr][rec.unit].push({
+						name: rec.name,
 						type: rec.maintenance_type,
 						startDate: rec.start_date,
 						endDate: rec.end_date,
@@ -153,6 +154,24 @@ async function fetchMaintenanceRecords() {
 		}
 	} catch (e) {
 		console.error("Failed to fetch maintenance records", e);
+	}
+}
+
+async function deleteMaintenanceRecord(recordName) {
+	if (!confirm('Remove this maintenance record? Orders will be pushed forward.')) return;
+	try {
+		const res = await frappe.call({
+			method: "frappe.client.delete",
+			args: { doctype: "Equipment Maintenance", name: recordName }
+		});
+		if (res.message) {
+			frappe.show_alert({ message: "Maintenance record removed! Orders will move forward.", indicator: 'green' });
+			await fetchMaintenanceRecords();
+			await fetchData();
+		}
+	} catch (e) {
+		frappe.msgprint("Error deleting maintenance record");
+		console.error(e);
 	}
 }
 
