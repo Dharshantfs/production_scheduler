@@ -4193,6 +4193,7 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 	strict_target_date: when true, keep item exactly on selected target date (no auto-cascade).
 	"""
 	import json
+	from frappe.utils import getdate, add_days
 	if isinstance(items_data, str):
 		items_data = json.loads(items_data)
 
@@ -4384,7 +4385,6 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 			unit = target_unit or item_doc.unit or get_preferred_unit(item_doc.custom_quality)
 			limit = HARD_LIMITS.get(unit, 999.0)
 			
-			from frappe.utils import getdate, add_days
 			current_check_date = target_dates[0] if target_dates else str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
 
 			# Individual push can force exact selected date, skipping auto-next-day cascade.
