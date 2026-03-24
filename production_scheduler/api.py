@@ -642,6 +642,8 @@ def get_next_available_date_skipping_maintenance(unit, start_date, required_tons
 @frappe.whitelist()
 def add_equipment_maintenance(unit, maintenance_type, start_date, end_date, notes=None):
 	"""Create new Equipment Maintenance record."""
+	import json
+
 	if not frappe.db.exists("DocType", "Equipment Maintenance"):
 		return {"status": "error", "message": "Equipment Maintenance module not found"}
 	
@@ -655,19 +657,33 @@ def add_equipment_maintenance(unit, maintenance_type, start_date, end_date, note
 		"status": "Planned"
 	})
 	doc.insert(ignore_permissions=False)
+
+	# NEW BEHAVIOR: As soon as maintenance is added, move affected orders forward.
+	cascade_result = cascade_orders_after_maintenance_removal(unit, start_date, end_date)
+	movement_log = cascade_result.get("movement_log") or []
+
+	# Persist original->new date movements on the maintenance record so delete can restore backward.
+	if movement_log:
+		marker = "MAINTENANCE_CASCADE_LOG::"
+		user_notes = (notes or "").strip()
+		log_line = marker + json.dumps(movement_log, separators=(",", ":"))
+		stored_notes = f"{user_notes}\n\n{log_line}" if user_notes else log_line
+		frappe.db.set_value("Equipment Maintenance", doc.name, "notes", stored_notes, update_modified=False)
+
 	frappe.db.commit()
 	
 	return {
 		"status": "success",
-		"message": f"Maintenance scheduled for {unit} from {start_date} to {end_date}",
+		"message": f"Maintenance scheduled for {unit} from {start_date} to {end_date}. Moved {cascade_result.get('cascaded_count', 0)} items forward.",
+		"cascaded_count": cascade_result.get("cascaded_count", 0),
 		"name": doc.name
 	}
 
 @frappe.whitelist()
 def cascade_orders_after_maintenance_removal(unit, maint_start_date, maint_end_date):
 	"""
-	When maintenance is removed, re-cascade orders that were blocked on those dates
-	to the next available dates with capacity.
+	Move items planned inside a maintenance window forward to next available dates.
+	(Used at maintenance creation time.)
 	"""
 	from frappe.utils import getdate, add_days
 	
@@ -695,6 +711,7 @@ def cascade_orders_after_maintenance_removal(unit, maint_start_date, maint_end_d
 	has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
 	cascaded_count = 0
 	local_loads = {}
+	movement_log = []
 	
 	for item in items:
 		if not has_item_planned_col:
@@ -704,6 +721,7 @@ def cascade_orders_after_maintenance_removal(unit, maint_start_date, maint_end_d
 		qty_tons = flt(item.get("qty")) / 1000.0
 		unit_limit = HARD_LIMITS.get(unit, 999.0)
 		current_date = getdate(item.get("effective_planned_date"))
+		original_date_str = current_date.strftime("%Y-%m-%d")
 		
 		# Find next available date (skipping maintenance)
 		candidate = add_days(current_date, 1)
@@ -731,6 +749,11 @@ def cascade_orders_after_maintenance_removal(unit, maint_start_date, maint_end_d
 					SET custom_item_planned_date = %s
 					WHERE name = %s
 				""", (candidate_str, item_name))
+				movement_log.append({
+					"item_name": item_name,
+					"from_date": original_date_str,
+					"to_date": candidate_str
+				})
 				cascaded_count += 1
 				found_slot = True
 				break
@@ -742,13 +765,91 @@ def cascade_orders_after_maintenance_removal(unit, maint_start_date, maint_end_d
 	return {
 		"status": "success",
 		"message": f"Cascaded {cascaded_count} items to next available dates",
-		"cascaded_count": cascaded_count
+		"cascaded_count": cascaded_count,
+		"movement_log": movement_log
 	}
+
+def _extract_maintenance_cascade_log(notes_text):
+	"""Read embedded movement log from maintenance notes."""
+	import json
+
+	marker = "MAINTENANCE_CASCADE_LOG::"
+	if not notes_text or marker not in notes_text:
+		return []
+
+	raw = notes_text.split(marker, 1)[1].strip()
+	if "\n" in raw:
+		raw = raw.split("\n", 1)[0].strip()
+
+	try:
+		parsed = json.loads(raw)
+		return parsed if isinstance(parsed, list) else []
+	except Exception:
+		return []
+
+def _restore_orders_to_original_dates(unit, movement_log):
+	"""Restore moved items back to their original dates after maintenance is deleted."""
+	from frappe.utils import getdate
+
+	if not movement_log:
+		return {"restored_count": 0, "skipped_count": 0}
+
+	if not frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+		return {"restored_count": 0, "skipped_count": len(movement_log)}
+
+	restored_count = 0
+	skipped_count = 0
+
+	for move in movement_log:
+		item_name = move.get("item_name")
+		from_date = move.get("from_date")
+		to_date = move.get("to_date")
+
+		if not item_name or not from_date or not to_date:
+			skipped_count += 1
+			continue
+
+		row = frappe.db.sql("""
+			SELECT i.unit, COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) AS effective_planned_date
+			FROM `tabPlanning Sheet Item` i
+			JOIN `tabPlanning sheet` p ON p.name = i.parent
+			WHERE i.name = %s
+			  AND p.docstatus < 2
+			  AND i.docstatus < 2
+			LIMIT 1
+		""", (item_name,), as_dict=True)
+
+		if not row:
+			skipped_count += 1
+			continue
+
+		current_unit = row[0].get("unit")
+		current_effective = str(getdate(row[0].get("effective_planned_date")))
+
+		# Restore only if item is still on the date where maintenance moved it.
+		if current_unit != unit or current_effective != str(getdate(to_date)):
+			skipped_count += 1
+			continue
+
+		# Avoid restoring into another active maintenance window.
+		if is_date_under_maintenance(unit, from_date):
+			skipped_count += 1
+			continue
+
+		frappe.db.sql("""
+			UPDATE `tabPlanning Sheet Item`
+			SET custom_item_planned_date = %s
+			WHERE name = %s
+		""", (from_date, item_name))
+		restored_count += 1
+
+	frappe.db.commit()
+	return {"restored_count": restored_count, "skipped_count": skipped_count}
 
 @frappe.whitelist()
 def delete_maintenance_and_cascade(maintenance_record_name):
 	"""
-	Delete a maintenance record and cascade affected orders forward.
+	Delete a maintenance record and restore previously moved orders backward.
 	This is called from the frontend when user clicks "Remove" on maintenance.
 	"""
 	if not maintenance_record_name:
@@ -758,7 +859,7 @@ def delete_maintenance_and_cascade(maintenance_record_name):
 	maint_doc = frappe.db.get_value(
 		"Equipment Maintenance",
 		maintenance_record_name,
-		["unit", "start_date", "end_date"],
+		["unit", "start_date", "end_date", "notes"],
 		as_dict=True
 	)
 	
@@ -766,16 +867,20 @@ def delete_maintenance_and_cascade(maintenance_record_name):
 		return {"status": "error", "message": "Maintenance record not found"}
 	
 	unit = maint_doc.get("unit")
-	start_date = maint_doc.get("start_date")
-	end_date = maint_doc.get("end_date")
+	notes = maint_doc.get("notes")
+	movement_log = _extract_maintenance_cascade_log(notes)
 	
 	# Delete the maintenance record
 	frappe.delete_doc("Equipment Maintenance", maintenance_record_name)
-	
-	# Cascade orders that were blocked during maintenance window
-	cascade_result = cascade_orders_after_maintenance_removal(unit, start_date, end_date)
-	
-	return cascade_result
+
+	restore_result = _restore_orders_to_original_dates(unit, movement_log)
+
+	return {
+		"status": "success",
+		"message": f"Maintenance removed. Restored {restore_result.get('restored_count', 0)} items to original dates.",
+		"restored_count": restore_result.get("restored_count", 0),
+		"skipped_count": restore_result.get("skipped_count", 0)
+	}
 
 @frappe.whitelist()
 def get_all_equipment_maintenance(start_date=None, end_date=None):

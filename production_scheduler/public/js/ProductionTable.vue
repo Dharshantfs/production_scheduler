@@ -158,7 +158,7 @@ async function fetchMaintenanceRecords() {
 }
 
 async function deleteMaintenanceRecord(recordName) {
-	if (!confirm('Remove this maintenance record? Orders will be pushed forward.')) return;
+  if (!confirm('Remove this maintenance record? Orders moved for this maintenance will be restored to original dates.')) return;
 	try {
 		const res = await frappe.call({
 			method: "production_scheduler.api.delete_maintenance_and_cascade",
