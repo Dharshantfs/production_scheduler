@@ -277,7 +277,7 @@ async function openMaintenanceDialog() {
 				fieldtype: "Select",
 				fieldname: "maint_type",
 				label: "Maintenance Type",
-				options: "Mesh Change\nDie Change",
+        options: "Mesh Change\nDie Change\nBreakdown - Partial\nBreakdown - Full\nEB Shutdown\nMachine Off",
 				reqd: 1
 			},
 			{
