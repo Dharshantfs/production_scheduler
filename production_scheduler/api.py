@@ -6017,13 +6017,15 @@ def get_planning_sheet_pp_id(planning_sheet_name):
     2. If not found, search for PP by matching Sales Order
     3. Return most recent PP if found
     """
-    if not planning_sheet_name:
-        return {"status": "error", "message": "Planning sheet name is required"}
+	no_pp_message = "No Production Plan created for this order"
+
+	if not planning_sheet_name:
+		return {"status": "not_found", "message": no_pp_message}
     
     try:
         # Check if planning sheet exists
-        if not frappe.db.exists("Planning sheet", planning_sheet_name):
-            return {"status": "error", "message": "Planning sheet not found"}
+		if not frappe.db.exists("Planning sheet", planning_sheet_name):
+			return {"status": "not_found", "message": no_pp_message}
         
         sheet = frappe.get_doc("Planning sheet", planning_sheet_name)
         pp_id = None
@@ -6077,22 +6079,34 @@ def get_planning_sheet_pp_id(planning_sheet_name):
                 except Exception as e:
                     frappe.log_error(f"Error searching PP by items: {str(e)}", "get_planning_sheet_pp_id")
         
-        # ===== STRATEGY 3: Search by Planning Sheet name reference =====
-        # Some PPs might reference the planning sheet directly
-        if not pp_id:
-            pps = frappe.db.sql("""
-                SELECT name FROM `tabProduction Plan`
-                WHERE (custom_planning_sheet = %s OR planning_sheet = %s)
-                AND docstatus = 1
-                ORDER BY creation DESC
-                LIMIT 1
-            """, (planning_sheet_name, planning_sheet_name), as_dict=True)
-            
-            if pps:
-                pp_id = pps[0]['name']
+		# ===== STRATEGY 3: Search by Planning Sheet name reference =====
+		# Build dynamic conditions only for columns that actually exist.
+		if not pp_id:
+			conditions = []
+			params = []
+
+			if frappe.db.has_column("Production Plan", "custom_planning_sheet"):
+				conditions.append("custom_planning_sheet = %s")
+				params.append(planning_sheet_name)
+			if frappe.db.has_column("Production Plan", "planning_sheet"):
+				conditions.append("planning_sheet = %s")
+				params.append(planning_sheet_name)
+
+			if conditions:
+				where_clause = " OR ".join(conditions)
+				pps = frappe.db.sql(f"""
+					SELECT name FROM `tabProduction Plan`
+					WHERE ({where_clause})
+					AND docstatus = 1
+					ORDER BY creation DESC
+					LIMIT 1
+				""", tuple(params), as_dict=True)
+
+				if pps:
+					pp_id = pps[0]['name']
         
-        if not pp_id:
-            return {"status": "error", "message": "No Production Plan linked to this order sheet"}
+		if not pp_id:
+			return {"status": "not_found", "message": no_pp_message}
         
         # Verify the production plan exists
         if not frappe.db.exists("Production Plan", pp_id):
@@ -6102,4 +6116,4 @@ def get_planning_sheet_pp_id(planning_sheet_name):
     
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "get_planning_sheet_pp_id")
-        return {"status": "error", "message": str(e)}
+		return {"status": "error", "message": "Unable to fetch Production Plan"}
