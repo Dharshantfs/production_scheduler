@@ -746,6 +746,38 @@ def cascade_orders_after_maintenance_removal(unit, maint_start_date, maint_end_d
 	}
 
 @frappe.whitelist()
+def delete_maintenance_and_cascade(maintenance_record_name):
+	"""
+	Delete a maintenance record and cascade affected orders forward.
+	This is called from the frontend when user clicks "Remove" on maintenance.
+	"""
+	if not maintenance_record_name:
+		return {"status": "error", "message": "No maintenance record specified"}
+	
+	# Fetch maintenance record details before deletion
+	maint_doc = frappe.db.get_value(
+		"Equipment Maintenance",
+		maintenance_record_name,
+		["unit", "start_date", "end_date"],
+		as_dict=True
+	)
+	
+	if not maint_doc:
+		return {"status": "error", "message": "Maintenance record not found"}
+	
+	unit = maint_doc.get("unit")
+	start_date = maint_doc.get("start_date")
+	end_date = maint_doc.get("end_date")
+	
+	# Delete the maintenance record
+	frappe.delete_doc("Equipment Maintenance", maintenance_record_name)
+	
+	# Cascade orders that were blocked during maintenance window
+	cascade_result = cascade_orders_after_maintenance_removal(unit, start_date, end_date)
+	
+	return cascade_result
+
+@frappe.whitelist()
 def get_all_equipment_maintenance(start_date=None, end_date=None):
 	"""Get all maintenance records, optionally filtered by date range."""
 	if not frappe.db.exists("DocType", "Equipment Maintenance"):
@@ -4173,11 +4205,45 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 			# Individual push can force exact selected date, skipping auto-next-day cascade.
 			strict_keep_date = cint(strict_target_date) or cint(item_strict_target)
 			if strict_keep_date:
-				effective_date = current_check_date
-				load_key = (effective_date, unit)
-				if load_key not in local_loads:
-					local_loads[load_key] = get_unit_load(effective_date, unit, "__all__", pb_only=1)
-				local_loads[load_key] = local_loads[load_key] + item_wt
+				# Even in strict mode, NEVER place on maintenance day - cascade forward instead
+				if is_date_under_maintenance(unit, current_check_date):
+					# Maintenance on target date - cascade forward
+					maint_info = get_maintenance_info_on_date(unit, current_check_date)
+					frappe.msgprint(
+						f"Target date {current_check_date} has maintenance ({maint_info['type']} until {maint_info['end_date']}). "
+						f"Item will be cascaded to next available date.",
+						indicator='yellow'
+					)
+					# Fall through to normal cascade logic
+					maintenance_block = None
+					while True:
+						if is_date_under_maintenance(unit, current_check_date):
+							maint_info = get_maintenance_info_on_date(unit, current_check_date)
+							if not maintenance_block:
+								maintenance_block = maint_info
+							next_d = add_days(current_check_date, 1)
+							current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+							continue
+						
+						load_key = (current_check_date, unit)
+						if load_key not in local_loads:
+							local_loads[load_key] = get_unit_load(current_check_date, unit, "__all__", pb_only=1)
+						
+						load = local_loads[load_key]
+						if (load + item_wt <= limit * 1.05) or (load == 0 and item_wt >= limit):
+							effective_date = current_check_date
+							local_loads[load_key] = load + item_wt
+							break
+						
+						next_d = add_days(current_check_date, 1)
+						current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+				else:
+					# No maintenance - use strict date as-is
+					effective_date = current_check_date
+					load_key = (effective_date, unit)
+					if load_key not in local_loads:
+						local_loads[load_key] = get_unit_load(effective_date, unit, "__all__", pb_only=1)
+					local_loads[load_key] = local_loads[load_key] + item_wt
 			else:
 				maintenance_block = None
 				while True:

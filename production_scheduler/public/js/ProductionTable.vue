@@ -161,13 +161,15 @@ async function deleteMaintenanceRecord(recordName) {
 	if (!confirm('Remove this maintenance record? Orders will be pushed forward.')) return;
 	try {
 		const res = await frappe.call({
-			method: "frappe.client.delete",
-			args: { doctype: "Equipment Maintenance", name: recordName }
+			method: "production_scheduler.api.delete_maintenance_and_cascade",
+			args: { maintenance_record_name: recordName }
 		});
-		if (res.message) {
-			frappe.show_alert({ message: "Maintenance record removed! Orders will move forward.", indicator: 'green' });
+		if (res.message && res.message.status === 'success') {
+			frappe.show_alert({ message: `${res.message.message}`, indicator: 'green' });
 			await fetchMaintenanceRecords();
 			await fetchData();
+		} else if (res.message && res.message.status === 'error') {
+			frappe.msgprint(res.message.message || "Error deleting maintenance record");
 		}
 	} catch (e) {
 		frappe.msgprint("Error deleting maintenance record");
