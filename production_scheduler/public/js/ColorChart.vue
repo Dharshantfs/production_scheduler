@@ -5013,41 +5013,95 @@ async function openPushColorDialog(color, inputTargetDate = null) {
              
              const targetDate = d.get_value("target_date");
              const pbPlan = selectedPlanLabel.value;
-             
-             const payload = selected.map(s => ({
-                 name: s.name,
-                 target_unit: s.target_unit,
-                 target_date: targetDate,
-                 strict_target_date: 1
-             }));
-             
-             d.get_primary_btn().prop("disabled", true).text("Pushing...");
+
+             const selectedMap = new Map(selected.map(s => [s.name, s]));
+             const selectedItems = allForColor.filter(x => selectedMap.has(x.itemName || x.name));
+
+             // Compute additional load requested on target date per unit (in tons).
+             const addByUnit = {};
+             selectedItems.forEach(it => {
+                 const key = it.itemName || it.name;
+                 const sel = selectedMap.get(key);
+                 const unit = (sel && sel.target_unit) ? sel.target_unit : (it.unit || "Unit 1");
+                 const wt = (parseFloat(it.qty || 0) || 0) / 1000;
+                 addByUnit[unit] = (addByUnit[unit] || 0) + wt;
+             });
+
+             let shouldAskCascade = false;
+             let overflowLines = [];
              try {
-                 const r = await frappe.call({
-                     method: "production_scheduler.api.push_items_to_pb",
-                     args: { items_data: JSON.stringify(payload), pb_plan_name: pbPlan },
-                     freeze: true
+                 const capRes = await frappe.call({
+                     method: "production_scheduler.api.get_multiple_dates_capacity",
+                     args: { dates: targetDate, plan_name: "__all__", pb_only: 1 },
+                     freeze: false
                  });
-                 if (r.message && r.message.status === 'success') {
-                     d.get_primary_btn().text("✅ Pushed").css({"background-color": "#10b981", "color": "white"});
-                     let dateMsg = '';
-                    if (r.message.dates && r.message.dates.length > 0) {
-                        dateMsg = ` to ${r.message.dates.join(', ')}`;
-                    }
-                    frappe.show_alert({
-                        message: `✅ Pushed ${r.message.count} order(s)${dateMsg} to Plan "${r.message.plan_name || pbPlan}" automatically.`,
-                        indicator: 'green'
-                    });
-                     setTimeout(() => { d.hide(); fetchData(); }, 1000);
-                 } else {
-                     frappe.msgprint(r.message?.message || "Push failed");
+                 const caps = capRes.message || {};
+
+                 Object.keys(addByUnit).forEach(unit => {
+                     const c = caps[unit] || { total_limit: 999, total_load: 0 };
+                     const limit = parseFloat(c.total_limit || 0) || 0;
+                     const load = parseFloat(c.total_load || 0) || 0;
+                     const add = addByUnit[unit] || 0;
+                     const projected = load + add;
+                     if (projected > (limit * 1.05)) {
+                         shouldAskCascade = true;
+                         overflowLines.push(`${unit}: ${projected.toFixed(2)}T / ${limit.toFixed(2)}T`);
+                     }
+                 });
+             } catch (e) {
+                 console.warn("Capacity pre-check failed; continuing with strict date push", e);
+             }
+
+             const doPush = async (allowCascade) => {
+                 const payload = selected.map(s => ({
+                     name: s.name,
+                     target_unit: s.target_unit,
+                     target_date: targetDate,
+                     strict_target_date: allowCascade ? 0 : 1
+                 }));
+
+                 d.get_primary_btn().prop("disabled", true).text("Pushing...");
+                 try {
+                     const r = await frappe.call({
+                         method: "production_scheduler.api.push_items_to_pb",
+                         args: { items_data: JSON.stringify(payload), pb_plan_name: pbPlan },
+                         freeze: true
+                     });
+                     if (r.message && r.message.status === 'success') {
+                         d.get_primary_btn().text("✅ Pushed").css({"background-color": "#10b981", "color": "white"});
+                         let dateMsg = '';
+                        if (r.message.dates && r.message.dates.length > 0) {
+                            dateMsg = ` to ${r.message.dates.join(', ')}`;
+                        }
+                        frappe.show_alert({
+                            message: `✅ Pushed ${r.message.count} order(s)${dateMsg} to Plan "${r.message.plan_name || pbPlan}" automatically.`,
+                            indicator: 'green'
+                        });
+                         setTimeout(() => { d.hide(); fetchData(); }, 1000);
+                     } else {
+                         frappe.msgprint(r.message?.message || "Push failed");
+                         d.get_primary_btn().prop("disabled", false).text("Push to Production Board");
+                     }
+                 } catch(e) {
+                     console.error("Push Error", e);
+                     frappe.msgprint("Error pushing to Production Board.");
                      d.get_primary_btn().prop("disabled", false).text("Push to Production Board");
                  }
-             } catch(e) {
-                 console.error("Push Error", e);
-                 frappe.msgprint("Error pushing to Production Board.");
-                 d.get_primary_btn().prop("disabled", false).text("Push to Production Board");
+             };
+
+             if (shouldAskCascade) {
+                 const html = `<b>Capacity is full on ${targetDate}.</b><br>` +
+                              `Projected load exceeds limit for:<br>${overflowLines.join('<br>')}<br><br>` +
+                              `Do you want to auto-push overflow items to the next available days?`;
+                 frappe.confirm(
+                     html,
+                     () => doPush(true),
+                     () => doPush(false)
+                 );
+                 return;
              }
+
+             await doPush(false);
         }
     });
 
