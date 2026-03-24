@@ -3719,6 +3719,100 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 	if not items_data:
 		return {"status": "error", "message": "Missing item data"}
 
+	def _cascade_white_queue_for_unit(target_date_val, unit_val, active_pb_plan=None, shared_loads=None):
+		"""
+		Shift queued white items forward day-by-day for a given unit/date slot.
+		This frees the target slot for incoming color push while preserving white order.
+		Updates only item-level custom_item_planned_date (and plan code when available).
+		"""
+		from frappe.utils import getdate, add_days
+
+		target_dt = getdate(target_date_val)
+		unit_limit = HARD_LIMITS.get(unit_val, 999.0)
+		shared_loads = shared_loads if isinstance(shared_loads, dict) else {}
+
+		white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
+		plan_cond = ""
+		params = [target_dt, unit_val]
+		if active_pb_plan:
+			plan_cond = "AND COALESCE(p.custom_pb_plan_name, '') = %s"
+			params.append(active_pb_plan)
+
+		rows = frappe.db.sql(f"""
+			SELECT
+				i.name,
+				i.qty,
+				i.unit,
+				COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) AS effective_date
+			FROM `tabPlanning Sheet Item` i
+			JOIN `tabPlanning sheet` p ON i.parent = p.name
+			WHERE p.docstatus < 2
+			  AND i.docstatus < 2
+			  AND i.unit = %s
+			  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) >= DATE(%s)
+			  AND REPLACE(UPPER(COALESCE(i.color, '')), ' ', '') IN ({white_sql})
+			  {plan_cond}
+			ORDER BY DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) ASC, i.idx ASC
+		""", tuple([params[1], params[0]] + params[2:]), as_dict=True)
+
+		if not rows:
+			return {"moved": 0, "dates": set()}
+
+		has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+		has_plan_code_col = frappe.db.has_column("Planning Sheet Item", "custom_plan_code")
+
+		moved_count = 0
+		moved_dates = set()
+
+		for r in rows:
+			item_name = r.get("name")
+			qty_tons = flt(r.get("qty")) / 1000.0
+			source_date = str(getdate(r.get("effective_date")))
+
+			# Remove this item's load from its current source day in the shared cache.
+			src_key = (source_date, unit_val)
+			if src_key not in shared_loads:
+				shared_loads[src_key] = get_unit_load(source_date, unit_val, "__all__", pb_only=1)
+			shared_loads[src_key] = max(0.0, shared_loads[src_key] - qty_tons)
+
+			# Queue shift rule: each white item moves to at least the next day.
+			candidate = add_days(getdate(source_date), 1)
+			while True:
+				candidate_str = candidate if isinstance(candidate, str) else candidate.strftime("%Y-%m-%d")
+				load_key = (candidate_str, unit_val)
+				if load_key not in shared_loads:
+					shared_loads[load_key] = get_unit_load(candidate_str, unit_val, "__all__", pb_only=1)
+
+				current_load = shared_loads[load_key]
+				if (current_load + qty_tons <= unit_limit * 1.05) or (current_load == 0 and qty_tons >= unit_limit):
+					shared_loads[load_key] = current_load + qty_tons
+					break
+
+				candidate = add_days(candidate, 1)
+
+			if not has_item_planned_col:
+				continue
+
+			if has_plan_code_col:
+				new_code = generate_plan_code(candidate_str, unit_val, active_pb_plan)
+				frappe.db.sql("""
+					UPDATE `tabPlanning Sheet Item`
+					SET custom_item_planned_date = %s,
+					    custom_plan_code = %s
+					WHERE name = %s
+				""", (candidate_str, new_code, item_name))
+			else:
+				frappe.db.sql("""
+					UPDATE `tabPlanning Sheet Item`
+					SET custom_item_planned_date = %s
+					WHERE name = %s
+				""", (candidate_str, item_name))
+
+			moved_count += 1
+			moved_dates.add(candidate_str)
+
+		return {"moved": moved_count, "dates": moved_dates}
+
 	count = 0
 	skipped_already_pushed = []
 	updated_sheets = set()
@@ -3726,6 +3820,48 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 	local_loads = {} # (date, unit) -> current load
 	unit_date_idx_offsets = {} # (unit, date) -> max_idx
 	effective_dates_used = set()
+	white_shifted_count = 0
+	white_shifted_dates = set()
+
+	# Pre-shift queued whites for incoming color pushes (per target unit/date).
+	# This runs once per slot before actual color placement so colors get the day first.
+	cascade_slots = set()
+	for raw_item in items_data:
+		if not isinstance(raw_item, dict):
+			continue
+		name = raw_item.get("name")
+		if not name:
+			continue
+
+		item_meta = frappe.db.get_value(
+			"Planning Sheet Item",
+			name,
+			["unit", "custom_quality", "color"],
+			as_dict=True,
+		)
+		if not item_meta:
+			continue
+		if _is_white_color(item_meta.get("color")):
+			continue
+
+		target_date_raw = raw_item.get("target_dates") or raw_item.get("target_date") or target_date
+		if not target_date_raw:
+			continue
+		picked_dates = [d.strip() for d in str(target_date_raw).split(",") if d and str(d).strip()]
+		if not picked_dates:
+			continue
+
+		resolved_unit = raw_item.get("target_unit") or item_meta.get("unit") or get_preferred_unit(item_meta.get("custom_quality"))
+		if not resolved_unit:
+			continue
+
+		cascade_slots.add((str(getdate(picked_dates[0])), resolved_unit))
+
+	for slot_date, slot_unit in sorted(cascade_slots):
+		shift_res = _cascade_white_queue_for_unit(slot_date, slot_unit, pb_plan_name, local_loads)
+		white_shifted_count += cint(shift_res.get("moved") or 0)
+		for d in (shift_res.get("dates") or set()):
+			white_shifted_dates.add(str(d))
 
 	for item in items_data:
 		name = item.get("name") if isinstance(item, dict) else item
@@ -3925,6 +4061,8 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 		"count": count, # moved items
 		"moved_items": count, # legacy alias
 		"dates": sorted(list(effective_dates_used)),
+		"white_shifted_count": white_shifted_count,
+		"white_shifted_dates": sorted(list(white_shifted_dates)),
 		"skipped_already_pushed": len(skipped_already_pushed),
 		"updated_sheets": len(updated_sheets),
 		"plan_name": pb_plan_name,

@@ -5073,8 +5073,13 @@ async function openPushColorDialog(color, inputTargetDate = null) {
                         if (r.message.dates && r.message.dates.length > 0) {
                             dateMsg = ` to ${r.message.dates.join(', ')}`;
                         }
+                        let whiteShiftMsg = '';
+                        if ((r.message.white_shifted_count || 0) > 0) {
+                            const wDates = (r.message.white_shifted_dates || []).join(', ');
+                            whiteShiftMsg = ` Whites shifted: ${r.message.white_shifted_count}` + (wDates ? ` (${wDates})` : '');
+                        }
                         frappe.show_alert({
-                            message: `✅ Pushed ${r.message.count} order(s)${dateMsg} to Plan "${r.message.plan_name || pbPlan}" automatically.`,
+                            message: `✅ Pushed ${r.message.count} order(s)${dateMsg} to Plan "${r.message.plan_name || pbPlan}" automatically.${whiteShiftMsg}`,
                             indicator: 'green'
                         });
                          setTimeout(() => { d.hide(); fetchData(); }, 1000);
