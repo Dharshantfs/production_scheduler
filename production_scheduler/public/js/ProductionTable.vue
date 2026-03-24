@@ -642,8 +642,8 @@ async function openProductionPlanView(planningSheetName) {
     
     if (res.message && res.message.status === "ok") {
       const ppId = res.message.pp_id;
-      // Open Production Plan in new tab
-      window.open(`/app/production-plan/${ppId}`, '_blank');
+      // Open Production Plan PRINT FORMAT in new tab
+      window.open(`/app/production-plan/${ppId}?print`, '_blank');
     } else {
       const errorMsg = res.message?.message || "Error fetching Production Plan";
       frappe.msgprint(errorMsg);
