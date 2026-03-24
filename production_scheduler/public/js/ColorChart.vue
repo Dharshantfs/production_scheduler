@@ -172,7 +172,7 @@
                     {{ getUnitTotal(unit).toFixed(2) }}T
                     </span>
                     <!-- Approval Actions -->
-                    <div class="cc-approval-actions" v-if="viewMode === 'kanban' && filterOrderDate && !filterOrderDate.value.includes(',')">
+                    <div class="cc-approval-actions" v-if="viewMode === 'kanban' && filterOrderDate && !String(filterOrderDate.value || '').includes(',')">
                         <button v-if="(!sequenceStatuses[unit] || sequenceStatuses[unit] === 'Draft') && getUnitEntries(unit).length > 0" 
                                 class="cc-approve-btn request" @click.stop="requestApproval(unit)">
                             📤 Request Approval
@@ -1207,7 +1207,7 @@ const EXCLUDED_WHITES = [
 
 function isExcludedWhite(color) {
     if (!color) return false;
-    const cUpper = color.toUpperCase();
+    const cUpper = String(color).toUpperCase();
     // Keep Ivory/Cream explicitly
     if (cUpper.includes("IVORY") || cUpper.includes("CREAM") || cUpper.includes("OFF WHITE")) return false;
     return EXCLUDED_WHITES.some(ex => cUpper.includes(ex));
@@ -1755,7 +1755,7 @@ function getUnitTotal(unit) {
   return rawData.value
     .filter((d) => {
         if ((d.unit || "Mixed") !== unit) return false;
-        const colorUpper = (d.color || "").toUpperCase();
+                const colorUpper = String(d.color || "").toUpperCase();
         if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return true;
         if (EXCLUDED_WHITES.some(ex => colorUpper.includes(ex))) return false;
         return true;
@@ -1767,7 +1767,7 @@ function getHiddenWhiteTotal(unit) {
   return rawData.value
     .filter((d) => {
         if ((d.unit || "Mixed") !== unit) return false;
-        const colorUpper = (d.color || "").toUpperCase();
+                const colorUpper = String(d.color || "").toUpperCase();
         // Check if it IS an excluded white
         if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return false;
         return EXCLUDED_WHITES.some(ex => colorUpper.includes(ex));
@@ -2658,7 +2658,7 @@ function toggleDirection() {
 }
 
 async function persistSequence(unit) {
-    if (!filterOrderDate.value || filterOrderDate.value.includes(",") || viewMode.value !== 'kanban') return;
+    if (!filterOrderDate.value || String(filterOrderDate.value).includes(",") || viewMode.value !== 'kanban') return;
     
     // Get current item names in the column after the drop
     const items = getUnitEntries(unit).filter(e => e.type === "order");
@@ -4392,7 +4392,7 @@ async function fetchData() {
     
     // Fetch Sequence Statuses for each unit
     // Fetch for the primary date in view, or the selected filter date
-    const statusDate = filterOrderDate.value ? (filterOrderDate.value.includes(",") ? filterOrderDate.value.split(",")[0] : filterOrderDate.value) : args.start_date;
+    const statusDate = filterOrderDate.value ? (String(filterOrderDate.value).includes(",") ? String(filterOrderDate.value).split(",")[0] : filterOrderDate.value) : args.start_date;
 
     if (statusDate) {
         for (const unit of units) {
