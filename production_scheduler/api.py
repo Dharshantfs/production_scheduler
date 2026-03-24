@@ -679,7 +679,7 @@ def cascade_orders_after_maintenance_removal(unit, maint_start_date, maint_end_d
 	
 	# Find all items planned between maintenance start and end dates
 	items = frappe.db.sql("""
-		SELECT i.name, i.qty, i.unit, COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as current_date
+		SELECT i.name, i.qty, i.unit, COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as effective_planned_date
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
 		WHERE i.unit = %s
@@ -703,7 +703,7 @@ def cascade_orders_after_maintenance_removal(unit, maint_start_date, maint_end_d
 		item_name = item.get("name")
 		qty_tons = flt(item.get("qty")) / 1000.0
 		unit_limit = HARD_LIMITS.get(unit, 999.0)
-		current_date = getdate(item.get("current_date"))
+		current_date = getdate(item.get("effective_planned_date"))
 		
 		# Find next available date (skipping maintenance)
 		candidate = add_days(current_date, 1)
