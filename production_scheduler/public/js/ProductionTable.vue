@@ -13,7 +13,7 @@
       
       <div class="cc-filter-item" v-if="viewScope === 'daily'">
         <label>Planned Date</label>
-        <input type="date" v-model="filterOrderDate" @change="fetchData" />
+        <input type="date" v-model="filterOrderDate" @change="fetchData" :disabled="isManufactureUser" :style="isManufactureUser ? { opacity: '0.5', cursor: 'not-allowed' } : {}" />
       </div>
       <div class="cc-filter-item" v-else-if="viewScope === 'weekly'">
         <label>Select Week</label>
@@ -659,6 +659,12 @@ function goToBoard() {
 }
 
 function toggleViewScope() {
+    // Prevent manufacture users from changing view scope
+    if (isManufactureUser.value) {
+        viewScope.value = "daily";
+        return;
+    }
+    
     if (viewScope.value === 'monthly' && !filterMonth.value) {
         filterMonth.value = frappe.datetime.get_today().substring(0, 7);
     } else if (viewScope.value === 'weekly' && !filterWeek.value) {
@@ -779,7 +785,14 @@ function updateUrlParams() {
 }
 
 watch(viewScope, updateUrlParams);
-watch(filterOrderDate, updateUrlParams);
+watch(filterOrderDate, (newVal) => {
+  // Prevent manufacture users from changing the date - force today
+  if (isManufactureUser.value && newVal !== frappe.datetime.get_today()) {
+    filterOrderDate.value = frappe.datetime.get_today();
+    return;
+  }
+  updateUrlParams();
+});
 watch(filterWeek, updateUrlParams);
 watch(filterMonth, updateUrlParams);
 
@@ -798,10 +811,17 @@ onMounted(() => {
   const weekParam = params.get('week');
   const monthParam = params.get('month');
   
-  if (scopeParam) viewScope.value = scopeParam;
-  if (dateParam) filterOrderDate.value = dateParam;
-  if (weekParam) filterWeek.value = weekParam;
-  if (monthParam) filterMonth.value = monthParam;
+  // For manufacture users: FORCE daily view with today's date only
+  if (isManufactureUser.value) {
+    viewScope.value = "daily";
+    filterOrderDate.value = frappe.datetime.get_today();
+  } else {
+    // For other users: respect URL parameters
+    if (scopeParam) viewScope.value = scopeParam;
+    if (dateParam) filterOrderDate.value = dateParam;
+    if (weekParam) filterWeek.value = weekParam;
+    if (monthParam) filterMonth.value = monthParam;
+  }
   
   fetchMaintenanceRecords();
   fetchData();
