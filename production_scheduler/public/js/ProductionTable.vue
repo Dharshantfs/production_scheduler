@@ -4,7 +4,7 @@
     <div class="cc-filters">
       <div class="cc-filter-item">
         <label>View Scope</label>
-        <select v-model="viewScope" @change="toggleViewScope" style="font-weight: bold; color: #4f46e5;">
+        <select v-model="viewScope" @change="toggleViewScope" :disabled="isManufactureUser" style="font-weight: bold; color: #4f46e5;" :style="isManufactureUser ? { opacity: '0.5', cursor: 'not-allowed' } : {}">
           <option value="daily">Daily</option>
           <option value="weekly">Weekly</option>
           <option value="monthly">Monthly</option>
@@ -68,6 +68,7 @@
                         <th style="width: 80px;">WEIGHT (Kg)</th>
                         <th style="width: 80px;">ACTUAL PROD</th>
                         <th style="width: 100px;">DESPATCH STATUS</th>
+                        <th style="width: 80px; position: sticky; right: 0; background: #fafafa; z-index: 10;">PRODUCTION PLAN</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -109,6 +110,11 @@
                                 {{ formatDispatchStatus(item.delivery_status) }}
                               </span>
                             </td>
+                            <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">
+                              <button @click="openProductionPlanView(item.planningSheet)" class="cc-pp-btn" title="View Production Plan">
+                                📋 View
+                              </button>
+                            </td>
                           </tr>
                         </template>
                       </template>
@@ -119,6 +125,7 @@
                         <td colspan="7" style="text-align:center; color:#94a3b8; font-style:italic;">No orders (maintenance day)</td>
                         <td class="cell-center font-bold bg-yellow-50">0</td>
                         <td class="cell-center">-</td>
+                        <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;"></td>
                       </tr>
                     </template>
                     <tr v-if="unitGroup.dates.length === 0">
@@ -519,6 +526,9 @@ const filterCustomer = ref("");
 const filterUnit = ref("");
 const rawData = ref([]);
 
+// ===== ROLE-BASED VISIBILITY CONTROL =====
+const isManufactureUser = ref(false);
+
 const visibleUnits = computed(() => {
   if (!filterUnit.value) return units;
   return units.filter((u) => u === filterUnit.value);
@@ -616,6 +626,32 @@ function getDispatchStatusClass(status) {
     if (status === 'Fully Delivered') return 'bg-green-100 text-green-800';
     if (status === 'Partly Delivered') return 'bg-orange-100 text-orange-800';
     return 'bg-gray-100 text-gray-800';
+}
+
+async function openProductionPlanView(planningSheetName) {
+  if (!planningSheetName) {
+    frappe.msgprint("Planning Sheet not found for this order");
+    return;
+  }
+  
+  try {
+    const res = await frappe.call({
+      method: "production_scheduler.api.get_planning_sheet_pp_id",
+      args: { planning_sheet_name: planningSheetName }
+    });
+    
+    if (res.message && res.message.status === "ok") {
+      const ppId = res.message.pp_id;
+      // Open Production Plan in new tab
+      window.open(`/app/production-plan/${ppId}`, '_blank');
+    } else {
+      const errorMsg = res.message?.message || "Error fetching Production Plan";
+      frappe.msgprint(errorMsg);
+    }
+  } catch (e) {
+    frappe.msgprint("Error opening Production Plan");
+    console.error(e);
+  }
 }
 
 function goToBoard() {
@@ -748,6 +784,14 @@ watch(filterWeek, updateUrlParams);
 watch(filterMonth, updateUrlParams);
 
 onMounted(() => {
+  // Check user role for visibility control
+  try {
+    isManufactureUser.value = frappe.has_role("Manufacture User");
+  } catch (e) {
+    console.log("Could not detect user role", e);
+    isManufactureUser.value = false;
+  }
+  
   const params = new URLSearchParams(window.location.search);
   const scopeParam = params.get('scope');
   const dateParam = params.get('date');
@@ -827,6 +871,23 @@ onMounted(() => {
 .cc-maint-btn:hover {
     background-color: #ea580c;
     box-shadow: 0 2px 4px rgba(249, 115, 22, 0.3);
+}
+
+.cc-pp-btn {
+    padding: 6px 12px;
+    background-color: #8b5cf6;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+.cc-pp-btn:hover {
+    background-color: #7c3aed;
+    box-shadow: 0 2px 4px rgba(139, 92, 246, 0.3);
 }
 
 .cc-table-container {

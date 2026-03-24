@@ -6004,3 +6004,52 @@ def run_orphan_cleanup():
         "message": f"Cleaned up {orphans_count} orphans and {dup_count} duplicates.",
         "columns_checked": columns
     }
+
+
+@frappe.whitelist()
+def get_planning_sheet_pp_id(planning_sheet_name):
+    """
+    Fetch the Production Plan ID linked to a Planning Sheet.
+    Returns the PP ID so it can be viewed in a new tab.
+    """
+    if not planning_sheet_name:
+        return {"status": "error", "message": "Planning sheet name is required"}
+    
+    try:
+        # Check if planning sheet exists
+        if not frappe.db.exists("Planning sheet", planning_sheet_name):
+            return {"status": "error", "message": "Planning sheet not found"}
+        
+        # Try to fetch production_plan from planning sheet
+        # Try different possible field names
+        pp_id = None
+        
+        # Try custom_production_plan first
+        if frappe.db.has_column("Planning sheet", "custom_production_plan"):
+            pp_id = frappe.db.get_value("Planning sheet", planning_sheet_name, "custom_production_plan")
+        
+        # Try production_plan field if custom field not found
+        if not pp_id and frappe.db.has_column("Planning sheet", "production_plan"):
+            pp_id = frappe.db.get_value("Planning sheet", planning_sheet_name, "production_plan")
+        
+        # Try other possible field names
+        if not pp_id:
+            sheet = frappe.get_doc("Planning sheet", planning_sheet_name)
+            for field_name in ["custom_production_plan", "production_plan", "production_plan_id", "pp_id"]:
+                if hasattr(sheet, field_name):
+                    pp_id = getattr(sheet, field_name, None)
+                    if pp_id:
+                        break
+        
+        if not pp_id:
+            return {"status": "error", "message": "No Production Plan linked to this order sheet"}
+        
+        # Verify the production plan exists
+        if not frappe.db.exists("Production Plan", pp_id):
+            return {"status": "error", "message": "Linked Production Plan not found in system"}
+        
+        return {"status": "ok", "pp_id": pp_id}
+    
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "get_planning_sheet_pp_id")
+        return {"status": "error", "message": str(e)}
