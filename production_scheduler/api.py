@@ -4356,6 +4356,7 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 	so the Production Board can find them via the sheet-level filter.
 	items_data: list of dicts [{"name": "...", "target_date": "...", "target_unit": "...", "strict_target_date": 1}]
 	strict_target_date: when true, keep item exactly on selected target date (no auto-cascade).
+	Note: automatic pre-shifting of queued white orders is intentionally disabled.
 	"""
 	import json
 	from frappe.utils import getdate, add_days
@@ -4480,45 +4481,8 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 	white_shifted_count = 0
 	white_shifted_dates = set()
 
-	# Pre-shift queued whites for incoming color pushes (per target unit/date).
-	# This runs once per slot before actual color placement so colors get the day first.
-	cascade_slots = set()
-	for raw_item in items_data:
-		if not isinstance(raw_item, dict):
-			continue
-		name = raw_item.get("name")
-		if not name:
-			continue
-
-		item_meta = frappe.db.get_value(
-			"Planning Sheet Item",
-			name,
-			["unit", "custom_quality", "color"],
-			as_dict=True,
-		)
-		if not item_meta:
-			continue
-		if _is_white_color(item_meta.get("color")):
-			continue
-
-		target_date_raw = raw_item.get("target_dates") or raw_item.get("target_date") or target_date
-		if not target_date_raw:
-			continue
-		picked_dates = [d.strip() for d in str(target_date_raw).split(",") if d and str(d).strip()]
-		if not picked_dates:
-			continue
-
-		resolved_unit = raw_item.get("target_unit") or item_meta.get("unit") or get_preferred_unit(item_meta.get("custom_quality"))
-		if not resolved_unit:
-			continue
-
-		cascade_slots.add((str(getdate(picked_dates[0])), resolved_unit))
-
-	for slot_date, slot_unit in sorted(cascade_slots):
-		shift_res = _cascade_white_queue_for_unit(slot_date, slot_unit, pb_plan_name, local_loads)
-		white_shifted_count += cint(shift_res.get("moved") or 0)
-		for d in (shift_res.get("dates") or set()):
-			white_shifted_dates.add(str(d))
+	# Disabled by request: do not pre-shift queued white orders when pushing colors.
+	# Keep counters for response compatibility.
 
 	for item in items_data:
 		name = item.get("name") if isinstance(item, dict) else item
