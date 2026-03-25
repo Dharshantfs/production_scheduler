@@ -504,27 +504,30 @@ function sortItems(unit, items, date) {
   const normalizedUnit = normalizeUnit(unit);
   const key = `${normalizedUnit}||${date}`;
   const savedSeq = unitSequenceStore[key]?.sequence;
-  
+
   if (savedSeq && savedSeq.length) {
-      console.log(`Applying saved sequence for ${key}:`, savedSeq.length, "items");
-      const seqMap = {};
-      savedSeq.forEach((name, i) => seqMap[name] = i);
-      
-      return [...items].sort((a, b) => {
-          const nameA = a.itemName || a.name;
-          const nameB = b.itemName || b.name;
-          
-          const idxA = seqMap[nameA] !== undefined ? seqMap[nameA] : 9999 + parseInt(a.idx || 0);
-          const idxB = seqMap[nameB] !== undefined ? seqMap[nameB] : 9999 + parseInt(b.idx || 0);
-          
-          if (idxA !== idxB) return idxA - idxB;
-          
-          // Fallback if not in sequence map
-          const pA = getColorPriority(a.color);
-          const pB = getColorPriority(b.color);
-          if (pA !== pB) return pA - pB;
-          return (parseFloat(b.gsm) || 0) - (parseFloat(a.gsm) || 0);
-      });
+    const rowNames = items.map(a => a.itemName || a.name);
+    console.log(`Applying saved sequence for ${key}:`, savedSeq.length, "items");
+    console.log('Saved sequence:', savedSeq);
+    console.log('Table row names:', rowNames);
+    const seqMap = {};
+    savedSeq.forEach((name, i) => seqMap[name] = i);
+
+    return [...items].sort((a, b) => {
+      const nameA = a.itemName || a.name;
+      const nameB = b.itemName || b.name;
+
+      const idxA = seqMap[nameA] !== undefined ? seqMap[nameA] : 9999 + parseInt(a.idx || 0);
+      const idxB = seqMap[nameB] !== undefined ? seqMap[nameB] : 9999 + parseInt(b.idx || 0);
+
+      if (idxA !== idxB) return idxA - idxB;
+
+      // Fallback if not in sequence map
+      const pA = getColorPriority(a.color);
+      const pB = getColorPriority(b.color);
+      if (pA !== pB) return pA - pB;
+      return (parseFloat(b.gsm) || 0) - (parseFloat(a.gsm) || 0);
+    });
   }
 
   // 2. Default Auto Sort (Matches Board's default when no manual sequence): 
