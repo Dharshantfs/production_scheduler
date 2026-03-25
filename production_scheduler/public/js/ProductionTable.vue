@@ -46,6 +46,17 @@
       >
         {{ tableReorderLocked ? '🔒 Reorder Locked' : '🔓 Reorder Enabled' }}
       </button>
+      <button
+        class="cc-save-arrange-btn"
+        @click="saveArrangement"
+        :disabled="!arrangementDirty || arrangementSaving"
+        :title="arrangementDirty ? 'Save current row arrangement permanently' : 'No pending arrangement changes'"
+      >
+        {{ arrangementSaving ? 'Saving Arrangement...' : '💾 Save Arrangement' }}
+      </button>
+      <span v-if="arrangementSaving" class="cc-arrange-indicator saving">Saving...</span>
+      <span v-else-if="arrangementDirty" class="cc-arrange-indicator dirty">Unsaved arrangement changes</span>
+      <span v-else class="cc-arrange-indicator clean">Arrangement saved</span>
       <button class="cc-maint-btn" @click="openMaintenanceDialog" title="Manage equipment maintenance schedules">⚙️ Maintenance</button>
       
       <div class="cc-filter-item" style="margin-left: auto;">
@@ -546,6 +557,13 @@ const filterUnit = ref("");
 const rawData = ref([]);
 const tableReorderLocked = ref(true);
 const sortableInstances = ref([]);
+const pendingArrangementUpdates = ref({});
+const arrangementDirty = ref(false);
+const arrangementSaving = ref(false);
+
+function getArrangementKey(unit, date) {
+  return `${unit}__${date}`;
+}
 
 function destroyTableSortables() {
   sortableInstances.value.forEach((instance) => {
@@ -573,13 +591,39 @@ async function persistDateGroupOrder(tbodyEl) {
 
   if (!items.length) return;
 
-  await frappe.call({
-    method: "production_scheduler.api.update_items_bulk",
-    args: {
-      plan_name: "__all__",
-      items: JSON.stringify(items),
-    },
-  });
+  pendingArrangementUpdates.value[getArrangementKey(unit, date)] = items;
+  arrangementDirty.value = true;
+}
+
+async function saveArrangement() {
+  if (!arrangementDirty.value || arrangementSaving.value) return;
+
+  const payload = Object.values(pendingArrangementUpdates.value).flat();
+  if (!payload.length) {
+    arrangementDirty.value = false;
+    return;
+  }
+
+  arrangementSaving.value = true;
+  try {
+    await frappe.call({
+      method: "production_scheduler.api.update_items_bulk",
+      args: {
+        plan_name: "__all__",
+        items: JSON.stringify(payload),
+      },
+    });
+
+    pendingArrangementUpdates.value = {};
+    arrangementDirty.value = false;
+    frappe.show_alert({ message: 'Arrangement saved permanently', indicator: 'green' });
+    await fetchData();
+  } catch (e) {
+    console.error('Failed to save arrangement:', e);
+    frappe.msgprint('Failed to save arrangement');
+  } finally {
+    arrangementSaving.value = false;
+  }
 }
 
 async function initTableSortables() {
@@ -598,11 +642,10 @@ async function initTableSortables() {
       onEnd: async (evt) => {
         try {
           await persistDateGroupOrder(evt.to);
-          frappe.show_alert({ message: 'Order updated', indicator: 'green' });
-          await fetchData();
+          frappe.show_alert({ message: 'Arrangement changed. Click Save Arrangement.', indicator: 'orange' });
         } catch (e) {
-          console.error('Failed to persist row order:', e);
-          frappe.msgprint('Failed to save new row order');
+          console.error('Failed to queue row order:', e);
+          frappe.msgprint('Failed to stage new row order');
           await fetchData();
         }
       },
@@ -1058,6 +1101,33 @@ onBeforeUnmount(() => {
   font-weight: 600;
   background: #fff7ed;
   color: #9a3412;
+}
+.cc-save-arrange-btn {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 600;
+  background: #16a34a;
+  color: white;
+}
+.cc-save-arrange-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.cc-arrange-indicator {
+  font-size: 12px;
+  font-weight: 600;
+}
+.cc-arrange-indicator.saving {
+  color: #2563eb;
+}
+.cc-arrange-indicator.dirty {
+  color: #c2410c;
+}
+.cc-arrange-indicator.clean {
+  color: #15803d;
 }
 .cc-view-btn {
     background-color: #3b82f6;
