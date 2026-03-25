@@ -226,7 +226,7 @@
                     <div class="cc-card-color-name">{{ entry.color }}</div>
                     <div class="cc-card-customer">
                         <span style="font-weight:700; color:#111827;">{{ entry.partyCode }}</span>
-                        <span v-if="entry.partyCode !== entry.customer" style="font-weight:400; color:#6b7280;"> · {{ entry.customer }}</span>
+                        <span v-if="entry.partyCode !== entry.customer_name" style="font-weight:400; color:#6b7280;"> · {{ entry.customer_name }}</span>
                     </div>
                     <div class="cc-card-details" style="display:flex; align-items:center;">
                         {{ entry.quality }} · {{ entry.gsm }} GSM

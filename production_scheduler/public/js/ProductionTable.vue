@@ -94,7 +94,7 @@
                             </td>
                                     
                             <td class="cell-center">{{ item.partyCode }}</td>
-                            <td>{{ item.customer }}</td>
+                            <td>{{ item.customer_name }}</td>
                             <td class="cell-center font-mono font-bold" style="font-size:11px; color:#4f46e5;">{{ item.planCode }}</td>
                             <td class="cell-center">{{ item.quality }}</td>
                             <td class="cell-center font-bold">{{ item.color }}</td>

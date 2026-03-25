@@ -1780,10 +1780,12 @@ def get_items_by_name(names):
 	return frappe.db.sql(f"""
 		SELECT 
 			i.name, i.color, i.custom_quality as quality, i.qty, p.party_code,
-			p.customer, p.sales_order, i.custom_item_planned_date, i.custom_plan_code,
+			p.customer, COALESCE(c.customer_name, p.customer) as customer_name,
+			p.sales_order, i.custom_item_planned_date, i.custom_plan_code,
 			p.custom_pb_plan_name as pbPlanName
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
+		LEFT JOIN `tabCustomer` c ON p.customer = c.name
 		WHERE i.name IN %s
 	""", (names,), as_dict=True)
 
@@ -1829,9 +1831,11 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 					i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
 					{so_item_col} {split_col}
 					p.name as planningSheet, p.party_code as partyCode, p.customer,
+					COALESCE(c.customer_name, p.customer) as customer_name,
 					p.ordered_date, p.dod, p.sales_order as salesOrder
 				FROM `tabPlanning Sheet Item` i
 				JOIN `tabPlanning sheet` p ON i.parent = p.name
+				LEFT JOIN `tabCustomer` c ON p.customer = c.name
 				WHERE i.color IS NOT NULL AND i.color != ''
 				  AND p.docstatus < 2
 				  AND DATE(COALESCE(NULLIF(i.custom_item_planned_date, ''), NULLIF(p.custom_planned_date, ''), p.ordered_date)) = DATE(%s)
@@ -1846,9 +1850,11 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 					i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
 					{so_item_col} {split_col}
 					p.name as planningSheet, p.party_code as partyCode, p.customer,
+					COALESCE(c.customer_name, p.customer) as customer_name,
 					p.ordered_date, p.dod, p.sales_order as salesOrder
 				FROM `tabPlanning Sheet Item` i
 				JOIN `tabPlanning sheet` p ON i.parent = p.name
+				LEFT JOIN `tabCustomer` c ON p.customer = c.name
 				WHERE {sheet_date_col} = %s
 				  AND i.color IS NOT NULL AND i.color != ''
 				  AND p.docstatus < 2
@@ -1927,11 +1933,13 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				i.custom_item_planned_date,
 				{so_item_col} {split_col}
 				p.name as planningSheet, p.party_code as partyCode, p.customer,
+				COALESCE(c.customer_name, p.customer) as customer_name,
 				p.ordered_date, p.dod, p.sales_order as salesOrder,
 				COALESCE(p.custom_pb_plan_name, '') as pbPlanName,
 				COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as planned_date
 			FROM `tabPlanning Sheet Item` i
 			JOIN `tabPlanning sheet` p ON i.parent = p.name
+			LEFT JOIN `tabCustomer` c ON p.customer = c.name
 			WHERE {item_date_expr}
 			  AND i.color IS NOT NULL AND i.color != ''
 			  AND (
@@ -2372,10 +2380,12 @@ def get_orders_for_date(date):
 			i.name, i.item_code, i.item_name, i.qty, i.uom, i.unit,
 			i.color, i.custom_quality as quality, i.gsm, i.width,
 			p.name as planning_sheet, p.party_code, p.customer,
+			COALESCE(c.customer_name, p.customer) as customer_name,
 			p.ordered_date{extra_fields},
 			{eff} as effective_date
 		FROM `tabPlanning Sheet Item` i
 		JOIN `tabPlanning sheet` p ON i.parent = p.name
+		LEFT JOIN `tabCustomer` c ON p.customer = c.name
 		WHERE {eff} = %s
 		  AND p.docstatus < 2
 		ORDER BY i.unit, i.idx
@@ -3747,10 +3757,12 @@ def get_unscheduled_planning_sheets():
     """
     sql = """
         SELECT 
-            p.name, p.customer, p.party_code, p.docstatus, p.ordered_date,
+            p.name, p.customer, COALESCE(c.customer_name, p.customer) as customer_name,
+            p.party_code, p.docstatus, p.ordered_date,
             SUM(i.qty) as total_qty
         FROM `tabPlanning sheet` p
         LEFT JOIN `tabPlanning Sheet Item` i ON i.parent = p.name
+        LEFT JOIN `tabCustomer` c ON p.customer = c.name
         WHERE 
             (p.ordered_date IS NULL OR p.ordered_date = '')
             AND p.docstatus < 2
@@ -3793,13 +3805,17 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
         SELECT 
             i.name, i.item_code, i.item_name, i.qty, i.unit, i.color, 
             i.gsm, i.custom_quality as quality, i.width_inch, i.idx,
-            p.name as planning_sheet, p.party_code, p.customer, p.dod, p.planning_status, p.creation,
+            p.name as planning_sheet, p.party_code, p.customer,
+            COALESCE(c.customer_name, p.customer) as customer_name,
+            p.dod, p.planning_status, p.creation,
             so.transaction_date as so_date, so.custom_production_status, so.delivery_status,
             {eff} as effective_date
         FROM
             `tabPlanning Sheet Item` i
         JOIN
             `tabPlanning sheet` p ON i.parent = p.name
+        LEFT JOIN
+            `tabCustomer` c ON p.customer = c.name
         LEFT JOIN
             `tabSales Order` so ON p.sales_order = so.name
         WHERE
