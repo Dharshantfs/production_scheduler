@@ -39,6 +39,13 @@
         </select>
       </div>
       <button class="cc-clear-btn" @click="fetchData">🔄 Refresh</button>
+      <button
+        class="cc-lock-btn"
+        @click="toggleTableReorder"
+        :title="tableReorderLocked ? 'Unlock to enable drag and drop reordering' : 'Lock to disable drag and drop reordering'"
+      >
+        {{ tableReorderLocked ? '🔒 Reorder Locked' : '🔓 Reorder Enabled' }}
+      </button>
       <button class="cc-maint-btn" @click="openMaintenanceDialog" title="Manage equipment maintenance schedules">⚙️ Maintenance</button>
       
       <div class="cc-filter-item" style="margin-left: auto;">
@@ -57,6 +64,7 @@
             <table class="cc-prod-table">
                 <thead>
                     <tr>
+                    <th style="width: 36px;">DRAG</th>
                         <th style="width: 80px;">DATE</th>
                         <th style="width: 80px;">DAY</th>
                         <th style="width: 100px;">PARTY CODE</th>
@@ -71,11 +79,16 @@
                         <th style="width: 80px; position: sticky; right: 0; background: #fafafa; z-index: 10;">PRODUCTION PLAN</th>
                     </tr>
                 </thead>
-                <tbody>
-                    <template v-for="dateGroup in unitGroup.dates" :key="dateGroup.date">
+                <tbody
+                  v-for="dateGroup in unitGroup.dates"
+                  :key="dateGroup.date"
+                  class="pt-sortable-body"
+                  :data-unit="unitGroup.unit"
+                  :data-date="dateGroup.date"
+                >
                       <!-- Maintenance Row (show once at maintenance start date, centered) -->
-                      <tr v-if="getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit)" style="background-color: #fee2e2; border: 2px solid #dc2626;">
-                        <td colspan="11" style="padding: 8px 12px; font-weight: 700; color: #991b1b; text-align: center;">
+                      <tr v-if="getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit)" class="pt-non-draggable" style="background-color: #fee2e2; border: 2px solid #dc2626;">
+                        <td colspan="13" style="padding: 8px 12px; font-weight: 700; color: #991b1b; text-align: center;">
                           <div style="display: inline-flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;">
                             <span>🔧 MAINTENANCE: {{ getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).type }} ({{ getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).startDate }} - {{ getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).endDate }})</span>
                             <button @click="deleteMaintenanceRecord(getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).name)" style="background: #dc2626; color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Remove</button>
@@ -85,7 +98,10 @@
 
                       <template v-if="dateGroup.items.length">
                         <template v-for="(item, idx) in dateGroup.items" :key="item.itemName">
-                          <tr>
+                          <tr class="pt-draggable-row" :data-item-name="item.itemName">
+                            <td class="cell-center" style="cursor: grab; color: #94a3b8; font-size: 15px;" :title="tableReorderLocked ? 'Unlock reorder to drag' : 'Drag to reorder'">
+                              <span class="pt-drag-handle">⠿</span>
+                            </td>
                             <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center font-bold">
                               {{ formatDate(dateGroup.date) }}
                             </td>
@@ -120,6 +136,7 @@
                       </template>
 
                       <tr v-else>
+                        <td class="cell-center">-</td>
                         <td class="cell-center font-bold">{{ formatDate(dateGroup.date) }}</td>
                         <td class="cell-center">{{ getDayName(dateGroup.date) }}</td>
                         <td colspan="7" style="text-align:center; color:#94a3b8; font-style:italic;">No orders (maintenance day)</td>
@@ -127,9 +144,10 @@
                         <td class="cell-center">-</td>
                         <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;"></td>
                       </tr>
-                    </template>
+                </tbody>
+                <tbody>
                     <tr v-if="unitGroup.dates.length === 0">
-                        <td colspan="10" style="text-align:center; padding: 20px; color:#999;">No production planned for this unit</td>
+                        <td colspan="13" style="text-align:center; padding: 20px; color:#999;">No production planned for this unit</td>
                     </tr>
                 </tbody>
             </table>
@@ -139,7 +157,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch, reactive } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch, reactive } from "vue";
+import Sortable from "sortablejs";
 
 // ===== MAINTENANCE DATA =====
 const maintenanceRecords = ref([]);
@@ -525,6 +544,86 @@ const filterPartyCode = ref("");
 const filterCustomer = ref("");
 const filterUnit = ref("");
 const rawData = ref([]);
+const tableReorderLocked = ref(true);
+const sortableInstances = ref([]);
+
+function destroyTableSortables() {
+  sortableInstances.value.forEach((instance) => {
+    try {
+      instance.destroy();
+    } catch (e) {}
+  });
+  sortableInstances.value = [];
+}
+
+async function persistDateGroupOrder(tbodyEl) {
+  const unit = tbodyEl?.dataset?.unit;
+  const date = tbodyEl?.dataset?.date;
+  if (!unit || !date) return;
+
+  const rows = Array.from(tbodyEl.querySelectorAll('.pt-draggable-row'));
+  const items = rows
+    .map((row, idx) => ({
+      name: row.dataset.itemName,
+      unit,
+      date,
+      index: idx + 1,
+    }))
+    .filter((row) => row.name);
+
+  if (!items.length) return;
+
+  await frappe.call({
+    method: "production_scheduler.api.update_items_bulk",
+    args: {
+      plan_name: "__all__",
+      items: JSON.stringify(items),
+    },
+  });
+}
+
+async function initTableSortables() {
+  destroyTableSortables();
+  if (tableReorderLocked.value) return;
+
+  await nextTick();
+  const bodies = document.querySelectorAll('.pt-sortable-body');
+
+  bodies.forEach((tbody) => {
+    const sortable = new Sortable(tbody, {
+      animation: 150,
+      handle: '.pt-drag-handle',
+      draggable: '.pt-draggable-row',
+      filter: '.pt-non-draggable',
+      onEnd: async (evt) => {
+        try {
+          await persistDateGroupOrder(evt.to);
+          frappe.show_alert({ message: 'Order updated', indicator: 'green' });
+          await fetchData();
+        } catch (e) {
+          console.error('Failed to persist row order:', e);
+          frappe.msgprint('Failed to save new row order');
+          await fetchData();
+        }
+      },
+    });
+
+    sortableInstances.value.push(sortable);
+  });
+}
+
+async function toggleTableReorder() {
+  tableReorderLocked.value = !tableReorderLocked.value;
+
+  if (tableReorderLocked.value) {
+    destroyTableSortables();
+    frappe.show_alert({ message: 'Row reorder locked', indicator: 'blue' });
+    return;
+  }
+
+  await initTableSortables();
+  frappe.show_alert({ message: 'Row reorder enabled', indicator: 'orange' });
+}
 
 // ===== ROLE-BASED VISIBILITY CONTROL =====
 const isManufactureUser = ref(false);
@@ -832,6 +931,7 @@ async function fetchData() {
         frappe.msgprint("Error loading plan data");
         console.error(e);
       }
+      await initTableSortables();
       resolve();
     }, 150);
   });
@@ -869,7 +969,7 @@ watch(filterOrderDate, (newVal) => {
 watch(filterWeek, updateUrlParams);
 watch(filterMonth, updateUrlParams);
 
-onMounted(() => {
+onMounted(async () => {
   // Check user role for visibility control
   try {
     isManufactureUser.value = detectRestrictedUser();
@@ -896,8 +996,12 @@ onMounted(() => {
     if (monthParam) filterMonth.value = monthParam;
   }
   
-  fetchMaintenanceRecords();
-  fetchData();
+  await fetchMaintenanceRecords();
+  await fetchData();
+});
+
+onBeforeUnmount(() => {
+  destroyTableSortables();
 });
 </script>
 
@@ -944,6 +1048,16 @@ onMounted(() => {
   font-size: 13px;
   cursor: pointer;
   font-weight: 500;
+}
+.cc-lock-btn {
+  padding: 8px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 600;
+  background: #fff7ed;
+  color: #9a3412;
 }
 .cc-view-btn {
     background-color: #3b82f6;
@@ -1009,6 +1123,16 @@ onMounted(() => {
     padding: 10px;
     border: 1px solid #e5e7eb;
     text-align: center;
+.pt-sortable-body .pt-draggable-row {
+  transition: background-color 0.2s;
+}
+.pt-sortable-body .pt-draggable-row:hover {
+  background-color: #f8fafc;
+}
+.pt-drag-handle {
+  display: inline-block;
+  user-select: none;
+}
     font-weight: 700;
 }
 .cc-prod-table td {
