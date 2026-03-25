@@ -6,7 +6,7 @@
         method: 'frappe.client.get_list',
         args: {
             doctype: 'Planning sheet',
-            fields: ['name', 'customer', 'customer_name'],
+            fields: ['name', 'customer'],
             limit_page_length: 0
         },
         callback: function (r) {
@@ -16,13 +16,13 @@
                 return;
             }
 
-            const targets = sheets.filter((s) => s.customer && !s.customer_name);
+            const targets = sheets.filter((s) => s.customer);
             if (!targets.length) {
-                console.log('No backfill needed. All customer names already present.');
+                console.log('No records with customer found.');
                 return;
             }
 
-            console.log(`Found ${sheets.length} Planning Sheets. Need to backfill ${targets.length}.`);
+            console.log(`Found ${sheets.length} Planning Sheets. Starting backfill for ${targets.length}.`);
 
             let done = 0;
             let updated = 0;
@@ -72,9 +72,25 @@
                                 finishOne();
                             },
                             error: function () {
-                                failed += 1;
-                                console.error(`Failed updating ${sheet.name}`);
-                                finishOne();
+                                // Some sites use custom_customer_name instead of customer_name.
+                                frappe.call({
+                                    method: 'frappe.client.set_value',
+                                    args: {
+                                        doctype: 'Planning sheet',
+                                        name: sheet.name,
+                                        fieldname: 'custom_customer_name',
+                                        value: customerName
+                                    },
+                                    callback: function () {
+                                        updated += 1;
+                                        finishOne();
+                                    },
+                                    error: function () {
+                                        failed += 1;
+                                        console.error(`Failed updating ${sheet.name}`);
+                                        finishOne();
+                                    }
+                                });
                             }
                         });
                     },
