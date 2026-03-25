@@ -620,8 +620,6 @@ async function saveArrangement() {
   arrangementSaving.value = true;
   try {
     // Persist explicit sequence per unit/date only.
-    // We intentionally bypass idx/unit/date bulk updates here because
-    // backend idx recalculation can re-order rows unexpectedly.
     for (const [, items] of groupedUpdates) {
       if (!items.length) continue;
       const unit = normalizeUnit(items[0].unit);
@@ -629,6 +627,7 @@ async function saveArrangement() {
       const sequence = items.map((row) => row.name).filter(Boolean);
       if (!unit || !date || !sequence.length) continue;
 
+      // Save to backend
       await frappe.call({
         method: "production_scheduler.api.save_color_sequence",
         args: {
@@ -639,16 +638,21 @@ async function saveArrangement() {
         },
       });
 
-      unitSequenceStore[`${unit}||${date}`] = {
+      // Update local store with the saved sequence
+      const storeKey = `${unit}||${date}`;
+      unitSequenceStore[storeKey] = {
         sequence,
         status: "Draft",
       };
+      console.log(`Saved and cached sequence for ${storeKey}:`, sequence.length, "items");
     }
 
     pendingArrangementUpdates.value = {};
     arrangementDirty.value = false;
     frappe.show_alert({ message: 'Arrangement saved permanently', indicator: 'green' });
-    await fetchData();
+    
+    // DO NOT call fetchData() here - it would reset the sequences we just saved
+    // Arrangement stays visible until user manually refreshes if they want to verify
   } catch (e) {
     console.error('Failed to save arrangement:', e);
     frappe.msgprint('Failed to save arrangement');
