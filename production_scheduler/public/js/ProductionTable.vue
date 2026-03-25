@@ -599,23 +599,17 @@ async function saveArrangement() {
   if (!arrangementDirty.value || arrangementSaving.value) return;
 
   const groupedUpdates = Object.entries(pendingArrangementUpdates.value);
-  const payload = groupedUpdates.map(([, items]) => items).flat();
-  if (!payload.length) {
+  const hasRows = groupedUpdates.some(([, items]) => (items || []).length > 0);
+  if (!hasRows) {
     arrangementDirty.value = false;
     return;
   }
 
   arrangementSaving.value = true;
   try {
-    await frappe.call({
-      method: "production_scheduler.api.update_items_bulk",
-      args: {
-        plan_name: "__all__",
-        items: JSON.stringify(payload),
-      },
-    });
-
-    // Persist explicit sequence per unit/date so refresh uses the same arrangement.
+    // Persist explicit sequence per unit/date only.
+    // We intentionally bypass idx/unit/date bulk updates here because
+    // backend idx recalculation can re-order rows unexpectedly.
     for (const [, items] of groupedUpdates) {
       if (!items.length) continue;
       const unit = items[0].unit;
