@@ -568,13 +568,14 @@ function getArrangementKey(unit, date) {
   return `${unit}||${date}`;
 }
 
+// Removed duplicate normalizeUnit definition
 function normalizeUnit(raw) {
-  const r = String(raw || "").toUpperCase();
+  const r = String(raw || "").trim().toUpperCase().replace(/\s+/g, "");
   if (r.includes("UNIT1")) return "Unit 1";
   if (r.includes("UNIT2")) return "Unit 2";
   if (r.includes("UNIT3")) return "Unit 3";
   if (r.includes("UNIT4")) return "Unit 4";
-  return raw;
+  return "Mixed";
 }
 
 function destroyTableSortables() {
