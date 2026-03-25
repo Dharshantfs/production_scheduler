@@ -3464,6 +3464,25 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         return {"status": "failed", "message": "No items selected"}
 
     target_date = getdate(target_date)
+
+	def _resolve_customer_link(raw_customer, party_code=None):
+		"""Return a valid Customer docname for link field usage."""
+		if not raw_customer:
+			if party_code and frappe.db.exists("Customer", party_code):
+				return party_code
+			return ""
+
+		if frappe.db.exists("Customer", raw_customer):
+			return raw_customer
+
+		by_name = frappe.db.get_value("Customer", {"customer_name": raw_customer}, "name")
+		if by_name:
+			return by_name
+
+		if party_code and frappe.db.exists("Customer", party_code):
+			return party_code
+
+		return ""
     
     # --- CAPACITY VALIDATION & SPLITTING PREPARATION ---
     # 1. Calculate weight to add per unit and prepare docs
@@ -3573,7 +3592,7 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                 if frappe.db.has_column("Planning sheet", "custom_planned_date"):
                     target_sheet.custom_planned_date = target_date
                 target_sheet.party_code = parent_doc.party_code
-                target_sheet.customer = parent_doc.customer
+				target_sheet.customer = _resolve_customer_link(parent_doc.customer, parent_doc.party_code)
                 target_sheet.sales_order = parent_doc.sales_order
                 if plan_name and plan_name != "Default":
                     target_sheet.custom_plan_name = plan_name
@@ -3625,10 +3644,6 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         frappe.db.commit() # Save SQL updates
         
         # 3. Handle Parent Cleanup
-        target_sheet.reload()
-        if int(target_sheet.docstatus or 0) == 0:
-            target_sheet.save()
-            
         if target_sheet.name != parent_doc.name:
             parent_doc.reload()
             if not parent_doc.get("items"):
@@ -3642,8 +3657,6 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                     # If it's linked to a Production Plan, Frappe prevents deletion. 
                     # We catch it so the move doesn't crash since the items were already moved via SQL.
                     frappe.logger().error(f"Could not delete empty planning sheet {parent_doc.name}: {e}")
-            elif int(parent_doc.docstatus or 0) == 0:
-                parent_doc.save()
         
     frappe.db.commit()
 
