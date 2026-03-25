@@ -502,7 +502,7 @@ const unitSequenceStore = reactive({});
 function sortItems(unit, items, date) {
   // 1. If we have a saved sequence (Manual Sort / Approved Sequence) for this unit/date, use it primarily
   const normalizedUnit = normalizeUnit(unit);
-  const key = `${normalizedUnit}-${date}`;
+  const key = `${normalizedUnit}||${date}`;
   const savedSeq = unitSequenceStore[key]?.sequence;
   
   if (savedSeq && savedSeq.length) {
@@ -565,7 +565,7 @@ const arrangementDirty = ref(false);
 const arrangementSaving = ref(false);
 
 function getArrangementKey(unit, date) {
-  return `${unit}__${date}`;
+  return `${unit}||${date}`;
 }
 
 function normalizeUnit(raw) {
@@ -639,7 +639,7 @@ async function saveArrangement() {
         },
       });
 
-      unitSequenceStore[`${unit}-${date}`] = {
+      unitSequenceStore[`${unit}||${date}`] = {
         sequence,
         status: "Draft",
       };
@@ -1001,13 +1001,21 @@ async function fetchData() {
                 }
             });
             if (seqRes.message) {
-                // Normalize keys and ensure unit names are correct
+                // Backend returns keys as "unit-date", but unit might have dashes.
+                // Reconstruct using the unit and date from object properties instead.
                 const normalized = {};
-                for (const [key, val] of Object.entries(seqRes.message)) {
-                    const [unit, date] = key.split('-');
-                    const normalizedUnit = normalizeUnit(unit);
-                    const newKey = `${normalizedUnit}-${date}`;
-                    normalized[newKey] = val;
+                for (const [origKey, val] of Object.entries(seqRes.message)) {
+                    // Parse the key carefully: "Unit 1-2026-01-18" -> unit="Unit 1", date="2026-01-18"
+                    // Assume date is always YYYY-MM-DD at the end
+                    const dateMatch = origKey.match(/(\d{4}-\d{2}-\d{2})$/);
+                    if (dateMatch) {
+                        const date = dateMatch[1];
+                        const unit = origKey.substring(0, origKey.length - date.length - 1).trim();
+                        const normalizedUnit = normalizeUnit(unit);
+                        const newKey = `${normalizedUnit}||${date}`;
+                        normalized[newKey] = val;
+                        console.log(`Mapped key: ${origKey} -> ${newKey}`);
+                    }
                 }
                 Object.assign(unitSequenceStore, normalized);
                 console.log("Sequences loaded:", Object.keys(normalized).length, "keys");
