@@ -598,7 +598,8 @@ async function persistDateGroupOrder(tbodyEl) {
 async function saveArrangement() {
   if (!arrangementDirty.value || arrangementSaving.value) return;
 
-  const payload = Object.values(pendingArrangementUpdates.value).flat();
+  const groupedUpdates = Object.entries(pendingArrangementUpdates.value);
+  const payload = groupedUpdates.map(([, items]) => items).flat();
   if (!payload.length) {
     arrangementDirty.value = false;
     return;
@@ -613,6 +614,30 @@ async function saveArrangement() {
         items: JSON.stringify(payload),
       },
     });
+
+    // Persist explicit sequence per unit/date so refresh uses the same arrangement.
+    for (const [, items] of groupedUpdates) {
+      if (!items.length) continue;
+      const unit = items[0].unit;
+      const date = items[0].date;
+      const sequence = items.map((row) => row.name).filter(Boolean);
+      if (!unit || !date || !sequence.length) continue;
+
+      await frappe.call({
+        method: "production_scheduler.api.save_color_sequence",
+        args: {
+          date,
+          unit,
+          sequence_data: JSON.stringify(sequence),
+          plan_name: "Default",
+        },
+      });
+
+      unitSequenceStore[`${unit}-${date}`] = {
+        sequence,
+        status: "Draft",
+      };
+    }
 
     pendingArrangementUpdates.value = {};
     arrangementDirty.value = false;
