@@ -5351,11 +5351,89 @@ def run_global_cleanup():
 
 
 @frappe.whitelist()
+def normalize_planning_sheet_customer_link(doc, method=None):
+	"""Normalize customer link on Planning sheet docs to valid Customer name."""
+	if not doc:
+		return
+
+	current_customer = (doc.get("customer") or "").strip()
+	party_code = (doc.get("party_code") or "").strip()
+	resolved = _resolve_customer_link(current_customer, party_code)
+
+	if resolved != current_customer:
+		doc.customer = resolved
+
+
+@frappe.whitelist()
+def repair_planning_sheet_customer_links(limit_page_length=0, dry_run=0):
+	"""One-time repair: convert invalid Planning sheet.customer values to valid Customer IDs."""
+	limit_page_length = cint(limit_page_length or 0)
+	dry_run = cint(dry_run or 0)
+
+	rows = frappe.get_all(
+		"Planning sheet",
+		filters={"docstatus": ["<", 2]},
+		fields=["name", "customer", "party_code"],
+		limit_page_length=limit_page_length,
+	)
+
+	scanned = 0
+	updated = 0
+	cleared = 0
+	skipped = 0
+	samples = []
+
+	for r in rows:
+		scanned += 1
+		current_customer = (r.get("customer") or "").strip()
+		party_code = (r.get("party_code") or "").strip()
+
+		if not current_customer:
+			skipped += 1
+			continue
+
+		resolved = _resolve_customer_link(current_customer, party_code)
+
+		if resolved == current_customer:
+			skipped += 1
+			continue
+
+		if dry_run:
+			samples.append({"name": r.get("name"), "from": current_customer, "to": resolved})
+			if resolved:
+				updated += 1
+			else:
+				cleared += 1
+			continue
+
+		frappe.db.set_value("Planning sheet", r.get("name"), "customer", resolved or "")
+		if resolved:
+			updated += 1
+		else:
+			cleared += 1
+
+	if not dry_run:
+		frappe.db.commit()
+
+	return {
+		"status": "success",
+		"scanned": scanned,
+		"updated": updated,
+		"cleared": cleared,
+		"skipped": skipped,
+		"dry_run": bool(dry_run),
+		"samples": samples[:50],
+	}
+
+
+@frappe.whitelist()
 def validate_planning_sheet_duplicates(doc, method=None):
     """
     Prevents saving a Planning Sheet if another UNLOCKED sheet 
     already exists for the same Sales Order.
     """
+	normalize_planning_sheet_customer_link(doc)
+
     if not doc.sales_order or doc.docstatus > 1:
         return
         

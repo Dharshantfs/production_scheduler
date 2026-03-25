@@ -19,6 +19,7 @@ doc_events = {
         "on_submit": "production_scheduler.api.auto_create_planning_sheet"
     },
     "Planning sheet": {
+        "before_validate": "production_scheduler.api.normalize_planning_sheet_customer_link",
         "validate": "production_scheduler.api.validate_planning_sheet_duplicates"
     }
 }
