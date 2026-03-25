@@ -501,9 +501,12 @@ const unitSequenceStore = reactive({});
 
 function sortItems(unit, items, date) {
   // 1. If we have a saved sequence (Manual Sort / Approved Sequence) for this unit/date, use it primarily
-  const key = `${unit}-${date}`;
+  const normalizedUnit = normalizeUnit(unit);
+  const key = `${normalizedUnit}-${date}`;
   const savedSeq = unitSequenceStore[key]?.sequence;
+  
   if (savedSeq && savedSeq.length) {
+      console.log(`Applying saved sequence for ${key}:`, savedSeq.length, "items");
       const seqMap = {};
       savedSeq.forEach((name, i) => seqMap[name] = i);
       
@@ -671,7 +674,6 @@ async function initTableSortables() {
       ghostClass: 'pt-drag-ghost',
       chosenClass: 'pt-drag-chosen',
       dragClass: 'pt-drag-dragging',
-      forceFallback: true,
       scrollSensitivity: 30,
       scrollSpeed: 10,
       onStart: () => {
@@ -999,7 +1001,16 @@ async function fetchData() {
                 }
             });
             if (seqRes.message) {
-                Object.assign(unitSequenceStore, seqRes.message);
+                // Normalize keys and ensure unit names are correct
+                const normalized = {};
+                for (const [key, val] of Object.entries(seqRes.message)) {
+                    const [unit, date] = key.split('-');
+                    const normalizedUnit = normalizeUnit(unit);
+                    const newKey = `${normalizedUnit}-${date}`;
+                    normalized[newKey] = val;
+                }
+                Object.assign(unitSequenceStore, normalized);
+                console.log("Sequences loaded:", Object.keys(normalized).length, "keys");
             }
         } catch (e) {
             console.warn(`Failed to fetch sequence range`, e);
