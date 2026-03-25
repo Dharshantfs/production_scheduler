@@ -565,6 +565,15 @@ function getArrangementKey(unit, date) {
   return `${unit}__${date}`;
 }
 
+function normalizeUnit(raw) {
+  const r = String(raw || "").toUpperCase();
+  if (r.includes("UNIT1")) return "Unit 1";
+  if (r.includes("UNIT2")) return "Unit 2";
+  if (r.includes("UNIT3")) return "Unit 3";
+  if (r.includes("UNIT4")) return "Unit 4";
+  return raw;
+}
+
 function destroyTableSortables() {
   sortableInstances.value.forEach((instance) => {
     try {
@@ -612,7 +621,7 @@ async function saveArrangement() {
     // backend idx recalculation can re-order rows unexpectedly.
     for (const [, items] of groupedUpdates) {
       if (!items.length) continue;
-      const unit = items[0].unit;
+      const unit = normalizeUnit(items[0].unit);
       const date = items[0].date;
       const sequence = items.map((row) => row.name).filter(Boolean);
       if (!unit || !date || !sequence.length) continue;
