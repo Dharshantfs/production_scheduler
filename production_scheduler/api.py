@@ -770,6 +770,160 @@ def cascade_orders_after_maintenance_removal(unit, maint_start_date, maint_end_d
 		"movement_log": movement_log
 	}
 
+@frappe.whitelist()
+def forward_orders_from_date_range(cascade_start_date, cascade_end_date, plan_name=None):
+	"""
+	Forward ALL orders queued on cascade_start_date to cascade_end_date
+	to next available dates (after the cascade ends).
+	
+	Used when pushing colors - automatically clears the cascade range.
+	
+	Args:
+		cascade_start_date: Start of cascade range (e.g. '2026-03-08')
+		cascade_end_date: End of cascade range (e.g. '2026-03-16')
+		plan_name: Plan name to filter by (optional)
+	
+	Returns:
+		{
+			"status": "success|error",
+			"forwarded_count": number of items moved,
+			"dates_cleared": list of dates that were cleared,
+			"movement_log": [{"item_name": "...", "from_date": "...", "to_date": "...", "unit": "..."}, ...]
+		}
+	"""
+	from frappe.utils import getdate, add_days
+	import datetime
+	
+	if not cascade_start_date or not cascade_end_date:
+		return {"status": "error", "message": "Missing cascade date range"}
+	
+	start_dt = getdate(cascade_start_date)
+	end_dt = getdate(cascade_end_date)
+	
+	if not frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+		return {"status": "error", "message": "Required column custom_item_planned_date not found"}
+	
+	# Find ALL items (any type) queued on dates in the cascade range
+	items = frappe.db.sql("""
+		SELECT 
+			i.name, 
+			i.qty, 
+			i.unit, 
+			i.color,
+			COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as effective_planned_date
+		FROM `tabPlanning Sheet Item` i
+		JOIN `tabPlanning sheet` p ON i.parent = p.name
+		WHERE p.docstatus < 2
+		  AND i.docstatus < 2
+		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) >= %s
+		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= %s
+	""", (start_dt, end_dt), as_dict=True)
+	
+	if not items:
+		# Generate date list for cleared dates
+		dates_cleared = []
+		current = start_dt
+		while current <= end_dt:
+			dates_cleared.append(str(current))
+			current = add_days(current, 1)
+		
+		return {
+			"status": "success",
+			"message": "No items to forward",
+			"forwarded_count": 0,
+			"dates_cleared": dates_cleared,
+			"movement_log": []
+		}
+	
+	# Group items by unit for independent cascading
+	items_by_unit = {}
+	for item in items:
+		unit = item.get("unit") or "Unit 1"
+		if unit not in items_by_unit:
+			items_by_unit[unit] = []
+		items_by_unit[unit].append(item)
+	
+	forwarded_count = 0
+	movement_log = []
+	local_loads = {}  # (date, unit) -> current load in tons
+	
+	# Generate date list for cleared dates
+	dates_cleared = []
+	current = start_dt
+	while current <= end_dt:
+		dates_cleared.append(str(current))
+		current = add_days(current, 1)
+	
+	# Process each unit independently
+	for unit, unit_items in items_by_unit.items():
+		unit_limit = HARD_LIMITS.get(unit, 999.0)
+		
+		for item in unit_items:
+			item_name = item.get("name")
+			qty_tons = flt(item.get("qty")) / 1000.0
+			original_date = getdate(item.get("effective_planned_date"))
+			original_date_str = str(original_date)
+			color = item.get("color") or ""
+			
+			# Start looking from the day AFTER cascade_end_date
+			candidate = add_days(end_dt, 1)
+			forward_found = False
+			
+			# Search up to 60 days ahead for available slot
+			for search_days in range(60):
+				candidate_str = str(candidate) if isinstance(candidate, str) else candidate.strftime("%Y-%m-%d")
+				
+				# Skip if under maintenance
+				if is_date_under_maintenance(unit, candidate_str):
+					candidate = add_days(candidate, 1)
+					continue
+				
+				# Check current load for this date/unit
+				load_key = (candidate_str, unit)
+				if load_key not in local_loads:
+					local_loads[load_key] = get_unit_load(candidate_str, unit, "__all__", pb_only=1)
+				
+				current_load = local_loads[load_key]
+				
+				# Check if item fits (with 5% buffer) or if day is empty but item is oversized
+				if (current_load + qty_tons <= unit_limit * 1.05) or (current_load == 0 and qty_tons >= unit_limit):
+					local_loads[load_key] = current_load + qty_tons
+					
+					# Update the item's planned date
+					frappe.db.sql("""
+						UPDATE `tabPlanning Sheet Item`
+						SET custom_item_planned_date = %s
+						WHERE name = %s
+					""", (candidate_str, item_name))
+					
+					movement_log.append({
+						"item_name": item_name,
+						"color": color,
+						"from_date": original_date_str,
+						"to_date": candidate_str,
+						"unit": unit,
+						"qty_tons": round(qty_tons, 2)
+					})
+					
+					forwarded_count += 1
+					forward_found = True
+					break
+				
+				candidate = add_days(candidate, 1)
+			
+			if not forward_found:
+				frappe.log_error(f"Could not forward item {item_name} from {original_date_str} - no available slot found in 60 days", "Forward Orders Error")
+	
+	frappe.db.commit()
+	
+	return {
+		"status": "success",
+		"message": f"Forwarded {forwarded_count} items from cascade range {cascade_start_date} to {cascade_end_date}",
+		"forwarded_count": forwarded_count,
+		"dates_cleared": dates_cleared,
+		"movement_log": movement_log
+	}
+
 def _extract_maintenance_cascade_log(notes_text):
 	"""Read embedded movement log from maintenance notes."""
 	import json

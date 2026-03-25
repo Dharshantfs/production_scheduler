@@ -3586,6 +3586,46 @@ async function pushToProductionBoard() {
                 if (!confirmed) return;
             }
 
+            // ========== FORWARD EXISTING ORDERS BEFORE PUSHING ==========
+            // Extract cascade range from fetch_dates
+            const fetchDatesArray = (fetchDatesValue || "").split(",").map(d => d.trim()).filter(Boolean);
+            if (fetchDatesArray.length > 0) {
+                const cascadeStartDate = fetchDatesArray[0];
+                const cascadeEndDate = fetchDatesArray[fetchDatesArray.length - 1];
+                
+                if (cascadeStartDate && cascadeEndDate) {
+                    pBtn.prop('disabled', true).text('⏳ Clearing cascade range...');
+                    
+                    try {
+                        const forwardRes = await frappe.call({
+                            method: "production_scheduler.api.forward_orders_from_date_range",
+                            args: {
+                                cascade_start_date: cascadeStartDate,
+                                cascade_end_date: cascadeEndDate,
+                                plan_name: selectedPlanLabel.value
+                            },
+                            freeze: false
+                        });
+                        
+                        if (forwardRes.message && forwardRes.message.status === 'success') {
+                            const forwardedCount = forwardRes.message.forwarded_count || 0;
+                            if (forwardedCount > 0) {
+                                frappe.show_alert({
+                                    message: `✅ Forwarded ${forwardedCount} order(s) from ${cascadeStartDate} to ${cascadeEndDate}. Clearing cascade range.`,
+                                    indicator: 'green'
+                                });
+                            }
+                        } else {
+                            frappe.msgprint('Error forwarding existing orders. Continuing with push anyway.');
+                        }
+                    } catch (e) {
+                        console.error('Forward orders failed', e);
+                        frappe.msgprint('Error clearing cascade range. Continuing with push.');
+                    }
+                }
+            }
+            // ========== END: FORWARD LOGIC ==========
+
             pBtn.prop('disabled', true).text('⏳ Pushing...');
             frappe.show_alert({ message: `Pushing ${checkedItems.length} items from fetch date(s) to ${targetDate}...`, indicator: 'blue' });
 
