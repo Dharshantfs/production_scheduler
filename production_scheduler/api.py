@@ -5433,7 +5433,7 @@ def validate_planning_sheet_duplicates(doc, method=None):
     Prevents saving a Planning Sheet if another UNLOCKED sheet 
     already exists for the same Sales Order.
     """
-	normalize_planning_sheet_customer_link(doc)
+    normalize_planning_sheet_customer_link(doc)
 
     if not doc.sales_order or doc.docstatus > 1:
         return
@@ -6326,4 +6326,5 @@ def get_planning_sheet_pp_id(planning_sheet_name):
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "get_planning_sheet_pp_id")
 		return {"status": "error", "message": "Unable to fetch Production Plan"}
+
 
