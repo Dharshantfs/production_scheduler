@@ -94,7 +94,7 @@
                             </td>
                                     
                             <td class="cell-center">{{ item.partyCode }}</td>
-                            <td>{{ item.customer_name }}</td>
+                            <td>{{ item.customer_name || item.party_name || item.customer || item.partyCode }}</td>
                             <td class="cell-center font-mono font-bold" style="font-size:11px; color:#4f46e5;">{{ item.planCode }}</td>
                             <td class="cell-center">{{ item.quality }}</td>
                             <td class="cell-center font-bold">{{ item.color }}</td>
@@ -782,6 +782,7 @@ async function fetchData() {
       ...d,
       plannedDate: d.plannedDate || d.planned_date || "",
       partyCode: d.partyCode || d.party_code || "",
+      customer_name: d.customer_name || d.party_name || d.customer || d.party_code || "",
       itemName: d.itemName || d.item_name || "",
       orderDate: d.orderDate || d.ordered_date || "",
       planCode: d.custom_plan_code || "",

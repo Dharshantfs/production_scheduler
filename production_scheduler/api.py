@@ -2304,6 +2304,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 				"description": item.item_name or "",
 				"planningSheet": sheet.name,
 				"customer": sheet.customer,
+				"customer_name": (sheet.get("party_name") or sheet.customer or sheet.party_code or ""),
 				"partyCode": sheet.party_code,
 				"planningStatus": sheet.planning_status or "Draft",
 				"docstatus": sheet.docstatus,
