@@ -613,7 +613,14 @@ const filteredData = computed(() => {
   if (filterCustomer.value) {
     const search = filterCustomer.value.toLowerCase();
     data = data.filter((d) =>
-      (d.customer || "").toLowerCase().includes(search)
+      (
+        d.customer_name ||
+        d.party_name ||
+        d.customer ||
+        d.partyCode ||
+        d.party_code ||
+        ""
+      ).toLowerCase().includes(search)
     );
   }
   return data;
