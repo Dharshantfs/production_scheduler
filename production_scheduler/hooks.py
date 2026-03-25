@@ -22,8 +22,3 @@ doc_events = {
         "validate": "production_scheduler.api.validate_planning_sheet_duplicates"
     }
 }
-
-# Client Scripts
-doctype_js = {
-    "Planning sheet": "public/js/planning_sheet_custom.js"
-}
