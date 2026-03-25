@@ -1780,7 +1780,7 @@ def get_items_by_name(names):
 	return frappe.db.sql(f"""
 		SELECT 
 			i.name, i.color, i.custom_quality as quality, i.qty, p.party_code,
-			p.customer, COALESCE(p.custom_customer_name, c.customer_name, p.customer) as customer_name,
+			p.customer, COALESCE(c.customer_name, p.customer) as customer_name,
 			p.sales_order, i.custom_item_planned_date, i.custom_plan_code,
 			p.custom_pb_plan_name as pbPlanName
 		FROM `tabPlanning Sheet Item` i
@@ -1831,7 +1831,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 					i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
 					{so_item_col} {split_col}
 					p.name as planningSheet, p.party_code as partyCode, p.customer,
-					COALESCE(p.custom_customer_name, c.customer_name, p.customer) as customer_name,
+					COALESCE(c.customer_name, p.customer) as customer_name,
 					p.ordered_date, p.dod, p.sales_order as salesOrder
 				FROM `tabPlanning Sheet Item` i
 				JOIN `tabPlanning sheet` p ON i.parent = p.name
@@ -1850,12 +1850,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 					i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
 					{so_item_col} {split_col}
 					p.name as planningSheet, p.party_code as partyCode, p.customer,
-					COALESCE(p.custom_customer_name, c.customer_name, p.customer) as customer_name,
-					p.ordered_date, p.dod, p.sales_order as salesOrder
-				FROM `tabPlanning Sheet Item` i
-				JOIN `tabPlanning sheet` p ON i.parent = p.name
-				LEFT JOIN `tabCustomer` c ON p.customer = c.name
-				WHERE {sheet_date_col} = %s
+				COALESCE(c.customer_name, p.customer) as customer_name,
 				  AND i.color IS NOT NULL AND i.color != ''
 				  AND p.docstatus < 2
 				ORDER BY i.unit, i.idx
@@ -2380,7 +2375,7 @@ def get_orders_for_date(date):
 			i.name, i.item_code, i.item_name, i.qty, i.uom, i.unit,
 			i.color, i.custom_quality as quality, i.gsm, i.width,
 			p.name as planning_sheet, p.party_code, p.customer,
-			COALESCE(p.custom_customer_name, c.customer_name, p.customer) as customer_name,
+			COALESCE(c.customer_name, p.customer) as customer_name,
 			p.ordered_date{extra_fields},
 			{eff} as effective_date
 		FROM `tabPlanning Sheet Item` i
@@ -3757,7 +3752,7 @@ def get_unscheduled_planning_sheets():
     """
     sql = """
         SELECT 
-            p.name, p.customer, COALESCE(p.custom_customer_name, c.customer_name, p.customer) as customer_name,
+            p.name, p.customer, COALESCE(c.customer_name, p.customer) as customer_name,
             p.party_code, p.docstatus, p.ordered_date,
             SUM(i.qty) as total_qty
         FROM `tabPlanning sheet` p
@@ -3806,7 +3801,7 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
             i.name, i.item_code, i.item_name, i.qty, i.unit, i.color, 
             i.gsm, i.custom_quality as quality, i.width_inch, i.idx,
             p.name as planning_sheet, p.party_code, p.customer,
-            COALESCE(p.custom_customer_name, c.customer_name, p.customer) as customer_name,
+            COALESCE(c.customer_name, p.customer) as customer_name,
             p.dod, p.planning_status, p.creation,
             so.transaction_date as so_date, so.custom_production_status, so.delivery_status,
             {eff} as effective_date
@@ -5170,13 +5165,6 @@ def auto_create_planning_sheet(doc, method=None):
         sheet = frappe.get_doc("Planning sheet", existing[0].name)
         new_ctx_name = _get_contextual_plan_name(cc_plan, doc.transaction_date)
         
-        # Update customer name field
-        try:
-            customer_doc = frappe.get_doc("Customer", doc.customer)
-            sheet.custom_customer_name = customer_doc.customer_name
-        except:
-            sheet.custom_customer_name = doc.customer
-        
         # If plan is different, update it
         if sheet.custom_plan_name != new_ctx_name:
             sheet.custom_plan_name = new_ctx_name
@@ -5197,14 +5185,6 @@ def auto_create_planning_sheet(doc, method=None):
     ps.sales_order = doc.name
     ps.customer = doc.customer
     ps.party_code = doc.party_code
-    
-    # Fetch customer name from Customer master
-    try:
-        customer_doc = frappe.get_doc("Customer", doc.customer)
-        ps.custom_customer_name = customer_doc.customer_name
-    except:
-        ps.custom_customer_name = doc.customer  # Fallback to ID if customer not found
-    
     ps.ordered_date = doc.transaction_date
     ps.dod = doc.delivery_date
     ps.planning_status = "Draft"
