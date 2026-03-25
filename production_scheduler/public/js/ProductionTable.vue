@@ -663,11 +663,22 @@ async function initTableSortables() {
 
   bodies.forEach((tbody) => {
     const sortable = new Sortable(tbody, {
-      animation: 150,
+      animation: 200,
+      easing: "cubic-bezier(1, 0, 0, 1)",
       handle: '.pt-drag-handle',
       draggable: '.pt-draggable-row',
       filter: '.pt-non-draggable',
+      ghostClass: 'pt-drag-ghost',
+      chosenClass: 'pt-drag-chosen',
+      dragClass: 'pt-drag-dragging',
+      forceFallback: true,
+      scrollSensitivity: 30,
+      scrollSpeed: 10,
+      onStart: () => {
+        document.body.style.cursor = 'grabbing';
+      },
       onEnd: async (evt) => {
+        document.body.style.cursor = 'default';
         try {
           await persistDateGroupOrder(evt.to);
           frappe.show_alert({ message: 'Arrangement changed. Click Save Arrangement.', indicator: 'orange' });
@@ -1248,4 +1259,26 @@ onBeforeUnmount(() => {
 .bg-green-100 { background: #dcfce7; color: #166534; }
 .bg-orange-100 { background: #ffedd5; color: #9a3412; }
 .bg-gray-100 { background: #f3f4f6; color: #374151; }
+
+.pt-draggable-row.pt-drag-ghost {
+  opacity: 0.4 !important;
+  background-color: #f0f9ff !important;
+}
+
+.pt-draggable-row.pt-drag-chosen {
+  background-color: #dbeafe !important;
+  box-shadow: inset 0 0 8px rgba(59, 130, 246, 0.3) !important;
+}
+
+.pt-draggable-row.pt-drag-dragging {
+  opacity: 1 !important;
+  background-color: #e0f2fe !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  z-index: 1000 !important;
+  transform: scale(1.01) !important;
+}
+
+.pt-sortable-body.sortable-ghost {
+  background-color: #f5f5f5 !important;
+}
 </style>
