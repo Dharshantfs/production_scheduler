@@ -1005,7 +1005,8 @@ async function fetchData() {
                     start_date: seqStart, 
                     end_date: seqEnd, 
                     unit: filterUnit.value || "All Units",
-                    plan_name: "__all__" 
+                // Must match save_color_sequence plan_name to avoid loading stale rows
+                plan_name: "Default" 
                 }
             });
             if (seqRes.message) {
