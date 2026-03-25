@@ -3899,7 +3899,7 @@ def create_planning_sheet_from_so(doc):
 
         ps = frappe.new_doc("Planning sheet")
         ps.sales_order = doc.name
-		ps.customer = _resolve_customer_link(doc.customer, doc.get("party_code"))
+        ps.customer = _resolve_customer_link(doc.customer, doc.get("party_code"))
         ps.party_code = doc.get("party_code") or doc.customer
         ps.ordered_date = doc.transaction_date 
         ps.custom_planned_date = doc.delivery_date
@@ -4056,7 +4056,7 @@ def create_planning_sheets_bulk(sales_orders):
             ps = frappe.new_doc("Planning sheet")
             ps.sales_order = doc.name
             ps.party_code = doc.get("party_code") or doc.customer
-			ps.customer = _resolve_customer_link(doc.customer, doc.get("party_code"))
+            ps.customer = _resolve_customer_link(doc.customer, doc.get("party_code"))
             ps.dod = doc.delivery_date
             ps.ordered_date = doc.transaction_date
             ps.planning_status = "Draft"
@@ -5165,7 +5165,7 @@ def auto_create_planning_sheet(doc, method=None):
     generate_party_code(doc)
     ps = frappe.new_doc("Planning sheet")
     ps.sales_order = doc.name
-	ps.customer = _resolve_customer_link(doc.customer, doc.party_code)
+    ps.customer = _resolve_customer_link(doc.customer, doc.party_code)
     ps.party_code = doc.party_code
     ps.ordered_date = doc.transaction_date
     ps.dod = doc.delivery_date
@@ -5235,7 +5235,7 @@ def regenerate_planning_sheet(so_name):
     generate_party_code(doc)
     ps = frappe.new_doc("Planning sheet")
     ps.sales_order = doc.name
-	ps.customer = _resolve_customer_link(doc.customer, doc.get("party_code"))
+    ps.customer = _resolve_customer_link(doc.customer, doc.get("party_code"))
     ps.party_code = doc.get("party_code") or ""
     ps.ordered_date = doc.transaction_date
     ps.dod = doc.delivery_date
