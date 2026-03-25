@@ -967,13 +967,22 @@ async function fetchData() {
 
     // After loading raw data, fetch the exact sequence for the range 
     // to match the Production Board's exact queuing flow for each day.
-    if (args.start_date && args.end_date) {
+    let seqStart = args.start_date;
+    let seqEnd = args.end_date;
+    
+    // For single day, use the same date for start/end
+    if (args.date && !seqStart) {
+        seqStart = args.date;
+        seqEnd = args.date;
+    }
+    
+    if (seqStart && seqEnd) {
         try {
             const seqRes = await frappe.call({
                 method: "production_scheduler.api.get_color_sequences_range",
                 args: { 
-                    start_date: args.start_date, 
-                    end_date: args.end_date, 
+                    start_date: seqStart, 
+                    end_date: seqEnd, 
                     unit: filterUnit.value || "All Units",
                     plan_name: "__all__" 
                 }
@@ -983,19 +992,6 @@ async function fetchData() {
             }
         } catch (e) {
             console.warn(`Failed to fetch sequence range`, e);
-        }
-    } else if (args.date) {
-        // Single day case
-        for (const unit of units) {
-            try {
-                const seqRes = await frappe.call({
-                    method: "production_scheduler.api.get_color_sequence",
-                    args: { date: args.date, unit, plan_name: "__all__" }
-                });
-                if (seqRes.message && seqRes.message.sequence) {
-                    unitSequenceStore[`${unit}-${args.date}`] = seqRes.message;
-                }
-            } catch (e) {}
         }
     }
       } catch (e) {
