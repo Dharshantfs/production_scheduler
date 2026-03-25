@@ -5,6 +5,30 @@ import json
 import re
 import datetime
 
+
+def _resolve_customer_link(raw_customer, party_code=None):
+	"""Return a valid Customer docname for link-field assignments."""
+	if not raw_customer:
+		if party_code and frappe.db.exists("Customer", party_code):
+			return party_code
+		return ""
+
+	raw_customer = str(raw_customer).strip()
+	if not raw_customer:
+		return ""
+
+	if frappe.db.exists("Customer", raw_customer):
+		return raw_customer
+
+	by_name = frappe.db.get_value("Customer", {"customer_name": raw_customer}, "name")
+	if by_name:
+		return by_name
+
+	if party_code and frappe.db.exists("Customer", party_code):
+		return party_code
+
+	return ""
+
 def generate_party_code(doc):
     """One Sales Order = One Party Code.
     Generates a unique party_code if not present and copies it to child items.
@@ -3358,7 +3382,7 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
 					new_sheet.custom_plan_name = target_plan
 					new_sheet.ordered_date = effective_date
 					new_sheet.party_code = party_code
-					new_sheet.customer = parent_sheet.customer or ""
+					new_sheet.customer = _resolve_customer_link(parent_sheet.customer, parent_sheet.party_code)
 					new_sheet.insert(ignore_permissions=True)
 					target_sheet_name = new_sheet.name
 					# Force custom_plan_name via raw SQL to ensure persistence
@@ -3464,25 +3488,6 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         return {"status": "failed", "message": "No items selected"}
 
     target_date = getdate(target_date)
-
-	def _resolve_customer_link(raw_customer, party_code=None):
-		"""Return a valid Customer docname for link field usage."""
-		if not raw_customer:
-			if party_code and frappe.db.exists("Customer", party_code):
-				return party_code
-			return ""
-
-		if frappe.db.exists("Customer", raw_customer):
-			return raw_customer
-
-		by_name = frappe.db.get_value("Customer", {"customer_name": raw_customer}, "name")
-		if by_name:
-			return by_name
-
-		if party_code and frappe.db.exists("Customer", party_code):
-			return party_code
-
-		return ""
     
     # --- CAPACITY VALIDATION & SPLITTING PREPARATION ---
     # 1. Calculate weight to add per unit and prepare docs
@@ -3717,7 +3722,7 @@ def rescue_orphaned_items(target_date=None, colour=None, party_code=None):
 			if frappe.db.has_column("Planning sheet", "custom_planned_date"):
 				new_sheet.custom_planned_date = target_date
 			new_sheet.party_code = party
-			new_sheet.customer = first.get("customer") or ""
+			new_sheet.customer = _resolve_customer_link(first.get("customer"), first.get("party_code") or party)
 			new_sheet.sales_order = first.get("sales_order") or ""
 			new_sheet.save(ignore_permissions=True)
 			sheet_name = new_sheet.name
@@ -3894,7 +3899,7 @@ def create_planning_sheet_from_so(doc):
 
         ps = frappe.new_doc("Planning sheet")
         ps.sales_order = doc.name
-        ps.customer = doc.customer
+		ps.customer = _resolve_customer_link(doc.customer, doc.get("party_code"))
         ps.party_code = doc.get("party_code") or doc.customer
         ps.ordered_date = doc.transaction_date 
         ps.custom_planned_date = doc.delivery_date
@@ -4051,7 +4056,7 @@ def create_planning_sheets_bulk(sales_orders):
             ps = frappe.new_doc("Planning sheet")
             ps.sales_order = doc.name
             ps.party_code = doc.get("party_code") or doc.customer
-            ps.customer = doc.customer
+			ps.customer = _resolve_customer_link(doc.customer, doc.get("party_code"))
             ps.dod = doc.delivery_date
             ps.ordered_date = doc.transaction_date
             ps.planning_status = "Draft"
@@ -4294,7 +4299,7 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
 					# planned_date is the actual production date (may be overflow)
 					pb_sheet.custom_planned_date = effective_date
 					pb_sheet.party_code = party_code
-					pb_sheet.customer = parent.customer or ""
+					pb_sheet.customer = _resolve_customer_link(parent.customer, parent.party_code)
 					pb_sheet.sales_order = parent.sales_order or ""
 					pb_sheet.insert(ignore_permissions=True)
 					pb_sheet_name = pb_sheet.name
@@ -4652,7 +4657,7 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 						pb_sheet.ordered_date = original_ordered_date
 						pb_sheet.custom_planned_date = effective_date
 						pb_sheet.party_code = party_code
-						pb_sheet.customer = parent_doc.customer or ""
+						pb_sheet.customer = _resolve_customer_link(parent_doc.customer, parent_doc.party_code)
 						pb_sheet.sales_order = parent_doc.sales_order or ""
 						pb_sheet.insert(ignore_permissions=True)
 						pb_sheet_name = pb_sheet.name
@@ -4814,7 +4819,7 @@ def revert_items_from_pb(item_names):
 					orig.custom_plan_name = parent_doc.get("custom_plan_name") or "Default"
 					orig.ordered_date = eff_date
 					orig.party_code = party
-					orig.customer = parent_doc.customer or ""
+					orig.customer = _resolve_customer_link(parent_doc.customer, parent_doc.party_code)
 					orig.sales_order = parent_doc.sales_order or ""
 					orig.insert(ignore_permissions=True)
 					orig_name = orig.name
@@ -5160,7 +5165,7 @@ def auto_create_planning_sheet(doc, method=None):
     generate_party_code(doc)
     ps = frappe.new_doc("Planning sheet")
     ps.sales_order = doc.name
-    ps.customer = doc.customer
+	ps.customer = _resolve_customer_link(doc.customer, doc.party_code)
     ps.party_code = doc.party_code
     ps.ordered_date = doc.transaction_date
     ps.dod = doc.delivery_date
@@ -5230,7 +5235,7 @@ def regenerate_planning_sheet(so_name):
     generate_party_code(doc)
     ps = frappe.new_doc("Planning sheet")
     ps.sales_order = doc.name
-    ps.customer = doc.customer
+	ps.customer = _resolve_customer_link(doc.customer, doc.get("party_code"))
     ps.party_code = doc.get("party_code") or ""
     ps.ordered_date = doc.transaction_date
     ps.dod = doc.delivery_date
