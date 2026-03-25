@@ -3597,7 +3597,7 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                 if frappe.db.has_column("Planning sheet", "custom_planned_date"):
                     target_sheet.custom_planned_date = target_date
                 target_sheet.party_code = parent_doc.party_code
-				target_sheet.customer = _resolve_customer_link(parent_doc.customer, parent_doc.party_code)
+                target_sheet.customer = _resolve_customer_link(parent_doc.customer, parent_doc.party_code)
                 target_sheet.sales_order = parent_doc.sales_order
                 if plan_name and plan_name != "Default":
                     target_sheet.custom_plan_name = plan_name
@@ -6247,3 +6247,4 @@ def get_planning_sheet_pp_id(planning_sheet_name):
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "get_planning_sheet_pp_id")
 		return {"status": "error", "message": "Unable to fetch Production Plan"}
+
