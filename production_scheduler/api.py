@@ -5447,6 +5447,90 @@ def backfill_sales_order_item_links(sales_order=None):
     
     return result
 
+
+@frappe.whitelist()
+def backfill_wo_production_plan_links(sales_order=None, item_code=None):
+    """
+    Backfill custom_production_plan on Planning Sheet Items by finding Work Orders.
+    Links WO -> Production Plan -> Planning Sheet Item.
+    Works even if Work Orders don't have sales_order field set.
+    """
+    result = {
+        "updated": 0,
+        "skipped": 0,
+        "errors": [],
+        "linked_items": []
+    }
+    
+    try:
+        # Find Planning Sheets
+        if sales_order:
+            sheets = frappe.get_all("Planning sheet", filters={"sales_order": sales_order}, fields=["name", "sales_order"])
+        else:
+            sheets = frappe.get_all("Planning sheet", fields=["name", "sales_order"])
+        
+        if not sheets:
+            return {"status": "error", "message": f"No Planning Sheets found"}
+        
+        for sheet in sheets:
+            try:
+                sheet_name = sheet["name"]
+                
+                # Get all items in this Planning Sheet
+                psi_items = frappe.get_all("Planning Sheet Item",
+                    filters={"parent": sheet_name},
+                    fields=["name", "item_code"]
+                )
+                
+                for psi in psi_items:
+                    psi_item_code = psi["item_code"]
+                    
+                    try:
+                        # Find Work Orders with matching item code
+                        wos = frappe.db.sql("""
+                            SELECT name, production_plan
+                            FROM `tabWork Order`
+                            WHERE (production_item = %s OR item_code = %s)
+                              AND docstatus < 2
+                            ORDER BY creation DESC
+                            LIMIT 1
+                        """, (psi_item_code, psi_item_code), as_dict=True)
+                        
+                        if wos and wos[0].get("production_plan"):
+                            pp = wos[0]["production_plan"]
+                            frappe.db.set_value(
+                                "Planning Sheet Item",
+                                psi["name"],
+                                "custom_production_plan",
+                                pp
+                            )
+                            result["updated"] += 1
+                            result["linked_items"].append({
+                                "psi": psi["name"],
+                                "item_code": psi_item_code,
+                                "wo": wos[0]["name"],
+                                "pp": pp
+                            })
+                        else:
+                            result["skipped"] += 1
+                    
+                    except Exception as e:
+                        result["errors"].append(f"PSI {psi['name']}: {str(e)}")
+                        result["skipped"] += 1
+            
+            except Exception as e:
+                result["errors"].append(f"Sheet {sheet_name}: {str(e)}")
+        
+        frappe.db.commit()
+        result["status"] = "success"
+    
+    except Exception as e:
+        result["status"] = "error"
+        result["message"] = str(e)
+    
+    return result
+
+
 @frappe.whitelist()
 def get_work_orders_for_sales_order(sales_order):
     """
@@ -5475,6 +5559,45 @@ def get_work_orders_for_sales_order(sales_order):
         return {
             "status": "success",
             "count": len(wos),
+            "work_orders": wos
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
+@frappe.whitelist()
+def get_work_orders_by_item_code(item_code):
+    """
+    Get all Work Orders for a given item code (bypasses sales_order requirement).
+    Safe server-side query to find WOs regardless of sales_order linkage.
+    """
+    if not item_code:
+        return {"status": "error", "message": "item_code required"}
+    
+    try:
+        wos = frappe.db.sql("""
+            SELECT 
+                name,
+                item_code,
+                production_item,
+                qty,
+                produced_qty,
+                status,
+                sales_order,
+                docstatus
+            FROM `tabWork Order`
+            WHERE production_item = %s
+               OR item_code = %s
+            ORDER BY creation DESC
+        """, (item_code, item_code), as_dict=True)
+        
+        return {
+            "status": "success",
+            "count": len(wos),
+            "item_code": item_code,
             "work_orders": wos
         }
     except Exception as e:
