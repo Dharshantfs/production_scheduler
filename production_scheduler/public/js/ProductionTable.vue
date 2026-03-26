@@ -1584,6 +1584,9 @@ async function createItemStockEntry(item) {
         });
         
         console.log("create_item_spr response:", res);
+        console.log("Response status:", res.message?.status);
+        console.log("Response message:", res.message?.message);
+        console.log("Response full:", JSON.stringify(res.message));
         
         if (res.message && res.message.status === "ok") {
           const sprId = res.message.spr_id;
@@ -1602,8 +1605,8 @@ async function createItemStockEntry(item) {
             }, 1000);
           });
         } else {
-          const msg = res.message?.message || "Failed to create SPR";
-          console.error("SPR creation failed:", res.message);
+          const msg = res.message?.message || JSON.stringify(res.message) || "Failed to create SPR";
+          console.error("SPR creation failed - Full response:", res.message);
           frappe.msgprint(`❌ Error: ${msg}`);
         }
       } catch (e) {
