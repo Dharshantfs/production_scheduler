@@ -2318,6 +2318,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     psi_pp_field = _psi_production_plan_field()
     so_item_code_produced_map = {}
     so_item_code_wo_count_map = {}
+    so_item_code_order_produced_map = {}
+    so_item_code_order_wo_count_map = {}
     
     valid_pps = set()
     
@@ -2325,6 +2327,12 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         sos = frappe.get_all("Sales Order", filters={"name": ["in", so_names]}, fields=["name", "delivery_status"])
         for s in sos:
             so_status_map[s.name] = s.delivery_status
+
+        so_order_code_col = None
+        for c in ["order_code", "custom_order_code", "po_no", "customer_order_no"]:
+            if frappe.db.has_column("Sales Order", c):
+                so_order_code_col = c
+                break
             
         format_string_so = ','.join(['%s'] * len(so_names))
         
@@ -2376,10 +2384,12 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 so_item_prod_rows = frappe.db.sql(f"""
                         SELECT pps.sales_order,
                                      wo.production_item as item_code,
+                           {('IFNULL(so.' + so_order_code_col + ", '')") if so_order_code_col else "''"} as so_order_code,
                                      SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty,
                                      COUNT(wo.name) as wo_count
                         FROM `tabWork Order` wo
                         INNER JOIN `tabProduction Plan Sales Order` pps ON pps.parent = wo.production_plan
+                    {('LEFT JOIN `tabSales Order` so ON so.name = pps.sales_order') if so_order_code_col else ''}
                         LEFT JOIN (
                                 SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
                                 FROM `tabStock Entry` se
@@ -2393,15 +2403,20 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                             AND wo.docstatus < 2
                             AND pps.docstatus < 2
                             AND IFNULL(wo.production_item, '') != ''
-                        GROUP BY pps.sales_order, wo.production_item
+                            GROUP BY pps.sales_order, wo.production_item{', so_order_code' if so_order_code_col else ''}
                 """, tuple(so_names), as_dict=True)
                 for row in so_item_prod_rows:
                         so_key = (row.get("sales_order") or "").strip()
                         item_key = (row.get("item_code") or "").strip()
+                            order_key = (row.get("so_order_code") or "").strip()
                         if so_key and item_key:
                                 map_key = f"{so_key}::{item_key}"
                                 so_item_code_produced_map[map_key] = flt(row.get("produced_qty"))
                                 so_item_code_wo_count_map[map_key] = cint(row.get("wo_count"))
+                                if order_key:
+                                    map_order_key = f"{so_key}::{item_key}::{order_key}"
+                                    so_item_code_order_produced_map[map_order_key] = flt(row.get("produced_qty"))
+                                    so_item_code_order_wo_count_map[map_order_key] = cint(row.get("wo_count"))
 
     if sheet_names:
         format_string_sheet = ','.join(['%s'] * len(sheet_names))
@@ -2750,6 +2765,17 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
             # Strict fallback for legacy rows with missing SO-item/PP links:
             # derive via Sales Order -> Production Plan -> Work Order -> production_item.
+            if item_level_produced is None:
+                item_code_key = (item.get("item_code") or "").strip()
+                sales_order_key = (sheet.sales_order or "").strip()
+                if sales_order_key and item_code_key:
+                    sheet_order_code = (sheet.get("party_code") or "").strip()
+                    if sheet_order_code:
+                        so_item_order_map_key = f"{sales_order_key}::{item_code_key}::{sheet_order_code}"
+                        if so_item_order_map_key in so_item_code_order_produced_map:
+                            item_level_produced = so_item_code_order_produced_map.get(so_item_order_map_key, 0)
+                            item_level_wo_count = max(item_level_wo_count, so_item_code_order_wo_count_map.get(so_item_order_map_key, 0))
+
             if item_level_produced is None:
                 item_code_key = (item.get("item_code") or "").strip()
                 sales_order_key = (sheet.sales_order or "").strip()
