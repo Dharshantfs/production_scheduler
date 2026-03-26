@@ -2381,15 +2381,23 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
                 # Strict chain fallback: SO -> PP -> WO -> production_item.
                 # This prevents mixing produced qty for same item across different Sales Orders.
+                so_order_select = "'' as so_order_code"
+                so_order_join = ""
+                so_order_group = ""
+                if so_order_code_col:
+                        so_order_select = f"IFNULL(so.{so_order_code_col}, '') as so_order_code"
+                        so_order_join = "LEFT JOIN `tabSales Order` so ON so.name = pps.sales_order"
+                        so_order_group = ", so_order_code"
+
                 so_item_prod_rows = frappe.db.sql(f"""
                         SELECT pps.sales_order,
                                      wo.production_item as item_code,
-                           {('IFNULL(so.' + so_order_code_col + ", '')") if so_order_code_col else "''"} as so_order_code,
+                                     {so_order_select},
                                      SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty,
                                      COUNT(wo.name) as wo_count
                         FROM `tabWork Order` wo
                         INNER JOIN `tabProduction Plan Sales Order` pps ON pps.parent = wo.production_plan
-                    {('LEFT JOIN `tabSales Order` so ON so.name = pps.sales_order') if so_order_code_col else ''}
+                        {so_order_join}
                         LEFT JOIN (
                                 SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
                                 FROM `tabStock Entry` se
@@ -2403,20 +2411,20 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                             AND wo.docstatus < 2
                             AND pps.docstatus < 2
                             AND IFNULL(wo.production_item, '') != ''
-                            GROUP BY pps.sales_order, wo.production_item{', so_order_code' if so_order_code_col else ''}
+                        GROUP BY pps.sales_order, wo.production_item{so_order_group}
                 """, tuple(so_names), as_dict=True)
                 for row in so_item_prod_rows:
                         so_key = (row.get("sales_order") or "").strip()
                         item_key = (row.get("item_code") or "").strip()
-                            order_key = (row.get("so_order_code") or "").strip()
+                        order_key = (row.get("so_order_code") or "").strip()
                         if so_key and item_key:
                                 map_key = f"{so_key}::{item_key}"
                                 so_item_code_produced_map[map_key] = flt(row.get("produced_qty"))
                                 so_item_code_wo_count_map[map_key] = cint(row.get("wo_count"))
                                 if order_key:
-                                    map_order_key = f"{so_key}::{item_key}::{order_key}"
-                                    so_item_code_order_produced_map[map_order_key] = flt(row.get("produced_qty"))
-                                    so_item_code_order_wo_count_map[map_order_key] = cint(row.get("wo_count"))
+                                        map_order_key = f"{so_key}::{item_key}::{order_key}"
+                                        so_item_code_order_produced_map[map_order_key] = flt(row.get("produced_qty"))
+                                        so_item_code_order_wo_count_map[map_order_key] = cint(row.get("wo_count"))
 
     if sheet_names:
         format_string_sheet = ','.join(['%s'] * len(sheet_names))
