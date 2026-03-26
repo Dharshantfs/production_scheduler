@@ -143,7 +143,8 @@
                         <th style="width: 100px;">ACTUAL PROD (Kgs)</th>
                         <th style="width: 110px;">MERGE ACTION</th>
                         <th style="width: 100px;">DESPATCH STATUS</th>
-                        <th style="width: 80px; position: sticky; right: 0; background: #fafafa; z-index: 10;">PRODUCTION PLAN</th>
+                        <th style="width: 80px; position: sticky; right: 10%; background: #fafafa; z-index: 10;">PRODUCTION PLAN</th>
+                        <th style="width: 100px; position: sticky; right: 0; background: #fafafa; z-index: 10;">STOCK ENTRY</th>
                     </tr>
                 </thead>
                 <tbody
@@ -195,10 +196,28 @@
                                 {{ formatDispatchStatus(row.item.delivery_status) }}
                               </span>
                             </td>
-                            <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">
+                            <td class="cell-center" style="position: sticky; right: 10%; background: white; z-index: 9;">
                               <button @click="openProductionPlanView(row.item.planningSheet, row.item.salesOrderItem, row.item.itemName, row.item.pp_id)" class="cc-pp-btn" title="View Production Plan">
                                 📋 View
                               </button>
+                            </td>
+                            <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">
+                              <button 
+                                v-if="row.item.pp_id && !row.item.spr_name" 
+                                @click="createItemStockEntry(row.item)" 
+                                class="cc-pp-btn" 
+                                title="Create Stock Entry for this item">
+                                📝 Stock Entry
+                              </button>
+                              <button 
+                                v-else-if="row.item.spr_name" 
+                                @click="openItemSPR(row.item.spr_name)" 
+                                class="cc-pp-btn" 
+                                style="background:#10b981; color:white;" 
+                                title="View SPR">
+                                ✅ Open SPR
+                              </button>
+                              <span v-else style="color:#999; font-size:11px;">No PP</span>
                             </td>
                           </tr>
 
@@ -256,9 +275,26 @@
                                 {{ formatDispatchStatus(row.mergeDispatchStatus) }}
                               </span>
                             </td>
-                            <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">
+                            <td class="cell-center" style="position: sticky; right: 10%; background: white; z-index: 9;">
                               <button @click="openMergedProductionPlan(row)" class="cc-pp-btn" title="View Production Plan">
                                 📋 View
+                              </button>
+                            </td>
+                            <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">
+                              <button 
+                                v-if="!row.spr_name" 
+                                @click="createMergedStockEntry(row)" 
+                                class="cc-pp-btn" 
+                                title="Create Stock Entry for merged items">
+                                📝 Stock Entry
+                              </button>
+                              <button 
+                                v-else 
+                                @click="openItemSPR(row.spr_name)" 
+                                class="cc-pp-btn" 
+                                style="background:#10b981; color:white;" 
+                                title="View SPR">
+                                ✅ Open SPR
                               </button>
                             </td>
                           </tr>
@@ -1469,6 +1505,131 @@ async function openProductionPlanView(planningSheetName, salesOrderItem = null, 
     frappe.msgprint("Error opening Production Plan");
     console.error(e);
   }
+}
+
+async function createItemStockEntry(item) {
+  if (!item.pp_id) {
+    frappe.msgprint("No Production Plan linked to this item");
+    return;
+  }
+  
+  frappe.confirm(
+    `Create Stock Entry for <b>${item.partyCode}</b> (${item.color})?<br/>PP: ${item.pp_id}`,
+    async () => {
+      try {
+        const res = await frappe.call({
+          method: "production_scheduler.api.create_item_spr",
+          args: {
+            pp_id: item.pp_id,
+            planning_sheet_item_names: JSON.stringify([item.itemName])
+          }
+        });
+        
+        if (res.message && res.message.status === "ok") {
+          const sprId = res.message.spr_id;
+          item.spr_name = sprId;
+          
+          frappe.show_alert({
+            message: `✅ SPR Created: ${sprId}. Opening form...`,
+            indicator: 'green'
+          }, 3);
+          
+          // Redirect to SPR form
+          await new Promise(resolve => {
+            setTimeout(() => {
+              frappe.set_route('Form', 'Shaft Production Run', sprId);
+              resolve();
+            }, 1000);
+          });
+        } else {
+          const msg = res.message?.message || "Failed to create SPR";
+          frappe.msgprint(msg);
+        }
+      } catch (e) {
+        frappe.msgprint("Error creating Stock Entry");
+        console.error(e);
+      }
+    }
+  );
+}
+
+async function createMergedStockEntry(mergedRow) {
+  // Group by PP ID
+  const groupedByPP = {};
+  for (const item of mergedRow.items) {
+    const pp = item.pp_id || 'no_pp';
+    if (!groupedByPP[pp]) groupedByPP[pp] = [];
+    groupedByPP[pp].push(item);
+  }
+  
+  const ppGroups = Object.entries(groupedByPP).filter(([pp]) => pp !== 'no_pp');
+  
+  if (ppGroups.length === 0) {
+    frappe.msgprint("No Production Plans linked to merged items");
+    return;
+  }
+  
+  if (ppGroups.length === 1) {
+    // Same PP - create 1 SPR
+    await createSingleMergedSPR(ppGroups[0][0], ppGroups[0][1], mergedRow);
+  } else {
+    // Multiple PPs - create separate SPRs
+    frappe.msgprint(`Merged items have ${ppGroups.length} different Production Plans.<br/>Creating separate SPRs for each...`);
+    for (const [pp, items] of ppGroups) {
+      await createSingleMergedSPR(pp, items, mergedRow);
+    }
+  }
+}
+
+async function createSingleMergedSPR(ppId, mergedItems, mergedRow) {
+  return new Promise((resolve) => {
+    frappe.confirm(
+      `Create SPR for ${mergedItems.length} merged items?<br/>PP: ${ppId}`,
+      async () => {
+        try {
+          const itemNames = mergedItems.map(it => it.itemName);
+          const res = await frappe.call({
+            method: "production_scheduler.api.create_item_spr",
+            args: {
+              pp_id: ppId,
+              planning_sheet_item_names: JSON.stringify(itemNames)
+            }
+          });
+          
+          if (res.message && res.message.status === "ok") {
+            const sprId = res.message.spr_id;
+            mergedRow.spr_name = sprId;
+            
+            frappe.show_alert({
+              message: `✅ Merged SPR Created: ${sprId}. Opening form...`,
+              indicator: 'green'
+            }, 3);
+            
+            await new Promise(r => setTimeout(() => {
+              frappe.set_route('Form', 'Shaft Production Run', sprId);
+              r();
+            }, 1000));
+          } else {
+            frappe.msgprint(res.message?.message || "Failed to create SPR");
+          }
+          resolve();
+        } catch (e) {
+          frappe.msgprint("Error creating SPR");
+          console.error(e);
+          resolve();
+        }
+      },
+      () => resolve()
+    );
+  });
+}
+
+function openItemSPR(sprName) {
+  if (!sprName) {
+    frappe.msgprint("No SPR linked");
+    return;
+  }
+  frappe.set_route('Form', 'Shaft Production Run', sprName);
 }
 
 function goToBoard() {

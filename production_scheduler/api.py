@@ -2659,6 +2659,31 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     except Exception:
         pass
 
+    # Fetch SPR production via custom_spr_name field on Planning Sheet Items
+    try:
+        if frappe.db.has_column("Planning Sheet Item", "custom_spr_name"):
+            psi_spr_data = frappe.db.sql("""
+                SELECT 
+                    psi.name as psi_name,
+                    psi.custom_spr_name as spr_name,
+                    COALESCE(spr.custom_total_produced_weight, 0) as total_produced
+                FROM `tabPlanning Sheet Item` psi
+                LEFT JOIN `tabShaft Production Run` spr ON psi.custom_spr_name = spr.name
+                WHERE psi.parent IN ({})
+                  AND psi.custom_spr_name IS NOT NULL 
+                  AND psi.custom_spr_name != ''
+                  AND spr.docstatus = 1
+            """.format(','.join(['%s'] * len(sheet_names))), tuple(sheet_names), as_dict=True)
+            
+            for row in psi_spr_data:
+                psi_name = row.get('psi_name')
+                produced = flt(row.get('total_produced', 0))
+                if psi_name and produced > 0:
+                    spr_psi_produced_map[psi_name] = produced
+                    spr_psi_count_map[psi_name] = 1
+    except Exception:
+        pass
+
     # Item-level produced quantity map via sales_order_item/custom_sales_order_item
     if sheet_names:
         # 1) Strongest link: Planning Sheet Item -> Production Plan -> Work Order
@@ -7866,6 +7891,105 @@ def get_planning_sheet_pp_id(planning_sheet_name, sales_order_item=None, plannin
     except Exception:
         frappe.log_error(frappe.get_traceback(), "get_planning_sheet_pp_id")
         return {"status": "error", "message": "Unable to fetch Production Plan"}
+
+
+@frappe.whitelist()
+def create_item_spr(pp_id, planning_sheet_item_names):
+    """
+    Create a Shaft Production Run (SPR) for a Production Plan item.
+    Auto-populates from the Production Plan and Planning Sheet Item data.
+    
+    Args:
+        pp_id: Production Plan ID
+        planning_sheet_item_names: JSON list of Planning Sheet Item names to include
+    
+    Returns: SPR name or error message
+    """
+    if isinstance(planning_sheet_item_names, str):
+        planning_sheet_item_names = json.loads(planning_sheet_item_names)
+    
+    if not pp_id or not planning_sheet_item_names:
+        return {"status": "error", "message": "PP ID and item names required"}
+    
+    if not frappe.db.exists("Production Plan", pp_id):
+        return {"status": "error", "message": f"Production Plan {pp_id} not found"}
+    
+    try:
+        pp = frappe.get_doc("Production Plan", pp_id)
+        psi_list = []
+        
+        for psi_name in planning_sheet_item_names:
+            if frappe.db.exists("Planning Sheet Item", psi_name):
+                psi = frappe.get_doc("Planning Sheet Item", psi_name)
+                psi_list.append(psi)
+        
+        if not psi_list:
+            return {"status": "error", "message": "No valid Planning Sheet Items found"}
+        
+        # Create SPR
+        spr = frappe.new_doc("Shaft Production Run")
+        spr.run_date = frappe.utils.today()
+        spr.shift = get_current_shift()
+        spr.is_mix_roll = 0
+        spr.status = "Draft"
+        spr.custom_production_plan = pp_id
+        
+        # Extract order code and customer from first item's parent sheet
+        first_psi = psi_list[0]
+        parent_sheet = frappe.get_doc("Planning sheet", first_psi.parent)
+        
+        spr.custom_order_code = parent_sheet.party_code or ""
+        spr.customer = pp.customer or parent_sheet.customer or ""
+        
+        # Add shaft jobs for each Planning Sheet Item
+        item_codes = []
+        
+        for i, psi in enumerate(psi_list):
+            row = spr.append("shaft_jobs", {})
+            row.job_id = str(i + 1)
+            row.quality = psi.custom_quality or psi.get("quality") or ""
+            row.color = psi.color or ""
+            row.party_code = parent_sheet.party_code or ""
+            row.gsm = psi.gsm or ""
+            
+            # Get width info from PSI
+            width = flt(psi.get("width") or psi.get("custom_width") or psi.get("width_inch") or 0)
+            if width:
+                row.combination = str(int(width))
+                row.total_width = width
+            else:
+                row.combination = "Standard"
+                row.total_width = 0
+            
+            row.no_of_shafts = 1
+            row.meter_roll_mtrs = 800  # Default
+            row.is_manual = 1
+            
+            # Collect item codes
+            if psi.item_code:
+                item_codes.append(psi.item_code)
+        
+        # Store item codes reference
+        if item_codes and spr.shaft_jobs:
+            spr.shaft_jobs[0].manual_items = json.dumps(item_codes)
+        
+        spr.insert(ignore_permissions=True)
+        
+        # Link SPR back to Planning Sheet Items
+        for psi_name in planning_sheet_item_names:
+            frappe.db.set_value("Planning Sheet Item", psi_name, "custom_spr_name", spr.name)
+        
+        frappe.db.commit()
+        
+        return {
+            "status": "ok",
+            "spr_id": spr.name,
+            "message": f"SPR Created: {spr.name}"
+        }
+        
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "create_item_spr")
+        return {"status": "error", "message": str(e)}
 
 
 # ============================================================================
