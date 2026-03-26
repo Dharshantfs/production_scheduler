@@ -2192,6 +2192,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     so_wo_map = {}
     sheet_pp_map = {}
     pp_wo_map = {}
+    so_item_produced_map = {}
     
     valid_pps = set()
     
@@ -2253,6 +2254,35 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "produced_qty": flt(row.produced_qty),
                 "qty": flt(row.qty)
             })
+
+    # Item-level produced quantity map via sales_order_item/custom_sales_order_item
+    if sheet_names:
+        psi_so_item_col = "sales_order_item" if frappe.db.has_column("Planning Sheet Item", "sales_order_item") else "custom_sales_order_item"
+        wo_so_item_col = "sales_order_item" if frappe.db.has_column("Work Order", "sales_order_item") else "custom_sales_order_item"
+
+        if psi_so_item_col and wo_so_item_col and frappe.db.has_column("Planning Sheet Item", psi_so_item_col) and frappe.db.has_column("Work Order", wo_so_item_col):
+            fmt_sheet = ','.join(['%s'] * len(sheet_names))
+            so_item_rows = frappe.db.sql(f"""
+                SELECT DISTINCT {psi_so_item_col} as so_item
+                FROM `tabPlanning Sheet Item`
+                WHERE parent IN ({fmt_sheet})
+                  AND IFNULL({psi_so_item_col}, '') != ''
+            """, tuple(sheet_names), as_dict=True)
+
+            so_item_names = [r.so_item for r in so_item_rows if r.get("so_item")]
+            if so_item_names:
+                fmt_so_item = ','.join(['%s'] * len(so_item_names))
+                wo_item_rows = frappe.db.sql(f"""
+                    SELECT {wo_so_item_col} as so_item, SUM(IFNULL(produced_qty, 0)) as produced_qty
+                    FROM `tabWork Order`
+                    WHERE {wo_so_item_col} IN ({fmt_so_item})
+                      AND docstatus < 2
+                    GROUP BY {wo_so_item_col}
+                """, tuple(so_item_names), as_dict=True)
+
+                for row in wo_item_rows:
+                    if row.get("so_item"):
+                        so_item_produced_map[row.so_item] = flt(row.produced_qty)
 
     data = []
     for sheet in planning_sheets:
@@ -2362,6 +2392,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "has_wo": sheet_has_wo,
                 "produced_qty": flt(produced_weight),
                 "salesOrderItem": item.get("sales_order_item") or item.get("custom_sales_order_item"),
+                "actual_produced_qty": flt(so_item_produced_map.get(item.get("sales_order_item") or item.get("custom_sales_order_item"), produced_weight)),
                 "isSplit": item.get("custom_is_split")
             })
 

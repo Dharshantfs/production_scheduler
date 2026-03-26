@@ -57,10 +57,58 @@
       <span v-if="arrangementSaving" class="cc-arrange-indicator saving">Saving...</span>
       <span v-else-if="arrangementDirty" class="cc-arrange-indicator dirty">Unsaved arrangement changes</span>
       <span v-else class="cc-arrange-indicator clean">Arrangement saved</span>
+      <button
+        class="cc-lock-btn"
+        @click="toggleMergeMode"
+        :title="mergeMode ? 'Disable merge mode' : 'Enable merge mode'"
+        :style="mergeMode ? { background: '#fee2e2', color: '#991b1b', borderColor: '#fca5a5' } : {}"
+      >
+        {{ mergeMode ? '🔗 Merge Mode ON' : '🔗 Merge Mode OFF' }}
+      </button>
       <button class="cc-maint-btn" @click="openMaintenanceDialog" title="Manage equipment maintenance schedules">⚙️ Maintenance</button>
       
       <div class="cc-filter-item" style="margin-left: auto;">
           <button class="cc-view-btn" @click="goToBoard">📊 Back to Board</button>
+      </div>
+    </div>
+
+    <div v-if="showMergeDialog" class="pt-merge-overlay" @click.self="closeMergeDialog">
+      <div class="pt-merge-dialog">
+        <div class="pt-merge-header">
+          <h3>Merge Items</h3>
+          <button class="pt-merge-close" @click="closeMergeDialog">✕</button>
+        </div>
+        <div class="pt-merge-filters">
+          <input v-model="mergeFilterOrderCode" type="text" placeholder="Filter Order Code" />
+          <input v-model="mergeFilterCustomer" type="text" placeholder="Filter Customer" />
+          <input v-model="mergeFilterQuality" type="text" placeholder="Filter Quality" />
+          <input v-model="mergeFilterColor" type="text" placeholder="Filter Colour" />
+          <button class="cc-save-arrange-btn" @click="applyAutoMergeSuggestion">✨ Auto Suggest</button>
+        </div>
+        <div class="pt-merge-suggest" v-if="autoMergeSuggestions.length">
+          <strong>Suggested Groups:</strong>
+          <div class="pt-merge-suggest-list">
+            <button
+              v-for="s in autoMergeSuggestions"
+              :key="s.key"
+              class="pt-merge-suggest-pill"
+              @click="selectSuggestion(s)"
+            >
+              {{ s.partyCode }} · {{ s.quality }} · {{ s.color }} ({{ s.items.length }})
+            </button>
+          </div>
+        </div>
+        <div class="pt-merge-list">
+          <label v-for="item in mergeDialogItems" :key="item.itemName" class="pt-merge-item">
+            <input type="checkbox" :checked="selectedMergeItems.has(item.itemName)" @change="toggleMergeSelection(item.itemName)" />
+            <span>{{ item.partyCode }} | {{ item.customer_name || item.customer || '-' }} | {{ item.quality }} | {{ item.color }} | {{ item.qty }} Kg</span>
+          </label>
+          <div v-if="!mergeDialogItems.length" class="pt-merge-empty">No items found for merge filters.</div>
+        </div>
+        <div class="pt-merge-actions">
+          <button class="cc-clear-btn" @click="closeMergeDialog">Cancel</button>
+          <button class="cc-save-arrange-btn" :disabled="selectedMergeItems.size < 2" @click="createMergeFromDialog">Add Merge</button>
+        </div>
       </div>
     </div>
 
@@ -84,8 +132,9 @@
                         <th style="width: 80px;">QUALITY</th>
                         <th style="width: 100px;">COLOUR</th>
                         <th style="width: 80px;">GSM</th>
-                        <th style="width: 80px;">WEIGHT (Kg)</th>
-                        <th style="width: 80px;">ACTUAL PROD</th>
+                        <th style="width: 120px;">TARGET WEIGHT (Kgs)</th>
+                        <th style="width: 150px;">ACTUAL PRODUCTION WEIGHT (Kgs)</th>
+                        <th style="width: 100px;">ACTUAL PROD (Kgs)</th>
                         <th style="width: 100px;">DESPATCH STATUS</th>
                         <th style="width: 80px; position: sticky; right: 0; background: #fafafa; z-index: 10;">PRODUCTION PLAN</th>
                     </tr>
@@ -99,7 +148,7 @@
                 >
                       <!-- Maintenance Row (show once at maintenance start date, centered) -->
                       <tr v-if="getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit)" class="pt-non-draggable" style="background-color: #fee2e2; border: 2px solid #dc2626;">
-                        <td colspan="13" style="padding: 8px 12px; font-weight: 700; color: #991b1b; text-align: center;">
+                        <td colspan="14" style="padding: 8px 12px; font-weight: 700; color: #991b1b; text-align: center;">
                           <div style="display: inline-flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;">
                             <span>🔧 MAINTENANCE: {{ getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).type }} ({{ getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).startDate }} - {{ getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).endDate }})</span>
                             <button @click="deleteMaintenanceRecord(getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).name)" style="background: #dc2626; color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Remove</button>
@@ -107,40 +156,82 @@
                         </td>
                       </tr>
 
-                      <template v-if="dateGroup.items.length">
-                        <template v-for="(item, idx) in dateGroup.items" :key="item.itemName">
-                          <tr class="pt-draggable-row" :data-item-name="item.itemName">
+                      <template v-if="dateGroup.rows.length">
+                        <template v-for="(row, idx) in dateGroup.rows" :key="row.rowKey">
+                          <tr v-if="row.type === 'item'" class="pt-draggable-row" :data-item-name="row.item.itemName">
                             <td class="cell-center" style="cursor: grab; color: #94a3b8; font-size: 15px;" :title="tableReorderLocked ? 'Unlock reorder to drag' : 'Drag to reorder'">
                               <span class="pt-drag-handle">⠿</span>
                             </td>
-                            <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center font-bold">
+                            <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-center font-bold">
                               {{ formatDate(dateGroup.date) }}
                             </td>
-                            <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center">
+                            <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-center">
                               {{ getDayName(dateGroup.date) }}
                             </td>
                                     
-                            <td class="cell-center">{{ item.partyCode }}</td>
-                            <td>{{ item.customer_name || item.party_name || item.customer || item.partyCode }}</td>
-                            <td class="cell-center font-mono font-bold" style="font-size:11px; color:#4f46e5;">{{ item.planCode }}</td>
-                            <td class="cell-center">{{ item.quality }}</td>
-                            <td class="cell-center font-bold">{{ item.color }}</td>
-                            <td class="cell-center">{{ item.gsm }}</td>
-                            <td class="cell-right font-bold">{{ item.qty }}</td>
+                            <td class="cell-center">{{ row.item.partyCode }}</td>
+                            <td>{{ row.item.customer_name || row.item.party_name || row.item.customer || row.item.partyCode }}</td>
+                            <td class="cell-center font-mono font-bold" style="font-size:11px; color:#4f46e5;">{{ row.item.planCode }}</td>
+                            <td class="cell-center">{{ row.item.quality }}</td>
+                            <td class="cell-center font-bold">{{ row.item.color }}</td>
+                            <td class="cell-center">{{ row.item.gsm }}</td>
+                            <td class="cell-right font-bold">{{ formatKg(row.item.qty) }}</td>
+                            <td class="cell-right font-bold">{{ formatKg(row.item.actual_production_weight_kgs) }}</td>
                                     
-                            <td v-if="idx === 0" :rowspan="dateGroup.items.length" class="cell-center font-bold bg-yellow-50">
-                              {{ dateGroup.dailyTotal.toFixed(0) }}
+                            <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-right font-bold bg-yellow-50">
+                              {{ formatKg(dateGroup.dailyActualTotal) }}
                             </td>
                                     
                             <td class="cell-center">
-                              <span class="status-badge" :class="getDispatchStatusClass(item.delivery_status)">
-                                {{ formatDispatchStatus(item.delivery_status) }}
+                              <span class="status-badge" :class="getDispatchStatusClass(row.item.delivery_status)">
+                                {{ formatDispatchStatus(row.item.delivery_status) }}
                               </span>
                             </td>
                             <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">
-                              <button @click="openProductionPlanView(item.planningSheet)" class="cc-pp-btn" title="View Production Plan">
+                              <button @click="openProductionPlanView(row.item.planningSheet)" class="cc-pp-btn" title="View Production Plan">
                                 📋 View
                               </button>
+                            </td>
+                          </tr>
+
+                          <tr v-else class="pt-merge-row">
+                            <td class="cell-center" style="color: #7c3aed; font-size: 15px;">🔗</td>
+                            <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-center font-bold">
+                              {{ formatDate(dateGroup.date) }}
+                            </td>
+                            <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-center">
+                              {{ getDayName(dateGroup.date) }}
+                            </td>
+                            <td class="cell-center font-bold">{{ row.partyCode }}</td>
+                            <td>
+                              <button class="pt-merge-expand-btn" @click="toggleMergeExpanded(row.mergeId)">
+                                {{ isMergeExpanded(row.mergeId) ? '▼' : '▶' }} {{ row.mergeLabel }} ({{ row.items.length }} items)
+                              </button>
+                            </td>
+                            <td class="cell-center font-mono font-bold" style="font-size:11px; color:#4f46e5;">MERGED</td>
+                            <td class="cell-center">{{ row.quality }}</td>
+                            <td class="cell-center font-bold">{{ row.color }}</td>
+                            <td class="cell-center">-</td>
+                            <td class="cell-right font-bold">{{ formatKg(row.totalTargetWeight) }}</td>
+                            <td class="cell-right font-bold">{{ formatKg(row.totalActualWeight) }}</td>
+                            <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-right font-bold bg-yellow-50">
+                              {{ formatKg(dateGroup.dailyActualTotal) }}
+                            </td>
+                            <td class="cell-center">
+                              <button class="cc-clear-btn" style="padding: 4px 8px; font-size: 11px;" @click="deleteMerge(row.mergeId)">Unmerge</button>
+                            </td>
+                            <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">-</td>
+                          </tr>
+                          <tr v-if="row.type === 'merge' && isMergeExpanded(row.mergeId)" class="pt-merge-expanded-row">
+                            <td colspan="14" style="background: #faf5ff; padding: 8px 12px;">
+                              <div v-for="mItem in row.items" :key="mItem.itemName" style="display:flex; gap:16px; font-size:12px; padding:2px 0;">
+                                <span><b>{{ mItem.partyCode }}</b></span>
+                                <span>{{ mItem.customer_name || mItem.customer || '-' }}</span>
+                                <span>{{ mItem.quality }}</span>
+                                <span>{{ mItem.color }}</span>
+                                <span>Target: {{ formatKg(mItem.qty) }} Kg</span>
+                                <span>Actual: {{ formatKg(mItem.actual_production_weight_kgs) }} Kg</span>
+                              </div>
                             </td>
                           </tr>
                         </template>
@@ -150,7 +241,9 @@
                         <td class="cell-center">-</td>
                         <td class="cell-center font-bold">{{ formatDate(dateGroup.date) }}</td>
                         <td class="cell-center">{{ getDayName(dateGroup.date) }}</td>
-                        <td colspan="7" style="text-align:center; color:#94a3b8; font-style:italic;">No orders (maintenance day)</td>
+                        <td colspan="8" style="text-align:center; color:#94a3b8; font-style:italic;">No orders (maintenance day)</td>
+                        <td class="cell-center">0</td>
+                        <td class="cell-center">0</td>
                         <td class="cell-center font-bold bg-yellow-50">0</td>
                         <td class="cell-center">-</td>
                         <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;"></td>
@@ -158,7 +251,7 @@
                 </tbody>
                 <tbody>
                     <tr v-if="unitGroup.dates.length === 0">
-                        <td colspan="13" style="text-align:center; padding: 20px; color:#999;">No production planned for this unit</td>
+                        <td colspan="14" style="text-align:center; padding: 20px; color:#999;">No production planned for this unit</td>
                     </tr>
                 </tbody>
             </table>
@@ -566,6 +659,16 @@ const sortableInstances = ref([]);
 const pendingArrangementUpdates = ref({});
 const arrangementDirty = ref(false);
 const arrangementSaving = ref(false);
+const mergeMode = ref(false);
+const showMergeDialog = ref(false);
+const merges = ref([]);
+const mergedItemsMap = ref({});
+const expandedMerges = ref(new Set());
+const selectedMergeItems = ref(new Set());
+const mergeFilterOrderCode = ref("");
+const mergeFilterCustomer = ref("");
+const mergeFilterQuality = ref("");
+const mergeFilterColor = ref("");
 
 function getArrangementKey(unit, date) {
   return `${unit}||${date}`;
@@ -817,6 +920,62 @@ const filteredData = computed(() => {
   return data;
 });
 
+const mergeDialogItems = computed(() => {
+  let items = filteredData.value || [];
+  const orderSearch = mergeFilterOrderCode.value.trim().toLowerCase();
+  const customerSearch = mergeFilterCustomer.value.trim().toLowerCase();
+  const qualitySearch = mergeFilterQuality.value.trim().toLowerCase();
+  const colorSearch = mergeFilterColor.value.trim().toLowerCase();
+
+  if (orderSearch) {
+    items = items.filter((d) => (d.partyCode || "").toLowerCase().includes(orderSearch));
+  }
+  if (customerSearch) {
+    items = items.filter((d) => ((d.customer_name || d.customer || "").toLowerCase().includes(customerSearch)));
+  }
+  if (qualitySearch) {
+    items = items.filter((d) => (d.quality || "").toLowerCase().includes(qualitySearch));
+  }
+  if (colorSearch) {
+    items = items.filter((d) => (d.color || "").toLowerCase().includes(colorSearch));
+  }
+
+  return items.filter((d) => !mergedItemsMap.value[d.itemName]);
+});
+
+const autoMergeSuggestions = computed(() => {
+  const grouped = {};
+  (mergeDialogItems.value || []).forEach((item) => {
+    const key = [item.partyCode || "", item.quality || "", item.color || "", item.unit || "", item.plannedDate || ""].join("||");
+    if (!grouped[key]) {
+      grouped[key] = {
+        key,
+        partyCode: item.partyCode || "",
+        quality: item.quality || "",
+        color: item.color || "",
+        unit: item.unit || "",
+        plannedDate: item.plannedDate || "",
+        items: [],
+      };
+    }
+    grouped[key].items.push(item);
+  });
+  return Object.values(grouped).filter((g) => g.items.length >= 2).sort((a, b) => b.items.length - a.items.length);
+});
+
+function getMergeById(mergeId) {
+  return (merges.value || []).find((m) => m.name === mergeId);
+}
+
+function isMergeExpanded(mergeId) {
+  return expandedMerges.value.has(mergeId);
+}
+
+function toggleMergeExpanded(mergeId) {
+  if (expandedMerges.value.has(mergeId)) expandedMerges.value.delete(mergeId);
+  else expandedMerges.value.add(mergeId);
+}
+
 const tableData = computed(() => {
     return visibleUnits.value.map(unit => {
         let items = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
@@ -841,6 +1000,39 @@ const tableData = computed(() => {
         // Sort each date group individually using Board's exact queuing for that day
         dates.forEach(group => {
             group.items = sortItems(unit, group.items, group.date);
+            group.dailyActualTotal = group.items.reduce((sum, item) => sum + (parseFloat(item.actual_production_weight_kgs) || 0), 0);
+
+            const seenMerges = new Set();
+            const rows = [];
+            group.items.forEach((item) => {
+              const mergeId = mergedItemsMap.value[item.itemName];
+              if (!mergeId) {
+                rows.push({ type: "item", rowKey: `item-${item.itemName}`, item });
+                return;
+              }
+              if (seenMerges.has(mergeId)) return;
+              seenMerges.add(mergeId);
+
+              const merge = getMergeById(mergeId);
+              const mergeItems = (group.items || []).filter((it) => mergedItemsMap.value[it.itemName] === mergeId);
+              const totalTargetWeight = mergeItems.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
+              const totalActualWeight = mergeItems.reduce((s, it) => s + (parseFloat(it.actual_production_weight_kgs) || 0), 0);
+              const first = mergeItems[0] || item;
+              rows.push({
+                type: "merge",
+                rowKey: `merge-${mergeId}`,
+                mergeId,
+                mergeLabel: (merge && merge.merge_label) || `Merge ${mergeItems.length}`,
+                items: mergeItems,
+                partyCode: first.partyCode,
+                quality: first.quality,
+                color: first.color,
+                totalTargetWeight,
+                totalActualWeight,
+              });
+            });
+
+            group.rows = rows;
         });
 
         const totalWeight = items.reduce((s, i) => s + (i.qty || 0), 0) / 1000;
@@ -865,6 +1057,12 @@ function getUnitHeaderColor(unit) {
     return "#fcd34d"; 
 }
 
+function formatKg(value) {
+  const num = parseFloat(value || 0);
+  if (!Number.isFinite(num)) return "0";
+  return num.toFixed(0);
+}
+
 function formatDispatchStatus(status) {
     if (!status || status === 'Not Delivered') return 'NOT DESPATCHED';
     if (status === 'Fully Delivered') return 'DESPATCHED';
@@ -877,6 +1075,132 @@ function getDispatchStatusClass(status) {
     if (status === 'Fully Delivered') return 'bg-green-100 text-green-800';
     if (status === 'Partly Delivered') return 'bg-orange-100 text-orange-800';
     return 'bg-gray-100 text-gray-800';
+}
+
+function toggleMergeMode() {
+  mergeMode.value = !mergeMode.value;
+  if (mergeMode.value) {
+    showMergeDialog.value = true;
+    tableReorderLocked.value = true;
+    destroyTableSortables();
+  } else {
+    closeMergeDialog();
+  }
+}
+
+function closeMergeDialog() {
+  showMergeDialog.value = false;
+  selectedMergeItems.value = new Set();
+}
+
+function toggleMergeSelection(itemName) {
+  const next = new Set(selectedMergeItems.value);
+  if (next.has(itemName)) next.delete(itemName);
+  else next.add(itemName);
+  selectedMergeItems.value = next;
+}
+
+function applyAutoMergeSuggestion() {
+  const top = autoMergeSuggestions.value[0];
+  if (!top) {
+    frappe.msgprint("No auto merge suggestions available.");
+    return;
+  }
+  const next = new Set(selectedMergeItems.value);
+  top.items.forEach((item) => next.add(item.itemName));
+  selectedMergeItems.value = next;
+}
+
+function selectSuggestion(suggestion) {
+  const next = new Set(selectedMergeItems.value);
+  suggestion.items.forEach((item) => next.add(item.itemName));
+  selectedMergeItems.value = next;
+}
+
+async function loadMergesForCurrentData() {
+  const dates = Array.from(new Set((filteredData.value || []).map((d) => d.plannedDate).filter(Boolean)));
+  const all = [];
+  for (const date of dates) {
+    try {
+      const res = await frappe.call({
+        method: "production_scheduler.api.get_merges_for_date",
+        args: {
+          date,
+          unit: filterUnit.value || null,
+          plan_name: "Default",
+        },
+      });
+      if (Array.isArray(res.message)) {
+        res.message.forEach((m) => all.push(m));
+      }
+    } catch (e) {
+      console.warn("Failed to load merge records", e);
+    }
+  }
+  merges.value = all;
+  const map = {};
+  all.forEach((m) => {
+    const mergedItems = Array.isArray(m.merged_items) ? m.merged_items : [];
+    mergedItems.forEach((itemName) => {
+      map[itemName] = m.name;
+    });
+  });
+  mergedItemsMap.value = map;
+}
+
+async function createMergeFromDialog() {
+  const selectedItems = (mergeDialogItems.value || []).filter((it) => selectedMergeItems.value.has(it.itemName));
+  if (selectedItems.length < 2) {
+    frappe.msgprint("Select at least 2 items to merge.");
+    return;
+  }
+
+  const first = selectedItems[0];
+  const sameSlot = selectedItems.every((it) => it.unit === first.unit && it.plannedDate === first.plannedDate);
+  if (!sameSlot) {
+    frappe.msgprint("Please select items from same Unit and Planned Date.");
+    return;
+  }
+
+  const label = window.prompt("Merge label", `${first.partyCode} ${first.quality} ${first.color}`) || "";
+  if (!label.trim()) return;
+
+  try {
+    const res = await frappe.call({
+      method: "production_scheduler.api.create_merge",
+      args: {
+        date: first.plannedDate,
+        unit: first.unit,
+        plan_name: "Default",
+        item_names: JSON.stringify(selectedItems.map((it) => it.itemName)),
+        merge_label: label.trim(),
+      },
+    });
+    if (res.message && res.message.status === "success") {
+      frappe.show_alert({ message: "Merge created", indicator: "green" });
+      closeMergeDialog();
+      await loadMergesForCurrentData();
+    }
+  } catch (e) {
+    frappe.msgprint(e?.message || "Unable to create merge");
+  }
+}
+
+async function deleteMerge(mergeId) {
+  if (!mergeId) return;
+  if (!window.confirm("Remove this merge and restore individual rows?")) return;
+  try {
+    const res = await frappe.call({
+      method: "production_scheduler.api.delete_merge",
+      args: { merge_id: mergeId },
+    });
+    if (res.message && res.message.status === "success") {
+      frappe.show_alert({ message: "Merge removed", indicator: "orange" });
+      await loadMergesForCurrentData();
+    }
+  } catch (e) {
+    frappe.msgprint("Unable to remove merge");
+  }
 }
 
 async function openProductionPlanView(planningSheetName) {
@@ -984,6 +1308,7 @@ async function fetchData() {
       itemName: d.itemName || d.item_name || "",
       orderDate: d.orderDate || d.ordered_date || "",
       planCode: d.custom_plan_code || "",
+      actual_production_weight_kgs: parseFloat(d.actual_produced_qty || d.actual_production_weight_kgs || d.produced_qty || 0) || 0,
     }));
 
     // After loading raw data, fetch the exact sequence for the range 
@@ -1033,6 +1358,8 @@ async function fetchData() {
             console.warn(`Failed to fetch sequence range`, e);
         }
     }
+
+    await loadMergesForCurrentData();
       } catch (e) {
         frappe.msgprint("Error loading plan data");
         console.error(e);
@@ -1308,5 +1635,123 @@ onBeforeUnmount(() => {
 
 .pt-sortable-body.sortable-ghost {
   background-color: #f5f5f5 !important;
+}
+
+.pt-merge-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pt-merge-dialog {
+  width: min(980px, 92vw);
+  max-height: 88vh;
+  overflow: hidden;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+}
+
+.pt-merge-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.pt-merge-close {
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.pt-merge-filters {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.pt-merge-filters input {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 13px;
+}
+
+.pt-merge-suggest {
+  padding: 8px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.pt-merge-suggest-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.pt-merge-suggest-pill {
+  border: 1px solid #c4b5fd;
+  background: #f5f3ff;
+  color: #5b21b6;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pt-merge-list {
+  padding: 10px 16px;
+  overflow: auto;
+  max-height: 45vh;
+}
+
+.pt-merge-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px dashed #e5e7eb;
+  font-size: 12px;
+}
+
+.pt-merge-empty {
+  color: #6b7280;
+  font-style: italic;
+}
+
+.pt-merge-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.pt-merge-row {
+  background: #faf5ff;
+}
+
+.pt-merge-expand-btn {
+  border: none;
+  background: transparent;
+  color: #6d28d9;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.pt-merge-expanded-row {
+  background: #fdf4ff;
 }
 </style>

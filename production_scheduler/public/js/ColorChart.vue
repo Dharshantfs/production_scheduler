@@ -118,23 +118,6 @@
       <button class="cc-clear-btn" style="color: #7c3aed; border-color: #7c3aed; margin-left: 8px; font-weight:600;" @click="syncAllPlanCodes" title="Recalculate Plan Codes for all existing sheets">
         📂 Sync Plan Codes
       </button>
-      <button 
-        class="cc-clear-btn" 
-        :style="{ color: mergeMode ? '#dc2626' : '#6b7280', borderColor: mergeMode ? '#dc2626' : '#6b7280', marginLeft: '8px', fontWeight: '600' }" 
-        @click="toggleMergeMode" 
-        title="Enable/Disable merge mode for grouping orders"
-      >
-        {{ mergeMode ? '🔗 Merge Mode ON' : '🔓 Merge Mode OFF' }}
-      </button>
-      <button 
-        v-if="mergeMode && selectedForMerge.size >= 2"
-        class="cc-clear-btn" 
-        style="color: #059669; border-color: #059669; margin-left: 8px; font-weight: 600;" 
-        @click="createMergeFromSelection" 
-        title="Create merge group from selected items"
-      >
-        ✅ Create Merge ({{ selectedForMerge.size }})
-      </button>
       <button v-if="hasRecentlyReset" class="cc-clear-btn" style="color: #ca8a04; border-color: #ca8a04; margin-left: 8px; font-weight:600;" @click="restoreWhiteOrders" title="Restore accidentally cleared white orders">
         🛠️ Restore Whites
       </button>
@@ -227,24 +210,12 @@
                 <div
                 v-else
                 class="cc-card"
-                :class="{ 'cc-card-merged': mergedItemsMap[entry.itemName], 'cc-card-selected': selectedForMerge.has(entry.itemName) }"
                 :data-name="entry.name"
                 :data-item-name="entry.itemName"
                 :data-color="entry.color"
                 :data-planning-sheet="entry.planningSheet"
-                @click="mergeMode ? toggleItemSelection(entry.itemName) : openForm(entry.planningSheet)"
+                @click="openForm(entry.planningSheet)"
                 >
-                <div v-if="mergeMode" class="cc-card-checkbox" style="position: absolute; top: 4px; left: 4px; z-index: 10;">
-                    <input 
-                        type="checkbox" 
-                        :checked="selectedForMerge.has(entry.itemName)"
-                        @click.stop="toggleItemSelection(entry.itemName)"
-                        style="width: 18px; height: 18px; cursor: pointer;"
-                    />
-                </div>
-                <div v-if="mergedItemsMap[entry.itemName]" style="position: absolute; top: 4px; right: 4px; z-index: 10; font-size: 18px;" title="Part of merge group">
-                    🔗
-                </div>
                 <div class="cc-card-left">
                     <div
                     class="cc-color-swatch"
