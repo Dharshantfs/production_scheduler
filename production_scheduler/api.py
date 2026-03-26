@@ -8087,6 +8087,9 @@ def create_item_spr(pp_id, planning_sheet_item_names):
             frappe.log_error(frappe.get_traceback(), "create_item_spr_insert")
             return {"status": "error", "message": f"Failed to create SPR: {error_msg}"}
         
+        # Link SPR back to Production Plan
+        frappe.db.set_value("Production Plan", pp_id, "shaft_production_run", spr.name)
+        
         frappe.db.commit()
         
         return {
