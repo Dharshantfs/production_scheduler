@@ -4826,13 +4826,14 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
 
 
 @frappe.whitelist()
-def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_date=None, strict_target_date=0):
+def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_date=None, strict_target_date=0, allow_month_cascade=0):
     """
     Pushes Planning Sheet Items to a Production Board plan.
     Re-parents each item to a PB Planning Sheet (with custom_planned_date set)
     so the Production Board can find them via the sheet-level filter.
     items_data: list of dicts [{"name": "...", "target_date": "...", "target_unit": "...", "strict_target_date": 1}]
     strict_target_date: when true, keep item exactly on selected target date (no auto-cascade).
+    allow_month_cascade: when 0, prevents cascading beyond target month end date.
     Note: automatic pre-shifting of queued white orders is intentionally disabled.
     """
     import json
@@ -5037,6 +5038,25 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
                     local_loads[load_key] = local_loads[load_key] + item_wt
             else:
                 maintenance_block = None
+                # Calculate month boundary to prevent March->April shifts
+                from datetime import datetime as dt
+                from dateutil.relativedelta import relativedelta
+                
+                try:
+                    target_dt_obj = getdate(current_check_date) if isinstance(current_check_date, str) else current_check_date
+                    if isinstance(target_dt_obj, str):
+                        target_dt_obj = getdate(target_dt_obj)
+                    
+                    # Get the last day of the target month
+                    first_day_next_month = target_dt_obj.replace(day=1) + relativedelta(months=1)
+                    month_end_dt = first_day_next_month - relativedelta(days=1)
+                    month_end_str = month_end_dt.strftime("%Y-%m-%d") if hasattr(month_end_dt, 'strftime') else str(month_end_dt)
+                except Exception as e:
+                    # If month calculation fails, allow cascading
+                    frappe.log_error(f"Month boundary calculation failed: {str(e)}", "Date Cascade Warning")
+                    allow_month_cascade = 1
+                    month_end_str = None
+                
                 while True:
                     # CHECK MAINTENANCE: Skip if under maintenance
                     if is_date_under_maintenance(unit, current_check_date):
@@ -5048,8 +5068,20 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
                                 "start": maint_info["start_date"],
                                 "end": maint_info["end_date"]
                             }
+                        
+                        # Check if next day would exceed month boundary
                         next_d = add_days(current_check_date, 1)
-                        current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+                        next_d_str = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+                        if not allow_month_cascade and month_end_str and next_d_str > month_end_str:
+                            # Return item with warning but don't fail the whole push
+                            frappe.msgprint(
+                                f"⚠️ Item {item_doc.item_code} cannot be placed: all slots in target month are full. " +
+                                f"Consider pushing to the next month or reducing quantity.",
+                                indicator='yellow'
+                            )
+                            break  # Skip this item
+                        
+                        current_check_date = next_d_str
                         continue
                     
                     load_key = (current_check_date, unit)
@@ -5072,9 +5104,20 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
                             maintenance_conflicts.append(maintenance_block)
                         break
                     
-                    # Otherwise, capacity is full for this date -> Cascade to the next day
+                    # Check month boundary before cascading
                     next_d = add_days(current_check_date, 1)
-                    current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+                    next_d_str = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+                    if not allow_month_cascade and month_end_str and next_d_str > month_end_str:
+                        # Month boundary reached and not allowed to cross
+                        frappe.msgprint(
+                            f"⚠️ Item {item_doc.item_code}: No capacity in target month. " +
+                            f"Cascade would exceed month boundary. Please select the next month.",
+                            indicator='yellow'
+                        )
+                        break  # Skip this item
+                    
+                    # Otherwise, capacity is full for this date -> Cascade to the next day
+                    current_check_date = next_d_str
             # ------------------------------------------------
 
             party_code = parent_doc.party_code or ""

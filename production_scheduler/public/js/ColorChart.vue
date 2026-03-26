@@ -5192,6 +5192,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
         title: `📤 Push ${color} to Production Board`,
         fields: [
             { fieldname: "target_date", label: "Target Date", fieldtype: "Date", reqd: 1, default: dialogTargetDate },
+            { fieldname: "target_unit", label: "Target Unit", fieldtype: "Select", options: "\nUnit 1\nUnit 2\nUnit 3\nUnit 4", description: "Unit to push items to. Leave blank to preserve item's current unit." },
             { fieldname: "filters_info", label: "Filters", fieldtype: "HTML" },
             { fieldname: "items_info", label: "Order Selection", fieldtype: "HTML" }
         ],
@@ -5243,9 +5244,10 @@ async function openPushColorDialog(color, inputTargetDate = null) {
              }
 
              const doPush = async (allowCascade) => {
+                 const dialogTargetUnit = d.get_value("target_unit");
                  const payload = selected.map(s => ({
                      name: s.name,
-                     target_unit: s.target_unit,
+                     target_unit: dialogTargetUnit || s.target_unit,
                      target_date: targetDate,
                      strict_target_date: allowCascade ? 0 : 1
                  }));
@@ -5287,6 +5289,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
              if (shouldAskCascade) {
                  const html = `<b>Capacity is full on ${targetDate}.</b><br>` +
                               `Projected load exceeds limit for:<br>${overflowLines.join('<br>')}<br><br>` +
+                              `<span style="color:#dc2626; font-weight: 600;">⚠️ WARNING:</span> Items may cascade to subsequent dates, potentially crossing into the next month.<br><br>` +
                               `Do you want to auto-push overflow items to the next available days?`;
                  frappe.confirm(
                      html,
