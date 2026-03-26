@@ -2970,7 +2970,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "actual_produced_qty": flt(item_level_produced),
                 "isSplit": item.get("custom_is_split"),
                 "pp_id": item_pp or "",  # Item-level production plan ID for direct PP view routing
-                "spr_name": frappe.db.get_value("Production Plan", item_pp, "shaft_production_run") if item_pp else ""  # SPR linked to PP
+                "spr_name": frappe.db.get_value("Production Plan", item_pp, "custom_shaft_production_run_id") if item_pp else ""  # SPR linked to PP
             })
 
     if cint(planned_only) and plan_name == "__all__":
@@ -8098,8 +8098,8 @@ def create_item_spr(pp_id, planning_sheet_item_names):
             frappe.log_error(frappe.get_traceback(), "create_item_spr_insert")
             return {"status": "error", "message": f"Failed to create SPR: {error_msg}"}
         
-        # Link SPR back to Production Plan
-        frappe.db.set_value("Production Plan", pp_id, "shaft_production_run", spr.name)
+        # Link SPR back to Production Plan using correct field name
+        frappe.db.set_value("Production Plan", pp_id, "custom_shaft_production_run_id", spr.name)
         
         frappe.db.commit()
         
