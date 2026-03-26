@@ -2316,8 +2316,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     spr_order_code_count_map = {}
     so_item_pp_cache = {}
     psi_pp_field = _psi_production_plan_field()
-    wo_item_code_produced_map = {}
-    wo_item_code_count_map = {}
+    so_item_code_produced_map = {}
+    so_item_code_wo_count_map = {}
     
     valid_pps = set()
     
@@ -2371,6 +2371,38 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 so_produced_map[row.sales_order] = flt(row.get("produced_qty"))
                 so_wo_count_map[row.sales_order] = cint(row.get("wo_count"))
 
+                # Strict chain fallback: SO -> PP -> WO -> production_item.
+                # This prevents mixing produced qty for same item across different Sales Orders.
+                so_item_prod_rows = frappe.db.sql(f"""
+                        SELECT pps.sales_order,
+                                     wo.production_item as item_code,
+                                     SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty,
+                                     COUNT(wo.name) as wo_count
+                        FROM `tabWork Order` wo
+                        INNER JOIN `tabProduction Plan Sales Order` pps ON pps.parent = wo.production_plan
+                        LEFT JOIN (
+                                SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
+                                FROM `tabStock Entry` se
+                                INNER JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
+                                WHERE se.docstatus = 1
+                                    AND IFNULL(se.work_order, '') != ''
+                                    AND IFNULL(sed.is_finished_item, 0) = 1
+                                GROUP BY se.work_order
+                        ) se_map ON se_map.work_order = wo.name
+                        WHERE pps.sales_order IN ({format_string_so})
+                            AND wo.docstatus < 2
+                            AND pps.docstatus < 2
+                            AND IFNULL(wo.production_item, '') != ''
+                        GROUP BY pps.sales_order, wo.production_item
+                """, tuple(so_names), as_dict=True)
+                for row in so_item_prod_rows:
+                        so_key = (row.get("sales_order") or "").strip()
+                        item_key = (row.get("item_code") or "").strip()
+                        if so_key and item_key:
+                                map_key = f"{so_key}::{item_key}"
+                                so_item_code_produced_map[map_key] = flt(row.get("produced_qty"))
+                                so_item_code_wo_count_map[map_key] = cint(row.get("wo_count"))
+
     if sheet_names:
         format_string_sheet = ','.join(['%s'] * len(sheet_names))
         # Check Production Plan via Planning Sheet custom field
@@ -2387,52 +2419,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         except Exception:
             pass
 
-        # Emergency fallback map: item_code -> produced_qty from WO.production_item.
-        # Applies to all item codes in the current queried sheet set.
-        try:
-            psi_code_rows = frappe.db.sql(f"""
-                SELECT DISTINCT item_code
-                FROM `tabPlanning Sheet Item`
-                WHERE parent IN ({format_string_sheet})
-                  AND IFNULL(item_code, '') != ''
-            """, tuple(sheet_names), as_dict=True)
-
-            all_item_codes = []
-            for r in psi_code_rows:
-                code = (r.get("item_code") or "").strip()
-                if not code:
-                    continue
-                all_item_codes.append(code)
-
-            if all_item_codes:
-                fmt_code = ','.join(['%s'] * len(all_item_codes))
-                wo_item_rows = frappe.db.sql(f"""
-                    SELECT wo.production_item as item_code,
-                           SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty,
-                           COUNT(wo.name) as wo_count
-                    FROM `tabWork Order` wo
-                    LEFT JOIN (
-                        SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
-                        FROM `tabStock Entry` se
-                        INNER JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
-                        WHERE se.docstatus = 1
-                          AND IFNULL(se.work_order, '') != ''
-                          AND IFNULL(sed.is_finished_item, 0) = 1
-                        GROUP BY se.work_order
-                    ) se_map ON se_map.work_order = wo.name
-                    WHERE wo.production_item IN ({fmt_code})
-                      AND wo.docstatus < 2
-                    GROUP BY wo.production_item
-                                """, tuple(all_item_codes), as_dict=True)
-
-                for row in wo_item_rows:
-                    code = (row.get("item_code") or "").strip()
-                    if code:
-                        wo_item_code_produced_map[code] = flt(row.get("produced_qty"))
-                        wo_item_code_count_map[code] = cint(row.get("wo_count"))
-        except Exception:
-            pass
-            
+        
     if valid_pps:
         format_string_pp = ','.join(['%s'] * len(valid_pps))
         # Check Work Order via Production Plan
@@ -2761,13 +2748,16 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                     item_level_produced = spr_pp_produced_map.get(item_pp)
                     item_level_wo_count = max(item_level_wo_count, spr_pp_count_map.get(item_pp, 0))
 
-            # Emergency fallback for legacy rows with missing SO/SO-item/PP links.
-            # Apply by item_code so rows can still surface completed qty when WO exists.
+            # Strict fallback for legacy rows with missing SO-item/PP links:
+            # derive via Sales Order -> Production Plan -> Work Order -> production_item.
             if item_level_produced is None:
                 item_code_key = (item.get("item_code") or "").strip()
-                if item_code_key and item_code_key in wo_item_code_produced_map:
-                    item_level_produced = wo_item_code_produced_map.get(item_code_key, 0)
-                    item_level_wo_count = max(item_level_wo_count, wo_item_code_count_map.get(item_code_key, 0))
+                sales_order_key = (sheet.sales_order or "").strip()
+                if sales_order_key and item_code_key:
+                    so_item_map_key = f"{sales_order_key}::{item_code_key}"
+                    if so_item_map_key in so_item_code_produced_map:
+                        item_level_produced = so_item_code_produced_map.get(so_item_map_key, 0)
+                        item_level_wo_count = max(item_level_wo_count, so_item_code_wo_count_map.get(so_item_map_key, 0))
 
             # Safe fallback: only rows with no item key can use SO aggregate.
             if item_level_produced is None and not so_item_key and sheet.sales_order:
