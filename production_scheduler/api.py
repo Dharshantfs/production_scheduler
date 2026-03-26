@@ -99,10 +99,10 @@ def generate_party_code(doc):
 UNIT_1 = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER"]
 UNIT_2 = ["GOLD", "SILVER", "BRONZE", "CLASSIC", "SUPER CLASSIC", "LIFE STYLE", "ECO SPECIAL", "ECO GREEN", "SUPER ECO", "ULTRA", "DELUXE"]
 UNIT_3 = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER", "BRONZE"]
-UNIT_4 = ["PREMIUM", "PLATINUM", "GOLD", "SILVER", "BRONZE"]
+UNIT_4 = ["PREMIUM", "PLATINUM", "GOLD", "SILVER", "BRONZE", "CLASSIC", "CRT"]
 
 QUAL_LIST = ["SUPER PLATINUM", "SUPER CLASSIC", "SUPER ECO", "ECO SPECIAL", "ECO GREEN",
-             "ECO SPL", "LIFE STYLE", "LIFESTYLE", "PREMIUM", "PLATINUM", "CLASSIC",
+			 "ECO SPL", "LIFE STYLE", "LIFESTYLE", "PREMIUM", "PLATINUM", "CLASSIC", "CRT",
              "DELUXE", "BRONZE", "SILVER", "ULTRA", "GOLD", "UV"]
 QUAL_LIST.sort(key=len, reverse=True)
 
@@ -221,7 +221,7 @@ def _populate_planning_sheet_items(ps, doc):
                   "LIFESTYLE": 9, "ECOSPECIAL": 10, "ECOGREEN": 11, "SUPERECO": 12, "ULTRA": 13, "DELUXE": 14 
               },
               "Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
-              "Unit 4": { "PREMIUM": 1, "PLATINUM": 2, "GOLD": 3, "SILVER": 4, "BRONZE": 5 }
+			  "Unit 4": { "PREMIUM": 1, "PLATINUM": 2, "GOLD": 3, "SILVER": 4, "BRONZE": 5, "CLASSIC": 6, "CRT": 6 }
             }
             
             best_unit = "Unit 1"
@@ -1215,7 +1215,7 @@ def get_preferred_unit(quality):
 			"LIFE STYLE": 6, "ECO SPECIAL": 7, "ECO GREEN": 8, "SUPER ECO": 9, "ULTRA": 10, "DELUXE": 11 
 		},
 		"Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPER PLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
-		"Unit 4": { "PREMIUM": 1, "GOLD": 2, "SILVER": 3, "BRONZE": 4 }
+		"Unit 4": { "PREMIUM": 1, "GOLD": 2, "SILVER": 3, "BRONZE": 4, "CLASSIC": 5, "CRT": 5 }
 	}
 	
 	best_unit = "Unit 1"
@@ -3135,7 +3135,7 @@ UNIT_QUALITY_ORDER = {
 	"Unit 2": ["GOLD","SILVER","BRONZE","CLASSIC","SUPER CLASSIC","LIFE STYLE",
 	           "ECO SPECIAL","ECO GREEN","SUPER ECO","ULTRA","DELUXE"],
 	"Unit 3": ["PREMIUM","PLATINUM","SUPER PLATINUM","GOLD","SILVER","BRONZE"],
-	"Unit 4": ["PREMIUM","GOLD","SILVER","BRONZE"],
+	"Unit 4": ["PREMIUM","GOLD","SILVER","BRONZE","CLASSIC","CRT"],
 }
 
 @frappe.whitelist()
@@ -3900,7 +3900,7 @@ def create_planning_sheet_from_so(doc):
         UNIT_2_MAP = ["GOLD", "SILVER", "BRONZE", "CLASSIC", "SUPER CLASSIC", "LIFE STYLE",
                       "ECO SPECIAL", "ECO GREEN", "SUPER ECO", "ULTRA", "DELUXE"]
         UNIT_3_MAP = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER", "BRONZE"]
-        UNIT_4_MAP = ["PREMIUM", "GOLD", "SILVER", "BRONZE"]
+		UNIT_4_MAP = ["PREMIUM", "GOLD", "SILVER", "BRONZE", "CLASSIC", "CRT"]
 
         ps = frappe.new_doc("Planning sheet")
         ps.sales_order = doc.name
