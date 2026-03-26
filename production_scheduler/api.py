@@ -5187,8 +5187,8 @@ def revert_items_to_last_sheet_planned_date(
     dry_run=1,
 ):
     """
-    Revert item-level planned dates (custom_item_planned_date) back to the sheet-level
-    planned date when items were accidentally shifted across months.
+    Revert item-level planned dates (custom_item_planned_date) back to the best
+    recoverable prior date when items were accidentally shifted across months.
 
     Default use-case:
     - Source (original) months: Feb + Mar
@@ -5222,17 +5222,17 @@ def revert_items_to_last_sheet_planned_date(
         dry = cint(dry_run) == 1
 
         placeholders = ",".join(["%s"] * len(src_months))
-        params = [bad_month] + src_months
 
         unit_sql = ""
+        query_params = [bad_month] + src_months + src_months
         if unit:
             unit_sql = " AND COALESCE(i.unit, '') = %s"
-            params.append(unit)
+            query_params.append(unit)
 
         # Candidate rows:
         # - item currently in bad month (e.g., April)
-        # - parent sheet originally in source months (e.g., Feb/Mar)
-        # - parent has custom_planned_date (the intended date to restore)
+        # - parent indicates original month either through ordered_date OR custom_planned_date
+        #   (ordered_date branch catches cases where header custom_planned_date got overwritten)
         candidates = frappe.db.sql(
             f"""
             SELECT
@@ -5240,7 +5240,7 @@ def revert_items_to_last_sheet_planned_date(
                 i.parent,
                 i.unit,
                 i.custom_item_planned_date AS current_item_date,
-                p.custom_planned_date AS restore_date,
+                p.custom_planned_date AS sheet_planned_date,
                 p.ordered_date,
                 p.custom_pb_plan_name,
                 p.custom_plan_name
@@ -5249,13 +5249,15 @@ def revert_items_to_last_sheet_planned_date(
             WHERE p.docstatus < 2
               AND i.docstatus < 2
               AND i.custom_item_planned_date IS NOT NULL
-              AND p.custom_planned_date IS NOT NULL
               AND MONTH(i.custom_item_planned_date) = %s
-              AND MONTH(COALESCE(p.custom_planned_date, p.ordered_date)) IN ({placeholders})
+              AND (
+                    MONTH(COALESCE(p.ordered_date, p.custom_planned_date)) IN ({placeholders})
+                    OR MONTH(COALESCE(p.custom_planned_date, p.ordered_date)) IN ({placeholders})
+                  )
               {unit_sql}
             ORDER BY p.name, i.idx
             """,
-            tuple(params),
+            tuple(query_params),
             as_dict=True,
         )
 
@@ -5270,11 +5272,24 @@ def revert_items_to_last_sheet_planned_date(
 
         has_plan_code_col = frappe.db.has_column("Planning Sheet Item", "custom_plan_code")
         updated = 0
+        skipped = 0
         samples = []
 
         for r in candidates:
-            restore_date = r.get("restore_date")
+            # Prefer sheet_planned_date, but if it is also in the bad month,
+            # fall back to ordered_date to restore pre-shift month position.
+            restore_date = r.get("sheet_planned_date")
+            if restore_date and getdate(restore_date).month == bad_month:
+                restore_date = r.get("ordered_date")
+            elif not restore_date:
+                restore_date = r.get("ordered_date")
+
             if not restore_date:
+                skipped += 1
+                continue
+
+            if getdate(restore_date).month == bad_month:
+                skipped += 1
                 continue
 
             row_preview = {
@@ -5321,6 +5336,7 @@ def revert_items_to_last_sheet_planned_date(
             "dry_run": dry,
             "count": len(candidates),
             "updated": updated,
+            "skipped": skipped,
             "samples": samples,
             "message": "Preview generated" if dry else f"Reverted {updated} items to previous sheet planned date",
         }
