@@ -8087,19 +8087,6 @@ def create_item_spr(pp_id, planning_sheet_item_names):
             frappe.log_error(frappe.get_traceback(), "create_item_spr_insert")
             return {"status": "error", "message": f"Failed to create SPR: {error_msg}"}
         
-        # Link SPR back to Planning Sheet Items (only if field exists)
-        spr_link_field = None
-        for field in ["custom_spr_name", "spr_name", "custom_shaft_production_run"]:
-            if frappe.db.has_column("Planning Sheet Item", field):
-                spr_link_field = field
-                break
-        
-        if spr_link_field:
-            for psi_name in planning_sheet_item_names:
-                frappe.db.set_value("Planning Sheet Item", psi_name, spr_link_field, spr.name)
-        else:
-            frappe.log_error(f"No SPR link field found on Planning Sheet Item. Tried: custom_spr_name, spr_name, custom_shaft_production_run", "create_item_spr_field_missing")
-        
         frappe.db.commit()
         
         return {
