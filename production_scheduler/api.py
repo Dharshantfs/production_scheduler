@@ -6490,20 +6490,37 @@ def create_merge(date, unit, plan_name, item_names, merge_label=None):
         if overlap:
             frappe.throw(_("Items already in another merge: {}").format(", ".join(overlap)))
     
-    # Create new merge record
+    # Create new merge record.
+    # NOTE: The DocType autoname expression can collide for same unit/date,
+    # so we provide our own unique name and retry safely.
     import json
-    merge_doc = frappe.get_doc({
-        "doctype": "Production Merge",
-        "plan_name": plan_name,
-        "date": date,
-        "unit": unit,
-        "merge_label": merge_label or _get_merge_row_name(item_names),
-        "status": "Active",
-        "merged_items": json.dumps(item_names)
-    })
-    merge_doc.insert()
-    
-    return {"status": "success", "merge_id": merge_doc.name}
+    from frappe.exceptions import DuplicateEntryError
+
+    base_name = f"PMRG-{str(unit).replace(' ', '')}-{str(date)}"
+    last_error = None
+    for _ in range(5):
+        unique_name = f"{base_name}-{frappe.generate_hash(length=6)}"
+        merge_doc = frappe.get_doc({
+            "doctype": "Production Merge",
+            "name": unique_name,
+            "plan_name": plan_name,
+            "date": date,
+            "unit": unit,
+            "merge_label": merge_label or _get_merge_row_name(item_names),
+            "status": "Active",
+            "merged_items": json.dumps(item_names)
+        })
+        try:
+            merge_doc.insert()
+            return {"status": "success", "merge_id": merge_doc.name}
+        except DuplicateEntryError as e:
+            last_error = e
+            continue
+
+    if last_error:
+        frappe.throw(_("Unable to create merge due to repeated duplicate name collision. Please try again."))
+
+    frappe.throw(_("Unable to create merge"))
 
 
 @frappe.whitelist()
