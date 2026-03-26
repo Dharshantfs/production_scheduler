@@ -94,6 +94,26 @@ def generate_party_code(doc):
             item_row.party_code = doc.party_code
 
 
+def _find_existing_sheet_for_sales_order(sales_order, exclude_name=None):
+    """Return the oldest existing Planning Sheet for a Sales Order, or None."""
+    so = str(sales_order or "").strip()
+    if not so:
+        return None
+
+    filters = {"sales_order": so}
+    if exclude_name:
+        filters["name"] = ["!=", exclude_name]
+
+    existing = frappe.get_all(
+        "Planning sheet",
+        filters=filters,
+        fields=["name", "docstatus", "creation"],
+        order_by="creation asc",
+        limit=1,
+    )
+    return existing[0] if existing else None
+
+
 
 # --- DEFINITIONS ---
 PREMIUM_SPECIAL_QUALITIES = [
@@ -3489,13 +3509,18 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
                 if existing:
                     target_sheet_name = existing[0].name
                 else:
-                    new_sheet = frappe.new_doc("Planning sheet")
-                    new_sheet.custom_plan_name = target_plan
-                    new_sheet.ordered_date = effective_date
-                    new_sheet.party_code = party_code
-                    new_sheet.customer = _resolve_customer_link(parent_sheet.customer, parent_sheet.party_code)
-                    new_sheet.insert(ignore_permissions=True)
-                    target_sheet_name = new_sheet.name
+                    so_existing = _find_existing_sheet_for_sales_order(parent_sheet.sales_order) if parent_sheet.sales_order else None
+                    if so_existing:
+                        target_sheet_name = so_existing["name"]
+                    else:
+                        new_sheet = frappe.new_doc("Planning sheet")
+                        new_sheet.custom_plan_name = target_plan
+                        new_sheet.ordered_date = effective_date
+                        new_sheet.party_code = party_code
+                        new_sheet.customer = _resolve_customer_link(parent_sheet.customer, parent_sheet.party_code)
+                        new_sheet.sales_order = parent_sheet.sales_order or ""
+                        new_sheet.insert(ignore_permissions=True)
+                        target_sheet_name = new_sheet.name
                     # Force custom_plan_name via raw SQL to ensure persistence
                     if frappe.db.has_column("Planning sheet", "custom_plan_name"):
                         frappe.db.sql(
@@ -3702,20 +3727,24 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
             if found_name:
                 target_sheet_name = found_name
             else:
-                # Create NEW sheet only for plan changes
-                target_sheet = frappe.new_doc("Planning sheet")
-                target_sheet.ordered_date = target_date
-                if frappe.db.has_column("Planning sheet", "custom_planned_date"):
-                    target_sheet.custom_planned_date = target_date
-                target_sheet.party_code = parent_doc.party_code
-                target_sheet.customer = _resolve_customer_link(parent_doc.customer, parent_doc.party_code)
-                target_sheet.sales_order = parent_doc.sales_order
-                if plan_name and plan_name != "Default":
-                    target_sheet.custom_plan_name = plan_name
-                if pb_plan_name and pb_plan_name != "Default":
-                    target_sheet.custom_pb_plan_name = pb_plan_name
-                target_sheet.save(ignore_permissions=True)
-                target_sheet_name = target_sheet.name
+                so_existing = _find_existing_sheet_for_sales_order(parent_doc.sales_order) if parent_doc.sales_order else None
+                if so_existing:
+                    target_sheet_name = so_existing["name"]
+                else:
+                    # Create NEW sheet only if SO has no sheet at all
+                    target_sheet = frappe.new_doc("Planning sheet")
+                    target_sheet.ordered_date = target_date
+                    if frappe.db.has_column("Planning sheet", "custom_planned_date"):
+                        target_sheet.custom_planned_date = target_date
+                    target_sheet.party_code = parent_doc.party_code
+                    target_sheet.customer = _resolve_customer_link(parent_doc.customer, parent_doc.party_code)
+                    target_sheet.sales_order = parent_doc.sales_order
+                    if plan_name and plan_name != "Default":
+                        target_sheet.custom_plan_name = plan_name
+                    if pb_plan_name and pb_plan_name != "Default":
+                        target_sheet.custom_pb_plan_name = pb_plan_name
+                    target_sheet.save(ignore_permissions=True)
+                    target_sheet_name = target_sheet.name
 
         target_sheet = frappe.get_doc("Planning sheet", target_sheet_name)
         
@@ -3828,15 +3857,19 @@ def rescue_orphaned_items(target_date=None, colour=None, party_code=None):
             sheet_name = existing
         else:
             first = items[0]
-            new_sheet = frappe.new_doc("Planning sheet")
-            new_sheet.ordered_date = target_date
-            if frappe.db.has_column("Planning sheet", "custom_planned_date"):
-                new_sheet.custom_planned_date = target_date
-            new_sheet.party_code = party
-            new_sheet.customer = _resolve_customer_link(first.get("customer"), first.get("party_code") or party)
-            new_sheet.sales_order = first.get("sales_order") or ""
-            new_sheet.save(ignore_permissions=True)
-            sheet_name = new_sheet.name
+            so_existing = _find_existing_sheet_for_sales_order(first.get("sales_order")) if first.get("sales_order") else None
+            if so_existing:
+                sheet_name = so_existing["name"]
+            else:
+                new_sheet = frappe.new_doc("Planning sheet")
+                new_sheet.ordered_date = target_date
+                if frappe.db.has_column("Planning sheet", "custom_planned_date"):
+                    new_sheet.custom_planned_date = target_date
+                new_sheet.party_code = party
+                new_sheet.customer = _resolve_customer_link(first.get("customer"), first.get("party_code") or party)
+                new_sheet.sales_order = first.get("sales_order") or ""
+                new_sheet.save(ignore_permissions=True)
+                sheet_name = new_sheet.name
         
         # Reparent all orphaned items to this sheet
         for item in items:
@@ -3980,16 +4013,8 @@ def create_planning_sheet_from_so(doc):
     AUTO-CREATE PLANNING SHEET (QUALITY + GSM LOGIC)
     """
     try:
-        # Check if an UNLOCKED Planning Sheet already exists
-        existing_sheets = frappe.get_all("Planning sheet", filters={"sales_order": doc.name, "docstatus": ["<", 2]}, fields=["name"])
-        unlocked_sheet = None
-        for s in existing_sheets:
-            if not is_sheet_locked(s.name):
-                unlocked_sheet = s.name
-                break
-        
-        if unlocked_sheet:
-            # frappe.msgprint(f"Γä╣∩╕Å Planning Sheet already exists (unlocked): {unlocked_sheet}")
+        existing_sheet = _find_existing_sheet_for_sales_order(doc.name)
+        if existing_sheet:
             return
             
         # --- GET ACTIVE UNLOCKED PLANS ---
@@ -4157,10 +4182,9 @@ def create_planning_sheets_bulk(sales_orders):
     
     for so_name in sales_orders:
         try:
-            # Check if active Planning Sheet exists (Docstatus 0 or 1)
-            # We use frappe.db.exists with filters
-            if frappe.db.count("Planning sheet", {"sales_order": so_name, "docstatus": ["<", 2]}) > 0:
-                continue # Skip if exists
+            # Strict singleton: never create another sheet unless existing one is deleted.
+            if _find_existing_sheet_for_sales_order(so_name):
+                continue
                 
             doc = frappe.get_doc("Sales Order", so_name)
             
@@ -4174,8 +4198,6 @@ def create_planning_sheets_bulk(sales_orders):
             
             _populate_planning_sheet_items(ps, doc)
             update_sheet_plan_codes(ps) # Call new helper
-            ps.insert(ignore_permissions=True)
-                
             ps.insert(ignore_permissions=True)
             created.append(ps.name)
             
@@ -4402,18 +4424,22 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
                 if existing:
                     pb_sheet_name = existing[0].name
                 else:
-                    pb_sheet = frappe.new_doc("Planning sheet")
-                    pb_sheet.custom_plan_name = parent.get("custom_plan_name") or "Default"
-                    pb_sheet.custom_pb_plan_name = pb_plan_name
-                    # CRITICAL: ordered_date stays as the ORIGINAL order date
-                    pb_sheet.ordered_date = original_ordered_date
-                    # planned_date is the actual production date (may be overflow)
-                    pb_sheet.custom_planned_date = effective_date
-                    pb_sheet.party_code = party_code
-                    pb_sheet.customer = _resolve_customer_link(parent.customer, parent.party_code)
-                    pb_sheet.sales_order = parent.sales_order or ""
-                    pb_sheet.insert(ignore_permissions=True)
-                    pb_sheet_name = pb_sheet.name
+                    so_existing = _find_existing_sheet_for_sales_order(parent.sales_order) if parent.sales_order else None
+                    if so_existing:
+                        pb_sheet_name = so_existing["name"]
+                    else:
+                        pb_sheet = frappe.new_doc("Planning sheet")
+                        pb_sheet.custom_plan_name = parent.get("custom_plan_name") or "Default"
+                        pb_sheet.custom_pb_plan_name = pb_plan_name
+                        # CRITICAL: ordered_date stays as the ORIGINAL order date
+                        pb_sheet.ordered_date = original_ordered_date
+                        # planned_date is the actual production date (may be overflow)
+                        pb_sheet.custom_planned_date = effective_date
+                        pb_sheet.party_code = party_code
+                        pb_sheet.customer = _resolve_customer_link(parent.customer, parent.party_code)
+                        pb_sheet.sales_order = parent.sales_order or ""
+                        pb_sheet.insert(ignore_permissions=True)
+                        pb_sheet_name = pb_sheet.name
                     # Force custom fields via SQL
                     if frappe.db.has_column("Planning sheet", "custom_pb_plan_name"):
                         frappe.db.sql("""
@@ -4763,15 +4789,19 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
                     if existing:
                         pb_sheet_name = existing[0].name
                     else:
-                        pb_sheet = frappe.new_doc("Planning sheet")
-                        # CRITICAL: ordered_date stays as ORIGINAL
-                        pb_sheet.ordered_date = original_ordered_date
-                        pb_sheet.custom_planned_date = effective_date
-                        pb_sheet.party_code = party_code
-                        pb_sheet.customer = _resolve_customer_link(parent_doc.customer, parent_doc.party_code)
-                        pb_sheet.sales_order = parent_doc.sales_order or ""
-                        pb_sheet.insert(ignore_permissions=True)
-                        pb_sheet_name = pb_sheet.name
+                        so_existing = _find_existing_sheet_for_sales_order(parent_doc.sales_order) if parent_doc.sales_order else None
+                        if so_existing:
+                            pb_sheet_name = so_existing["name"]
+                        else:
+                            pb_sheet = frappe.new_doc("Planning sheet")
+                            # CRITICAL: ordered_date stays as ORIGINAL
+                            pb_sheet.ordered_date = original_ordered_date
+                            pb_sheet.custom_planned_date = effective_date
+                            pb_sheet.party_code = party_code
+                            pb_sheet.customer = _resolve_customer_link(parent_doc.customer, parent_doc.party_code)
+                            pb_sheet.sales_order = parent_doc.sales_order or ""
+                            pb_sheet.insert(ignore_permissions=True)
+                            pb_sheet_name = pb_sheet.name
 
                     # Force custom fields via SQL to ensure consistency (New OR Existing)
                     frappe.db.sql("""
@@ -4925,15 +4955,19 @@ def revert_items_from_pb(item_names):
                 if orig_sheets:
                     orig_name = orig_sheets[0].name
                 else:
-                    # Create new CC sheet if none exists
-                    orig = frappe.new_doc("Planning sheet")
-                    orig.custom_plan_name = parent_doc.get("custom_plan_name") or "Default"
-                    orig.ordered_date = eff_date
-                    orig.party_code = party
-                    orig.customer = _resolve_customer_link(parent_doc.customer, parent_doc.party_code)
-                    orig.sales_order = parent_doc.sales_order or ""
-                    orig.insert(ignore_permissions=True)
-                    orig_name = orig.name
+                    so_existing = _find_existing_sheet_for_sales_order(parent_doc.sales_order) if parent_doc.sales_order else None
+                    if so_existing:
+                        orig_name = so_existing["name"]
+                    else:
+                        # Create new CC sheet only when no sheet exists for this SO
+                        orig = frappe.new_doc("Planning sheet")
+                        orig.custom_plan_name = parent_doc.get("custom_plan_name") or "Default"
+                        orig.ordered_date = eff_date
+                        orig.party_code = party
+                        orig.customer = _resolve_customer_link(parent_doc.customer, parent_doc.party_code)
+                        orig.sales_order = parent_doc.sales_order or ""
+                        orig.insert(ignore_permissions=True)
+                        orig_name = orig.name
                 
                 # Move item back to original sheet
                 frappe.db.set_value("Planning Sheet Item", name, "parent", orig_name)
@@ -5184,7 +5218,7 @@ def revert_pb_push(pb_plan_name, date=None):
         # Search by the date it was PUSHED to, not the original SO date
         filters["custom_planned_date"] = target_date
 
-    pb_sheets = frappe.get_all("Planning sheet", filters=filters, fields=["name", "ordered_date", "party_code", "custom_plan_name"])
+    pb_sheets = frappe.get_all("Planning sheet", filters=filters, fields=["name", "ordered_date", "party_code", "custom_plan_name", "sales_order"])
 
     reverted = 0
     for pb_sheet in pb_sheets:
@@ -5204,13 +5238,18 @@ def revert_pb_push(pb_plan_name, date=None):
         if originals:
             original_sheet_name = originals[0].name
         else:
-            # Create a blank original sheet if none found
-            orig_sheet = frappe.new_doc("Planning sheet")
-            orig_sheet.custom_plan_name = pb_sheet.custom_plan_name or "Default"
-            orig_sheet.ordered_date = pb_sheet.ordered_date
-            orig_sheet.party_code = pb_sheet.party_code or ""
-            orig_sheet.insert(ignore_permissions=True)
-            original_sheet_name = orig_sheet.name
+            so_existing = _find_existing_sheet_for_sales_order(pb_sheet.sales_order) if pb_sheet.sales_order else None
+            if so_existing:
+                original_sheet_name = so_existing["name"]
+            else:
+                # Create a blank original sheet only when no SO-linked sheet exists
+                orig_sheet = frappe.new_doc("Planning sheet")
+                orig_sheet.custom_plan_name = pb_sheet.custom_plan_name or "Default"
+                orig_sheet.ordered_date = pb_sheet.ordered_date
+                orig_sheet.party_code = pb_sheet.party_code or ""
+                orig_sheet.sales_order = pb_sheet.sales_order or ""
+                orig_sheet.insert(ignore_permissions=True)
+                original_sheet_name = orig_sheet.name
 
         # Move all items from PB sheet back to original sheet
         items = frappe.get_all("Planning Sheet Item", filters={"parent": pb_sheet.name}, fields=["name"])
@@ -5246,30 +5285,26 @@ def auto_create_planning_sheet(doc, method=None):
         frappe.msgprint(f"⚠️ All Color Chart plans are locked - Planning Sheet not created. Plans found: {plan_summary}", indicator="orange", alert=True)
         return None
 
-    # 2. CHECK IF ANY UNLOCKED SHEET EXISTS FOR THIS ORDER
-    # (Fix: Reuse existing unlocked sheet even if plan name differs, just update the plan)
-    existing = frappe.get_all("Planning sheet",
-        filters={"sales_order": doc.name, "docstatus": 0},
-        fields=["name", "custom_plan_name"],
-        limit=1
-    )
-    
+    # 2. STRICT SINGLETON RULE:
+    # Once a sheet exists for an SO, never create another unless the sheet is deleted.
+    existing = _find_existing_sheet_for_sales_order(doc.name)
+
     if existing:
-        sheet = frappe.get_doc("Planning sheet", existing[0].name)
+        sheet = frappe.get_doc("Planning sheet", existing["name"])
         new_ctx_name = _get_contextual_plan_name(cc_plan, doc.transaction_date)
         
-        # If plan is different, update it
-        if sheet.custom_plan_name != new_ctx_name:
-            sheet.custom_plan_name = new_ctx_name
-            sheet.db_set("custom_plan_name", new_ctx_name)
-        
-        # Refresh items (de-duplicate happens inside _populate)
-        _populate_planning_sheet_items(sheet, doc)
-        update_sheet_plan_codes(sheet)
-        sheet.save(ignore_permissions=True)
-        frappe.db.commit()
-        
-        frappe.msgprint(f"✅ Planning Sheet <b>{sheet.name}</b> updated to plan <b>{sheet.custom_plan_name}</b>")
+        # Reuse existing draft only; submitted/cancelled sheets are never duplicated.
+        if int(sheet.docstatus or 0) == 0:
+            if sheet.custom_plan_name != new_ctx_name:
+                sheet.custom_plan_name = new_ctx_name
+                sheet.db_set("custom_plan_name", new_ctx_name)
+
+            _populate_planning_sheet_items(sheet, doc)
+            update_sheet_plan_codes(sheet)
+            sheet.save(ignore_permissions=True)
+            frappe.db.commit()
+
+        frappe.msgprint(f"Planning Sheet <b>{sheet.name}</b> already exists for Sales Order <b>{doc.name}</b>. Reusing existing sheet.")
         return sheet
 
     # 3. CREATE PLANNING SHEET 
@@ -5325,11 +5360,12 @@ def regenerate_planning_sheet(so_name):
     if not so_name:
         frappe.throw("Sales Order Name is required")
 
-    existing_sheets = frappe.get_all("Planning sheet", filters={"sales_order": so_name, "docstatus": ["<", 2]}, fields=["name", "custom_plan_name"])
-    if existing_sheets:
-        # Before throwing error, check if ANY existing sheet matches legacy formats of what we want
-        # Note: cc_plan is fetched later, so we just check for generic existence first
-        frappe.throw(f"⚠️ An active Planning Sheet <b>{existing_sheets[0].name}</b> already exists. Cancel it first.")
+    existing_sheet = _find_existing_sheet_for_sales_order(so_name)
+    if existing_sheet:
+        frappe.throw(
+            f"Planning Sheet <b>{existing_sheet['name']}</b> already exists for Sales Order <b>{so_name}</b>. "
+            "Delete it first, then regenerate."
+        )
 
     doc = frappe.get_doc("Sales Order", so_name)
 
@@ -5545,24 +5581,24 @@ def validate_planning_sheet_duplicates(doc, method=None):
     """
     normalize_planning_sheet_customer_link(doc)
 
-    if not doc.sales_order or doc.docstatus > 1:
+    if not doc.sales_order:
         return
         
     # Recalculate plan codes whenever saved
     update_sheet_plan_codes(doc)
 
-    # Check for other sheets in the SAME plan for the same Sales Order
+    # Strict singleton: block any second sheet for the same Sales Order.
     filters = {
         "sales_order": doc.sales_order,
         "name": ["!=", doc.name],
-        "docstatus": 0,
-        "custom_plan_name": doc.custom_plan_name
     }
     existing = frappe.get_all("Planning sheet", filters=filters, fields=["name"], limit=1)
     if existing:
         frappe.throw(
-            _(f"⚠️ An unlocked Planning Sheet <b>{existing[0].name}</b> already exists for Sales Order <b>{doc.sales_order}</b>. "
-              "Please reuse that sheet instead of creating a new one to avoid duplication errors.")
+            _(
+                f"A Planning Sheet <b>{existing[0].name}</b> already exists for Sales Order <b>{doc.sales_order}</b>. "
+                "Delete the existing sheet first before creating a new one."
+            )
         )
 
 
