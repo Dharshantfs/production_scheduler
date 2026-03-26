@@ -2400,14 +2400,17 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             order_code_select = "'' as order_code"
 
         so_item_prod_rows = frappe.db.sql(f"""
-            SELECT pps.sales_order,
+            SELECT COALESCE(NULLIF(wo.sales_order, ''), pps.sales_order) as sales_order,
                    wo.production_item as item_code,
                    {order_code_select},
                    SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty,
-                   COUNT(wo.name) as wo_count
+                   COUNT(DISTINCT wo.name) as wo_count
             FROM `tabWork Order` wo
-            INNER JOIN `tabProduction Plan Sales Order` pps ON pps.parent = wo.production_plan
-            LEFT JOIN `tabProduction Plan` pp ON pp.name = pps.parent
+            LEFT JOIN `tabProduction Plan Sales Order` pps
+              ON pps.parent = wo.production_plan
+             AND pps.docstatus < 2
+             AND (IFNULL(wo.sales_order, '') = '' OR pps.sales_order = wo.sales_order)
+            LEFT JOIN `tabProduction Plan` pp ON pp.name = wo.production_plan
             LEFT JOIN (
                 SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
                 FROM `tabStock Entry` se
@@ -2417,11 +2420,10 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                   AND IFNULL(sed.is_finished_item, 0) = 1
                 GROUP BY se.work_order
             ) se_map ON se_map.work_order = wo.name
-            WHERE pps.sales_order IN ({format_string_so})
+            WHERE COALESCE(NULLIF(wo.sales_order, ''), pps.sales_order) IN ({format_string_so})
               AND wo.docstatus < 2
-              AND pps.docstatus < 2
               AND IFNULL(wo.production_item, '') != ''
-            GROUP BY pps.sales_order, wo.production_item, order_code
+            GROUP BY COALESCE(NULLIF(wo.sales_order, ''), pps.sales_order), wo.production_item, order_code
         """, tuple(so_names), as_dict=True)
         for row in so_item_prod_rows:
             so_key = (row.get("sales_order") or "").strip()
