@@ -237,7 +237,11 @@
                             <td class="cell-center">
                               <button class="cc-clear-btn" style="padding: 4px 8px; font-size: 11px;" @click="deleteMerge(row.mergeId)">Unmerge</button>
                             </td>
-                            <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">-</td>
+                            <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">
+                              <button @click="openMergedProductionPlan(row)" class="cc-pp-btn" title="View Production Plan">
+                                📋 View
+                              </button>
+                            </td>
                           </tr>
                         </template>
                       </template>
@@ -1118,7 +1122,20 @@ function toggleMergeMode() {
 
 function closeMergeDialog() {
   showMergeDialog.value = false;
+  mergeMode.value = false;
   selectedMergeItems.value = new Set();
+}
+
+function openMergedProductionPlan(row) {
+  const planningSheets = Array.from(new Set((row.items || []).map((it) => it.planningSheet).filter(Boolean)));
+  if (!planningSheets.length) {
+    frappe.msgprint("No Planning Sheet found for this merged row");
+    return;
+  }
+  if (planningSheets.length > 1) {
+    frappe.show_alert({ message: `Multiple planning sheets in merge. Opening first: ${planningSheets[0]}`, indicator: 'orange' });
+  }
+  openProductionPlanView(planningSheets[0]);
 }
 
 function toggleMergeSelection(itemName) {
