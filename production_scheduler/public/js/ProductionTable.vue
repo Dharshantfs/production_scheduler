@@ -1256,6 +1256,8 @@ onBeforeUnmount(() => {
     padding: 10px;
     border: 1px solid #e5e7eb;
     text-align: center;
+    font-weight: 700;
+}
 .pt-sortable-body .pt-draggable-row {
   transition: background-color 0.2s;
 }
@@ -1265,8 +1267,6 @@ onBeforeUnmount(() => {
 .pt-drag-handle {
   display: inline-block;
   user-select: none;
-}
-    font-weight: 700;
 }
 .cc-prod-table td {
     padding: 8px;

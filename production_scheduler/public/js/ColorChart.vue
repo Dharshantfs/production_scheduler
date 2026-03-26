@@ -242,7 +242,7 @@
                         style="width: 18px; height: 18px; cursor: pointer;"
                     />
                 </div>
-                <div v-if="mergedItemsMap[entry.itemName]" style="position: absolute; top: 4px; right: 4px; z-index: 10; font-size: 18px; title='' title='Part of merge group'>
+                <div v-if="mergedItemsMap[entry.itemName]" style="position: absolute; top: 4px; right: 4px; z-index: 10; font-size: 18px;" title="Part of merge group">
                     🔗
                 </div>
                 <div class="cc-card-left">
