@@ -1597,7 +1597,7 @@ async function createItemStockEntry(item) {
             indicator: 'green'
           }, 3);
           
-          // Redirect to SPR form
+          // Redirect to SPR form with PP ID
           await new Promise(resolve => {
             setTimeout(() => {
               frappe.set_route('Form', 'Shaft Production Run', sprId);
