@@ -2318,7 +2318,6 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     psi_pp_field = _psi_production_plan_field()
     wo_item_code_produced_map = {}
     wo_item_code_count_map = {}
-    psi_item_code_occurrence = {}
     
     valid_pps = set()
     
@@ -2389,28 +2388,24 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             pass
 
         # Emergency fallback map: item_code -> produced_qty from WO.production_item.
-        # Guard with occurrence count so we only auto-apply when item_code is unique
-        # in the current queried sheet set (avoids duplicating same WO qty across rows).
+        # Applies to all item codes in the current queried sheet set.
         try:
             psi_code_rows = frappe.db.sql(f"""
-                SELECT item_code, COUNT(name) as row_count
+                SELECT DISTINCT item_code
                 FROM `tabPlanning Sheet Item`
                 WHERE parent IN ({format_string_sheet})
                   AND IFNULL(item_code, '') != ''
-                GROUP BY item_code
             """, tuple(sheet_names), as_dict=True)
 
-            unique_item_codes = []
+            all_item_codes = []
             for r in psi_code_rows:
                 code = (r.get("item_code") or "").strip()
                 if not code:
                     continue
-                psi_item_code_occurrence[code] = cint(r.get("row_count"))
-                if cint(r.get("row_count")) == 1:
-                    unique_item_codes.append(code)
+                all_item_codes.append(code)
 
-            if unique_item_codes:
-                fmt_code = ','.join(['%s'] * len(unique_item_codes))
+            if all_item_codes:
+                fmt_code = ','.join(['%s'] * len(all_item_codes))
                 wo_item_rows = frappe.db.sql(f"""
                     SELECT wo.production_item as item_code,
                            SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty,
@@ -2428,7 +2423,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                     WHERE wo.production_item IN ({fmt_code})
                       AND wo.docstatus < 2
                     GROUP BY wo.production_item
-                """, tuple(unique_item_codes), as_dict=True)
+                                """, tuple(all_item_codes), as_dict=True)
 
                 for row in wo_item_rows:
                     code = (row.get("item_code") or "").strip()
@@ -2767,13 +2762,12 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                     item_level_wo_count = max(item_level_wo_count, spr_pp_count_map.get(item_pp, 0))
 
             # Emergency fallback for legacy rows with missing SO/SO-item/PP links.
-            # Only apply when this item_code is unique in current sheet set.
+            # Apply by item_code so rows can still surface completed qty when WO exists.
             if item_level_produced is None:
                 item_code_key = (item.get("item_code") or "").strip()
-                if item_code_key and psi_item_code_occurrence.get(item_code_key) == 1:
-                    if item_code_key in wo_item_code_produced_map:
-                        item_level_produced = wo_item_code_produced_map.get(item_code_key, 0)
-                        item_level_wo_count = max(item_level_wo_count, wo_item_code_count_map.get(item_code_key, 0))
+                if item_code_key and item_code_key in wo_item_code_produced_map:
+                    item_level_produced = wo_item_code_produced_map.get(item_code_key, 0)
+                    item_level_wo_count = max(item_level_wo_count, wo_item_code_count_map.get(item_code_key, 0))
 
             # Safe fallback: only rows with no item key can use SO aggregate.
             if item_level_produced is None and not so_item_key and sheet.sales_order:
