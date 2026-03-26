@@ -83,6 +83,7 @@
           <input v-model="mergeFilterCustomer" type="text" placeholder="Filter Customer" />
           <input v-model="mergeFilterQuality" type="text" placeholder="Filter Quality" />
           <input v-model="mergeFilterColor" type="text" placeholder="Filter Colour" />
+          <input v-model="mergeFilterGsm" type="text" placeholder="Filter GSM" />
           <button class="cc-save-arrange-btn" @click="applyAutoMergeSuggestion">✨ Auto Suggest</button>
         </div>
         <div class="pt-merge-suggest" v-if="autoMergeSuggestions.length">
@@ -94,7 +95,7 @@
               class="pt-merge-suggest-pill"
               @click="selectSuggestion(s)"
             >
-              {{ s.partyCode }} · {{ s.quality }} · {{ s.color }} ({{ s.items.length }})
+              {{ s.partyCode }} · {{ s.quality }} · {{ s.color }} · {{ s.gsm }} GSM ({{ s.items.length }})
             </button>
           </div>
         </div>
@@ -106,7 +107,7 @@
         <div class="pt-merge-list">
           <label v-for="item in mergeDialogItems" :key="item.itemName" class="pt-merge-item">
             <input type="checkbox" :checked="selectedMergeItems.has(item.itemName)" @change="toggleMergeSelection(item.itemName)" />
-            <span>{{ item.partyCode }} | {{ item.customer_name || item.customer || '-' }} | {{ item.quality }} | {{ item.color }} | {{ item.qty }} Kg</span>
+            <span>{{ item.partyCode }} | {{ item.customer_name || item.customer || '-' }} | {{ item.quality }} | {{ item.color }} | {{ item.gsm }} GSM | {{ item.qty }} Kg</span>
           </label>
           <div v-if="!mergeDialogItems.length" class="pt-merge-empty">No items found for merge filters.</div>
         </div>
@@ -674,6 +675,7 @@ const mergeFilterOrderCode = ref("");
 const mergeFilterCustomer = ref("");
 const mergeFilterQuality = ref("");
 const mergeFilterColor = ref("");
+const mergeFilterGsm = ref("");
 
 function getArrangementKey(unit, date) {
   return `${unit}||${date}`;
@@ -931,6 +933,7 @@ const mergeDialogItems = computed(() => {
   const customerSearch = mergeFilterCustomer.value.trim().toLowerCase();
   const qualitySearch = mergeFilterQuality.value.trim().toLowerCase();
   const colorSearch = mergeFilterColor.value.trim().toLowerCase();
+  const gsmSearch = mergeFilterGsm.value.trim().toLowerCase();
 
   if (orderSearch) {
     items = items.filter((d) => (d.partyCode || "").toLowerCase().includes(orderSearch));
@@ -944,6 +947,9 @@ const mergeDialogItems = computed(() => {
   if (colorSearch) {
     items = items.filter((d) => (d.color || "").toLowerCase().includes(colorSearch));
   }
+  if (gsmSearch) {
+    items = items.filter((d) => String(d.gsm || "").toLowerCase().includes(gsmSearch));
+  }
 
   return items.filter((d) => !mergedItemsMap.value[d.itemName]);
 });
@@ -951,13 +957,14 @@ const mergeDialogItems = computed(() => {
 const autoMergeSuggestions = computed(() => {
   const grouped = {};
   (mergeDialogItems.value || []).forEach((item) => {
-    const key = [item.partyCode || "", item.quality || "", item.color || "", item.unit || "", item.plannedDate || ""].join("||");
+    const key = [item.partyCode || "", item.quality || "", item.color || "", item.gsm || "", item.unit || "", item.plannedDate || ""].join("||");
     if (!grouped[key]) {
       grouped[key] = {
         key,
         partyCode: item.partyCode || "",
         quality: item.quality || "",
         color: item.color || "",
+        gsm: item.gsm || "",
         unit: item.unit || "",
         plannedDate: item.plannedDate || "",
         items: [],
@@ -1178,7 +1185,7 @@ async function createMergeFromDialog() {
     return;
   }
 
-  const label = window.prompt("Merge label", `${first.partyCode} ${first.quality} ${first.color}`) || "";
+  const label = window.prompt("Merge label", `${first.partyCode} ${first.quality} ${first.color} ${first.gsm}GSM`) || "";
   if (!label.trim()) return;
 
   try {
@@ -1691,7 +1698,7 @@ onBeforeUnmount(() => {
 
 .pt-merge-filters {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
   padding: 12px 16px;
   border-bottom: 1px solid #e5e7eb;

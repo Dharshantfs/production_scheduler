@@ -6398,12 +6398,12 @@ def get_planning_sheet_pp_id(planning_sheet_name):
 # ============================================================================
 
 def _get_item_merge_key(item_name):
-    """Get order_code + quality + color key for merge validation."""
+    """Get order_code + quality + color + gsm key for merge validation."""
     try:
         item = frappe.db.get_value(
             "Planning Sheet Item",
             item_name,
-            ["custom_quality", "color", "parent"],
+            ["custom_quality", "color", "gsm", "parent"],
             as_dict=True
         )
         if not item:
@@ -6412,14 +6412,15 @@ def _get_item_merge_key(item_name):
         ps = frappe.db.get_value("Planning sheet", item.get("parent"), "party_code")
         quality = (item.get("custom_quality") or "").strip()
         color = (item.get("color") or "").strip()
+        gsm = str(item.get("gsm") or "").strip()
         
-        return f"{ps}||{quality}||{color}"
+        return f"{ps}||{quality}||{color}||{gsm}"
     except Exception:
         return None
 
 
 def _validate_merge_items(item_names):
-    """Validate that all items have same order_code + quality + color."""
+    """Validate that all items have same order_code + quality + color + gsm."""
     if not item_names or len(item_names) < 2:
         return True, "At least 2 items required to merge"
     
@@ -6432,7 +6433,7 @@ def _validate_merge_items(item_names):
     
     # All keys must be identical
     if len(set(keys)) != 1:
-        return False, "All items must have same Order Code + Quality + Color to merge"
+        return False, "All items must have same Order Code + Quality + Color + GSM to merge"
     
     return True, "Valid"
 
