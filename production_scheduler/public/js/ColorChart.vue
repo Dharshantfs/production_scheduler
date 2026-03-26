@@ -118,6 +118,23 @@
       <button class="cc-clear-btn" style="color: #7c3aed; border-color: #7c3aed; margin-left: 8px; font-weight:600;" @click="syncAllPlanCodes" title="Recalculate Plan Codes for all existing sheets">
         📂 Sync Plan Codes
       </button>
+      <button 
+        class="cc-clear-btn" 
+        :style="{ color: mergeMode ? '#dc2626' : '#6b7280', borderColor: mergeMode ? '#dc2626' : '#6b7280', marginLeft: '8px', fontWeight: '600' }" 
+        @click="toggleMergeMode" 
+        title="Enable/Disable merge mode for grouping orders"
+      >
+        {{ mergeMode ? '🔗 Merge Mode ON' : '🔓 Merge Mode OFF' }}
+      </button>
+      <button 
+        v-if="mergeMode && selectedForMerge.size >= 2"
+        class="cc-clear-btn" 
+        style="color: #059669; border-color: #059669; margin-left: 8px; font-weight: 600;" 
+        @click="createMergeFromSelection" 
+        title="Create merge group from selected items"
+      >
+        ✅ Create Merge ({{ selectedForMerge.size }})
+      </button>
       <button v-if="hasRecentlyReset" class="cc-clear-btn" style="color: #ca8a04; border-color: #ca8a04; margin-left: 8px; font-weight:600;" @click="restoreWhiteOrders" title="Restore accidentally cleared white orders">
         🛠️ Restore Whites
       </button>
@@ -210,12 +227,24 @@
                 <div
                 v-else
                 class="cc-card"
+                :class="{ 'cc-card-merged': mergedItemsMap[entry.itemName], 'cc-card-selected': selectedForMerge.has(entry.itemName) }"
                 :data-name="entry.name"
                 :data-item-name="entry.itemName"
                 :data-color="entry.color"
                 :data-planning-sheet="entry.planningSheet"
-                @click="openForm(entry.planningSheet)"
+                @click="mergeMode ? toggleItemSelection(entry.itemName) : openForm(entry.planningSheet)"
                 >
+                <div v-if="mergeMode" class="cc-card-checkbox" style="position: absolute; top: 4px; left: 4px; z-index: 10;">
+                    <input 
+                        type="checkbox" 
+                        :checked="selectedForMerge.has(entry.itemName)"
+                        @click.stop="toggleItemSelection(entry.itemName)"
+                        style="width: 18px; height: 18px; cursor: pointer;"
+                    />
+                </div>
+                <div v-if="mergedItemsMap[entry.itemName]" style="position: absolute; top: 4px; right: 4px; z-index: 10; font-size: 18px; title='' title='Part of merge group'>
+                    🔗
+                </div>
                 <div class="cc-card-left">
                     <div
                     class="cc-color-swatch"
@@ -734,6 +763,12 @@ const filterUnit = ref("");
 const hasRecentlyReset = ref(false);
 const filterStatus = ref("");
 const selectedPlan = ref("Default");
+
+// Merge mode state
+const mergeMode = ref(false);
+const merges = ref([]);  // Stores all active merges for the current view
+const mergedItemsMap = ref({});  // Map of item_name -> merge_id
+const selectedForMerge = ref(new Set());  // Set of selected item names
 
 // Flatpickr ref
 const datePickerInput = ref(null);
@@ -1679,10 +1714,92 @@ function clearFilters() {
   filterUnit.value = "";
   filterStatus.value = "";
   selectedPlan.value = "Default";
-  // Reset all unit configs to default? Or keep them?
-  // Let's keep them or reset them. User might want to clear filters but keep sort.
-  // We'll leave unitSortConfig as is.
+  mergeMode.value = false;
+  selectedForMerge.value.clear();
   fetchData();
+}
+
+function toggleMergeMode() {
+  mergeMode.value = !mergeMode.value;
+  selectedForMerge.value.clear();
+  if (!mergeMode.value) {
+    // When disabling merge mode, reload data to show individual items again
+    fetchData();
+  }
+}
+
+async function loadMergeData(statusDate) {
+  """Load all active merges for the current date/unit/plan."""
+  if (!statusDate) return;
+  
+  try {
+    const res = await frappe.call({
+      method: "production_scheduler.api.get_merges_for_date",
+      args: {
+        date: statusDate,
+        unit: filterUnit.value || null,
+        plan_name: selectedPlan.value
+      }
+    });
+    
+    if (res.message) {
+      merges.value = res.message;
+      
+      // Build reverse lookup map
+      mergedItemsMap.value = {};
+      res.message.forEach(merge => {
+        const items = Array.isArray(merge.merged_items) ? merge.merged_items : [];
+        items.forEach(itemName => {
+          mergedItemsMap.value[itemName] = merge.name;
+        });
+      });
+    }
+  } catch (e) {
+    console.error("Failed to load merges:", e);
+    merges.value = [];
+    mergedItemsMap.value = {};
+  }
+}
+
+function toggleItemSelection(itemName) {
+  if (selectedForMerge.value.has(itemName)) {
+    selectedForMerge.value.delete(itemName);
+  } else {
+    selectedForMerge.value.add(itemName);
+  }
+}
+
+async function createMergeFromSelection() {
+  if (selectedForMerge.value.size < 2) {
+    frappe.msgprint("Please select at least 2 items to merge");
+    return;
+  }
+  
+  const items = Array.from(selectedForMerge.value);
+  const label = prompt("Enter merge label (e.g., 'Group A'):", `Merge ${items.length} items`);
+  if (!label) return;
+  
+  try {
+    const res = await frappe.call({
+      method: "production_scheduler.api.create_merge",
+      args: {
+        date: filterOrderDate.value,
+        unit: filterUnit.value || "Unit 1",
+        plan_name: selectedPlan.value,
+        item_names: JSON.stringify(items),
+        merge_label: label
+      }
+    });
+    
+    if (res.message && res.message.status === "success") {
+      frappe.msgprint(`Merge created successfully: ${label}`);
+      selectedForMerge.value.clear();
+      await loadMergeData(filterOrderDate.value);
+    }
+  } catch (e) {
+    frappe.msgprint("Error creating merge: " + (e.message || String(e)));
+    console.error(e);
+  }
 }
 
 // Find matching color group by checking if color name contains any keyword
@@ -4483,6 +4600,9 @@ async function fetchData() {
     const statusDate = filterOrderDate.value ? (String(filterOrderDate.value).includes(",") ? String(filterOrderDate.value).split(",")[0] : filterOrderDate.value) : args.start_date;
 
     if (statusDate) {
+        // Load merge data for current view
+        await loadMergeData(statusDate);
+        
         for (const unit of units) {
             const seqRes = await frappe.call({
                 method: "production_scheduler.api.get_color_sequence",

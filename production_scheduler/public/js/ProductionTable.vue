@@ -24,8 +24,8 @@
         <input type="month" v-model="filterMonth" @change="fetchData" />
       </div>
       <div class="cc-filter-item">
-        <label>Party Code</label>
-        <input type="text" v-model="filterPartyCode" placeholder="Search party..." @input="fetchData" />
+        <label>Order Code</label>
+        <input type="text" v-model="filterPartyCode" placeholder="Search order..." @input="fetchData" />
       </div>
       <div class="cc-filter-item">
         <label>Customer</label>
@@ -78,7 +78,7 @@
                     <th style="width: 36px;">DRAG</th>
                         <th style="width: 80px;">DATE</th>
                         <th style="width: 80px;">DAY</th>
-                        <th style="width: 100px;">PARTY CODE</th>
+                        <th style="width: 100px;">ORDER CODE</th>
                         <th style="width: 150px;">PARTY NAME</th>
                         <th style="width: 120px;">PLAN CODE</th>
                         <th style="width: 80px;">QUALITY</th>

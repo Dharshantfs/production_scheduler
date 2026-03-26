@@ -291,3 +291,62 @@
     background: #cbd5e1;
     border-radius: 4px;
 }
+/* ============================================
+   Production Merge Feature Styles
+   ============================================ */
+
+/* Merge Card States */
+.cc-card-selected {
+    border: 2px solid #059669 !important;
+    background-color: #ecfdf5 !important;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+.cc-card-merged {
+    border: 2px solid #3b82f6 !important;
+    opacity: 0.8;
+}
+
+.cc-card.cc-card-merged.cc-card-selected {
+    border: 2px solid #8b5cf6 !important;
+    background-color: #faf5ff !important;
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.cc-card-checkbox {
+    user-select: none;
+}
+
+.cc-card-checkbox input[type="checkbox"] {
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border: 2px solid #cbd5e1;
+    border-radius: 4px;
+    outline: none;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.cc-card-checkbox input[type="checkbox"]:hover {
+    border-color: #059669;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.1);
+}
+
+.cc-card-checkbox input[type="checkbox"]:checked {
+    background: #059669;
+    border-color: #059669;
+}
+
+.cc-card-checkbox input[type="checkbox"]:checked::after {
+    content: "?";
+    display: block;
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+    text-align: center;
+    line-height: 14px;
+}

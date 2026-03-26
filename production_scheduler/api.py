@@ -6362,3 +6362,184 @@ def get_planning_sheet_pp_id(planning_sheet_name):
         return {"status": "error", "message": "Unable to fetch Production Plan"}
 
 
+# ============================================================================
+# PRODUCTION MERGE APIs
+# ============================================================================
+
+def _get_item_merge_key(item_name):
+    """Get order_code + quality + color key for merge validation."""
+    try:
+        item = frappe.db.get_value(
+            "Planning Sheet Item",
+            item_name,
+            ["custom_quality", "color", "parent"],
+            as_dict=True
+        )
+        if not item:
+            return None
+        
+        ps = frappe.db.get_value("Planning sheet", item.get("parent"), "party_code")
+        quality = (item.get("custom_quality") or "").strip()
+        color = (item.get("color") or "").strip()
+        
+        return f"{ps}||{quality}||{color}"
+    except Exception:
+        return None
+
+
+def _validate_merge_items(item_names):
+    """Validate that all items have same order_code + quality + color."""
+    if not item_names or len(item_names) < 2:
+        return True, "At least 2 items required to merge"
+    
+    keys = []
+    for item_name in item_names:
+        key = _get_item_merge_key(item_name)
+        if not key:
+            return False, f"Item {item_name} not found or invalid"
+        keys.append(key)
+    
+    # All keys must be identical
+    if len(set(keys)) != 1:
+        return False, "All items must have same Order Code + Quality + Color to merge"
+    
+    return True, "Valid"
+
+
+def _get_merge_row_name(merged_items):
+    """Generate a safe row name from merged items."""
+    import hashlib
+    items_str = ",".join(sorted(merged_items))
+    hash_suffix = hashlib.md5(items_str.encode()).hexdigest()[:6]
+    return f"MERGE_{hash_suffix}"
+
+
+@frappe.whitelist()
+def create_merge(date, unit, plan_name, item_names, merge_label=None):
+    """Create a new Production Merge record."""
+    if isinstance(item_names, str):
+        import json
+        item_names = json.loads(item_names)
+    
+    if not isinstance(item_names, list):
+        frappe.throw(_("item_names must be a list or JSON array"))
+    
+    # Validate merge constraints
+    valid, msg = _validate_merge_items(item_names)
+    if not valid:
+        frappe.throw(_(msg))
+    
+    # Check for overlap with existing merges
+    existing_merges = frappe.db.sql("""
+        SELECT name, merged_items
+        FROM `tabProduction Merge`
+        WHERE date = %s AND unit = %s AND plan_name = %s AND status = 'Active'
+    """, (date, unit, plan_name), as_dict=True)
+    
+    for merge in existing_merges:
+        import json
+        existing_items = json.loads(merge.get("merged_items") or "[]")
+        overlap = set(item_names) & set(existing_items)
+        if overlap:
+            frappe.throw(_("Items already in another merge: {}").format(", ".join(overlap)))
+    
+    # Create new merge record
+    import json
+    merge_doc = frappe.get_doc({
+        "doctype": "Production Merge",
+        "plan_name": plan_name,
+        "date": date,
+        "unit": unit,
+        "merge_label": merge_label or _get_merge_row_name(item_names),
+        "status": "Active",
+        "merged_items": json.dumps(item_names)
+    })
+    merge_doc.insert()
+    
+    return {"status": "success", "merge_id": merge_doc.name}
+
+
+@frappe.whitelist()
+def update_merge(merge_id, merge_label=None, status=None):
+    """Update merge label or status."""
+    if not frappe.db.exists("Production Merge", merge_id):
+        frappe.throw(_("Merge record not found"))
+    
+    merge_doc = frappe.get_doc("Production Merge", merge_id)
+    
+    if merge_label:
+        merge_doc.merge_label = merge_label
+    
+    if status and status in ["Active", "Inactive"]:
+        merge_doc.status = status
+    
+    merge_doc.save()
+    return {"status": "success"}
+
+
+@frappe.whitelist()
+def delete_merge(merge_id):
+    """Delete a merge record and revert items to original positions."""
+    if not frappe.db.exists("Production Merge", merge_id):
+        frappe.throw(_("Merge record not found"))
+    
+    frappe.delete_doc("Production Merge", merge_id)
+    return {"status": "success"}
+
+
+@frappe.whitelist()
+def get_merges_for_date(date, unit=None, plan_name=None):
+    """Fetch all active merges for a specific date/unit/plan."""
+    filters = ["date = %s", "status = 'Active'"]
+    params = [date]
+    
+    if unit:
+        filters.append("unit = %s")
+        params.append(unit)
+    
+    if plan_name:
+        filters.append("plan_name = %s")
+        params.append(plan_name)
+    
+    where_clause = " AND ".join(filters)
+    
+    merges = frappe.db.sql(f"""
+        SELECT name, unit, plan_name, date, merge_label, status, merged_items
+        FROM `tabProduction Merge`
+        WHERE {where_clause}
+        ORDER BY creation ASC
+    """, tuple(params), as_dict=True)
+    
+    # Parse merged_items JSON for each merge
+    import json
+    for merge in merges:
+        try:
+            merge["merged_items"] = json.loads(merge.get("merged_items") or "[]")
+        except:
+            merge["merged_items"] = []
+    
+    return merges
+
+
+@frappe.whitelist()
+def sync_merge_planned_date(merge_id, new_date):
+    """Sync planned_date change from merged row back to all items in merge."""
+    if not frappe.db.exists("Production Merge", merge_id):
+        frappe.throw(_("Merge record not found"))
+    
+    merge_doc = frappe.get_doc("Production Merge", merge_id)
+    
+    import json
+    merged_items = json.loads(merge_doc.merged_items or "[]")
+    
+    if not merged_items:
+        return {"status": "success", "updated": 0}
+    
+    # Update each item's planned_date if the column exists
+    updated_count = 0
+    if frappe.db.has_column("Planning Sheet Item", "custom_planned_date"):
+        for item_name in merged_items:
+            frappe.db.set_value("Planning Sheet Item", item_name, "custom_planned_date", new_date)
+            updated_count += 1
+    
+    return {"status": "success", "updated": updated_count}
