@@ -1270,9 +1270,38 @@ async function createMergeFromDialog() {
     return;
   }
 
-  const selectedKeys = new Set(selectedItems.map(getMergeRuleKey));
-  if (selectedKeys.size > 1) {
-    frappe.msgprint("Selected rows contain multiple groups. Use 'Add All Suggested' for separate merges, or select one Order Code + Quality + Color group only.");
+  const groupedByKey = {};
+  selectedItems.forEach((it) => {
+    const key = getMergeRuleKey(it);
+    if (!groupedByKey[key]) groupedByKey[key] = [];
+    groupedByKey[key].push(it);
+  });
+  const groupedSelections = Object.values(groupedByKey);
+
+  if (groupedSelections.length > 1) {
+    let success = 0;
+    let failed = 0;
+
+    for (const groupItems of groupedSelections) {
+      if ((groupItems || []).length < 2) {
+        failed += 1;
+        continue;
+      }
+
+      const firstGroupItem = groupItems[0];
+      const groupGsmSummary = Array.from(new Set(groupItems.map((it) => String(it.gsm || "-")).filter(Boolean)))
+        .sort((a, b) => Number(a) - Number(b))
+        .join(",");
+      const groupLabel = `${firstGroupItem.partyCode || ''}, ${firstGroupItem.customer_name || firstGroupItem.customer || '-'}, ${firstGroupItem.quality || ''}, ${firstGroupItem.color || ''}, GSM: ${groupGsmSummary}`;
+
+      const ok = await createMergeForItems(groupItems, groupLabel);
+      if (ok) success += 1;
+      else failed += 1;
+    }
+
+    await loadMergesForCurrentData();
+    frappe.show_alert({ message: `Merge created: ${success}, failed: ${failed}`, indicator: failed ? "orange" : "green" });
+    if (success > 0) closeMergeDialog();
     return;
   }
 
