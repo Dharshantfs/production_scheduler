@@ -5660,6 +5660,8 @@ def backfill_wo_production_plan_links(sales_order=None, item_code=None):
         "errors": [],
         "linked_items": []
     }
+    psi_pp_field = _psi_production_plan_field()
+    psi_order_sheet_field = _psi_order_sheet_field()
     
     try:
         # Find Planning Sheets
@@ -5697,12 +5699,20 @@ def backfill_wo_production_plan_links(sales_order=None, item_code=None):
                         
                         if wos and wos[0].get("production_plan"):
                             pp = wos[0]["production_plan"]
-                            frappe.db.set_value(
-                                "Planning Sheet Item",
-                                psi["name"],
-                                "custom_production_plan",
-                                pp
-                            )
+                            if psi_pp_field:
+                                frappe.db.set_value(
+                                    "Planning Sheet Item",
+                                    psi["name"],
+                                    psi_pp_field,
+                                    pp
+                                )
+                            if psi_order_sheet_field and psi_order_sheet_field != psi_pp_field:
+                                frappe.db.set_value(
+                                    "Planning Sheet Item",
+                                    psi["name"],
+                                    psi_order_sheet_field,
+                                    pp
+                                )
                             result["updated"] += 1
                             result["linked_items"].append({
                                 "psi": psi["name"],
@@ -6145,7 +6155,8 @@ def backfill_item_level_production_plan_links(planning_sheet_name=None):
     frappe.only_for("System Manager")
 
     psi_pp_field = _psi_production_plan_field()
-    if not psi_pp_field:
+    psi_order_sheet_field = _psi_order_sheet_field()
+    if not psi_pp_field and not psi_order_sheet_field:
         return {"status": "error", "message": "Planning Sheet Item production plan field not found. Run sync_custom_fields first."}
 
     filters = {}
@@ -6163,7 +6174,7 @@ def backfill_item_level_production_plan_links(planning_sheet_name=None):
     unresolved = 0
 
     for r in rows:
-        existing_pp = frappe.db.get_value("Planning Sheet Item", r.name, psi_pp_field)
+        existing_pp = _get_item_level_production_plan(r.name)
         if existing_pp:
             continue
 
@@ -6177,7 +6188,10 @@ def backfill_item_level_production_plan_links(planning_sheet_name=None):
                 pp_id = frappe.db.get_value("Planning sheet", r.parent, "production_plan")
 
         if pp_id:
-            frappe.db.set_value("Planning Sheet Item", r.name, psi_pp_field, pp_id)
+            if psi_pp_field:
+                frappe.db.set_value("Planning Sheet Item", r.name, psi_pp_field, pp_id)
+            if psi_order_sheet_field and psi_order_sheet_field != psi_pp_field:
+                frappe.db.set_value("Planning Sheet Item", r.name, psi_order_sheet_field, pp_id)
             linked += 1
         else:
             unresolved += 1
@@ -6188,7 +6202,7 @@ def backfill_item_level_production_plan_links(planning_sheet_name=None):
         "linked": linked,
         "unresolved": unresolved,
         "scanned": len(rows),
-        "field": psi_pp_field,
+        "fields": [f for f in [psi_pp_field, psi_order_sheet_field] if f],
     }
 
 
