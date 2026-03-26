@@ -5448,6 +5448,43 @@ def backfill_sales_order_item_links(sales_order=None):
     return result
 
 @frappe.whitelist()
+def get_work_orders_for_sales_order(sales_order):
+    """
+    Get all Work Orders for a given Sales Order with production details.
+    Safe server-side query bypassing Frappe security restrictions.
+    """
+    if not sales_order:
+        return []
+    
+    try:
+        wos = frappe.db.sql("""
+            SELECT 
+                name,
+                item_code,
+                production_item,
+                qty,
+                produced_qty,
+                status,
+                docstatus
+            FROM `tabWork Order`
+            WHERE sales_order = %s
+              AND docstatus < 2
+            ORDER BY creation DESC
+        """, (sales_order,), as_dict=True)
+        
+        return {
+            "status": "success",
+            "count": len(wos),
+            "work_orders": wos
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
+@frappe.whitelist()
 def debug_production_qty_mapping(planning_sheet=None, item_name=None):
     """
     Diagnostic API to debug why production_qty shows 0 for specific items.
