@@ -5776,6 +5776,114 @@ def debug_production_qty_mapping(planning_sheet=None, item_name=None):
     return result
 
 @frappe.whitelist()
+def debug_production_qty_fallback_map(planning_sheet=None, item_name=None):
+    """
+    Debug API to trace exact fallback map state and lookup keys for produced qty.
+    Shows what's in SO->PP->WO maps and why production qty resolves to specific value.
+    """
+    import json
+    result = {
+        "planning_sheet": planning_sheet,
+        "item_name": item_name,
+        "maps": {},
+        "lookup_keys": {},
+        "resolved_qty": 0,
+        "debug": []
+    }
+    
+    try:
+        if not planning_sheet or not item_name:
+            return {"status": "error", "message": "planning_sheet and item_name required"}
+        
+        item_doc = frappe.get_doc("Planning Sheet Item", item_name)
+        sheet_doc = frappe.get_doc("Planning sheet", planning_sheet)
+        
+        # Get SO
+        so = sheet_doc.sales_order or ""
+        item_code = (item_doc.item_code or "").strip()
+        order_code = (sheet_doc.get("party_code") or "").strip()
+        
+        result["lookup_keys"] = {
+            "sales_order": so,
+            "item_code": item_code,
+            "party_code": order_code
+        }
+        
+        # Query strict maps directly
+        so_names = [so] if so else []
+        
+        if so_names:
+            so_order_code_col = None
+            for c in ["order_code", "custom_order_code", "po_no", "customer_order_no"]:
+                if frappe.db.has_column("Sales Order", c):
+                    so_order_code_col = c
+                    break
+            
+            format_string_so = ','.join(['%s'] * len(so_names))
+            
+            # Strict aggregation query
+            so_order_select = "'' as so_order_code"
+            so_order_join = ""
+            so_order_group = ""
+            if so_order_code_col:
+                so_order_select = f"IFNULL(so.{so_order_code_col}, '') as so_order_code"
+                so_order_join = "LEFT JOIN `tabSales Order` so ON so.name = pps.sales_order"
+                so_order_group = ", so_order_code"
+            
+            so_item_prod_rows = frappe.db.sql(f"""
+                SELECT pps.sales_order,
+                       wo.production_item as item_code,
+                       {so_order_select},
+                       SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty,
+                       wo.name as sample_wo
+                FROM `tabWork Order` wo
+                INNER JOIN `tabProduction Plan Sales Order` pps ON pps.parent = wo.production_plan
+                {so_order_join}
+                LEFT JOIN (
+                    SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
+                    FROM `tabStock Entry` se
+                    INNER JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
+                    WHERE se.docstatus = 1
+                      AND IFNULL(se.work_order, '') != ''
+                      AND IFNULL(sed.is_finished_item, 0) = 1
+                    GROUP BY se.work_order
+                ) se_map ON se_map.work_order = wo.name
+                WHERE pps.sales_order IN ({format_string_so})
+                  AND wo.docstatus < 2
+                  AND pps.docstatus < 2
+                  AND IFNULL(wo.production_item, '') != ''
+                GROUP BY pps.sales_order, wo.production_item{so_order_group}
+            """, tuple(so_names), as_dict=True)
+            
+            result["maps"]["so_item_code_wos"] = so_item_prod_rows
+            
+            # Try exact lookups
+            for row in so_item_prod_rows:
+                so_key = (row.get("sales_order") or "").strip()
+                item_key = (row.get("item_code") or "").strip()
+                order_key = (row.get("so_order_code") or "").strip()
+                
+                if so_key == so and item_key == item_code:
+                    result["debug"].append(f"✓ Found SO+item match: {so_key}::{item_key}")
+                    if order_key == order_code:
+                        result["debug"].append(f"✓ Order code matches: {order_code}")
+                        result["resolved_qty"] = flt(row.get("produced_qty"))
+                    elif order_key:
+                        result["debug"].append(f"✗ Order code mismatch: expected='{order_code}', got='{order_key}'")
+                    else:
+                        result["debug"].append(f"✓ No SO order_code, using SO+item fallback")
+                        result["resolved_qty"] = flt(row.get("produced_qty"))
+        
+        result["status"] = "success"
+    except Exception as e:
+        result["status"] = "error"
+        result["error"] = str(e)
+        import traceback
+        result["traceback"] = traceback.format_exc()
+    
+    return result
+
+@frappe.whitelist()
 def revert_items_from_pb(item_names):
     """
     Reverts Planning Sheet Items from the Production Board.
