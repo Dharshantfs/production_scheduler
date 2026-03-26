@@ -1762,7 +1762,8 @@ const QUALITY_PRIORITY = {
 };
 
 function getQualityPriority(unit, quality) {
-  const upper = (quality || "").toUpperCase().replace(/\s+/g, "");
+    const normalized = (quality || "").toUpperCase().replace(/[^A-Z0-9]+/g, "");
+    const upper = normalized.startsWith("PREMIUM") ? "PREMIUM" : normalized;
   const unitMap = QUALITY_PRIORITY[unit] || {};
   return unitMap[upper] || 99; // Unknown quality = lowest priority
 }

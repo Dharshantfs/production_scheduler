@@ -96,15 +96,27 @@ def generate_party_code(doc):
 
 
 # --- DEFINITIONS ---
-UNIT_1 = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER"]
-UNIT_2 = ["GOLD", "SILVER", "BRONZE", "CLASSIC", "SUPER CLASSIC", "LIFE STYLE", "ECO SPECIAL", "ECO GREEN", "SUPER ECO", "ULTRA", "DELUXE"]
-UNIT_3 = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER", "BRONZE"]
-UNIT_4 = ["PREMIUM", "PLATINUM", "GOLD", "SILVER", "BRONZE", "CLASSIC", "CRT"]
+PREMIUM_SPECIAL_QUALITIES = [
+	"PREMIUM - HYDROPHOBIC",
+	"PREMIUM - FR BS5867II PART 2 TYPE B",
+	"PREMIUM - FR + ANTI MICROBIAL",
+	"PREMIUM - FR FMV SS 302",
+	"PREMIUM - HYDROPHILIC",
+	"PREMIUM - UV",
+]
+
+UNIT_1 = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER"] + PREMIUM_SPECIAL_QUALITIES
+UNIT_2 = ["GOLD", "SILVER", "BRONZE", "CLASSIC", "SUPER CLASSIC", "LIFE STYLE", "ECO SPECIAL", "ECO GREEN", "SUPER ECO", "ULTRA", "DELUXE"] + PREMIUM_SPECIAL_QUALITIES
+UNIT_3 = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER", "BRONZE"] + PREMIUM_SPECIAL_QUALITIES
+UNIT_4 = ["PREMIUM", "PLATINUM", "GOLD", "SILVER", "BRONZE", "CLASSIC", "CRT"] + PREMIUM_SPECIAL_QUALITIES
 
 QUAL_LIST = ["SUPER PLATINUM", "SUPER CLASSIC", "SUPER ECO", "ECO SPECIAL", "ECO GREEN",
 			 "ECO SPL", "LIFE STYLE", "LIFESTYLE", "PREMIUM", "PLATINUM", "CLASSIC", "CRT",
-             "DELUXE", "BRONZE", "SILVER", "ULTRA", "GOLD", "UV"]
+			 "DELUXE", "BRONZE", "SILVER", "ULTRA", "GOLD", "UV"] + PREMIUM_SPECIAL_QUALITIES
 QUAL_LIST.sort(key=len, reverse=True)
+
+def _normalize_quality_key(text):
+	return re.sub(r"[^A-Z0-9]+", "", str(text or "").upper())
 
 COL_LIST = ["BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE", "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0", "WHITE MIX", "WHITE","BRIGHT IVORY","CREAM 2.0", "CREAM 3.0", "CREAM 4.0", "CREAM 5.0", "GOLDEN YELLOW 4.0 SPL", "GOLDEN YELLOW 1.0", "GOLDEN YELLOW 2.0", "GOLDEN YELLOW 3.0", "GOLDEN YELLOW", "LEMON YELLOW 1.0", "LEMON YELLOW 3.0", "LEMON YELLOW", "BRIGHT ORANGE", "DARK ORANGE", "ORANGE 2.0", "PINK 7.0 DARK", "PINK 6.0 DARK", "DARK PINK", "BABY PINK", "PINK 1.0", "PINK 2.0", "PINK 3.0", "PINK 5.0", "CRIMSON RED", "RED", "LIGHT MAROON", "DARK MAROON", "MAROON 1.0", "MAROON 2.0", "BLUE 13.0 INK BLUE", "BLUE 12.0 SPL NAVY BLUE", "BLUE 11.0 NAVY BLUE", "BLUE 8.0 DARK ROYAL BLUE", "BLUE 7.0 DARK BLUE", "BLUE 6.0 ROYAL BLUE", "LIGHT PEACOCK BLUE", "PEACOCK BLUE", "LIGHT MEDICAL BLUE", "MEDICAL BLUE", "ROYAL BLUE", "NAVY BLUE", "SKY BLUE", "LIGHT BLUE", "BLUE 9.0", "BLUE 4.0", "BLUE 2.0", "BLUE 1.0", "BLUE", "PURPLE 4.0 BLACKBERRY", "PURPLE 1.0", "PURPLE 2.0", "PURPLE 3.0", "VIOLET", "VOILET", "GREEN 13.0 ARMY GREEN", "GREEN 12.0 OLIVE GREEN", "GREEN 11.0 DARK GREEN", "GREEN 10.0", "GREEN 9.0 BOTTLE GREEN", "GREEN 8.0 APPLE GREEN", "GREEN 7.0", "GREEN 6.0", "GREEN 5.0 GRASS GREEN", "GREEN 4.0", "GREEN 3.0 RELIANCE GREEN", "GREEN 2.0 TORQUISE GREEN", "GREEN 1.0 MINT", "MEDICAL GREEN", "RELIANCE GREEN", "PARROT GREEN", "GREEN", "SILVER 1.0", "SILVER 2.0", "LIGHT GREY", "DARK GREY", "GREY 1.0", "CHOCOLATE BROWN 2.0", "CHOCOLATE BROWN", "CHOCOLATE BLACK", "BROWN 3.0 DARK COFFEE", "BROWN 2.0 DARK", "BROWN 1.0", "CHIKOO 1.0", "CHIKOO 2.0", "BEIGE 1.0", "BEIGE 2.0", "BEIGE 3.0", "BEIGE 4.0", "BEIGE 5.0", "LIGHT BEIGE", "DARK BEIGE", "BEIGE MIX", "BLACK MIX", "COLOR MIX", "BLACK"]
 COL_LIST.sort(key=len, reverse=True)
@@ -119,7 +131,19 @@ def _populate_planning_sheet_items(ps, doc):
     Populates items from a Sales Order into a Planning Sheet.
     Includes strict de-duplication based on sales_order_item.
     """
-    existing_items = [it.sales_order_item for it in ps.items]
+	existing_items = [it.sales_order_item for it in ps.items]
+
+	# Pull exact names from Quality Master so parsed quality matches ERPNext doctype names.
+	quality_lookup = list(QUAL_LIST)
+	try:
+		qm_names = frappe.get_all("Quality Master", pluck="name") or []
+		for qn in qm_names:
+			qn_up = str(qn or "").upper().strip()
+			if qn_up and qn_up not in quality_lookup:
+				quality_lookup.append(qn_up)
+	except Exception:
+		pass
+	quality_lookup.sort(key=len, reverse=True)
     
     for it in doc.items:
         if it.name in existing_items:
@@ -190,10 +214,11 @@ def _populate_planning_sheet_items(ps, doc):
                 pass # Fallback to string matching if DB fails
 
         # Fallback to String Matching
-        search_text = " " + " ".join(words) + " "
+		search_text = " " + " ".join(words) + " "
+		search_norm = _normalize_quality_key(search_text)
         if not qual:
-            for q in QUAL_LIST:
-                if (" " + q + " ") in search_text:
+			for q in quality_lookup:
+				if _normalize_quality_key(q) and _normalize_quality_key(q) in search_norm:
                     qual = q
                     break
         if not col:
@@ -211,7 +236,8 @@ def _populate_planning_sheet_items(ps, doc):
         # UNIT determination based STRICTLY on quality priority
         unit = "Unit 1"
         if qual:
-            q_up = qual.upper().replace(" ", "")
+			q_up = _normalize_quality_key(qual)
+			q_key = "PREMIUM" if q_up.startswith("PREMIUM") else q_up
             
             QUALITY_PRIORITY = {
               "Unit 1": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5 },
@@ -228,7 +254,7 @@ def _populate_planning_sheet_items(ps, doc):
             best_score = 999
             
             for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
-                score = QUALITY_PRIORITY.get(u, {}).get(q_up)
+				score = QUALITY_PRIORITY.get(u, {}).get(q_key)
                 if score is not None and score < best_score:
                     best_score = score
                     best_unit = u
@@ -237,10 +263,10 @@ def _populate_planning_sheet_items(ps, doc):
                 unit = best_unit
             else:
                 # Fallback if not mapped
-                if q_up in UNIT_1: unit = "Unit 1"
-                elif q_up in UNIT_2: unit = "Unit 2"
-                elif q_up in UNIT_3: unit = "Unit 3"
-                elif q_up in UNIT_4: unit = "Unit 4"
+				if q_up in [_normalize_quality_key(v) for v in UNIT_1]: unit = "Unit 1"
+				elif q_up in [_normalize_quality_key(v) for v in UNIT_2]: unit = "Unit 2"
+				elif q_up in [_normalize_quality_key(v) for v in UNIT_3]: unit = "Unit 3"
+				elif q_up in [_normalize_quality_key(v) for v in UNIT_4]: unit = "Unit 4"
 
         # plannedDate auto-set for White items
         p_date = ps.ordered_date if _is_white_color(col) else None
@@ -413,10 +439,13 @@ def is_quality_allowed(unit, quality):
 	if not quality or not unit: return True
 	if unit == "Unit 2": return True # As per user request, all qualities allowed in Unit 2
 	if unit not in UNIT_QUALITY_MAP: return True
-	
-	# Match with stripping and upper, removing spaces to handle "LIFE STYLE" vs "LIFESTYLE"
-	q_match = quality.upper().replace(" ", "")
-	allowed = [q.upper().replace(" ", "") for q in UNIT_QUALITY_MAP[unit]]
+
+	# Allow premium special variants in all units.
+	q_match = _normalize_quality_key(quality)
+	if q_match in [_normalize_quality_key(v) for v in PREMIUM_SPECIAL_QUALITIES]:
+		return True
+
+	allowed = [_normalize_quality_key(q) for q in UNIT_QUALITY_MAP[unit]]
 	return q_match in allowed
 
 def is_sheet_locked(sheet_name):
@@ -1206,15 +1235,16 @@ def find_best_slot(item_qty_tons, quality, preferred_unit, start_date, recursion
 def get_preferred_unit(quality):
 	"""Determines the best unit based on Item Quality."""
 	if not quality: return "Unit 1"
-	
-	q_up = quality.upper().strip()
+
+	q_up = _normalize_quality_key(quality)
+	q_key = "PREMIUM" if q_up.startswith("PREMIUM") else q_up
 	QUALITY_PRIORITY = {
-		"Unit 1": { "PREMIUM": 1, "PLATINUM": 2, "SUPER PLATINUM": 3, "GOLD": 4, "SILVER": 5 },
+		"Unit 1": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5 },
 		"Unit 2": { 
-			"GOLD": 1, "SILVER": 2, "BRONZE": 3, "CLASSIC": 4, "SUPER CLASSIC": 5, 
-			"LIFE STYLE": 6, "ECO SPECIAL": 7, "ECO GREEN": 8, "SUPER ECO": 9, "ULTRA": 10, "DELUXE": 11 
+			"GOLD": 1, "SILVER": 2, "BRONZE": 3, "CLASSIC": 4, "SUPERCLASSIC": 5, 
+			"LIFESTYLE": 6, "ECOSPECIAL": 7, "ECOGREEN": 8, "SUPERECO": 9, "ULTRA": 10, "DELUXE": 11 
 		},
-		"Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPER PLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
+		"Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
 		"Unit 4": { "PREMIUM": 1, "GOLD": 2, "SILVER": 3, "BRONZE": 4, "CLASSIC": 5, "CRT": 5 }
 	}
 	
@@ -1222,7 +1252,7 @@ def get_preferred_unit(quality):
 	best_score = 999
 	
 	for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
-		score = QUALITY_PRIORITY.get(u, {}).get(q_up)
+		score = QUALITY_PRIORITY.get(u, {}).get(q_key)
 		if score is not None and score < best_score:
 			best_score = score
 			best_unit = u
@@ -1231,10 +1261,10 @@ def get_preferred_unit(quality):
 		return best_unit
 
 	# Fallback if quality not mapped in priority dict
-	if q_up in UNIT_QUALITY_MAP.get("Unit 1", []): return "Unit 1"
-	if q_up in UNIT_QUALITY_MAP.get("Unit 2", []): return "Unit 2"
-	if q_up in UNIT_QUALITY_MAP.get("Unit 3", []): return "Unit 3"
-	if q_up in UNIT_QUALITY_MAP.get("Unit 4", []): return "Unit 4"
+	if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 1", [])]: return "Unit 1"
+	if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 2", [])]: return "Unit 2"
+	if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 3", [])]: return "Unit 3"
+	if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 4", [])]: return "Unit 4"
 	return "Unit 1"
 
 def generate_plan_code(date_str, unit, plan_name):
