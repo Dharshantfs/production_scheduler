@@ -191,29 +191,29 @@ def _populate_planning_sheet_items(ps, doc):
             q_code = item_code_str[3:6]
             c_code = item_code_str[6:9]
             
-            # Use specific fields for lookup based on get_master_code definitions
+            # Look up Quality
             try:
                 qual_name = frappe.db.get_value("Quality Master", {"short_code": q_code}, "name") or \
                            frappe.db.get_value("Quality Master", {"code": q_code}, "name") or \
                            frappe.db.get_value("Quality Master", {"quality_code": q_code}, "name")
                 if qual_name:
                     qual = qual_name
-                
-                # Color Lookup: Try all possible code fields and fetch 'name' (usually ID) or 'colour_name'
-                # From screenshot, 'name' column contains labels like 'BROWN 1.0'
-                color_name = None
-                for fld in ["colour_code", "color_code", "custom_color_code", "short_code", "code"]:
-                    res = frappe.db.get_value("Colour Master", {fld: c_code}, ["name", "colour_name", "color_name"], as_dict=True)
-                    if res:
-                        color_name = res.get("name") or res.get("colour_name") or res.get("color_name")
-                        break
-                
-                if color_name:
-                    col = color_name.upper().strip()
-            except Exception:
-                pass # Fallback to string matching if DB fails
+            except Exception as e:
+                frappe.logger().debug(f"Quality lookup failed for {it.item_code}: {str(e)}")
+            
+            # Look up Color using helper function
+            try:
+                color_result = _get_color_by_code(c_code)
+                if color_result:
+                    col = color_result
+                else:
+                    frappe.logger().warning(
+                        f"[Planning Sheet] Item {it.item_code}: Color code '{c_code}' not found in Colour Master"
+                    )
+            except Exception as e:
+                frappe.logger().error(f"[Planning Sheet] Error extracting color from {it.item_code}: {str(e)}")
 
-        # Fallback to String Matching
+        # Fallback to String Matching (if code-based lookup didn't work)
         search_text = " " + " ".join(words) + " "
         search_norm = _normalize_quality_key(search_text)
         if not qual:
@@ -318,6 +318,36 @@ def _is_white_color(color):
         return False
     c = color.upper().strip()
     return any(w == c for w in WHITE_COLORS)
+
+def _get_color_by_code(color_code):
+    """
+    Look up color in Colour Master by color code.
+    Returns the color name if found, None otherwise.
+    """
+    if not color_code:
+        return None
+    
+    color_code = str(color_code).strip()
+    
+    # Try multiple field names  in order of preference
+    fields_to_try = ["custom_color_code", "colour_code", "color_code", "short_code", "code"]
+    
+    for field in fields_to_try:
+        try:
+            result = frappe.db.get_value(
+                "Colour Master",
+                {field: color_code},
+                ["name", "colour_name", "color_name"],
+                as_dict=True
+            )
+            if result:
+                color_name = result.get("name") or result.get("colour_name") or result.get("color_name")
+                if color_name:
+                    return color_name.upper().strip()
+        except Exception:
+            pass
+    
+    return None
 
 # White colors that are auto-planned on the Production Board and excluded from Color Chart sequencing
 WHITE_COLORS = {
