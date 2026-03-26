@@ -3900,7 +3900,7 @@ def create_planning_sheet_from_so(doc):
         UNIT_2_MAP = ["GOLD", "SILVER", "BRONZE", "CLASSIC", "SUPER CLASSIC", "LIFE STYLE",
                       "ECO SPECIAL", "ECO GREEN", "SUPER ECO", "ULTRA", "DELUXE"]
         UNIT_3_MAP = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER", "BRONZE"]
-		UNIT_4_MAP = ["PREMIUM", "GOLD", "SILVER", "BRONZE", "CLASSIC", "CRT"]
+        UNIT_4_MAP = ["PREMIUM", "GOLD", "SILVER", "BRONZE", "CLASSIC", "CRT"]
 
         ps = frappe.new_doc("Planning sheet")
         ps.sales_order = doc.name
