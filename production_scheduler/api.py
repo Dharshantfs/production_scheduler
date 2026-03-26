@@ -4478,6 +4478,7 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
             if cache_key in pb_sheet_cache:
                 pb_sheet_name = pb_sheet_cache[cache_key]
             else:
+                created_pb_sheet = False
                 existing = frappe.get_all("Planning sheet", filters={
                     "custom_pb_plan_name": pb_plan_name,
                     "custom_planned_date": effective_date,
@@ -4504,8 +4505,11 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
                         pb_sheet.sales_order = parent.sales_order or ""
                         pb_sheet.insert(ignore_permissions=True)
                         pb_sheet_name = pb_sheet.name
+                        created_pb_sheet = True
                     # Force custom fields via SQL
-                    if frappe.db.has_column("Planning sheet", "custom_pb_plan_name"):
+                    # IMPORTANT: only write sheet-level planned date when a new sheet is created.
+                    # Reused sheets must not have their header date overwritten.
+                    if created_pb_sheet and frappe.db.has_column("Planning sheet", "custom_pb_plan_name"):
                         frappe.db.sql("""
                             UPDATE `tabPlanning sheet`
                             SET custom_pb_plan_name = %s, custom_plan_name = %s,
@@ -4844,6 +4848,7 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
                 if cache_key in pb_sheet_cache:
                     pb_sheet_name = pb_sheet_cache[cache_key]
                 else:
+                    created_pb_sheet = False
                     # ALWAYS Reuse ANY unlocked sheet for the same SO if it exists (regardless of its header date)
                     existing = frappe.get_all("Planning sheet", filters={
                         "sales_order": parent_doc.sales_order or "",
@@ -4866,13 +4871,16 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
                             pb_sheet.sales_order = parent_doc.sales_order or ""
                             pb_sheet.insert(ignore_permissions=True)
                             pb_sheet_name = pb_sheet.name
+                            created_pb_sheet = True
 
                     # Force custom fields via SQL to ensure consistency (New OR Existing)
-                    frappe.db.sql("""
-                        UPDATE `tabPlanning sheet`
-                        SET custom_plan_name = %s, custom_planned_date = %s
-                        WHERE name = %s
-                    """, (pb_plan_name or parent_doc.get("custom_plan_name") or "Default", effective_date, pb_sheet_name))
+                    # IMPORTANT: do not overwrite custom_planned_date on reused sheets.
+                    if created_pb_sheet:
+                        frappe.db.sql("""
+                            UPDATE `tabPlanning sheet`
+                            SET custom_plan_name = %s, custom_planned_date = %s
+                            WHERE name = %s
+                        """, (pb_plan_name or parent_doc.get("custom_plan_name") or "Default", effective_date, pb_sheet_name))
 
                     pb_sheet_cache[cache_key] = pb_sheet_name
 
@@ -5169,6 +5177,156 @@ def diagnose_sales_order_planning_sheets(sales_order):
         "count": len(sheets),
         "sheets": sheets,
     }
+
+
+@frappe.whitelist()
+def revert_items_to_last_sheet_planned_date(
+    from_months=None,
+    to_month=None,
+    unit=None,
+    dry_run=1,
+):
+    """
+    Revert item-level planned dates (custom_item_planned_date) back to the sheet-level
+    planned date when items were accidentally shifted across months.
+
+    Default use-case:
+    - Source (original) months: Feb + Mar
+    - Wrong target month: Apr
+
+    Args:
+        from_months: list/int/str month numbers considered original (default: [2, 3])
+        to_month: wrong month number to revert from (default: 4)
+        unit: optional unit filter (e.g., "Unit 2")
+        dry_run: 1 to preview, 0 to apply
+    """
+    try:
+        frappe.only_for("System Manager")
+
+        if not frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+            return {"status": "error", "message": "custom_item_planned_date column not found"}
+
+        src_months = from_months
+        if src_months in (None, "", []):
+            src_months = [2, 3]
+        elif isinstance(src_months, str):
+            # Accept "2,3" or "[2,3]"
+            s = src_months.strip().strip("[]")
+            src_months = [int(x.strip()) for x in s.split(",") if x.strip()]
+        elif isinstance(src_months, int):
+            src_months = [src_months]
+        else:
+            src_months = [int(x) for x in src_months]
+
+        bad_month = int(to_month or 4)
+        dry = cint(dry_run) == 1
+
+        placeholders = ",".join(["%s"] * len(src_months))
+        params = [bad_month] + src_months
+
+        unit_sql = ""
+        if unit:
+            unit_sql = " AND COALESCE(i.unit, '') = %s"
+            params.append(unit)
+
+        # Candidate rows:
+        # - item currently in bad month (e.g., April)
+        # - parent sheet originally in source months (e.g., Feb/Mar)
+        # - parent has custom_planned_date (the intended date to restore)
+        candidates = frappe.db.sql(
+            f"""
+            SELECT
+                i.name,
+                i.parent,
+                i.unit,
+                i.custom_item_planned_date AS current_item_date,
+                p.custom_planned_date AS restore_date,
+                p.ordered_date,
+                p.custom_pb_plan_name,
+                p.custom_plan_name
+            FROM `tabPlanning Sheet Item` i
+            INNER JOIN `tabPlanning sheet` p ON p.name = i.parent
+            WHERE p.docstatus < 2
+              AND i.docstatus < 2
+              AND i.custom_item_planned_date IS NOT NULL
+              AND p.custom_planned_date IS NOT NULL
+              AND MONTH(i.custom_item_planned_date) = %s
+              AND MONTH(COALESCE(p.custom_planned_date, p.ordered_date)) IN ({placeholders})
+              {unit_sql}
+            ORDER BY p.name, i.idx
+            """,
+            tuple(params),
+            as_dict=True,
+        )
+
+        if not candidates:
+            return {
+                "status": "success",
+                "dry_run": dry,
+                "message": "No matching shifted items found.",
+                "count": 0,
+                "samples": [],
+            }
+
+        has_plan_code_col = frappe.db.has_column("Planning Sheet Item", "custom_plan_code")
+        updated = 0
+        samples = []
+
+        for r in candidates:
+            restore_date = r.get("restore_date")
+            if not restore_date:
+                continue
+
+            row_preview = {
+                "item": r.get("name"),
+                "sheet": r.get("parent"),
+                "unit": r.get("unit"),
+                "from": str(r.get("current_item_date")),
+                "to": str(restore_date),
+            }
+            if len(samples) < 100:
+                samples.append(row_preview)
+
+            if dry:
+                continue
+
+            if has_plan_code_col:
+                plan_name_for_code = r.get("custom_pb_plan_name") or r.get("custom_plan_name") or "Default"
+                new_code = generate_plan_code(str(restore_date), r.get("unit") or "Unit 1", plan_name_for_code)
+                frappe.db.sql(
+                    """
+                    UPDATE `tabPlanning Sheet Item`
+                    SET custom_item_planned_date = %s,
+                        custom_plan_code = %s
+                    WHERE name = %s
+                    """,
+                    (restore_date, new_code, r.get("name")),
+                )
+            else:
+                frappe.db.sql(
+                    """
+                    UPDATE `tabPlanning Sheet Item`
+                    SET custom_item_planned_date = %s
+                    WHERE name = %s
+                    """,
+                    (restore_date, r.get("name")),
+                )
+            updated += 1
+
+        if not dry:
+            frappe.db.commit()
+
+        return {
+            "status": "success",
+            "dry_run": dry,
+            "count": len(candidates),
+            "updated": updated,
+            "samples": samples,
+            "message": "Preview generated" if dry else f"Reverted {updated} items to previous sheet planned date",
+        }
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "revert_items_to_last_sheet_planned_date")
+        return {"status": "error", "message": "Rollback failed. See Error Log."}
 
 
 @frappe.whitelist()
