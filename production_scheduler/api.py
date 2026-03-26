@@ -5490,11 +5490,11 @@ def backfill_wo_production_plan_links(sales_order=None, item_code=None):
                         wos = frappe.db.sql("""
                             SELECT name, production_plan
                             FROM `tabWork Order`
-                            WHERE (production_item = %s OR item_code = %s)
+                            WHERE production_item = %s
                               AND docstatus < 2
                             ORDER BY creation DESC
                             LIMIT 1
-                        """, (psi_item_code, psi_item_code), as_dict=True)
+                        """, (psi_item_code,), as_dict=True)
                         
                         if wos and wos[0].get("production_plan"):
                             pp = wos[0]["production_plan"]
@@ -5581,18 +5581,17 @@ def get_work_orders_by_item_code(item_code):
         wos = frappe.db.sql("""
             SELECT 
                 name,
-                item_code,
                 production_item,
                 qty,
                 produced_qty,
                 status,
                 sales_order,
+                production_plan,
                 docstatus
             FROM `tabWork Order`
             WHERE production_item = %s
-               OR item_code = %s
             ORDER BY creation DESC
-        """, (item_code, item_code), as_dict=True)
+        """, (item_code,), as_dict=True)
         
         return {
             "status": "success",
