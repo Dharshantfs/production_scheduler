@@ -7988,21 +7988,7 @@ def create_item_spr(pp_id, planning_sheet_item_names):
         spr.shift = get_current_shift()
         spr.is_mix_roll = 0
         spr.status = "Draft"
-        
-        # Try multiple field names for Production Plan
-        if frappe.db.has_column("Shaft Production Run", "custom_production_plan"):
-            spr.custom_production_plan = pp_id
-        elif frappe.db.has_column("Shaft Production Run", "production_plan"):
-            spr.production_plan = pp_id
-        else:
-            # Log what columns actually exist
-            cols = frappe.db.sql("""
-                SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS 
-                WHERE TABLE_NAME='tabShaft Production Run' 
-                  AND COLUMN_NAME LIKE '%production%'
-            """, as_dict=True)
-            frappe.log_error(f"SPR PP field options: {cols}", "create_item_spr_field_check")
-            spr.custom_production_plan = pp_id
+        spr.production_plan = pp_id  # Correct field name
         
         # Extract order code and customer from first item's parent sheet
         first_psi = psi_list[0]
@@ -8047,8 +8033,7 @@ def create_item_spr(pp_id, planning_sheet_item_names):
         frappe.log_error(f"""
         About to insert SPR:
         - Name will be auto-generated
-        - custom_production_plan: {getattr(spr, 'custom_production_plan', 'NOT SET')}
-        - production_plan: {getattr(spr, 'production_plan', 'NOT SET')}
+        - production_plan: {spr.production_plan}
         - customer: {spr.customer}
         - custom_order_code: {spr.custom_order_code}
         - shaft_jobs count: {len(spr.shaft_jobs or [])}
@@ -8061,10 +8046,9 @@ def create_item_spr(pp_id, planning_sheet_item_names):
             error_msg = str(insert_error)
             # Try to extract validation message
             if "Production Plan is required" in error_msg:
-                frappe.log_error(f"SPR field check - has custom_production_plan? {frappe.db.has_column('Shaft Production Run', 'custom_production_plan')}", "create_item_spr_field_error")
                 return {
                     "status": "error", 
-                    "message": f"SPR validation error: {error_msg}. Production Plan field may not be configured properly."
+                    "message": f"SPR validation error: {error_msg}. Check that Production Plan {pp_id} exists."
                 }
             frappe.log_error(frappe.get_traceback(), "create_item_spr_insert")
             return {"status": "error", "message": f"Failed to create SPR: {error_msg}"}
