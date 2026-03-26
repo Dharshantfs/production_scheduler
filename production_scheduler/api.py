@@ -5291,6 +5291,163 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 
 
 @frappe.whitelist()
+def backfill_production_plan_links(sales_order=None):
+    """
+    Backfill custom_production_plan field on Planning Sheet Items.
+    Links items to their Production Plans based on Sales Order.
+    """
+    import json
+    
+    result = {
+        "updated": 0,
+        "skipped": 0,
+        "errors": []
+    }
+    
+    try:
+        # Find Planning Sheets for this SO
+        if sales_order:
+            sheets = frappe.get_all("Planning sheet", filters={"sales_order": sales_order}, fields=["name"])
+        else:
+            sheets = frappe.get_all("Planning sheet", fields=["name"])
+        
+        if not sheets:
+            return {"status": "error", "message": f"No Planning Sheets found for SO: {sales_order}"}
+        
+        sheet_names = [s["name"] for s in sheets]
+        
+        for sheet_name in sheet_names:
+            try:
+                sheet_doc = frappe.get_doc("Planning sheet", sheet_name)
+                so = sheet_doc.sales_order
+                
+                if not so:
+                    continue
+                
+                # Find Production Plans for this Sales Order
+                pps = frappe.get_all("Production Plan", 
+                    filters={"sales_order": so, "docstatus": ["<", 2]},
+                    fields=["name"],
+                    limit=1
+                )
+                
+                if not pps:
+                    result["skipped"] += 1
+                    continue
+                
+                pp_name = pps[0]["name"]
+                
+                # Update all items in this sheet
+                items = frappe.get_all("Planning Sheet Item", 
+                    filters={"parent": sheet_name},
+                    fields=["name"]
+                )
+                
+                for item in items:
+                    try:
+                        frappe.db.set_value(
+                            "Planning Sheet Item",
+                            item["name"],
+                            "custom_production_plan",
+                            pp_name
+                        )
+                        result["updated"] += 1
+                    except Exception as e:
+                        result["errors"].append(f"Item {item['name']}: {str(e)}")
+                        result["skipped"] += 1
+            
+            except Exception as e:
+                result["errors"].append(f"Sheet {sheet_name}: {str(e)}")
+        
+        frappe.db.commit()
+        result["status"] = "success"
+    
+    except Exception as e:
+        result["status"] = "error"
+        result["message"] = str(e)
+    
+    return result
+
+
+@frappe.whitelist()
+def backfill_sales_order_item_links(sales_order=None):
+    """
+    Backfill sales_order_item field on Planning Sheet Items.
+    Links items to their Sales Order Items based on item_code matching.
+    """
+    import json
+    
+    result = {
+        "updated": 0,
+        "skipped": 0,
+        "errors": []
+    }
+    
+    try:
+        # Find Planning Sheets
+        if sales_order:
+            sheets = frappe.get_all("Planning sheet", filters={"sales_order": sales_order}, fields=["name", "sales_order"])
+        else:
+            sheets = frappe.get_all("Planning sheet", fields=["name", "sales_order"])
+        
+        if not sheets:
+            return {"status": "error", "message": f"No Planning Sheets found"}
+        
+        for sheet in sheets:
+            try:
+                sheet_name = sheet["name"]
+                so = sheet["sales_order"]
+                
+                if not so:
+                    continue
+                
+                # Get all items in this Planning Sheet
+                psi_items = frappe.get_all("Planning Sheet Item",
+                    filters={"parent": sheet_name},
+                    fields=["name", "item_code"]
+                )
+                
+                # Get all Sales Order Items for this SO
+                so_items = frappe.get_all("Sales Order Item",
+                    filters={"parent": so},
+                    fields=["name", "item_code"]
+                )
+                
+                # Create mapping: item_code -> SO Item name
+                so_item_map = {soi["item_code"]: soi["name"] for soi in so_items}
+                
+                # Link Planning Sheet Items to Sales Order Items
+                for psi in psi_items:
+                    item_code = psi["item_code"]
+                    if item_code in so_item_map:
+                        so_item_name = so_item_map[item_code]
+                        try:
+                            frappe.db.set_value(
+                                "Planning Sheet Item",
+                                psi["name"],
+                                "sales_order_item",
+                                so_item_name
+                            )
+                            result["updated"] += 1
+                        except Exception as e:
+                            result["errors"].append(f"PSI {psi['name']}: {str(e)}")
+                            result["skipped"] += 1
+                    else:
+                        result["skipped"] += 1
+            
+            except Exception as e:
+                result["errors"].append(f"Sheet {sheet_name}: {str(e)}")
+        
+        frappe.db.commit()
+        result["status"] = "success"
+    
+    except Exception as e:
+        result["status"] = "error"
+        result["message"] = str(e)
+    
+    return result
+
+@frappe.whitelist()
 def debug_production_qty_mapping(planning_sheet=None, item_name=None):
     """
     Diagnostic API to debug why production_qty shows 0 for specific items.
