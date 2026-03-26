@@ -554,6 +554,12 @@ def get_unit_load(date, unit, plan_name=None, pb_only=0):
 # EQUIPMENT MAINTENANCE HELPERS
 # ===========================
 
+NON_BLOCKING_MAINTENANCE_TYPES = {"MESH CHANGE", "DIE CHANGE"}
+
+
+def _is_non_blocking_maintenance_type(maintenance_type):
+    return str(maintenance_type or "").strip().upper() in NON_BLOCKING_MAINTENANCE_TYPES
+
 @frappe.whitelist()
 def get_maintenance_windows(unit, start_date, end_date):
     """
@@ -597,7 +603,7 @@ def get_maintenance_windows(unit, start_date, end_date):
     return result
 
 def is_date_under_maintenance(unit, date_string):
-    """Check if specific date has maintenance scheduled for unit."""
+    """Check if date has BLOCKING maintenance scheduled for unit."""
     from frappe.utils import getdate
     
     if not frappe.db.exists("DocType", "Equipment Maintenance"):
@@ -605,19 +611,20 @@ def is_date_under_maintenance(unit, date_string):
     
     check_date = getdate(date_string)
     
-    count = frappe.db.sql("""
+        count = frappe.db.sql("""
         SELECT COUNT(*) as cnt
         FROM `tabEquipment Maintenance`
         WHERE unit = %s
           AND start_date <= %s
           AND end_date >= %s
           AND docstatus < 2
-    """, (unit, check_date, check_date))
+            AND UPPER(TRIM(COALESCE(maintenance_type, ''))) NOT IN ('MESH CHANGE', 'DIE CHANGE')
+        """, (unit, check_date, check_date))
     
     return count[0][0] > 0 if count else False
 
 def get_maintenance_info_on_date(unit, date_string):
-    """Get maintenance details if date is under maintenance."""
+    """Get BLOCKING maintenance details if date is under maintenance."""
     from frappe.utils import getdate
     
     if not frappe.db.exists("DocType", "Equipment Maintenance"):
@@ -632,6 +639,7 @@ def get_maintenance_info_on_date(unit, date_string):
           AND start_date <= %s
           AND end_date >= %s
           AND docstatus < 2
+                    AND UPPER(TRIM(COALESCE(maintenance_type, ''))) NOT IN ('MESH CHANGE', 'DIE CHANGE')
         LIMIT 1
     """, (unit, check_date, check_date), as_dict=True)
     
@@ -701,20 +709,30 @@ def add_equipment_maintenance(unit, maintenance_type, start_date, end_date, note
     })
     doc.insert(ignore_permissions=False)
 
-    # NEW BEHAVIOR: As soon as maintenance is added, move affected orders forward.
-    cascade_result = cascade_orders_after_maintenance_removal(unit, start_date, end_date)
-    movement_log = cascade_result.get("movement_log") or []
+    cascade_result = {"cascaded_count": 0}
+    if not _is_non_blocking_maintenance_type(maintenance_type):
+        # Blocking maintenance types move affected orders forward.
+        cascade_result = cascade_orders_after_maintenance_removal(unit, start_date, end_date)
+        movement_log = cascade_result.get("movement_log") or []
 
-    # Persist original->new date movements on the maintenance record so delete can restore backward.
-    if movement_log:
-        marker = "MAINTENANCE_CASCADE_LOG::"
-        user_notes = (notes or "").strip()
-        log_line = marker + json.dumps(movement_log, separators=(",", ":"))
-        stored_notes = f"{user_notes}\n\n{log_line}" if user_notes else log_line
-        frappe.db.set_value("Equipment Maintenance", doc.name, "notes", stored_notes, update_modified=False)
-        frappe.cache().set_value(f"maintenance_cascade_log::{doc.name}", movement_log)
+        # Persist original->new date movements on the maintenance record so delete can restore backward.
+        if movement_log:
+            marker = "MAINTENANCE_CASCADE_LOG::"
+            user_notes = (notes or "").strip()
+            log_line = marker + json.dumps(movement_log, separators=(",", ":"))
+            stored_notes = f"{user_notes}\n\n{log_line}" if user_notes else log_line
+            frappe.db.set_value("Equipment Maintenance", doc.name, "notes", stored_notes, update_modified=False)
+            frappe.cache().set_value(f"maintenance_cascade_log::{doc.name}", movement_log)
 
     frappe.db.commit()
+
+    if _is_non_blocking_maintenance_type(maintenance_type):
+        return {
+            "status": "success",
+            "message": f"{maintenance_type} scheduled for {unit} from {start_date} to {end_date}. Orders remain on the same day.",
+            "cascaded_count": 0,
+            "name": doc.name
+        }
     
     return {
         "status": "success",
@@ -1125,7 +1143,7 @@ def delete_maintenance_and_cascade(maintenance_record_name):
     maint_doc = frappe.db.get_value(
         "Equipment Maintenance",
         maintenance_record_name,
-        ["unit", "start_date", "end_date", "notes"],
+        ["unit", "start_date", "end_date", "notes", "maintenance_type"],
         as_dict=True
     )
     
@@ -1136,10 +1154,23 @@ def delete_maintenance_and_cascade(maintenance_record_name):
     start_date = maint_doc.get("start_date")
     end_date = maint_doc.get("end_date")
     notes = maint_doc.get("notes")
+    maintenance_type = maint_doc.get("maintenance_type")
     movement_log = frappe.cache().get_value(f"maintenance_cascade_log::{maintenance_record_name}") or _extract_maintenance_cascade_log(notes)
     
     # Delete the maintenance record
     frappe.delete_doc("Equipment Maintenance", maintenance_record_name)
+
+    if _is_non_blocking_maintenance_type(maintenance_type):
+        try:
+            frappe.cache().delete_value(f"maintenance_cascade_log::{maintenance_record_name}")
+        except Exception:
+            pass
+        return {
+            "status": "success",
+            "message": "Maintenance removed.",
+            "restored_count": 0,
+            "skipped_count": 0
+        }
 
     restore_result = _restore_orders_to_original_dates(unit, movement_log)
     if restore_result.get("restored_count", 0) == 0:
