@@ -6498,20 +6498,19 @@ def create_merge(date, unit, plan_name, item_names, merge_label=None):
 
     base_name = f"PMRG-{str(unit).replace(' ', '')}-{str(date)}"
     last_error = None
-    for _ in range(5):
+    for attempt_idx in range(5):
         unique_name = f"{base_name}-{frappe.generate_hash(length=6)}"
-        merge_doc = frappe.get_doc({
-            "doctype": "Production Merge",
-            "name": unique_name,
-            "plan_name": plan_name,
-            "date": date,
-            "unit": unit,
-            "merge_label": merge_label or _get_merge_row_name(item_names),
-            "status": "Active",
-            "merged_items": json.dumps(item_names)
-        })
+        merge_doc = frappe.new_doc("Production Merge")
+        merge_doc.name = unique_name
+        merge_doc.flags.name_set = True
+        merge_doc.plan_name = plan_name
+        merge_doc.date = date
+        merge_doc.unit = unit
+        merge_doc.merge_label = merge_label or _get_merge_row_name(item_names)
+        merge_doc.status = "Active"
+        merge_doc.merged_items = json.dumps(item_names)
         try:
-            merge_doc.insert()
+            merge_doc.insert(ignore_permissions=True)
             return {"status": "success", "merge_id": merge_doc.name}
         except DuplicateEntryError as e:
             last_error = e
