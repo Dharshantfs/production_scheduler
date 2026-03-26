@@ -2389,10 +2389,20 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             if frappe.db.has_column("Work Order", c) and not wo_order_code_col:
                 wo_order_code_col = c
 
+        # Build order_code select safely - handle missing columns
+        if pp_order_code_col and wo_order_code_col:
+            order_code_select = f"IFNULL(pp.{pp_order_code_col}, IFNULL(wo.{wo_order_code_col}, '')) as order_code"
+        elif pp_order_code_col:
+            order_code_select = f"IFNULL(pp.{pp_order_code_col}, '') as order_code"
+        elif wo_order_code_col:
+            order_code_select = f"IFNULL(wo.{wo_order_code_col}, '') as order_code"
+        else:
+            order_code_select = "'' as order_code"
+
         so_item_prod_rows = frappe.db.sql(f"""
             SELECT pps.sales_order,
                    wo.production_item as item_code,
-                   IFNULL(pp.{pp_order_code_col}, IFNULL(wo.{wo_order_code_col}, '')) as order_code,
+                   {order_code_select},
                    SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty,
                    COUNT(wo.name) as wo_count
             FROM `tabWork Order` wo
