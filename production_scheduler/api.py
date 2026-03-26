@@ -2299,6 +2299,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     pp_wo_map = {}
     so_item_produced_map = {}
     so_item_wo_count_map = {}
+    item_pp_map = {}
+    pp_produced_map = {}
+    pp_wo_count_map = {}
     
     valid_pps = set()
     
@@ -2363,6 +2366,45 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
     # Item-level produced quantity map via sales_order_item/custom_sales_order_item
     if sheet_names:
+        # 1) Strongest link: Planning Sheet Item -> Production Plan -> Work Order
+        psi_pp_field = _psi_production_plan_field()
+        if psi_pp_field and frappe.db.has_column("Planning Sheet Item", psi_pp_field):
+            fmt_sheet = ','.join(['%s'] * len(sheet_names))
+            psi_pp_rows = frappe.db.sql(f"""
+                SELECT name as psi_name, {psi_pp_field} as production_plan
+                FROM `tabPlanning Sheet Item`
+                WHERE parent IN ({fmt_sheet})
+                  AND IFNULL({psi_pp_field}, '') != ''
+            """, tuple(sheet_names), as_dict=True)
+
+            pp_names = []
+            for r in psi_pp_rows:
+                psi_name = r.get("psi_name")
+                pp_name = r.get("production_plan")
+                if psi_name and pp_name:
+                    item_pp_map[psi_name] = pp_name
+                    pp_names.append(pp_name)
+
+            if pp_names:
+                pp_names = list(set(pp_names))
+                fmt_pp = ','.join(['%s'] * len(pp_names))
+                pp_wo_rows = frappe.db.sql(f"""
+                    SELECT production_plan,
+                           SUM(IFNULL(produced_qty, 0)) as produced_qty,
+                           COUNT(name) as wo_count
+                    FROM `tabWork Order`
+                    WHERE production_plan IN ({fmt_pp})
+                      AND docstatus < 2
+                    GROUP BY production_plan
+                """, tuple(pp_names), as_dict=True)
+
+                for row in pp_wo_rows:
+                    pp = row.get("production_plan")
+                    if pp:
+                        pp_produced_map[pp] = flt(row.get("produced_qty"))
+                        pp_wo_count_map[pp] = cint(row.get("wo_count"))
+
+        # 2) Fallback link: Planning Sheet Item sales_order_item -> Work Order
         psi_so_item_col = "sales_order_item" if frappe.db.has_column("Planning Sheet Item", "sales_order_item") else "custom_sales_order_item"
         wo_so_item_col = "sales_order_item" if frappe.db.has_column("Work Order", "sales_order_item") else "custom_sales_order_item"
 
@@ -2471,6 +2513,15 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 if not is_white and not item_pdate:
                     continue
 
+            so_item_key = item.get("sales_order_item") or item.get("custom_sales_order_item")
+            item_pp = item_pp_map.get(item.get("name"))
+            item_level_produced = pp_produced_map.get(item_pp)
+            item_level_wo_count = pp_wo_count_map.get(item_pp, 0)
+
+            if item_level_produced is None:
+                item_level_produced = so_item_produced_map.get(so_item_key, 0)
+                item_level_wo_count = so_item_wo_count_map.get(so_item_key, 0)
+
             data.append({
                 "name": "{}-{}".format(sheet.name, item.get("idx", 0)),
                 "itemName": item.name,
@@ -2498,10 +2549,10 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "dod": str(sheet.dod) if sheet.dod else "",
                 "delivery_status": so_status_map.get(sheet.sales_order) or "Not Delivered",
                 "has_pp": sheet_has_pp,
-                "has_wo": bool(sheet_has_wo or so_item_wo_count_map.get(item.get("sales_order_item") or item.get("custom_sales_order_item"), 0)),
-                "produced_qty": flt(so_item_produced_map.get(item.get("sales_order_item") or item.get("custom_sales_order_item"), 0)),
-                "salesOrderItem": item.get("sales_order_item") or item.get("custom_sales_order_item"),
-                "actual_produced_qty": flt(so_item_produced_map.get(item.get("sales_order_item") or item.get("custom_sales_order_item"), 0)),
+                "has_wo": bool(item_level_wo_count),
+                "produced_qty": flt(item_level_produced),
+                "salesOrderItem": so_item_key,
+                "actual_produced_qty": flt(item_level_produced),
                 "isSplit": item.get("custom_is_split")
             })
 
