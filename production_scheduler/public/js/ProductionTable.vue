@@ -199,8 +199,10 @@
                             </td>
                           </tr>
 
-                          <tr v-else class="pt-merge-row">
-                            <td class="cell-center" style="color: #7c3aed; font-size: 15px;">🔗</td>
+                          <tr v-else class="pt-merge-row pt-draggable-row" :data-merge-id="row.mergeId">
+                            <td class="cell-center" style="cursor: grab; color: #7c3aed; font-size: 15px;" :title="tableReorderLocked ? 'Unlock reorder to drag' : 'Drag merged row'">
+                              <span class="pt-drag-handle">🔗</span>
+                            </td>
                             <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-center font-bold">
                               {{ formatDate(dateGroup.date) }}
                             </td>
@@ -708,9 +710,28 @@ async function persistDateGroupOrder(tbodyEl) {
   if (!unit || !date) return;
 
   const rows = Array.from(tbodyEl.querySelectorAll('.pt-draggable-row'));
-  const items = rows
-    .map((row, idx) => ({
-      name: row.dataset.itemName,
+  const expandedNames = [];
+
+  // Persist merge rows as a contiguous block by expanding to all child item names.
+  rows.forEach((row) => {
+    const mergeId = row.dataset.mergeId;
+    if (mergeId) {
+      const unitGroup = tableData.value.find((g) => normalizeUnit(g.unit) === normalizeUnit(unit));
+      const dateGroup = unitGroup?.dates?.find((d) => String(d.date) === String(date));
+      const mergeRow = dateGroup?.rows?.find((r) => r.type === 'merge' && r.mergeId === mergeId);
+      const mergeItemNames = (mergeRow?.items || []).map((it) => it.itemName).filter(Boolean);
+      expandedNames.push(...mergeItemNames);
+      return;
+    }
+
+    if (row.dataset.itemName) {
+      expandedNames.push(row.dataset.itemName);
+    }
+  });
+
+  const items = expandedNames
+    .map((name, idx) => ({
+      name,
       unit,
       date,
       index: idx + 1,
