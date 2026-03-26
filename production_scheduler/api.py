@@ -7986,8 +7986,8 @@ def debug_item_pp_id(item_name):
 def create_item_spr(pp_id, planning_sheet_item_names):
 
     """
-    Create a Shaft Production Run (SPR) for a Production Plan item.
-    Auto-populates from the Production Plan and Planning Sheet Item data.
+    Create a Shaft Production Run (SPR) for a Production Plan.
+    Fetches shaft details from the Production Plan's shaft_details table.
     
     Args:
         pp_id: Production Plan ID
@@ -8022,46 +8022,56 @@ def create_item_spr(pp_id, planning_sheet_item_names):
         spr.shift = get_current_shift()
         spr.is_mix_roll = 0
         spr.status = "Draft"
-        spr.production_plan = pp_id  # Correct field name
+        spr.production_plan = pp_id
         
-        # Extract order code and customer from first item's parent sheet
+        # Extract order code and customer from first item's parent sheet and PP
         first_psi = psi_list[0]
         parent_sheet = frappe.get_doc("Planning sheet", first_psi.parent)
         
         spr.custom_order_code = parent_sheet.party_code or ""
         spr.customer = pp.customer or parent_sheet.customer or ""
         
-        # Add shaft jobs for each Planning Sheet Item
-        item_codes = []
+        # Fetch shaft details from Production Plan (not from Planning Sheet Items)
+        # Copy shaft details from PP to SPR
+        if hasattr(pp, 'shaft_details') and pp.shaft_details:
+            for pp_shaft in pp.shaft_details:
+                row = spr.append("shaft_jobs", {})
+                row.job_id = pp_shaft.get("job_id") or str(len(spr.shaft_jobs))
+                row.gsm = pp_shaft.get("gsm") or ""
+                row.combination = pp_shaft.get("combination") or ""
+                row.total_width = flt(pp_shaft.get("total_width") or 0)
+                row.meter_roll_mtrs = flt(pp_shaft.get("meter_roll_mtrs") or 500)
+                row.no_of_shafts = cint(pp_shaft.get("no_of_shafts") or 1)
+                row.quality = first_psi.custom_quality or first_psi.get("quality") or ""
+                row.color = first_psi.color or ""
+                row.party_code = parent_sheet.party_code or ""
+        else:
+            # Fallback: create one shaft job from PSI data if PP has no shaft_details
+            for i, psi in enumerate(psi_list):
+                row = spr.append("shaft_jobs", {})
+                row.job_id = str(i + 1)
+                row.quality = psi.custom_quality or psi.get("quality") or ""
+                row.color = psi.color or ""
+                row.party_code = parent_sheet.party_code or ""
+                row.gsm = psi.gsm or ""
+                
+                # Get width info from PSI
+                width = flt(psi.get("width") or psi.get("custom_width") or psi.get("width_inch") or 0)
+                if width:
+                    row.combination = str(int(width))
+                    row.total_width = width
+                else:
+                    row.combination = "Standard"
+                    row.total_width = 0
+                
+                row.no_of_shafts = 1
+                row.meter_roll_mtrs = 500
         
-        for i, psi in enumerate(psi_list):
-            row = spr.append("shaft_jobs", {})
-            row.job_id = str(i + 1)
-            row.quality = psi.custom_quality or psi.get("quality") or ""
-            row.color = psi.color or ""
-            row.party_code = parent_sheet.party_code or ""
-            row.gsm = psi.gsm or ""
-            
-            # Get width info from PSI
-            width = flt(psi.get("width") or psi.get("custom_width") or psi.get("width_inch") or 0)
-            if width:
-                row.combination = str(int(width))
-                row.total_width = width
-            else:
-                row.combination = "Standard"
-                row.total_width = 0
-            
-            row.no_of_shafts = 1
-            row.meter_roll_mtrs = 800  # Default
-            row.is_manual = 1
-            
-            # Collect item codes
-            if psi.item_code:
-                item_codes.append(psi.item_code)
-        
-        # Store item codes reference
-        if item_codes and spr.shaft_jobs:
-            spr.shaft_jobs[0].manual_items = json.dumps(item_codes)
+        # Store selected Planning Sheet Item names for reference
+        if psi_list:
+            psi_names_str = ", ".join([psi.name for psi in psi_list])
+            if spr.shaft_jobs:
+                spr.shaft_jobs[0].manual_items = psi_names_str
         
         # Debug log before insert
         frappe.log_error(f"""
