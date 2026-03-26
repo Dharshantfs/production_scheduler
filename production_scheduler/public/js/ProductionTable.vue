@@ -1508,12 +1508,25 @@ async function openProductionPlanView(planningSheetName, salesOrderItem = null, 
 }
 
 async function createItemStockEntry(item) {
+  // Detailed debug logging
+  console.log("createItemStockEntry called with item:", {
+    itemName: item.itemName,
+    pp_id: item.pp_id,
+    partyCode: item.partyCode,
+    color: item.color
+  });
+  
   if (!item.pp_id) {
-    frappe.msgprint("No Production Plan linked to this item");
+    frappe.msgprint("❌ No Production Plan linked to this item.<br/>Item Details:<br/>Code: " + item.partyCode + "<br/>Color: " + item.color);
     return;
   }
   
-  // Check if PP has WOs started
+  if (!item.itemName) {
+    frappe.msgprint("❌ Item Name missing - cannot create Stock Entry");
+    return;
+  }
+  
+  // Check if PP exists and has WOs started
   try {
     const ppCheckRes = await frappe.call({
       method: "frappe.client.get",
@@ -1524,11 +1537,13 @@ async function createItemStockEntry(item) {
     });
     
     if (!ppCheckRes.message) {
-      frappe.msgprint(`Production Plan ${item.pp_id} not found`);
+      frappe.msgprint(`❌ Production Plan '${item.pp_id}' not found in system.<br/>Please verify PP exists.`);
+      console.error("PP not found:", item.pp_id);
       return;
     }
     
     const pp = ppCheckRes.message;
+    console.log("Found PP:", pp.name);
     
     // Check if PP has Work Orders
     const woCheckRes = await frappe.call({
@@ -1541,17 +1556,25 @@ async function createItemStockEntry(item) {
     });
     
     if (!woCheckRes.message || woCheckRes.message.length === 0) {
-      frappe.msgprint(`Production Plan ${item.pp_id} has no Work Orders created yet.<br/>Please create Work Orders first.`);
+      frappe.msgprint(`⚠️ Production Plan '${item.pp_id}' has no started Work Orders.<br/>Please start production (create Work Orders) first.`);
+      console.warn("No WO for PP:", item.pp_id);
       return;
     }
+    
+    console.log("Found WO for PP:", item.pp_id);
   } catch (e) {
     console.warn("Could not validate PP, proceeding anyway", e);
   }
   
   frappe.confirm(
-    `Create Stock Entry for <b>${item.partyCode}</b> (${item.color})?<br/>PP: ${item.pp_id}`,
+    `Create Stock Entry for <b>${item.partyCode}</b> (${item.color})?<br/>PP: ${item.pp_id}<br/>Item: ${item.itemName}`,
     async () => {
       try {
+        console.log("Calling create_item_spr with:", {
+          pp_id: item.pp_id,
+          planning_sheet_item_names: [item.itemName]
+        });
+        
         const res = await frappe.call({
           method: "production_scheduler.api.create_item_spr",
           args: {
@@ -1559,6 +1582,8 @@ async function createItemStockEntry(item) {
             planning_sheet_item_names: JSON.stringify([item.itemName])
           }
         });
+        
+        console.log("create_item_spr response:", res);
         
         if (res.message && res.message.status === "ok") {
           const sprId = res.message.spr_id;
@@ -1578,11 +1603,12 @@ async function createItemStockEntry(item) {
           });
         } else {
           const msg = res.message?.message || "Failed to create SPR";
-          frappe.msgprint(msg);
+          console.error("SPR creation failed:", res.message);
+          frappe.msgprint(`❌ Error: ${msg}`);
         }
       } catch (e) {
-        frappe.msgprint("Error creating Stock Entry");
-        console.error(e);
+        console.error("Exception in createItemStockEntry:", e);
+        frappe.msgprint(`❌ Error creating Stock Entry: ${e.message || e}`);
       }
     }
   );

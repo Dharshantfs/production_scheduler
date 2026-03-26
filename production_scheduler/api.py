@@ -7894,7 +7894,63 @@ def get_planning_sheet_pp_id(planning_sheet_name, sales_order_item=None, plannin
 
 
 @frappe.whitelist()
+def debug_item_pp_id(item_name):
+    """
+    DEBUG: Check what pp_id is resolved for a specific Planning Sheet Item.
+    Used to diagnose missing PP links.
+    """
+    if not item_name:
+        return {"status": "error", "message": "item_name required"}
+    
+    if not frappe.db.exists("Planning Sheet Item", item_name):
+        return {"status": "error", "message": f"Item {item_name} not found"}
+    
+    try:
+        item = frappe.get_doc("Planning Sheet Item", item_name)
+        parent_sheet = frappe.get_doc("Planning sheet", item.parent)
+        
+        # Check each PP resolution strategy
+        result = {
+            "item_name": item_name,
+            "strategies": {}
+        }
+        
+        # Strategy 1: direct fields
+        for field in _psi_production_plan_fields():
+            value = frappe.db.get_value("Planning Sheet Item", item_name, field)
+            result["strategies"][f"Direct: {field}"] = value or "empty"
+        
+        # Strategy 2: via sales_order_item
+        so_item = item.get("sales_order_item") or item.get("custom_sales_order_item")
+        if so_item:
+            pp_via_so = _resolve_pp_by_sales_order_item(so_item)
+            result["strategies"]["Via SO Item"] = pp_via_so or "not found"
+        else:
+            result["strategies"]["Via SO Item"] = "no SO item"
+        
+        # Strategy 3: via sheet
+        sheet_pp_fields = ["custom_production_plan", "production_plan"]
+        for field in sheet_pp_fields:
+            if frappe.db.has_column("Planning sheet", field):
+                value = frappe.db.get_value("Planning sheet", item.parent, field)
+                result["strategies"][f"Sheet: {field}"] = value or "empty"
+        
+        # Final resolved PP
+        resolved_pp = _get_item_level_production_plan(item_name)
+        result["final_resolved_pp"] = resolved_pp or "NONE"
+        result["has_wo"] = bool(frappe.db.count("Work Order", 
+            filters={"production_plan": resolved_pp, "docstatus": ["<", 2]})) if resolved_pp else False
+        
+        return result
+        
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "debug_item_pp_id")
+        return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
 def create_item_spr(pp_id, planning_sheet_item_names):
+
     """
     Create a Shaft Production Run (SPR) for a Production Plan item.
     Auto-populates from the Production Plan and Planning Sheet Item data.
