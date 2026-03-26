@@ -2295,6 +2295,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     so_status_map = {}
     so_pp_map = {}
     so_wo_map = {}
+    so_produced_map = {}
+    so_wo_count_map = {}
     sheet_pp_map = {}
     pp_wo_map = {}
     so_item_produced_map = {}
@@ -2342,6 +2344,30 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         """, tuple(so_names), as_dict=True)
         for row in wo_data_so:
             so_wo_map[row.sales_order] = row.name
+
+        # Effective produced qty by Sales Order (WO produced_qty + submitted FG Stock Entry)
+        so_prod_rows = frappe.db.sql(f"""
+            SELECT wo.sales_order,
+                   SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty,
+                   COUNT(wo.name) as wo_count
+            FROM `tabWork Order` wo
+            LEFT JOIN (
+                SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
+                FROM `tabStock Entry` se
+                INNER JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
+                WHERE se.docstatus = 1
+                  AND IFNULL(se.work_order, '') != ''
+                  AND IFNULL(sed.is_finished_item, 0) = 1
+                GROUP BY se.work_order
+            ) se_map ON se_map.work_order = wo.name
+            WHERE wo.sales_order IN ({format_string_so})
+              AND wo.docstatus < 2
+            GROUP BY wo.sales_order
+        """, tuple(so_names), as_dict=True)
+        for row in so_prod_rows:
+            if row.get("sales_order"):
+                so_produced_map[row.sales_order] = flt(row.get("produced_qty"))
+                so_wo_count_map[row.sales_order] = cint(row.get("wo_count"))
 
     if sheet_names:
         format_string_sheet = ','.join(['%s'] * len(sheet_names))
@@ -2686,6 +2712,11 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 if item_level_produced is None:
                     item_level_produced = spr_pp_produced_map.get(item_pp)
                     item_level_wo_count = max(item_level_wo_count, spr_pp_count_map.get(item_pp, 0))
+
+            # Safe fallback: only rows with no item key can use SO aggregate.
+            if item_level_produced is None and not so_item_key and sheet.sales_order:
+                item_level_produced = so_produced_map.get(sheet.sales_order)
+                item_level_wo_count = max(item_level_wo_count, so_wo_count_map.get(sheet.sales_order, 0))
 
             if item_level_produced is None:
                 item_level_produced = 0

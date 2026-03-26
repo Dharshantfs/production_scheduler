@@ -827,6 +827,15 @@ const selectedPlanLabel = computed(() => {
     return currentMonthPrefix.value + ' ' + selectedPlan.value;
 });
 
+function isRowAlreadyPushed(d) {
+    const c = (d.color || '').toUpperCase().trim();
+    const isWhite = ["WHITE", "BRIGHT WHITE", "SUNSHINE WHITE", "MILKY WHITE", "SUPER WHITE", "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0"].includes(c);
+    if (isWhite) return true;
+
+    const pb = (d.pbPlanName || d.custom_pb_plan_name || '').toString().trim();
+    return !!pb;
+}
+
 function stripPlanPrefix(name) {
     if (!name) return '';
     let s = String(name).trim();
@@ -3190,7 +3199,7 @@ async function pushToProductionBoard() {
             return w.includes(col.toString().toUpperCase().trim());
         };
         // Pushed status: Whites are auto-pushed; Colors are pushed if they have a planned_date
-        const isPushed = isWhite(d.color) || (!!d.planned_date && d.planned_date !== "");
+        const isPushed = isRowAlreadyPushed(d);
         
         const rawUnit = d.unit || '';
         const normUnit = (rawUnit.toUpperCase().replace(/\s+/g, '').includes('UNIT1')) ? 'Unit 1' :
@@ -4623,7 +4632,7 @@ async function fetchData() {
             itemName: d.itemName || d.item_name || d.name || "",
             // Robust mapping: Prioritize PB plan name if it exists, especially if planName is "Default"
             planName: (d.pbPlanName && d.pbPlanName !== "") ? d.pbPlanName : (d.planName || d.custom_pb_plan_name || d.custom_plan_name || "Default"),
-            pbPlanName: ""
+            pbPlanName: d.pbPlanName || d.custom_pb_plan_name || ""
         };
     });
     
@@ -5160,7 +5169,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
 
     function getFilteredItems() {
         return allForColor.filter(d => {
-            if (d.plannedDate) return false; // already pushed
+            if (isRowAlreadyPushed(d)) return false; // already pushed
             if (fQuality && (d.quality || "").toUpperCase().trim() !== fQuality.toUpperCase().trim()) return false;
             if (fPartyCode && (d.partyCode || "").toUpperCase().indexOf(fPartyCode.toUpperCase()) === -1) return false;
             if (fGsm && String(d.gsm || "").trim() !== String(fGsm).trim()) return false;
@@ -5170,7 +5179,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
 
     let items = getFilteredItems();
 
-    if (allForColor.filter(d => !d.plannedDate).length === 0) {
+    if (allForColor.filter(d => !isRowAlreadyPushed(d)).length === 0) {
         frappe.msgprint("No eligible items found. (Note: White orders are auto-allocated and do not need to be pushed manually, and already-pushed items are hidden.)");
         return;
     }
@@ -5438,7 +5447,7 @@ async function revertColorGroup(color) {
         } else {
             if (d.planName && d.planName !== '' && d.planName !== 'Default') return false;
         }
-        return d.color === color && d.plannedDate;
+        return d.color === color && isRowAlreadyPushed(d);
     });
     
     if (itemsToRevert.length === 0) {
