@@ -609,8 +609,8 @@ def is_date_under_maintenance(unit, date_string):
     if not frappe.db.exists("DocType", "Equipment Maintenance"):
         return False
     
-    check_date = getdate(date_string)
-    
+        check_date = getdate(date_string)
+
         count = frappe.db.sql("""
         SELECT COUNT(*) as cnt
         FROM `tabEquipment Maintenance`
@@ -618,7 +618,7 @@ def is_date_under_maintenance(unit, date_string):
           AND start_date <= %s
           AND end_date >= %s
           AND docstatus < 2
-            AND UPPER(TRIM(COALESCE(maintenance_type, ''))) NOT IN ('MESH CHANGE', 'DIE CHANGE')
+                    AND UPPER(TRIM(COALESCE(maintenance_type, ''))) NOT IN ('MESH CHANGE', 'DIE CHANGE')
         """, (unit, check_date, check_date))
     
     return count[0][0] > 0 if count else False
