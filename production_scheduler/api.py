@@ -5238,6 +5238,82 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
     return response
 
 
+
+
+@frappe.whitelist()
+def debug_production_qty_mapping(planning_sheet=None, item_name=None):
+    """
+    Diagnostic API to debug why production_qty shows 0 for specific items.
+    Returns detailed information about Work Orders, Production Plans, and linkages.
+    """
+    import json
+    result = {
+        "planning_sheet": planning_sheet,
+        "item_name": item_name,
+        "diagnosis": []
+    }
+    
+    if not planning_sheet or not item_name:
+        return result
+    
+    try:
+        item_doc = frappe.get_doc("Planning Sheet Item", item_name)
+        sheet_doc = frappe.get_doc("Planning sheet", planning_sheet)
+        
+        result["item"] = {
+            "name": item_doc.name,
+            "item_code": item_doc.item_code,
+            "qty": item_doc.qty,
+            "custom_production_plan": item_doc.get("custom_production_plan"),
+            "sales_order_item": item_doc.get("sales_order_item") or item_doc.get("custom_sales_order_item"),
+        }
+        result["sheet"] = {
+            "name": sheet_doc.name,
+            "sales_order": sheet_doc.sales_order,
+        }
+        
+        # Check for Production Plan via item
+        item_pp = item_doc.get("custom_production_plan")
+        if item_pp:
+            result["diagnosis"].append(f"✓ Item has custom_production_plan: {item_pp}")
+            pps = frappe.get_all("Production Plan", filters={"name": item_pp}, fields=["name", "status", "docstatus"])
+            if pps:
+                result["diagnosis"].append(f"  → Production Plan exists: {pps[0]}")
+        else:
+            result["diagnosis"].append("✗ Item has NO custom_production_plan set")
+        
+        # Check for Work Orders via Sales Order
+        so_item = item_doc.get("sales_order_item") or item_doc.get("custom_sales_order_item")
+        if so_item:
+            result["diagnosis"].append(f"✓ Item has sales_order_item: {so_item}")
+            wos = frappe.get_all("Work Order", filters={"sales_order_item": so_item, "docstatus": ["<", 2]}, fields=["name", "produced_qty", "status", "docstatus"])
+            result["diagnosis"].append(f"  → Found {len(wos)} Work Orders matching this SO item")
+            for wo in wos[:3]:  # Show first 3
+                result["diagnosis"].append(f"    - {wo.name}: produced_qty={wo.produced_qty}, status={wo.status}")
+        else:
+            result["diagnosis"].append("✗ Item has NO sales_order_item set")
+        
+        # Check for Work Orders via Sales Order
+        if sheet_doc.sales_order:
+            result["diagnosis"].append(f"✓ Sheet has sales_order: {sheet_doc.sales_order}")
+            wos = frappe.get_all("Work Order", filters={"sales_order": sheet_doc.sales_order, "docstatus": ["<", 2]}, fields=["name", "produced_qty", "status", "docstatus"])
+            result["diagnosis"].append(f"  → Found {len(wos)} Work Orders for this SO")
+            for wo in wos[:3]:  # Show first 3
+                result["diagnosis"].append(f"    - {wo.name}: produced_qty={wo.produced_qty}, status={wo.status}")
+        else:
+            result["diagnosis"].append("✗ Sheet has NO sales_order")
+        
+        # Check Shaft Production Run
+        spr_count = frappe.db.count("Shaft Production Run", {"docstatus": 1})
+        result["diagnosis"].append(f"Shaft Production Run docs: {spr_count} submitted")
+        
+        result["status"] = "success"
+    except Exception as e:
+        result["status"] = "error"
+        result["error"] = str(e)
+    
+    return result
+
 @frappe.whitelist()
 def revert_items_from_pb(item_names):
     """
