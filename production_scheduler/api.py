@@ -7894,6 +7894,40 @@ def get_planning_sheet_pp_id(planning_sheet_name, sales_order_item=None, plannin
 
 
 @frappe.whitelist()
+def debug_psi_fields():
+    """
+    DEBUG: Check what fields exist on Planning Sheet Item.
+    Used to understand the actual column structure.
+    """
+    try:
+        # Get all columns for Planning Sheet Item
+        cols = frappe.db.sql("""
+            SELECT COLUMN_NAME 
+            FROM INFORMATION_SCHEMA.COLUMNS 
+            WHERE TABLE_NAME='tabPlanning Sheet Item' 
+            ORDER BY COLUMN_NAME
+        """, as_dict=True)
+        
+        column_names = [c['COLUMN_NAME'] for c in cols]
+        
+        # Filter for relevant fields
+        spr_related = [c for c in column_names if 'spr' in c.lower() or 'shaft' in c.lower()]
+        production_related = [c for c in column_names if 'production' in c.lower()]
+        
+        return {
+            "status": "ok",
+            "all_columns_count": len(column_names),
+            "spr_related_fields": spr_related,
+            "production_related_fields": production_related,
+            "sample_fields": column_names[:20] if len(column_names) > 20 else column_names
+        }
+        
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "debug_psi_fields")
+        return {"status": "error", "message": str(e)}
+
+
+@frappe.whitelist()
 def debug_item_pp_id(item_name):
     """
     DEBUG: Check what pp_id is resolved for a specific Planning Sheet Item.
@@ -8053,9 +8087,18 @@ def create_item_spr(pp_id, planning_sheet_item_names):
             frappe.log_error(frappe.get_traceback(), "create_item_spr_insert")
             return {"status": "error", "message": f"Failed to create SPR: {error_msg}"}
         
-        # Link SPR back to Planning Sheet Items
-        for psi_name in planning_sheet_item_names:
-            frappe.db.set_value("Planning Sheet Item", psi_name, "custom_spr_name", spr.name)
+        # Link SPR back to Planning Sheet Items (only if field exists)
+        spr_link_field = None
+        for field in ["custom_spr_name", "spr_name", "custom_shaft_production_run"]:
+            if frappe.db.has_column("Planning Sheet Item", field):
+                spr_link_field = field
+                break
+        
+        if spr_link_field:
+            for psi_name in planning_sheet_item_names:
+                frappe.db.set_value("Planning Sheet Item", psi_name, spr_link_field, spr.name)
+        else:
+            frappe.log_error(f"No SPR link field found on Planning Sheet Item. Tried: custom_spr_name, spr_name, custom_shaft_production_run", "create_item_spr_field_missing")
         
         frappe.db.commit()
         
