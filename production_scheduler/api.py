@@ -2304,6 +2304,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     pp_wo_count_map = {}
     spr_pp_produced_map = {}
     spr_pp_count_map = {}
+    spr_psi_produced_map = {}
+    spr_psi_count_map = {}
     spr_so_item_produced_map = {}
     spr_so_item_count_map = {}
     spr_so_produced_map = {}
@@ -2399,6 +2401,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             if spr_produced_col:
                 spr_pp_col = next((c for c in ["production_plan", "custom_production_plan"] if c in spr_cols), None)
                 spr_so_item_col = next((c for c in ["sales_order_item", "custom_sales_order_item"] if c in spr_cols), None)
+                spr_psi_col = next((c for c in ["planning_sheet_item", "custom_planning_sheet_item", "planning_sheet_item_name"] if c in spr_cols), None)
                 spr_so_col = next((c for c in ["sales_order", "custom_sales_order"] if c in spr_cols), None)
                 spr_order_code_col = next((c for c in ["order_code", "custom_order_code", "party_code"] if c in spr_cols), None)
 
@@ -2425,6 +2428,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                         select_cols.append(f"{spr_pp_col} as pp_key")
                     if spr_so_item_col:
                         select_cols.append(f"{spr_so_item_col} as so_item_key")
+                    if spr_psi_col:
+                        select_cols.append(f"{spr_psi_col} as psi_key")
                     if spr_so_col:
                         select_cols.append(f"{spr_so_col} as so_key")
                     if spr_order_code_col:
@@ -2455,6 +2460,11 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                         if so_item_key:
                             spr_so_item_produced_map[so_item_key] = spr_so_item_produced_map.get(so_item_key, 0) + qty
                             spr_so_item_count_map[so_item_key] = spr_so_item_count_map.get(so_item_key, 0) + 1
+
+                        psi_key = (r.get("psi_key") or "").strip()
+                        if psi_key:
+                            spr_psi_produced_map[psi_key] = spr_psi_produced_map.get(psi_key, 0) + qty
+                            spr_psi_count_map[psi_key] = spr_psi_count_map.get(psi_key, 0) + 1
 
                         so_key = (r.get("so_key") or "").strip()
                         if so_key:
@@ -2634,6 +2644,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 if not is_white and not item_pdate:
                     continue
 
+            psi_name = item.get("name")
             so_item_key = (item.get("sales_order_item") or item.get("custom_sales_order_item") or "").strip()
             item_pp = item_pp_map.get(item.get("name"))
 
@@ -2652,30 +2663,29 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                         except Exception:
                             pass
 
-            if not item_pp:
-                item_pp = my_pp_name
+            # Strict per-item production mapping (no header/plan total fallback).
+            item_level_produced = None
+            item_level_wo_count = 0
 
-            item_level_produced = pp_produced_map.get(item_pp)
-            item_level_wo_count = pp_wo_count_map.get(item_pp, 0)
+            if psi_name and psi_name in spr_psi_produced_map:
+                item_level_produced = spr_psi_produced_map.get(psi_name, 0)
+                item_level_wo_count = max(item_level_wo_count, spr_psi_count_map.get(psi_name, 0))
 
-            if item_level_produced is None:
-                item_level_produced = so_item_produced_map.get(so_item_key)
-                item_level_wo_count = so_item_wo_count_map.get(so_item_key, 0)
-
-            # Shaft Production Run fallback path for production-run based updates.
-            if item_level_produced is None:
-                if item_pp and item_pp in spr_pp_produced_map:
-                    item_level_produced = spr_pp_produced_map.get(item_pp, 0)
-                    item_level_wo_count = max(item_level_wo_count, spr_pp_count_map.get(item_pp, 0))
-                elif so_item_key and so_item_key in spr_so_item_produced_map:
+            if item_level_produced is None and so_item_key:
+                if so_item_key in so_item_produced_map:
+                    item_level_produced = so_item_produced_map.get(so_item_key, 0)
+                    item_level_wo_count = max(item_level_wo_count, so_item_wo_count_map.get(so_item_key, 0))
+                elif so_item_key in spr_so_item_produced_map:
                     item_level_produced = spr_so_item_produced_map.get(so_item_key, 0)
                     item_level_wo_count = max(item_level_wo_count, spr_so_item_count_map.get(so_item_key, 0))
-                elif sheet.sales_order and sheet.sales_order in spr_so_produced_map:
-                    item_level_produced = spr_so_produced_map.get(sheet.sales_order, 0)
-                    item_level_wo_count = max(item_level_wo_count, spr_so_count_map.get(sheet.sales_order, 0))
-                elif sheet.party_code and sheet.party_code in spr_order_code_produced_map:
-                    item_level_produced = spr_order_code_produced_map.get(sheet.party_code, 0)
-                    item_level_wo_count = max(item_level_wo_count, spr_order_code_count_map.get(sheet.party_code, 0))
+
+            # Last fallback to explicit PP link only when this item has its own PP key.
+            if item_level_produced is None and item_pp:
+                item_level_produced = pp_produced_map.get(item_pp)
+                item_level_wo_count = max(item_level_wo_count, pp_wo_count_map.get(item_pp, 0))
+                if item_level_produced is None:
+                    item_level_produced = spr_pp_produced_map.get(item_pp)
+                    item_level_wo_count = max(item_level_wo_count, spr_pp_count_map.get(item_pp, 0))
 
             if item_level_produced is None:
                 item_level_produced = 0
@@ -2706,7 +2716,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "plannedDate": str(item_pdate or (sheet.get("custom_planned_date") if is_white else "")),
                 "dod": str(sheet.dod) if sheet.dod else "",
                 "delivery_status": so_status_map.get(sheet.sales_order) or "Not Delivered",
-                "has_pp": sheet_has_pp,
+                "has_pp": bool(item_pp or sheet_has_pp),
                 "has_wo": bool(item_level_wo_count),
                 "produced_qty": flt(item_level_produced),
                 "salesOrderItem": so_item_key,
@@ -5309,8 +5319,10 @@ def sync_custom_fields():
             "label": "Production Plan",
             "fieldtype": "Link",
             "options": "Production Plan",
-            "insert_after": "sales_order_item",
+            "insert_after": "custom_plan_code",
             "read_only": 1,
+            "in_list_view": 1,
+            "columns": 2,
         })
         pp_cf.insert(ignore_permissions=True)
 
@@ -5319,7 +5331,10 @@ def sync_custom_fields():
         cf_name = frappe.db.get_value("Custom Field", {"dt": "Planning Sheet Item", "fieldname": "custom_production_plan"}, "name")
         if cf_name:
             frappe.db.set_value("Custom Field", cf_name, "hidden", 0)
-            frappe.db.set_value("Custom Field", cf_name, "insert_after", "sales_order_item")
+            frappe.db.set_value("Custom Field", cf_name, "insert_after", "custom_plan_code")
+            frappe.db.set_value("Custom Field", cf_name, "in_list_view", 1)
+            frappe.db.set_value("Custom Field", cf_name, "columns", 2)
+            frappe.db.set_value("Custom Field", cf_name, "read_only", 1)
     except Exception:
         pass
 
@@ -6965,10 +6980,10 @@ def get_planning_sheet_pp_id(planning_sheet_name, sales_order_item=None, plannin
             pp_id = _resolve_pp_by_sales_order_item(sales_order_item)
 
         # Strategy 1: direct link fields on Planning sheet
-        if frappe.db.has_column("Planning sheet", "custom_production_plan"):
+        if (not pp_id) and frappe.db.has_column("Planning sheet", "custom_production_plan"):
             pp_id = frappe.db.get_value("Planning sheet", planning_sheet_name, "custom_production_plan")
 
-        if not pp_id and frappe.db.has_column("Planning sheet", "production_plan"):
+        if (not pp_id) and frappe.db.has_column("Planning sheet", "production_plan"):
             pp_id = frappe.db.get_value("Planning sheet", planning_sheet_name, "production_plan")
 
         if not pp_id:
