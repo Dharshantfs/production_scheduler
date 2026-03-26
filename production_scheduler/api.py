@@ -273,7 +273,23 @@ def _populate_planning_sheet_items(ps, doc):
             unit = "Unit 2"  # Widest unit as fallback
 
         # plannedDate auto-set for White items
-        p_date = ps.ordered_date if _is_white_color(col) else None
+        p_date = None
+        if _is_white_color(col):
+            p_date = ps.ordered_date
+            # CHECK: If unit has blocking maintenance on ordered_date, forward to next available date
+            if is_date_under_maintenance(unit, str(ps.ordered_date)):
+                # Find next date without blocking maintenance
+                from frappe.utils import add_days, getdate
+                check_date = getdate(ps.ordered_date)
+                for days_offset in range(1, 31):  # Check up to 30 days ahead
+                    next_candidate = add_days(check_date, days_offset)
+                    if not is_date_under_maintenance(unit, str(next_candidate)):
+                        p_date = next_candidate
+                        frappe.logger().info(
+                            f"[Planning Sheet] White order {it.name} forwarded from {ps.ordered_date} to {p_date} "
+                            f"due to blocking maintenance on Unit {unit}"
+                        )
+                        break
 
         ps.append("items", {
             "sales_order_item": it.name,

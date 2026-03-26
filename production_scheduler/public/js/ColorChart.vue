@@ -947,11 +947,12 @@ async function fetchMaintenanceRecords() {
 			res.message.forEach(rec => {
 				const startD = new Date(rec.start_date);
 				const endD = new Date(rec.end_date);
-				for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+				// FIX: Properly iterate through date range
+				for (let d = new Date(startD); d.getTime() <= endD.getTime(); d.setDate(d.getDate() + 1)) {
 					const dateStr = d.toISOString().split('T')[0];
-					if (!maintenanceData[dateStr]) maintenanceData[dateStr] = {};
-					if (!maintenanceData[dateStr][rec.unit]) maintenanceData[dateStr][rec.unit] = [];
-					maintenanceData[dateStr][rec.unit].push({
+					if (!maintenanceData.value[dateStr]) maintenanceData.value[dateStr] = {};
+					if (!maintenanceData.value[dateStr][rec.unit]) maintenanceData.value[dateStr][rec.unit] = [];
+					maintenanceData.value[dateStr][rec.unit].push({
 						type: rec.maintenance_type,
 						start: rec.start_date,
 						end: rec.end_date,
@@ -959,17 +960,24 @@ async function fetchMaintenanceRecords() {
 					});
 				}
 			});
+			console.log("✅ Maintenance records loaded:", maintenanceData.value);
 		}
 	} catch (e) {
-		console.error("Failed to fetch maintenance records", e);
+		console.error("❌ Failed to fetch maintenance records", e);
 	}
 }
 
 function getMaintenanceForDateAndUnit(date, unit) {
-	if (!date) return null;
-	const dateStr = new Date(date).toISOString().split('T')[0];
-	if (!maintenanceData[dateStr]) return null;
-	return maintenanceData[dateStr][unit];
+	if (!date || !unit) return null;
+	try {
+		const dateStr = typeof date === 'string' ? date.split('T')[0] : new Date(date).toISOString().split('T')[0];
+		const data = maintenanceData.value[dateStr];
+		if (!data) return null;
+		return data[unit] || null;
+	} catch (e) {
+		console.error("Error getting maintenance data:", e);
+		return null;
+	}
 }
 
 async function syncAllPlanCodes() {
