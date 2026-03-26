@@ -141,6 +141,7 @@
                         <th style="width: 120px;">TARGET WEIGHT (Kgs)</th>
                         <th style="width: 150px;">ACTUAL PRODUCTION WEIGHT (Kgs)</th>
                         <th style="width: 100px;">ACTUAL PROD (Kgs)</th>
+                        <th style="width: 110px;">MERGE ACTION</th>
                         <th style="width: 100px;">DESPATCH STATUS</th>
                         <th style="width: 80px; position: sticky; right: 0; background: #fafafa; z-index: 10;">PRODUCTION PLAN</th>
                     </tr>
@@ -154,7 +155,7 @@
                 >
                       <!-- Maintenance Row (show once at maintenance start date, centered) -->
                       <tr v-if="getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit)" class="pt-non-draggable" style="background-color: #fee2e2; border: 2px solid #dc2626;">
-                        <td colspan="14" style="padding: 8px 12px; font-weight: 700; color: #991b1b; text-align: center;">
+                        <td colspan="15" style="padding: 8px 12px; font-weight: 700; color: #991b1b; text-align: center;">
                           <div style="display: inline-flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;">
                             <span>🔧 MAINTENANCE: {{ getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).type }} ({{ getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).startDate }} - {{ getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).endDate }})</span>
                             <button @click="deleteMaintenanceRecord(getMaintenanceBannerForDate(dateGroup.date, unitGroup.unit).name)" style="background: #dc2626; color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 11px;">Remove</button>
@@ -187,6 +188,7 @@
                             <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-right font-bold bg-yellow-50">
                               {{ formatKg(dateGroup.dailyActualTotal) }}
                             </td>
+                            <td class="cell-center">-</td>
                                     
                             <td class="cell-center">
                               <span class="status-badge" :class="getDispatchStatusClass(row.item.delivery_status)">
@@ -237,7 +239,20 @@
                               {{ formatKg(dateGroup.dailyActualTotal) }}
                             </td>
                             <td class="cell-center">
-                              <button class="cc-clear-btn" style="padding: 4px 8px; font-size: 11px;" @click="deleteMerge(row.mergeId)">Unmerge</button>
+                              <button
+                                class="cc-clear-btn"
+                                style="padding: 4px 8px; font-size: 11px;"
+                                :disabled="row.hasDispatchLock"
+                                :title="row.hasDispatchLock ? 'Cannot unmerge dispatched rows' : 'Unmerge'"
+                                @click="deleteMerge(row.mergeId)"
+                              >
+                                Unmerge
+                              </button>
+                            </td>
+                            <td class="cell-center">
+                              <span class="status-badge" :class="getDispatchStatusClass(row.mergeDispatchStatus)">
+                                {{ formatDispatchStatus(row.mergeDispatchStatus) }}
+                              </span>
                             </td>
                             <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">
                               <button @click="openMergedProductionPlan(row)" class="cc-pp-btn" title="View Production Plan">
@@ -252,17 +267,12 @@
                         <td class="cell-center">-</td>
                         <td class="cell-center font-bold">{{ formatDate(dateGroup.date) }}</td>
                         <td class="cell-center">{{ getDayName(dateGroup.date) }}</td>
-                        <td colspan="8" style="text-align:center; color:#94a3b8; font-style:italic;">No orders (maintenance day)</td>
-                        <td class="cell-center">0</td>
-                        <td class="cell-center">0</td>
-                        <td class="cell-center font-bold bg-yellow-50">0</td>
-                        <td class="cell-center">-</td>
-                        <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;"></td>
+                        <td colspan="12" style="text-align:center; color:#94a3b8; font-style:italic;">No orders (maintenance day)</td>
                       </tr>
                 </tbody>
                 <tbody>
                     <tr v-if="unitGroup.dates.length === 0">
-                        <td colspan="14" style="text-align:center; padding: 20px; color:#999;">No production planned for this unit</td>
+                        <td colspan="15" style="text-align:center; padding: 20px; color:#999;">No production planned for this unit</td>
                     </tr>
                 </tbody>
             </table>
@@ -1064,6 +1074,13 @@ const tableData = computed(() => {
               const mergeItems = (group.items || []).filter((it) => mergedItemsMap.value[it.itemName] === mergeId);
               const totalTargetWeight = mergeItems.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
               const totalActualWeight = mergeItems.reduce((s, it) => s + (parseFloat(it.actual_production_weight_kgs) || 0), 0);
+              const hasDispatchLock = mergeItems.some((it) => ["Partly Delivered", "Fully Delivered"].includes(String(it.delivery_status || "")));
+              const statuses = mergeItems.map((it) => String(it.delivery_status || "Not Delivered"));
+              const mergeDispatchStatus = statuses.every((s) => s === "Fully Delivered")
+                ? "Fully Delivered"
+                : statuses.some((s) => s === "Partly Delivered" || s === "Fully Delivered")
+                  ? "Partly Delivered"
+                  : "Not Delivered";
               const first = mergeItems[0] || item;
               const customer = first.customer_name || first.customer || "-";
               const gsmSummary = Array.from(new Set(mergeItems.map((it) => String(it.gsm || "-")).filter(Boolean)))
@@ -1084,6 +1101,8 @@ const tableData = computed(() => {
                 gsm: gsmSummary,
                 totalTargetWeight,
                 totalActualWeight,
+                hasDispatchLock,
+                mergeDispatchStatus,
               });
             });
 
@@ -1116,6 +1135,16 @@ function formatKg(value) {
   const num = parseFloat(value || 0);
   if (!Number.isFinite(num)) return "0";
   return num.toFixed(0);
+}
+
+function getMergeRuleKey(item) {
+  return [
+    String(item?.partyCode || "").trim().toUpperCase(),
+    String(item?.quality || "").trim().toUpperCase(),
+    String(item?.color || "").trim().toUpperCase(),
+    String(item?.unit || "").trim().toUpperCase(),
+    String(item?.plannedDate || "").trim(),
+  ].join("||");
 }
 
 function formatDispatchStatus(status) {
@@ -1223,6 +1252,12 @@ async function createMergeFromDialog() {
     return;
   }
 
+  const selectedKeys = new Set(selectedItems.map(getMergeRuleKey));
+  if (selectedKeys.size > 1) {
+    frappe.msgprint("Selected rows contain multiple groups. Use 'Add All Suggested' for separate merges, or select one Order Code + Quality + Color group only.");
+    return;
+  }
+
   const first = selectedItems[0];
   const sameSlot = selectedItems.every((it) => it.unit === first.unit && it.plannedDate === first.plannedDate);
   if (!sameSlot) {
@@ -1265,6 +1300,12 @@ async function createMergeForItems(selectedItems, label) {
   const sameSlot = selectedItems.every((it) => it.unit === first.unit && it.plannedDate === first.plannedDate);
   if (!sameSlot) {
     frappe.msgprint("Please select items from same Unit and Planned Date.");
+    return false;
+  }
+
+  const mergeKeys = new Set(selectedItems.map(getMergeRuleKey));
+  if (mergeKeys.size > 1) {
+    frappe.msgprint("Cannot merge different Order Code / Quality / Color groups together.");
     return false;
   }
 

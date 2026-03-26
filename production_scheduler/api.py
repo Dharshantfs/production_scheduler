@@ -6535,6 +6535,24 @@ def delete_merge(merge_id):
     """Delete a merge record and revert items to original positions."""
     if not frappe.db.exists("Production Merge", merge_id):
         frappe.throw(_("Merge record not found"))
+
+    merge_doc = frappe.get_doc("Production Merge", merge_id)
+    import json
+    merged_items = json.loads(merge_doc.merged_items or "[]")
+
+    if merged_items:
+        fmt = ','.join(['%s'] * len(merged_items))
+        dispatched = frappe.db.sql(f"""
+            SELECT DISTINCT COALESCE(so.delivery_status, 'Not Delivered') as delivery_status
+            FROM `tabPlanning Sheet Item` i
+            JOIN `tabPlanning sheet` p ON i.parent = p.name
+            LEFT JOIN `tabSales Order` so ON p.sales_order = so.name
+            WHERE i.name IN ({fmt})
+        """, tuple(merged_items), as_dict=True)
+
+        locked = any((r.get("delivery_status") or "") in ["Partly Delivered", "Fully Delivered"] for r in dispatched)
+        if locked:
+            frappe.throw("Cannot unmerge: one or more merged items are already dispatched.")
     
     frappe.delete_doc("Production Merge", merge_id)
     return {"status": "success"}
