@@ -5240,7 +5240,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
                      }
                  });
              } catch (e) {
-                 console.warn("Capacity pre-check failed; continuing with strict date push", e);
+                 console.warn("Capacity pre-check failed; proceeding with push on target date only (no cascade)", e);
              }
 
              const doPush = async (allowCascade) => {
