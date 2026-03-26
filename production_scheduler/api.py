@@ -236,8 +236,8 @@ def _populate_planning_sheet_items(ps, doc):
         # UNIT determination based STRICTLY on quality priority
         unit = "Unit 1"
         if qual:
-			q_up = _normalize_quality_key(qual)
-			q_key = "PREMIUM" if q_up.startswith("PREMIUM") else q_up
+            q_up = _normalize_quality_key(qual)
+            q_key = "PREMIUM" if q_up.startswith("PREMIUM") else q_up
             
             QUALITY_PRIORITY = {
               "Unit 1": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5 },
@@ -263,10 +263,10 @@ def _populate_planning_sheet_items(ps, doc):
                 unit = best_unit
             else:
                 # Fallback if not mapped
-				if q_up in [_normalize_quality_key(v) for v in UNIT_1]: unit = "Unit 1"
-				elif q_up in [_normalize_quality_key(v) for v in UNIT_2]: unit = "Unit 2"
-				elif q_up in [_normalize_quality_key(v) for v in UNIT_3]: unit = "Unit 3"
-				elif q_up in [_normalize_quality_key(v) for v in UNIT_4]: unit = "Unit 4"
+                if q_up in [_normalize_quality_key(v) for v in UNIT_1]: unit = "Unit 1"
+                elif q_up in [_normalize_quality_key(v) for v in UNIT_2]: unit = "Unit 2"
+                elif q_up in [_normalize_quality_key(v) for v in UNIT_3]: unit = "Unit 3"
+                elif q_up in [_normalize_quality_key(v) for v in UNIT_4]: unit = "Unit 4"
 
         # plannedDate auto-set for White items
         p_date = ps.ordered_date if _is_white_color(col) else None
