@@ -435,18 +435,8 @@ UNIT_QUALITY_MAP = {
 }
 
 def is_quality_allowed(unit, quality):
-    """Checks if a quality is allowed for a unit."""
-    if not quality or not unit: return True
-    if unit == "Unit 2": return True # As per user request, all qualities allowed in Unit 2
-    if unit not in UNIT_QUALITY_MAP: return True
-
-    # Allow premium special variants in all units.
-    q_match = _normalize_quality_key(quality)
-    if q_match in [_normalize_quality_key(v) for v in PREMIUM_SPECIAL_QUALITIES]:
-        return True
-
-    allowed = [_normalize_quality_key(q) for q in UNIT_QUALITY_MAP[unit]]
-    return q_match in allowed
+    """All Quality Master values are allowed in all units."""
+    return True
 
 def is_sheet_locked(sheet_name):
     """Checks if a sheet is locked (either submitted or belongs to a locked plan)."""
