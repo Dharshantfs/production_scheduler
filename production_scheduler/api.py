@@ -4988,7 +4988,7 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 
             effective_date = target_dates[0] if target_dates else str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
 
-            # --- FIND CAPACITY SLOT ACROSS MULTIPLE DATES (INFINITE CASCADE) ---
+            # --- FIND CAPACITY SLOT ACROSS MULTIPLE DATES (LIMITED CASCADE) ---
             unit = target_unit or item_doc.unit or get_preferred_unit(item_doc.custom_quality)
             limit = HARD_LIMITS.get(unit, 999.0)
             
@@ -4997,24 +4997,41 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
             # Individual push can force exact selected date, skipping auto-next-day cascade.
             strict_keep_date = cint(strict_target_date) or cint(item_strict_target)
             if strict_keep_date:
-                # Even in strict mode, NEVER place on maintenance day - cascade forward instead
+                # STRICT MODE: Use exact target date, no cascading at all (except maintenance)
                 if is_date_under_maintenance(unit, current_check_date):
-                    # Maintenance on target date - cascade forward
+                    # Maintenance on target date - cascade forward ONLY within same month
                     maint_info = get_maintenance_info_on_date(unit, current_check_date)
                     frappe.msgprint(
-                        f"Target date {current_check_date} has maintenance ({maint_info['type']} until {maint_info['end_date']}). "
-                        f"Item will be cascaded to next available date.",
+                        f"⚠️ Target date {current_check_date} has {maint_info['type']} (until {maint_info['end_date']}). Cascading within month only.",
                         indicator='yellow'
                     )
-                    # Fall through to normal cascade logic
+                    # Calculate month boundary
+                    target_dt = getdate(current_check_date)
+                    month_start = target_dt.replace(day=1)
+                    if target_dt.month == 12:
+                        month_end = month_start.replace(year=target_dt.year + 1, month=1, day=1) - add_days("2000-01-02", -1)
+                    else:
+                        month_end = month_start.replace(month=target_dt.month + 1, day=1) - add_days("2000-01-02", -1)
+                    month_end_str = month_end.strftime("%Y-%m-%d")
+                    
                     maintenance_block = None
-                    while True:
+                    cascade_days = 0
+                    while True and cascade_days < 31:  # Max 31 days cascade
                         if is_date_under_maintenance(unit, current_check_date):
                             maint_info = get_maintenance_info_on_date(unit, current_check_date)
                             if not maintenance_block:
                                 maintenance_block = maint_info
                             next_d = add_days(current_check_date, 1)
                             current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+                            cascade_days += 1
+                            # Check if we've exceeded month boundary
+                            if current_check_date > month_end_str:
+                                frappe.msgprint(
+                                    f"⚠️ Item {item_doc.item_code}: Cannot place due to maintenance throughout {month_start.strftime('%B')}. Skipped.",
+                                    indicator='orange'
+                                )
+                                effective_date = None  # Skip this item
+                                break
                             continue
                         
                         load_key = (current_check_date, unit)
@@ -5027,8 +5044,23 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
                             local_loads[load_key] = load + item_wt
                             break
                         
+                        # Check month boundary before next day
                         next_d = add_days(current_check_date, 1)
-                        current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+                        next_d_str = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+                        if next_d_str > month_end_str:
+                            frappe.msgprint(
+                                f"⚠️ Item {item_doc.item_code} ({item_doc.item_name}): Cannot fit in {month_start.strftime('%B')}. Month boundary reached.",
+                                indicator='orange'
+                            )
+                            effective_date = None  # Skip this item
+                            break
+                        
+                        current_check_date = next_d_str
+                        cascade_days += 1
+                    
+                    if effective_date is None:
+                        # Item couldn't be placed - skip it
+                        continue
                 else:
                     # No maintenance - use strict date as-is
                     effective_date = current_check_date
@@ -5037,9 +5069,12 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
                         local_loads[load_key] = get_unit_load(effective_date, unit, "__all__", pb_only=1)
                     local_loads[load_key] = local_loads[load_key] + item_wt
             else:
+                # FLEX MODE: User confirmed cascading - allow flexible dates but WITH LIMITS
                 maintenance_block = None
+                max_cascade_days = 30  # Maximum 30 days cascade (prevents wrapping to next month)
+                cascade_days = 0
                 
-                while True:
+                while cascade_days < max_cascade_days:
                     # CHECK MAINTENANCE: Skip if under maintenance
                     if is_date_under_maintenance(unit, current_check_date):
                         maint_info = get_maintenance_info_on_date(unit, current_check_date)
@@ -5052,6 +5087,7 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
                             }
                         next_d = add_days(current_check_date, 1)
                         current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+                        cascade_days += 1
                         continue
                     
                     load_key = (current_check_date, unit)
@@ -5077,6 +5113,20 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
                     # Otherwise, capacity is full for this date -> Cascade to the next day
                     next_d = add_days(current_check_date, 1)
                     current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+                    cascade_days += 1
+                
+                # If we hit max cascade limit, reject the item
+                if cascade_days >= max_cascade_days and effective_date != current_check_date:
+                    frappe.msgprint(
+                        f"⚠️ Item {item_doc.item_code}: Cannot place within 30-day window. Skipped.",
+                        indicator='orange'
+                    )
+                    continue
+            
+            # Safety check: if effective_date is None or empty, skip this item
+            if not effective_date:
+                continue
+            
             # ------------------------------------------------
 
             party_code = parent_doc.party_code or ""
