@@ -196,7 +196,7 @@
                               </span>
                             </td>
                             <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">
-                              <button @click="openProductionPlanView(row.item.planningSheet, row.item.salesOrderItem, row.item.itemName)" class="cc-pp-btn" title="View Production Plan">
+                              <button @click="openProductionPlanView(row.item.planningSheet, row.item.salesOrderItem, row.item.itemName, row.item.pp_id)" class="cc-pp-btn" title="View Production Plan">
                                 📋 View
                               </button>
                             </td>
@@ -1206,7 +1206,7 @@ function openMergedProductionPlan(row) {
     frappe.show_alert({ message: `Multiple planning sheets in merge. Opening first: ${planningSheets[0]}`, indicator: 'orange' });
   }
   const firstItem = (row.items || [])[0] || {};
-  openProductionPlanView(planningSheets[0], firstItem.salesOrderItem, firstItem.itemName);
+  openProductionPlanView(planningSheets[0], firstItem.salesOrderItem, firstItem.itemName, firstItem.pp_id);
 }
 
 function toggleMergeSelection(itemName) {
@@ -1429,29 +1429,41 @@ async function deleteMerge(mergeId) {
   }
 }
 
-async function openProductionPlanView(planningSheetName, salesOrderItem = null, planningSheetItem = null) {
+async function openProductionPlanView(planningSheetName, salesOrderItem = null, planningSheetItem = null, directPpId = null) {
   if (!planningSheetName) {
     frappe.msgprint("Planning Sheet not found for this order");
     return;
   }
   
   try {
-    const res = await frappe.call({
-      method: "production_scheduler.api.get_planning_sheet_pp_id",
-      args: {
-        planning_sheet_name: planningSheetName,
-        sales_order_item: salesOrderItem,
-        planning_sheet_item: planningSheetItem,
-      }
-    });
+    let ppId = directPpId; // Use PP ID directly if provided from data
     
-    if (res.message && res.message.status === "ok") {
-      const ppId = res.message.pp_id;
+    // If PP ID not provided directly, resolve it via API
+    if (!ppId) {
+      const res = await frappe.call({
+        method: "production_scheduler.api.get_planning_sheet_pp_id",
+        args: {
+          planning_sheet_name: planningSheetName,
+          sales_order_item: salesOrderItem,
+          planning_sheet_item: planningSheetItem,
+        }
+      });
+      
+      if (res.message && res.message.status === "ok") {
+        ppId = res.message.pp_id;
+      } else {
+        const errorMsg = res.message?.message || "Error fetching Production Plan";
+        frappe.msgprint(errorMsg);
+        return;
+      }
+    }
+    
+    // Open the Production Plan view
+    if (ppId) {
       const printUrl = `/printview?doctype=${encodeURIComponent("Production Plan")}&name=${encodeURIComponent(ppId)}&format=${encodeURIComponent("Assembly Item - Raw Material")}&trigger_print=0`;
       window.open(printUrl, '_blank');
     } else {
-      const errorMsg = res.message?.message || "Error fetching Production Plan";
-      frappe.msgprint(errorMsg);
+      frappe.msgprint("No Production Plan found for this item");
     }
   } catch (e) {
     frappe.msgprint("Error opening Production Plan");

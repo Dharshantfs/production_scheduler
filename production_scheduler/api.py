@@ -2943,7 +2943,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "produced_qty": flt(item_level_produced),
                 "salesOrderItem": so_item_key,
                 "actual_produced_qty": flt(item_level_produced),
-                "isSplit": item.get("custom_is_split")
+                "isSplit": item.get("custom_is_split"),
+                "pp_id": item_pp or ""  # Item-level production plan ID for direct PP view routing
             })
 
     if cint(planned_only) and plan_name == "__all__":
