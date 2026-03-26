@@ -6398,12 +6398,12 @@ def get_planning_sheet_pp_id(planning_sheet_name):
 # ============================================================================
 
 def _get_item_merge_key(item_name):
-    """Get order_code + quality + color + gsm key for merge validation."""
+    """Get order_code + quality + color key for merge validation."""
     try:
         item = frappe.db.get_value(
             "Planning Sheet Item",
             item_name,
-            ["custom_quality", "color", "gsm", "parent"],
+            ["custom_quality", "color", "parent"],
             as_dict=True
         )
         if not item:
@@ -6412,15 +6412,14 @@ def _get_item_merge_key(item_name):
         ps = frappe.db.get_value("Planning sheet", item.get("parent"), "party_code")
         quality = (item.get("custom_quality") or "").strip()
         color = (item.get("color") or "").strip()
-        gsm = str(item.get("gsm") or "").strip()
         
-        return f"{ps}||{quality}||{color}||{gsm}"
+        return f"{ps}||{quality}||{color}"
     except Exception:
         return None
 
 
 def _validate_merge_items(item_names):
-    """Validate that all items have same order_code + quality + color + gsm."""
+    """Validate that all items have same order_code + quality + color."""
     if not item_names or len(item_names) < 2:
         return True, "At least 2 items required to merge"
     
@@ -6433,7 +6432,7 @@ def _validate_merge_items(item_names):
     
     # All keys must be identical
     if len(set(keys)) != 1:
-        return False, "All items must have same Order Code + Quality + Color + GSM to merge"
+        return False, "All items must have same Order Code + Quality + Color to merge"
     
     return True, "Valid"
 
@@ -6460,6 +6459,22 @@ def create_merge(date, unit, plan_name, item_names, merge_label=None):
     valid, msg = _validate_merge_items(item_names)
     if not valid:
         frappe.throw(_(msg))
+
+    # Capacity check: merged target weight must not exceed unit hard limit
+    hard_limit_tons = HARD_LIMITS.get(unit)
+    if hard_limit_tons:
+        fmt = ','.join(['%s'] * len(item_names))
+        total_kg = frappe.db.sql(f"""
+            SELECT SUM(IFNULL(qty, 0))
+            FROM `tabPlanning Sheet Item`
+            WHERE name IN ({fmt})
+        """, tuple(item_names))[0][0] or 0
+        if flt(total_kg) > flt(hard_limit_tons) * 1000:
+            frappe.throw(_("Selected merge weight {0} Kg exceeds {1} capacity {2} Kg").format(
+                flt(total_kg),
+                unit,
+                flt(hard_limit_tons) * 1000
+            ))
     
     # Check for overlap with existing merges
     existing_merges = frappe.db.sql("""

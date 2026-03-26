@@ -83,7 +83,6 @@
           <input v-model="mergeFilterCustomer" type="text" placeholder="Filter Customer" />
           <input v-model="mergeFilterQuality" type="text" placeholder="Filter Quality" />
           <input v-model="mergeFilterColor" type="text" placeholder="Filter Colour" />
-          <input v-model="mergeFilterGsm" type="text" placeholder="Filter GSM" />
           <button class="cc-save-arrange-btn" @click="applyAutoMergeSuggestion">✨ Auto Suggest</button>
         </div>
         <div class="pt-merge-suggest" v-if="autoMergeSuggestions.length">
@@ -95,7 +94,7 @@
               class="pt-merge-suggest-pill"
               @click="selectSuggestion(s)"
             >
-              {{ s.partyCode }} · {{ s.quality }} · {{ s.color }} · {{ s.gsm }} GSM ({{ s.items.length }})
+              {{ s.partyCode }} · {{ s.quality }} · {{ s.color }} · GSM: {{ s.gsmSummary }} ({{ s.items.length }})
             </button>
           </div>
         </div>
@@ -678,7 +677,7 @@ const mergeFilterOrderCode = ref("");
 const mergeFilterCustomer = ref("");
 const mergeFilterQuality = ref("");
 const mergeFilterColor = ref("");
-const mergeFilterGsm = ref("");
+const UNIT_TONNAGE_LIMITS = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5, "Mixed": 999 };
 
 function getArrangementKey(unit, date) {
   return `${unit}||${date}`;
@@ -936,7 +935,6 @@ const mergeDialogItems = computed(() => {
   const customerSearch = mergeFilterCustomer.value.trim().toLowerCase();
   const qualitySearch = mergeFilterQuality.value.trim().toLowerCase();
   const colorSearch = mergeFilterColor.value.trim().toLowerCase();
-  const gsmSearch = mergeFilterGsm.value.trim().toLowerCase();
 
   if (orderSearch) {
     items = items.filter((d) => (d.partyCode || "").toLowerCase().includes(orderSearch));
@@ -950,9 +948,6 @@ const mergeDialogItems = computed(() => {
   if (colorSearch) {
     items = items.filter((d) => (d.color || "").toLowerCase().includes(colorSearch));
   }
-  if (gsmSearch) {
-    items = items.filter((d) => String(d.gsm || "").toLowerCase().includes(gsmSearch));
-  }
 
   return items.filter((d) => !mergedItemsMap.value[d.itemName]);
 });
@@ -960,22 +955,26 @@ const mergeDialogItems = computed(() => {
 const autoMergeSuggestions = computed(() => {
   const grouped = {};
   (mergeDialogItems.value || []).forEach((item) => {
-    const key = [item.partyCode || "", item.quality || "", item.color || "", item.gsm || "", item.unit || "", item.plannedDate || ""].join("||");
+    const key = [item.partyCode || "", item.quality || "", item.color || "", item.unit || "", item.plannedDate || ""].join("||");
     if (!grouped[key]) {
       grouped[key] = {
         key,
         partyCode: item.partyCode || "",
         quality: item.quality || "",
         color: item.color || "",
-        gsm: item.gsm || "",
+        gsmSet: new Set(),
         unit: item.unit || "",
         plannedDate: item.plannedDate || "",
         items: [],
       };
     }
     grouped[key].items.push(item);
+    grouped[key].gsmSet.add(String(item.gsm || "-"));
   });
-  return Object.values(grouped).filter((g) => g.items.length >= 2).sort((a, b) => b.items.length - a.items.length);
+  return Object.values(grouped)
+    .map((g) => ({ ...g, gsmSummary: Array.from(g.gsmSet).sort((a, b) => Number(a) - Number(b)).join(",") }))
+    .filter((g) => g.items.length >= 2)
+    .sort((a, b) => b.items.length - a.items.length);
 });
 
 const selectedMergeSummary = computed(() => {
@@ -1045,8 +1044,10 @@ const tableData = computed(() => {
               const totalActualWeight = mergeItems.reduce((s, it) => s + (parseFloat(it.actual_production_weight_kgs) || 0), 0);
               const first = mergeItems[0] || item;
               const customer = first.customer_name || first.customer || "-";
-              const gsm = first.gsm || "-";
-              const displayLabel = `${first.partyCode || ''}, ${customer}, ${first.quality || ''}, ${first.color || ''}, ${gsm} GSM (${mergeItems.length} items)`;
+              const gsmSummary = Array.from(new Set(mergeItems.map((it) => String(it.gsm || "-")).filter(Boolean)))
+                .sort((a, b) => Number(a) - Number(b))
+                .join(",");
+              const displayLabel = `${first.partyCode || ''}, ${customer}, ${first.quality || ''}, ${first.color || ''}, GSM: ${gsmSummary} (${mergeItems.length} items)`;
               rows.push({
                 type: "merge",
                 rowKey: `merge-${mergeId}`,
@@ -1058,7 +1059,7 @@ const tableData = computed(() => {
                 customer,
                 quality: first.quality,
                 color: first.color,
-                gsm,
+                gsm: gsmSummary,
                 totalTargetWeight,
                 totalActualWeight,
               });
@@ -1207,9 +1208,20 @@ async function createMergeFromDialog() {
     return;
   }
 
+  const totalSelectedKg = selectedItems.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
+  const unitLimitKg = (UNIT_TONNAGE_LIMITS[first.unit] || 999) * 1000;
+  if (totalSelectedKg > unitLimitKg) {
+    frappe.msgprint(`Selected merge weight ${formatKg(totalSelectedKg)} Kg exceeds ${first.unit} capacity ${formatKg(unitLimitKg)} Kg`);
+    return;
+  }
+
+  const selectedGsmSummary = Array.from(new Set(selectedItems.map((it) => String(it.gsm || "-")).filter(Boolean)))
+    .sort((a, b) => Number(a) - Number(b))
+    .join(",");
+
   const label = window.prompt(
     "Merge label",
-    `${first.partyCode || ''}, ${first.customer_name || first.customer || '-'}, ${first.quality || ''}, ${first.color || ''}, ${first.gsm || '-'} GSM`
+    `${first.partyCode || ''}, ${first.customer_name || first.customer || '-'}, ${first.quality || ''}, ${first.color || ''}, GSM: ${selectedGsmSummary}`
   ) || "";
   if (!label.trim()) return;
 
@@ -1723,7 +1735,7 @@ onBeforeUnmount(() => {
 
 .pt-merge-filters {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
   padding: 12px 16px;
   border-bottom: 1px solid #e5e7eb;
