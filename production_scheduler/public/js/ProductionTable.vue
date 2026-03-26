@@ -112,6 +112,7 @@
         </div>
         <div class="pt-merge-actions">
           <button class="cc-clear-btn" @click="closeMergeDialog">Cancel</button>
+          <button class="cc-clear-btn" :disabled="!autoMergeSuggestions.length" @click="createAllSuggestedMerges">Add All Suggested</button>
           <button class="cc-save-arrange-btn" :disabled="selectedMergeItems.size < 2" @click="createMergeFromDialog">Add Merge</button>
         </div>
       </div>
@@ -1246,6 +1247,34 @@ async function createMergeFromDialog() {
   ) || "";
   if (!label.trim()) return;
 
+  const ok = await createMergeForItems(selectedItems, label.trim());
+  if (ok) {
+    await loadMergesForCurrentData();
+    frappe.show_alert({ message: "Merge created", indicator: "green" });
+    closeMergeDialog();
+  }
+}
+
+async function createMergeForItems(selectedItems, label) {
+  if (!selectedItems || selectedItems.length < 2) {
+    frappe.msgprint("Select at least 2 items to merge.");
+    return false;
+  }
+
+  const first = selectedItems[0];
+  const sameSlot = selectedItems.every((it) => it.unit === first.unit && it.plannedDate === first.plannedDate);
+  if (!sameSlot) {
+    frappe.msgprint("Please select items from same Unit and Planned Date.");
+    return false;
+  }
+
+  const totalSelectedKg = selectedItems.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
+  const unitLimitKg = (UNIT_TONNAGE_LIMITS[first.unit] || 999) * 1000;
+  if (totalSelectedKg > unitLimitKg) {
+    frappe.msgprint(`Selected merge weight ${formatKg(totalSelectedKg)} Kg exceeds ${first.unit} capacity ${formatKg(unitLimitKg)} Kg`);
+    return false;
+  }
+
   try {
     const res = await frappe.call({
       method: "production_scheduler.api.create_merge",
@@ -1254,17 +1283,44 @@ async function createMergeFromDialog() {
         unit: first.unit,
         plan_name: "Default",
         item_names: JSON.stringify(selectedItems.map((it) => it.itemName)),
-        merge_label: label.trim(),
+        merge_label: label,
       },
     });
     if (res.message && res.message.status === "success") {
-      frappe.show_alert({ message: "Merge created", indicator: "green" });
-      closeMergeDialog();
-      await loadMergesForCurrentData();
+      return true;
     }
   } catch (e) {
     frappe.msgprint(e?.message || "Unable to create merge");
   }
+  return false;
+}
+
+async function createAllSuggestedMerges() {
+  const suggestions = autoMergeSuggestions.value || [];
+  if (!suggestions.length) {
+    frappe.msgprint("No suggested groups found.");
+    return;
+  }
+
+  let success = 0;
+  let failed = 0;
+
+  for (const s of suggestions) {
+    const items = (s.items || []).filter(Boolean);
+    if (items.length < 2) {
+      failed += 1;
+      continue;
+    }
+
+    const label = `${s.partyCode || ''}, ${items[0]?.customer_name || items[0]?.customer || '-'}, ${s.quality || ''}, ${s.color || ''}, GSM: ${s.gsmSummary || '-'}`;
+    const ok = await createMergeForItems(items, label);
+    if (ok) success += 1;
+    else failed += 1;
+  }
+
+  await loadMergesForCurrentData();
+  frappe.show_alert({ message: `Merge created: ${success}, failed: ${failed}`, indicator: failed ? "orange" : "green" });
+  if (success > 0) closeMergeDialog();
 }
 
 async function deleteMerge(mergeId) {

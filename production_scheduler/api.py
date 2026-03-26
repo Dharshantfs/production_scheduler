@@ -6453,12 +6453,12 @@ def create_merge(date, unit, plan_name, item_names, merge_label=None):
         item_names = json.loads(item_names)
     
     if not isinstance(item_names, list):
-        frappe.throw(_("item_names must be a list or JSON array"))
+        frappe.throw("item_names must be a list or JSON array")
     
     # Validate merge constraints
     valid, msg = _validate_merge_items(item_names)
     if not valid:
-        frappe.throw(_(msg))
+        frappe.throw(msg)
 
     # Capacity check: merged target weight must not exceed unit hard limit
     hard_limit_tons = HARD_LIMITS.get(unit)
@@ -6470,7 +6470,7 @@ def create_merge(date, unit, plan_name, item_names, merge_label=None):
             WHERE name IN ({fmt})
         """, tuple(item_names))[0][0] or 0
         if flt(total_kg) > flt(hard_limit_tons) * 1000:
-            frappe.throw(_("Selected merge weight {0} Kg exceeds {1} capacity {2} Kg").format(
+            frappe.throw("Selected merge weight {0} Kg exceeds {1} capacity {2} Kg".format(
                 flt(total_kg),
                 unit,
                 flt(hard_limit_tons) * 1000
@@ -6488,7 +6488,7 @@ def create_merge(date, unit, plan_name, item_names, merge_label=None):
         existing_items = json.loads(merge.get("merged_items") or "[]")
         overlap = set(item_names) & set(existing_items)
         if overlap:
-            frappe.throw(_("Items already in another merge: {}").format(", ".join(overlap)))
+            frappe.throw("Items already in another merge: {}".format(", ".join(overlap)))
     
     # Create new merge record.
     # NOTE: The DocType autoname expression can collide for same unit/date,
@@ -6510,16 +6510,16 @@ def create_merge(date, unit, plan_name, item_names, merge_label=None):
         merge_doc.status = "Active"
         merge_doc.merged_items = json.dumps(item_names)
         try:
-            merge_doc.insert(ignore_permissions=True)
+            merge_doc.insert(ignore_permissions=True, set_name=unique_name)
             return {"status": "success", "merge_id": merge_doc.name}
         except DuplicateEntryError as e:
             last_error = e
             continue
 
     if last_error:
-        frappe.throw(_("Unable to create merge due to repeated duplicate name collision. Please try again."))
+        frappe.throw("Unable to create merge due to repeated duplicate name collision. Please try again.")
 
-    frappe.throw(_("Unable to create merge"))
+    frappe.throw("Unable to create merge")
 
 
 @frappe.whitelist()
