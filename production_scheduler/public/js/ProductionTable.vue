@@ -214,16 +214,18 @@
                             </td>
                             <td class="cell-center font-bold">{{ row.partyCode }}</td>
                             <td>
-                              <button class="pt-merge-expand-btn" @click="toggleMergeExpanded(row.mergeId)">
+                              <button v-if="canExpandMergedRows" class="pt-merge-expand-btn" @click="toggleMergeExpanded(row.mergeId)">
                                 {{ isMergeExpanded(row.mergeId) ? '▼' : '▶' }} {{ row.displayLabel }}
                               </button>
-                              <div v-if="isMergeExpanded(row.mergeId)" class="pt-merge-inline-details">
+                              <span v-else>{{ row.displayLabel }}</span>
+                              <div v-if="canExpandMergedRows && isMergeExpanded(row.mergeId)" class="pt-merge-inline-details">
                                 <div v-for="mItem in row.items" :key="mItem.itemName" class="pt-merge-inline-item">
                                   <span><b>{{ mItem.partyCode }}</b></span>
                                   <span>{{ mItem.customer_name || mItem.customer || '-' }}</span>
                                   <span>{{ mItem.quality }}</span>
                                   <span>{{ mItem.color }}</span>
                                   <span>{{ mItem.gsm }} GSM</span>
+                                  <span>Width: {{ formatWidth(mItem.width_inch || mItem.width || mItem.custom_width) }}</span>
                                   <span>Target: {{ formatKg(mItem.qty) }} Kg</span>
                                   <span>Actual: {{ formatKg(mItem.actual_production_weight_kgs) }} Kg</span>
                                 </div>
@@ -869,6 +871,7 @@ const RESTRICTED_ROLE_NAMES = [
   "Manufacture User"
 ];
 const PRIVILEGED_ROLE_NAMES = ["System Manager"];
+const MERGE_EXPAND_ALLOWED_ROLES = ["System Manager", "Manufacturing Manager"];
 
 function getCurrentUserRoles() {
   const roleSet = new Set();
@@ -916,6 +919,14 @@ function detectRestrictedUser() {
 
   return false;
 }
+
+const canExpandMergedRows = computed(() => {
+  const currentUser = String(frappe?.session?.user || "").toLowerCase();
+  if (currentUser === "administrator") return true;
+
+  const roles = getCurrentUserRoles().map((r) => r.toLowerCase());
+  return MERGE_EXPAND_ALLOWED_ROLES.some((role) => roles.includes(role.toLowerCase()));
+});
 
 const visibleUnits = computed(() => {
   if (!filterUnit.value) return units;
@@ -1029,6 +1040,7 @@ function isMergeExpanded(mergeId) {
 }
 
 function toggleMergeExpanded(mergeId) {
+  if (!canExpandMergedRows.value) return;
   if (expandedMerges.value.has(mergeId)) expandedMerges.value.delete(mergeId);
   else expandedMerges.value.add(mergeId);
 }
@@ -1086,7 +1098,7 @@ const tableData = computed(() => {
               const gsmSummary = Array.from(new Set(mergeItems.map((it) => String(it.gsm || "-")).filter(Boolean)))
                 .sort((a, b) => Number(a) - Number(b))
                 .join(",");
-              const displayLabel = `${first.partyCode || ''}, ${customer}, ${first.quality || ''}, ${first.color || ''}, GSM: ${gsmSummary} (${mergeItems.length} items)`;
+              const displayLabel = `${customer}(${mergeItems.length}items)`;
               rows.push({
                 type: "merge",
                 rowKey: `merge-${mergeId}`,
@@ -1135,6 +1147,12 @@ function formatKg(value) {
   const num = parseFloat(value || 0);
   if (!Number.isFinite(num)) return "0";
   return num.toFixed(0);
+}
+
+function formatWidth(value) {
+  const num = parseFloat(value);
+  if (!Number.isFinite(num) || num <= 0) return "-";
+  return `${num} in`;
 }
 
 function getMergeRuleKey(item) {
