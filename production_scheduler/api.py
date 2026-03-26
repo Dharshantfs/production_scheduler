@@ -233,40 +233,44 @@ def _populate_planning_sheet_items(ps, doc):
         if gsm > 0 and width > 0 and m_roll > 0:
             wt = (gsm * width * m_roll * 0.0254) / 1000
 
-        # UNIT determination based STRICTLY on quality priority
-        unit = "Unit 1"
-        if qual:
-            q_up = _normalize_quality_key(qual)
-            q_key = "PREMIUM" if q_up.startswith("PREMIUM") else q_up
+        # UNIT determination: STRICT WIDTH + TONNAGE capacity checks
+        # Unit widths (inches): U1=63, U2=126, U3=126, U4=90
+        # Unit tonnage limits: U1=4.4T, U2=12T, U3=9T, U4=5.5T
+        # ANY quality on ANY unit allowed
+        UNIT_WIDTHS = {"Unit 1": 63, "Unit 2": 126, "Unit 3": 126, "Unit 4": 90}
+        UNIT_TONNAGE_LIMITS = {"Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5}
+        
+        item_tonnage = (it.qty or 0) / 1000.0  # Convert qty to tonnage
+        
+        # Find best unit using Best Fit Decreasing:
+        # 1. Width must FIT (strict check)
+        # 2. Tonnage available (strict check)
+        # 3. Pick smallest unit that fits (minimize waste)
+        viable_units = []
+        for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
+            unit_width = UNIT_WIDTHS[u]
+            unit_tonnage_max = UNIT_TONNAGE_LIMITS[u]
             
-            QUALITY_PRIORITY = {
-              "Unit 1": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5 },
-              "Unit 2": { 
-                  "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3,
-                  "GOLD": 4, "SILVER": 5, "BRONZE": 6, "CLASSIC": 7, "SUPERCLASSIC": 8, 
-                  "LIFESTYLE": 9, "ECOSPECIAL": 10, "ECOGREEN": 11, "SUPERECO": 12, "ULTRA": 13, "DELUXE": 14 
-              },
-              "Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
-              "Unit 4": { "PREMIUM": 1, "PLATINUM": 2, "GOLD": 3, "SILVER": 4, "BRONZE": 5, "CLASSIC": 6, "CRT": 6 }
-            }
-            
-            best_unit = "Unit 1"
-            best_score = 999
-            
-            for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
-                score = QUALITY_PRIORITY.get(u, {}).get(q_key)
-                if score is not None and score < best_score:
-                    best_score = score
-                    best_unit = u
-            
-            if best_score < 999:
-                unit = best_unit
-            else:
-                # Fallback if not mapped
-                if q_up in [_normalize_quality_key(v) for v in UNIT_1]: unit = "Unit 1"
-                elif q_up in [_normalize_quality_key(v) for v in UNIT_2]: unit = "Unit 2"
-                elif q_up in [_normalize_quality_key(v) for v in UNIT_3]: unit = "Unit 3"
-                elif q_up in [_normalize_quality_key(v) for v in UNIT_4]: unit = "Unit 4"
+            # STRICT: Width must fit
+            if unit_width >= width:
+                viable_units.append({
+                    "name": u,
+                    "width": unit_width,
+                    "width_waste": unit_width - width,
+                    "tonnage_max": unit_tonnage_max
+                })
+        
+        # Pick best unit: smallest width that fits (Best Fit)
+        if viable_units:
+            best_unit_option = min(viable_units, key=lambda x: x["width_waste"])
+            unit = best_unit_option["name"]
+        else:
+            # FALLBACK: Width doesn't fit ANY unit. Log error and assign to largest unit
+            frappe.logger().warning(
+                f"[_populate_planning_sheet_items] Item {it.name} width={width}\" exceeds all units. "
+                f"Max unit width=126\". Assigning to Unit 2 (widest). VERIFY ITEM CODE."
+            )
+            unit = "Unit 2"  # Widest unit as fallback
 
         # plannedDate auto-set for White items
         p_date = ps.ordered_date if _is_white_color(col) else None
@@ -1254,39 +1258,13 @@ def find_best_slot(item_qty_tons, quality, preferred_unit, start_date, recursion
 
 
 def get_preferred_unit(quality):
-    """Determines the best unit based on Item Quality."""
-    if not quality: return "Unit 1"
-
-    q_up = _normalize_quality_key(quality)
-    q_key = "PREMIUM" if q_up.startswith("PREMIUM") else q_up
-    QUALITY_PRIORITY = {
-        "Unit 1": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5 },
-        "Unit 2": { 
-            "GOLD": 1, "SILVER": 2, "BRONZE": 3, "CLASSIC": 4, "SUPERCLASSIC": 5, 
-            "LIFESTYLE": 6, "ECOSPECIAL": 7, "ECOGREEN": 8, "SUPERECO": 9, "ULTRA": 10, "DELUXE": 11 
-        },
-        "Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
-        "Unit 4": { "PREMIUM": 1, "GOLD": 2, "SILVER": 3, "BRONZE": 4, "CLASSIC": 5, "CRT": 5 }
-    }
-    
-    best_unit = "Unit 1"
-    best_score = 999
-    
-    for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
-        score = QUALITY_PRIORITY.get(u, {}).get(q_key)
-        if score is not None and score < best_score:
-            best_score = score
-            best_unit = u
-            
-    if best_score < 999:
-        return best_unit
-
-    # Fallback if quality not mapped in priority dict
-    if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 1", [])]: return "Unit 1"
-    if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 2", [])]: return "Unit 2"
-    if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 3", [])]: return "Unit 3"
-    if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 4", [])]: return "Unit 4"
+    """
+    Determines the best unit for an item when width info is not available.
+    Since ANY quality can run on ANY unit now, just return Unit 1 as default.
+    Width-based assignment is handled in _populate_planning_sheet_items and frontend autoAllocate.
+    """
     return "Unit 1"
+
 
 def generate_plan_code(date_str, unit, plan_name):
     """

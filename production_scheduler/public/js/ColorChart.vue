@@ -4666,14 +4666,15 @@ const UNIT_WIDTHS = {
 
 
 async function autoAllocate() {
-  if (!confirm("Auto-allocate visible orders based on Width & Quality? This will overwrite current unit assignments.")) return;
+  if (!confirm("⚠️ STRICT WIDTH ENFORCEMENT:\nAuto-allocate with strict width capacity checks.\nUnit 1: 63\", Unit 2: 126\", Unit 3: 126\", Unit 4: 90\"\nAny Quality, Any GSM allowed. Proceed?")) return;
 
-  const itemsToAlloc = filteredData.value; // Allocate currently filtered items
+  const itemsToAlloc = filteredData.value;
   if (itemsToAlloc.length === 0) return;
 
-  // 1. Group by Quality + Color (assume same color/quality run together)
+  // 1. Group by Quality + Color (same run together)
   const groups = {};
-  const unallocated = []; // Track items that don't fit
+  const unallocated = [];
+  const failedWidth = []; // Orders that don't fit ANY unit width-wise
   itemsToAlloc.forEach(item => {
     const key = `${item.quality}|${item.color}`;
     if (!groups[key]) groups[key] = [];
@@ -4685,46 +4686,17 @@ async function autoAllocate() {
   // 2. Process each group
   for (const key in groups) {
     const groupItems = groups[key];
-    const [quality, color] = key.split("|");
     
-    // Sort items by width DESC (Best Fit Decreasing)
+    // Sort items by width DESC (Best Fit Decreasing - largest first)
     groupItems.sort((a, b) => (b.width || 0) - (a.width || 0));
 
-    // Find compatible units based on QUALITY_PRIORITY map
-    // (If map exists for a unit, it lists supported qualities. If quality not in map, maybe not supported?)
-    // But user said "Gold can run Unit 3". U3 map has Gold.
-    let compatibleUnits = units.filter(u => {
-      const priMap = QUALITY_PRIORITY[u];
-      // If unit has no map (empty?), assume generic? No, strict check if map exists.
-      // If unit has map, check if quality is in it.
-      if (priMap) {
-         // If map has entries, strict check.
-         if (Object.keys(priMap).length > 0) {
-             return priMap[quality] !== undefined;
-         }
-      }
-      return true; // If no map, assume compatible
-    });
+    // ANY QUALITY on ANY UNIT - no quality filtering
+    let allUnits = ["Unit 1", "Unit 2", "Unit 3", "Unit 4"];
     
-    if (compatibleUnits.length === 0) {
-        // Fallback: try all units if strict check fails (maybe 'General' quality?)
-        compatibleUnits = [...units];
-    }
-
-    // Sort Units: Preference for Larger Width to facilitate grouping?
-    // Actually, maybe sort by Remaining Tonnage Capacity?
-    // For now, keep width logic but respect Tonnage.
-    compatibleUnits.sort((a, b) => UNIT_WIDTHS[b] - UNIT_WIDTHS[a]);
+    // Sort units by width DESCENDING (try largest first for grouping efficiency)
+    allUnits.sort((a, b) => UNIT_WIDTHS[b] - UNIT_WIDTHS[a]);
     
-    // Simulate current loads for this allocation session (since we are overwriting)
-    // We need to know if we are appending or overwriting.
-    // Alert says "overwrite current unit assignments". So we assume starting from 0 for these items.
-    // But what about items NOT in this filter?
-    // If we filter by "All Units", we re-allocate everything.
-    // Ideally we should account for "Locked" or "Other" items.
-    // For simplicity: We track load of items WE assign in this batch.
-    // Realistically, we should check existing load of UNSOUCHED items.
-    // But let's start with a local tracker.
+    // Track batch loads
     const batchLoads = {};
     units.forEach(u => batchLoads[u] = 0);
 
@@ -4735,16 +4707,17 @@ async function autoAllocate() {
         let bestUnit = null;
         let minWaste = Infinity;
         
-        for (const unit of compatibleUnits) {
+        // STRICT WIDTH CHECK: Try each unit
+        for (const unit of allUnits) {
              const unitWidth = UNIT_WIDTHS[unit];
              const limit = UNIT_TONNAGE_LIMITS[unit];
              
-             // Check 1: Width Fit
+             // ✅ CHECK 1: STRICT Width Fit (112" order CANNOT go to Unit 4 with 90" max)
              if (unitWidth >= itemWidth) {
-                 // Check 2: Tonnage Capacity
+                 // ✅ CHECK 2: Tonnage Capacity Available
                  if (batchLoads[unit] + itemTonnage <= limit) {
                      const waste = unitWidth - itemWidth;
-                     // Heuristic: Best Fit (Min Waste)
+                     // ✅ CHECK 3: Best Fit (minimize waste)
                      if (waste < minWaste) {
                          minWaste = waste;
                          bestUnit = unit;
@@ -4754,51 +4727,67 @@ async function autoAllocate() {
         }
         
         if (bestUnit) {
+            // ✅ Successfully allocated
             updates.push({
                 name: item.itemName,
                 unit: bestUnit
             });
             batchLoads[bestUnit] += itemTonnage;
+            console.log(`✅ ${item.itemName}: Width=${itemWidth}" → Unit=${bestUnit} (${UNIT_WIDTHS[bestUnit]}")`);
+        } else if (!allUnits.some(u => UNIT_WIDTHS[u] >= itemWidth)) {
+            // ❌ Width doesn't fit ANY unit
+            console.error(`❌ ${item.itemName}: Width=${itemWidth}" exceeds max unit width (126")`);
+            failedWidth.push(item);
         } else {
-            console.warn(`Could not allocate ${item.itemName}. Full or No Fit.`);
+            // ⚠️ Width fits but no tonnage available
+            console.warn(`⚠️ ${item.itemName}: Width fits but no tonnage capacity today`);
             unallocated.push(item);
         }
     }
   }
 
-  // 3. Apply updates (Unit Changes)
+  // 3. Apply updates
   if (updates.length > 0) {
       try {
-          // Optimistic update
           updates.forEach(upd => {
              const item = rawData.value.find(d => d.itemName === upd.name);
              if (item) item.unit = upd.unit;
           });
 
-          // API Call
           await frappe.call({
             method: "production_scheduler.api.update_items_bulk",
             args: { items: updates }
           });
           
-          frappe.show_alert({ message: `Auto-allocated ${updates.length} orders`, indicator: "green" });
+          frappe.show_alert({ 
+            message: `✅ Auto-allocated ${updates.length} orders with STRICT width enforcement`, 
+            indicator: "green" 
+          });
       } catch (e) {
           console.error(e);
-          frappe.msgprint("Error auto-allocating");
+          frappe.msgprint("❌ Error auto-allocating");
           fetchData(); 
       }
   }
 
-  // 4. Handle Unallocated (Rollover)
+  // 4. Report unallocated orders
+  if (failedWidth.length > 0) {
+      const totalWidth = failedWidth.reduce((s, i) => s + (i.width || 0), 0).toFixed(1);
+      frappe.msgprint(`
+        <strong>❌ ${failedWidth.length} ORDERS EXCEED MAXIMUM WIDTH (126"):</strong><br/>
+        Total width: ${totalWidth}"<br/>
+        <em>These orders cannot fit on ANY unit. Verify item codes or split orders.</em>
+      `);
+  }
+
   if (unallocated.length > 0) {
       const nextDate = frappe.datetime.add_days(filterOrderDate.value, 1);
       const totalUnallocated = unallocated.reduce((s, i) => s + (i.qty/1000), 0).toFixed(2);
       
-      if (confirm(`${unallocated.length} orders (${totalUnallocated}T) could not fit in today's capacity.\n\nMove them to the Next Day (${nextDate})?`)) {
-          console.log("Moving to next day:", nextDate, unallocated);
+      if (confirm(`⚠️ ${unallocated.length} orders (${totalUnallocated}T) don't fit TODAY's capacity (width OK, tonnage full).\n\nMove to ${nextDate}?`)) {
           const dateUpdates = unallocated.map(item => ({
               name: item.itemName,
-              date: nextDate 
+              custom_item_planned_date: nextDate 
           }));
           
           try {
@@ -4806,15 +4795,17 @@ async function autoAllocate() {
                 method: "production_scheduler.api.update_items_bulk",
                 args: { items: dateUpdates }
               });
-              frappe.show_alert({ message: `Moved ${unallocated.length} orders to ${nextDate}`, indicator: "orange" });
-              
-              // Remove from current view
+              frappe.show_alert({ message: `⏩ Moved ${unallocated.length} orders to ${nextDate}`, indicator: "orange" });
               rawData.value = rawData.value.filter(d => !unallocated.find(u => u.itemName === d.itemName));
           } catch (e) {
               console.error(e);
-              frappe.msgprint("Error moving items to next day");
+              frappe.msgprint("❌ Error moving items");
           }
       }
+  }
+
+  if (updates.length === 0 && failedWidth.length === 0 && unallocated.length === 0) {
+      frappe.msgprint("✓ All items already allocated.");
   }
 }
 
