@@ -2351,9 +2351,21 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         format_string_pp = ','.join(['%s'] * len(valid_pps))
         # Check Work Order via Production Plan
         wo_data_pp = frappe.db.sql(f"""
-            SELECT production_plan, name, produced_qty, qty
-            FROM `tabWork Order` 
-            WHERE production_plan IN ({format_string_pp}) AND docstatus < 2
+            SELECT wo.production_plan,
+                   wo.name,
+                   GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0)) as produced_qty,
+                   wo.qty
+            FROM `tabWork Order` wo
+            LEFT JOIN (
+                SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
+                FROM `tabStock Entry` se
+                INNER JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
+                WHERE se.docstatus = 1
+                  AND IFNULL(se.work_order, '') != ''
+                  AND IFNULL(sed.is_finished_item, 0) = 1
+                GROUP BY se.work_order
+            ) se_map ON se_map.work_order = wo.name
+            WHERE wo.production_plan IN ({format_string_pp}) AND wo.docstatus < 2
         """, tuple(valid_pps), as_dict=True)
         for row in wo_data_pp:
             if row.production_plan not in pp_wo_map:
@@ -2388,15 +2400,24 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             if pp_names:
                 pp_names = list(set(pp_names))
                 fmt_pp = ','.join(['%s'] * len(pp_names))
-                pp_wo_rows = frappe.db.sql(f"""
-                    SELECT production_plan,
-                           SUM(IFNULL(produced_qty, 0)) as produced_qty,
-                           COUNT(name) as wo_count
-                    FROM `tabWork Order`
-                    WHERE production_plan IN ({fmt_pp})
-                      AND docstatus < 2
-                    GROUP BY production_plan
-                """, tuple(pp_names), as_dict=True)
+                                pp_wo_rows = frappe.db.sql(f"""
+                                        SELECT wo.production_plan,
+                                                     SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty,
+                                                     COUNT(wo.name) as wo_count
+                                        FROM `tabWork Order` wo
+                                        LEFT JOIN (
+                                                SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
+                                                FROM `tabStock Entry` se
+                                                INNER JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
+                                                WHERE se.docstatus = 1
+                                                    AND IFNULL(se.work_order, '') != ''
+                                                    AND IFNULL(sed.is_finished_item, 0) = 1
+                                                GROUP BY se.work_order
+                                        ) se_map ON se_map.work_order = wo.name
+                                        WHERE wo.production_plan IN ({fmt_pp})
+                                            AND wo.docstatus < 2
+                                        GROUP BY wo.production_plan
+                                """, tuple(pp_names), as_dict=True)
 
                 for row in pp_wo_rows:
                     pp = row.get("production_plan")
@@ -2420,15 +2441,24 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             so_item_names = [r.so_item for r in so_item_rows if r.get("so_item")]
             if so_item_names:
                 fmt_so_item = ','.join(['%s'] * len(so_item_names))
-                wo_item_rows = frappe.db.sql(f"""
-                    SELECT {wo_so_item_col} as so_item,
-                           SUM(IFNULL(produced_qty, 0)) as produced_qty,
-                           COUNT(name) as wo_count
-                    FROM `tabWork Order`
-                    WHERE {wo_so_item_col} IN ({fmt_so_item})
-                      AND docstatus < 2
-                    GROUP BY {wo_so_item_col}
-                """, tuple(so_item_names), as_dict=True)
+                                wo_item_rows = frappe.db.sql(f"""
+                                        SELECT wo.{wo_so_item_col} as so_item,
+                                                     SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty,
+                                                     COUNT(wo.name) as wo_count
+                                        FROM `tabWork Order` wo
+                                        LEFT JOIN (
+                                                SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
+                                                FROM `tabStock Entry` se
+                                                INNER JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
+                                                WHERE se.docstatus = 1
+                                                    AND IFNULL(se.work_order, '') != ''
+                                                    AND IFNULL(sed.is_finished_item, 0) = 1
+                                                GROUP BY se.work_order
+                                        ) se_map ON se_map.work_order = wo.name
+                                        WHERE wo.{wo_so_item_col} IN ({fmt_so_item})
+                                            AND wo.docstatus < 2
+                                        GROUP BY wo.{wo_so_item_col}
+                                """, tuple(so_item_names), as_dict=True)
 
                 for row in wo_item_rows:
                     if row.get("so_item"):
