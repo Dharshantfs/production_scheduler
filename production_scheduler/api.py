@@ -114,12 +114,43 @@ def _find_existing_sheet_for_sales_order(sales_order, exclude_name=None):
     return existing[0] if existing else None
 
 
+def _psi_production_plan_fields():
+    """Return available Planning Sheet Item fields that may store item-level Production Plan links."""
+    candidates = [
+        "custom_production_plan",
+        "production_plan",
+        "custom_production_plan_id",
+        # Legacy/custom deployments sometimes store PP in order-sheet style fields.
+        "custom_order_sheet",
+        "order_sheet",
+        "custom_order_plan",
+    ]
+    return [f for f in candidates if frappe.db.has_column("Planning Sheet Item", f)]
+
+
 def _psi_production_plan_field():
-    """Return the best available Planning Sheet Item field for item-level Production Plan link."""
-    candidates = ["custom_production_plan", "production_plan", "custom_production_plan_id"]
-    for f in candidates:
+    """Return the primary Planning Sheet Item field used for writing item-level Production Plan links."""
+    fields = _psi_production_plan_fields()
+    return fields[0] if fields else None
+
+
+def _psi_order_sheet_field():
+    """Return optional Planning Sheet Item field used to store row-level order-sheet/PP reference."""
+    for f in ["custom_order_sheet", "order_sheet", "custom_order_plan"]:
         if frappe.db.has_column("Planning Sheet Item", f):
             return f
+    return None
+
+
+def _get_item_level_production_plan(item_name):
+    """Read item-level Production Plan link using all known candidate fields."""
+    if not item_name:
+        return None
+
+    for fieldname in _psi_production_plan_fields():
+        pp = frappe.db.get_value("Planning Sheet Item", item_name, fieldname)
+        if pp:
+            return pp
     return None
 
 
@@ -2797,6 +2828,10 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             psi_name = item.get("name")
             so_item_key = (item.get("sales_order_item") or item.get("custom_sales_order_item") or "").strip()
             item_pp = item_pp_map.get(item.get("name"))
+            if not item_pp:
+                item_pp = _get_item_level_production_plan(item.get("name"))
+                if item_pp:
+                    item_pp_map[item.get("name")] = item_pp
 
             # Legacy sheets may not have item-level PP populated; resolve via SO item and persist.
             if not item_pp and so_item_key:
@@ -4535,9 +4570,13 @@ def create_production_plan_from_sheet(sheet_name):
         frappe.db.set_value("Planning sheet", sheet.name, "production_plan", pp.name)
 
     psi_pp_field = _psi_production_plan_field()
-    if psi_pp_field:
+    psi_order_sheet_field = _psi_order_sheet_field()
+    if psi_pp_field or psi_order_sheet_field:
         for item in sheet.items:
-            frappe.db.set_value("Planning Sheet Item", item.name, psi_pp_field, pp.name)
+            if psi_pp_field:
+                frappe.db.set_value("Planning Sheet Item", item.name, psi_pp_field, pp.name)
+            if psi_order_sheet_field and psi_order_sheet_field != psi_pp_field:
+                frappe.db.set_value("Planning Sheet Item", item.name, psi_order_sheet_field, pp.name)
     
     # Update Status to Planned
     if sheet.sales_order:
@@ -4623,15 +4662,19 @@ def create_production_plan_bulk(sheets):
 
         # Persist PP link at item-level for exact row-to-PP mapping
         psi_pp_field = _psi_production_plan_field()
+        psi_order_sheet_field = _psi_order_sheet_field()
         for s in cust_sheets:
             if frappe.db.has_column("Planning sheet", "custom_production_plan"):
                 frappe.db.set_value("Planning sheet", s.name, "custom_production_plan", pp.name)
             elif frappe.db.has_column("Planning sheet", "production_plan"):
                 frappe.db.set_value("Planning sheet", s.name, "production_plan", pp.name)
 
-            if psi_pp_field:
+            if psi_pp_field or psi_order_sheet_field:
                 for item in s.items:
-                    frappe.db.set_value("Planning Sheet Item", item.name, psi_pp_field, pp.name)
+                    if psi_pp_field:
+                        frappe.db.set_value("Planning Sheet Item", item.name, psi_pp_field, pp.name)
+                    if psi_order_sheet_field and psi_order_sheet_field != psi_pp_field:
+                        frappe.db.set_value("Planning Sheet Item", item.name, psi_order_sheet_field, pp.name)
 
         created_plans.append(pp.name)
         
@@ -7714,7 +7757,6 @@ def get_planning_sheet_pp_id(planning_sheet_name, sales_order_item=None, plannin
         pp_id = None
 
         # Strategy 0: exact item-level linkage from clicked row item
-        psi_pp_field = _psi_production_plan_field()
         if not planning_sheet_item and sales_order_item:
             planning_sheet_item = frappe.db.get_value(
                 "Planning Sheet Item",
@@ -7726,8 +7768,8 @@ def get_planning_sheet_pp_id(planning_sheet_name, sales_order_item=None, plannin
                 "name",
             )
 
-        if planning_sheet_item and psi_pp_field and frappe.db.exists("Planning Sheet Item", planning_sheet_item):
-            pp_id = frappe.db.get_value("Planning Sheet Item", planning_sheet_item, psi_pp_field)
+        if planning_sheet_item and frappe.db.exists("Planning Sheet Item", planning_sheet_item):
+            pp_id = _get_item_level_production_plan(planning_sheet_item)
 
         # Strategy 0.5: resolve by Production Plan Item + sales_order_item
         if (not pp_id) and sales_order_item:
