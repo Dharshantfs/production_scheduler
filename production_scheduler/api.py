@@ -2302,6 +2302,16 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     item_pp_map = {}
     pp_produced_map = {}
     pp_wo_count_map = {}
+    spr_pp_produced_map = {}
+    spr_pp_count_map = {}
+    spr_so_item_produced_map = {}
+    spr_so_item_count_map = {}
+    spr_so_produced_map = {}
+    spr_so_count_map = {}
+    spr_order_code_produced_map = {}
+    spr_order_code_count_map = {}
+    so_item_pp_cache = {}
+    psi_pp_field = _psi_production_plan_field()
     
     valid_pps = set()
     
@@ -2376,10 +2386,91 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "qty": flt(row.qty)
             })
 
+    # Shaft Production Run aggregation (submitted docs) for production flows
+    try:
+        if frappe.db.exists("DocType", "Shaft Production Run"):
+            spr_cols = frappe.db.get_table_columns("Shaft Production Run") or []
+            spr_produced_col = None
+            for c in ["total_produced_weight", "custom_total_produced_weight", "produced_qty"]:
+                if c in spr_cols:
+                    spr_produced_col = c
+                    break
+
+            if spr_produced_col:
+                spr_pp_col = next((c for c in ["production_plan", "custom_production_plan"] if c in spr_cols), None)
+                spr_so_item_col = next((c for c in ["sales_order_item", "custom_sales_order_item"] if c in spr_cols), None)
+                spr_so_col = next((c for c in ["sales_order", "custom_sales_order"] if c in spr_cols), None)
+                spr_order_code_col = next((c for c in ["order_code", "custom_order_code", "party_code"] if c in spr_cols), None)
+
+                party_codes = list({str(s.party_code).strip() for s in planning_sheets if s.get("party_code")})
+                where_clauses = []
+                params = []
+
+                if spr_pp_col and valid_pps:
+                    fmt = ",".join(["%s"] * len(valid_pps))
+                    where_clauses.append(f"IFNULL({spr_pp_col}, '') IN ({fmt})")
+                    params.extend(list(valid_pps))
+                if spr_so_col and so_names:
+                    fmt = ",".join(["%s"] * len(so_names))
+                    where_clauses.append(f"IFNULL({spr_so_col}, '') IN ({fmt})")
+                    params.extend(so_names)
+                if spr_order_code_col and party_codes:
+                    fmt = ",".join(["%s"] * len(party_codes))
+                    where_clauses.append(f"IFNULL({spr_order_code_col}, '') IN ({fmt})")
+                    params.extend(party_codes)
+
+                if where_clauses:
+                    select_cols = ["name", f"IFNULL({spr_produced_col}, 0) as produced_qty"]
+                    if spr_pp_col:
+                        select_cols.append(f"{spr_pp_col} as pp_key")
+                    if spr_so_item_col:
+                        select_cols.append(f"{spr_so_item_col} as so_item_key")
+                    if spr_so_col:
+                        select_cols.append(f"{spr_so_col} as so_key")
+                    if spr_order_code_col:
+                        select_cols.append(f"{spr_order_code_col} as order_code_key")
+
+                    spr_rows = frappe.db.sql(
+                        f"""
+                        SELECT {', '.join(select_cols)}
+                        FROM `tabShaft Production Run`
+                        WHERE docstatus = 1
+                          AND ({' OR '.join(where_clauses)})
+                        """,
+                        tuple(params),
+                        as_dict=True,
+                    )
+
+                    for r in spr_rows:
+                        qty = flt(r.get("produced_qty"))
+                        if qty <= 0:
+                            continue
+
+                        pp_key = (r.get("pp_key") or "").strip()
+                        if pp_key:
+                            spr_pp_produced_map[pp_key] = spr_pp_produced_map.get(pp_key, 0) + qty
+                            spr_pp_count_map[pp_key] = spr_pp_count_map.get(pp_key, 0) + 1
+
+                        so_item_key = (r.get("so_item_key") or "").strip()
+                        if so_item_key:
+                            spr_so_item_produced_map[so_item_key] = spr_so_item_produced_map.get(so_item_key, 0) + qty
+                            spr_so_item_count_map[so_item_key] = spr_so_item_count_map.get(so_item_key, 0) + 1
+
+                        so_key = (r.get("so_key") or "").strip()
+                        if so_key:
+                            spr_so_produced_map[so_key] = spr_so_produced_map.get(so_key, 0) + qty
+                            spr_so_count_map[so_key] = spr_so_count_map.get(so_key, 0) + 1
+
+                        order_code_key = (r.get("order_code_key") or "").strip()
+                        if order_code_key:
+                            spr_order_code_produced_map[order_code_key] = spr_order_code_produced_map.get(order_code_key, 0) + qty
+                            spr_order_code_count_map[order_code_key] = spr_order_code_count_map.get(order_code_key, 0) + 1
+    except Exception:
+        pass
+
     # Item-level produced quantity map via sales_order_item/custom_sales_order_item
     if sheet_names:
         # 1) Strongest link: Planning Sheet Item -> Production Plan -> Work Order
-        psi_pp_field = _psi_production_plan_field()
         if psi_pp_field and frappe.db.has_column("Planning Sheet Item", psi_pp_field):
             fmt_sheet = ','.join(['%s'] * len(sheet_names))
             psi_pp_rows = frappe.db.sql(f"""
@@ -2400,24 +2491,24 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             if pp_names:
                 pp_names = list(set(pp_names))
                 fmt_pp = ','.join(['%s'] * len(pp_names))
-                                pp_wo_rows = frappe.db.sql(f"""
-                                        SELECT wo.production_plan,
-                                                     SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty,
-                                                     COUNT(wo.name) as wo_count
-                                        FROM `tabWork Order` wo
-                                        LEFT JOIN (
-                                                SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
-                                                FROM `tabStock Entry` se
-                                                INNER JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
-                                                WHERE se.docstatus = 1
-                                                    AND IFNULL(se.work_order, '') != ''
-                                                    AND IFNULL(sed.is_finished_item, 0) = 1
-                                                GROUP BY se.work_order
-                                        ) se_map ON se_map.work_order = wo.name
-                                        WHERE wo.production_plan IN ({fmt_pp})
-                                            AND wo.docstatus < 2
-                                        GROUP BY wo.production_plan
-                                """, tuple(pp_names), as_dict=True)
+                pp_wo_rows = frappe.db.sql(f"""
+                    SELECT wo.production_plan,
+                           SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty,
+                           COUNT(wo.name) as wo_count
+                    FROM `tabWork Order` wo
+                    LEFT JOIN (
+                        SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
+                        FROM `tabStock Entry` se
+                        INNER JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
+                        WHERE se.docstatus = 1
+                          AND IFNULL(se.work_order, '') != ''
+                          AND IFNULL(sed.is_finished_item, 0) = 1
+                        GROUP BY se.work_order
+                    ) se_map ON se_map.work_order = wo.name
+                    WHERE wo.production_plan IN ({fmt_pp})
+                      AND wo.docstatus < 2
+                    GROUP BY wo.production_plan
+                """, tuple(pp_names), as_dict=True)
 
                 for row in pp_wo_rows:
                     pp = row.get("production_plan")
@@ -2441,24 +2532,24 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             so_item_names = [r.so_item for r in so_item_rows if r.get("so_item")]
             if so_item_names:
                 fmt_so_item = ','.join(['%s'] * len(so_item_names))
-                                wo_item_rows = frappe.db.sql(f"""
-                                        SELECT wo.{wo_so_item_col} as so_item,
-                                                     SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty,
-                                                     COUNT(wo.name) as wo_count
-                                        FROM `tabWork Order` wo
-                                        LEFT JOIN (
-                                                SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
-                                                FROM `tabStock Entry` se
-                                                INNER JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
-                                                WHERE se.docstatus = 1
-                                                    AND IFNULL(se.work_order, '') != ''
-                                                    AND IFNULL(sed.is_finished_item, 0) = 1
-                                                GROUP BY se.work_order
-                                        ) se_map ON se_map.work_order = wo.name
-                                        WHERE wo.{wo_so_item_col} IN ({fmt_so_item})
-                                            AND wo.docstatus < 2
-                                        GROUP BY wo.{wo_so_item_col}
-                                """, tuple(so_item_names), as_dict=True)
+                wo_item_rows = frappe.db.sql(f"""
+                    SELECT wo.{wo_so_item_col} as so_item,
+                           SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty,
+                           COUNT(wo.name) as wo_count
+                    FROM `tabWork Order` wo
+                    LEFT JOIN (
+                        SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
+                        FROM `tabStock Entry` se
+                        INNER JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
+                        WHERE se.docstatus = 1
+                          AND IFNULL(se.work_order, '') != ''
+                          AND IFNULL(sed.is_finished_item, 0) = 1
+                        GROUP BY se.work_order
+                    ) se_map ON se_map.work_order = wo.name
+                    WHERE wo.{wo_so_item_col} IN ({fmt_so_item})
+                      AND wo.docstatus < 2
+                    GROUP BY wo.{wo_so_item_col}
+                """, tuple(so_item_names), as_dict=True)
 
                 for row in wo_item_rows:
                     if row.get("so_item"):
@@ -2543,14 +2634,51 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 if not is_white and not item_pdate:
                     continue
 
-            so_item_key = item.get("sales_order_item") or item.get("custom_sales_order_item")
+            so_item_key = (item.get("sales_order_item") or item.get("custom_sales_order_item") or "").strip()
             item_pp = item_pp_map.get(item.get("name"))
+
+            # Legacy sheets may not have item-level PP populated; resolve via SO item and persist.
+            if not item_pp and so_item_key:
+                if so_item_key not in so_item_pp_cache:
+                    so_item_pp_cache[so_item_key] = _resolve_pp_by_sales_order_item(so_item_key)
+                item_pp = so_item_pp_cache.get(so_item_key)
+                if item_pp:
+                    item_pp_map[item.get("name")] = item_pp
+                    if psi_pp_field and frappe.db.has_column("Planning Sheet Item", psi_pp_field):
+                        try:
+                            current_pp = frappe.db.get_value("Planning Sheet Item", item.get("name"), psi_pp_field)
+                            if not current_pp:
+                                frappe.db.set_value("Planning Sheet Item", item.get("name"), psi_pp_field, item_pp)
+                        except Exception:
+                            pass
+
+            if not item_pp:
+                item_pp = my_pp_name
+
             item_level_produced = pp_produced_map.get(item_pp)
             item_level_wo_count = pp_wo_count_map.get(item_pp, 0)
 
             if item_level_produced is None:
-                item_level_produced = so_item_produced_map.get(so_item_key, 0)
+                item_level_produced = so_item_produced_map.get(so_item_key)
                 item_level_wo_count = so_item_wo_count_map.get(so_item_key, 0)
+
+            # Shaft Production Run fallback path for production-run based updates.
+            if item_level_produced is None:
+                if item_pp and item_pp in spr_pp_produced_map:
+                    item_level_produced = spr_pp_produced_map.get(item_pp, 0)
+                    item_level_wo_count = max(item_level_wo_count, spr_pp_count_map.get(item_pp, 0))
+                elif so_item_key and so_item_key in spr_so_item_produced_map:
+                    item_level_produced = spr_so_item_produced_map.get(so_item_key, 0)
+                    item_level_wo_count = max(item_level_wo_count, spr_so_item_count_map.get(so_item_key, 0))
+                elif sheet.sales_order and sheet.sales_order in spr_so_produced_map:
+                    item_level_produced = spr_so_produced_map.get(sheet.sales_order, 0)
+                    item_level_wo_count = max(item_level_wo_count, spr_so_count_map.get(sheet.sales_order, 0))
+                elif sheet.party_code and sheet.party_code in spr_order_code_produced_map:
+                    item_level_produced = spr_order_code_produced_map.get(sheet.party_code, 0)
+                    item_level_wo_count = max(item_level_wo_count, spr_order_code_count_map.get(sheet.party_code, 0))
+
+            if item_level_produced is None:
+                item_level_produced = 0
 
             data.append({
                 "name": "{}-{}".format(sheet.name, item.get("idx", 0)),
@@ -5181,10 +5309,19 @@ def sync_custom_fields():
             "label": "Production Plan",
             "fieldtype": "Link",
             "options": "Production Plan",
-            "insert_after": "custom_plan_code",
+            "insert_after": "sales_order_item",
             "read_only": 1,
         })
         pp_cf.insert(ignore_permissions=True)
+
+    # Ensure the field is visible for legacy setups where it may exist but be hidden/misplaced.
+    try:
+        cf_name = frappe.db.get_value("Custom Field", {"dt": "Planning Sheet Item", "fieldname": "custom_production_plan"}, "name")
+        if cf_name:
+            frappe.db.set_value("Custom Field", cf_name, "hidden", 0)
+            frappe.db.set_value("Custom Field", cf_name, "insert_after", "sales_order_item")
+    except Exception:
+        pass
 
     frappe.db.commit()
     return "Custom fields synced successfully."
