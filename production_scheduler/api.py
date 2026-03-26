@@ -2298,6 +2298,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     sheet_pp_map = {}
     pp_wo_map = {}
     so_item_produced_map = {}
+    so_item_wo_count_map = {}
     
     valid_pps = set()
     
@@ -2378,7 +2379,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             if so_item_names:
                 fmt_so_item = ','.join(['%s'] * len(so_item_names))
                 wo_item_rows = frappe.db.sql(f"""
-                    SELECT {wo_so_item_col} as so_item, SUM(IFNULL(produced_qty, 0)) as produced_qty
+                    SELECT {wo_so_item_col} as so_item,
+                           SUM(IFNULL(produced_qty, 0)) as produced_qty,
+                           COUNT(name) as wo_count
                     FROM `tabWork Order`
                     WHERE {wo_so_item_col} IN ({fmt_so_item})
                       AND docstatus < 2
@@ -2388,6 +2391,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 for row in wo_item_rows:
                     if row.get("so_item"):
                         so_item_produced_map[row.so_item] = flt(row.produced_qty)
+                        so_item_wo_count_map[row.so_item] = cint(row.wo_count)
 
     data = []
     for sheet in planning_sheets:
@@ -2494,10 +2498,10 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "dod": str(sheet.dod) if sheet.dod else "",
                 "delivery_status": so_status_map.get(sheet.sales_order) or "Not Delivered",
                 "has_pp": sheet_has_pp,
-                "has_wo": sheet_has_wo,
-                "produced_qty": flt(produced_weight),
+                "has_wo": bool(sheet_has_wo or so_item_wo_count_map.get(item.get("sales_order_item") or item.get("custom_sales_order_item"), 0)),
+                "produced_qty": flt(so_item_produced_map.get(item.get("sales_order_item") or item.get("custom_sales_order_item"), 0)),
                 "salesOrderItem": item.get("sales_order_item") or item.get("custom_sales_order_item"),
-                "actual_produced_qty": flt(so_item_produced_map.get(item.get("sales_order_item") or item.get("custom_sales_order_item"), produced_weight)),
+                "actual_produced_qty": flt(so_item_produced_map.get(item.get("sales_order_item") or item.get("custom_sales_order_item"), 0)),
                 "isSplit": item.get("custom_is_split")
             })
 
