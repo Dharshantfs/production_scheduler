@@ -1729,7 +1729,7 @@ function toggleMergeMode() {
 }
 
 async function loadMergeData(statusDate) {
-  """Load all active merges for the current date/unit/plan."""
+  // Load all active merges for the current date/unit/plan.
   if (!statusDate) return;
   
   try {
