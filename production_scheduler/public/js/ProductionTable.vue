@@ -211,7 +211,7 @@
                               </button>
                               <button 
                                 v-else-if="row.item.spr_name" 
-                                @click="openItemSPR(row.item.spr_name)" 
+                                @click="openItemSPR(row.item.spr_name, row.item)" 
                                 class="cc-pp-btn" 
                                 style="background:#10b981; color:white;" 
                                 title="View SPR">
@@ -290,7 +290,7 @@
                               </button>
                               <button 
                                 v-else 
-                                @click="openItemSPR(row.spr_name)" 
+                                @click="openMergedSPR(row.spr_name, row)" 
                                 class="cc-pp-btn" 
                                 style="background:#10b981; color:white;" 
                                 title="View SPR">
@@ -1728,12 +1728,64 @@ async function createSingleMergedSPR(ppId, mergedItems, mergedRow) {
   });
 }
 
-function openItemSPR(sprName) {
+function openItemSPR(sprName, item = null) {
   if (!sprName) {
     frappe.msgprint("No SPR linked");
     return;
   }
-  frappe.set_route('Form', 'Shaft Production Run', sprName);
+  
+  // Verify SPR still exists
+  frappe.call({
+    method: "frappe.client.get",
+    args: { doctype: "Shaft Production Run", name: sprName },
+    callback: (r) => {
+      if (r.message) {
+        // SPR exists, open it
+        frappe.set_route('Form', 'Shaft Production Run', sprName);
+      } else {
+        // SPR was deleted, allow creating new one
+        if (item) {
+          frappe.show_alert({
+            message: '⚠️ SPR was deleted. You can create a new one.',
+            indicator: 'orange'
+          }, 3);
+          createItemStockEntry(item);
+        } else {
+          frappe.msgprint("SPR not found. It may have been deleted.");
+        }
+      }
+    }
+  });
+}
+
+function openMergedSPR(sprName, mergedRow) {
+  if (!sprName) {
+    frappe.msgprint("No SPR linked");
+    return;
+  }
+  
+  // Verify SPR still exists
+  frappe.call({
+    method: "frappe.client.get",
+    args: { doctype: "Shaft Production Run", name: sprName },
+    callback: (r) => {
+      if (r.message) {
+        // SPR exists, open it
+        frappe.set_route('Form', 'Shaft Production Run', sprName);
+      } else {
+        // SPR was deleted, allow creating new one
+        if (mergedRow) {
+          frappe.show_alert({
+            message: '⚠️ SPR was deleted. You can create a new one.',
+            indicator: 'orange'
+          }, 3);
+          createMergedStockEntry(mergedRow);
+        } else {
+          frappe.msgprint("SPR not found. It may have been deleted.");
+        }
+      }
+    }
+  });
 }
 
 function goToBoard() {

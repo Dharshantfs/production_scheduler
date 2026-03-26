@@ -2969,7 +2969,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "salesOrderItem": so_item_key,
                 "actual_produced_qty": flt(item_level_produced),
                 "isSplit": item.get("custom_is_split"),
-                "pp_id": item_pp or ""  # Item-level production plan ID for direct PP view routing
+                "pp_id": item_pp or "",  # Item-level production plan ID for direct PP view routing
+                "spr_name": frappe.db.get_value("Production Plan", item_pp, "shaft_production_run") if item_pp else ""  # SPR linked to PP
             })
 
     if cint(planned_only) and plan_name == "__all__":
