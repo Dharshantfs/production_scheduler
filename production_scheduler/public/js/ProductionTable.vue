@@ -196,7 +196,7 @@
                               </span>
                             </td>
                             <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">
-                              <button @click="openProductionPlanView(row.item.planningSheet)" class="cc-pp-btn" title="View Production Plan">
+                              <button @click="openProductionPlanView(row.item.planningSheet, row.item.salesOrderItem, row.item.itemName)" class="cc-pp-btn" title="View Production Plan">
                                 📋 View
                               </button>
                             </td>
@@ -1205,7 +1205,8 @@ function openMergedProductionPlan(row) {
   if (planningSheets.length > 1) {
     frappe.show_alert({ message: `Multiple planning sheets in merge. Opening first: ${planningSheets[0]}`, indicator: 'orange' });
   }
-  openProductionPlanView(planningSheets[0]);
+  const firstItem = (row.items || [])[0] || {};
+  openProductionPlanView(planningSheets[0], firstItem.salesOrderItem, firstItem.itemName);
 }
 
 function toggleMergeSelection(itemName) {
@@ -1428,7 +1429,7 @@ async function deleteMerge(mergeId) {
   }
 }
 
-async function openProductionPlanView(planningSheetName) {
+async function openProductionPlanView(planningSheetName, salesOrderItem = null, planningSheetItem = null) {
   if (!planningSheetName) {
     frappe.msgprint("Planning Sheet not found for this order");
     return;
@@ -1437,7 +1438,11 @@ async function openProductionPlanView(planningSheetName) {
   try {
     const res = await frappe.call({
       method: "production_scheduler.api.get_planning_sheet_pp_id",
-      args: { planning_sheet_name: planningSheetName }
+      args: {
+        planning_sheet_name: planningSheetName,
+        sales_order_item: salesOrderItem,
+        planning_sheet_item: planningSheetItem,
+      }
     });
     
     if (res.message && res.message.status === "ok") {

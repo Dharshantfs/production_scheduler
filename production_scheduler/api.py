@@ -114,6 +114,46 @@ def _find_existing_sheet_for_sales_order(sales_order, exclude_name=None):
     return existing[0] if existing else None
 
 
+def _psi_production_plan_field():
+    """Return the best available Planning Sheet Item field for item-level Production Plan link."""
+    candidates = ["custom_production_plan", "production_plan", "custom_production_plan_id"]
+    for f in candidates:
+        if frappe.db.has_column("Planning Sheet Item", f):
+            return f
+    return None
+
+
+def _resolve_pp_by_sales_order_item(sales_order_item):
+    """Find latest submitted Production Plan linked to a Sales Order Item."""
+    so_item = str(sales_order_item or "").strip()
+    if not so_item:
+        return None
+
+    so_item_col = None
+    if frappe.db.has_column("Production Plan Item", "sales_order_item"):
+        so_item_col = "sales_order_item"
+    elif frappe.db.has_column("Production Plan Item", "custom_sales_order_item"):
+        so_item_col = "custom_sales_order_item"
+
+    if not so_item_col:
+        return None
+
+    rows = frappe.db.sql(
+        f"""
+        SELECT DISTINCT pp.name
+        FROM `tabProduction Plan` pp
+        INNER JOIN `tabProduction Plan Item` ppi ON ppi.parent = pp.name
+        WHERE pp.docstatus = 1
+          AND COALESCE(ppi.{so_item_col}, '') = %s
+        ORDER BY pp.creation DESC
+        LIMIT 1
+        """,
+        (so_item,),
+        as_dict=True,
+    )
+    return rows[0]["name"] if rows else None
+
+
 
 # --- DEFINITIONS ---
 PREMIUM_SPECIAL_QUALITIES = [
@@ -4077,6 +4117,17 @@ def create_production_plan_from_sheet(sheet_name):
              row.sales_order_item = item.sales_order_item
              
     pp.insert()
+
+    # Persist PP link at sheet header (legacy) and item-level (source of truth for row actions)
+    if frappe.db.has_column("Planning sheet", "custom_production_plan"):
+        frappe.db.set_value("Planning sheet", sheet.name, "custom_production_plan", pp.name)
+    elif frappe.db.has_column("Planning sheet", "production_plan"):
+        frappe.db.set_value("Planning sheet", sheet.name, "production_plan", pp.name)
+
+    psi_pp_field = _psi_production_plan_field()
+    if psi_pp_field:
+        for item in sheet.items:
+            frappe.db.set_value("Planning Sheet Item", item.name, psi_pp_field, pp.name)
     
     # Update Status to Planned
     if sheet.sales_order:
@@ -4159,6 +4210,19 @@ def create_production_plan_bulk(sheets):
                 frappe.db.set_value("Sales Order", s.sales_order, "custom_production_status", "Planned")
         
         pp.insert()
+
+        # Persist PP link at item-level for exact row-to-PP mapping
+        psi_pp_field = _psi_production_plan_field()
+        for s in cust_sheets:
+            if frappe.db.has_column("Planning sheet", "custom_production_plan"):
+                frappe.db.set_value("Planning sheet", s.name, "custom_production_plan", pp.name)
+            elif frappe.db.has_column("Planning sheet", "production_plan"):
+                frappe.db.set_value("Planning sheet", s.name, "production_plan", pp.name)
+
+            if psi_pp_field:
+                for item in s.items:
+                    frappe.db.set_value("Planning Sheet Item", item.name, psi_pp_field, pp.name)
+
         created_plans.append(pp.name)
         
     return created_plans
@@ -5014,9 +5078,97 @@ def sync_custom_fields():
             "insert_after": "unit"
         })
         doc.insert(ignore_permissions=True)
-        frappe.db.commit()
-        return "Custom fields synced successfully."
-    return "Custom fields already synced."
+
+    # Item-level Production Plan link for exact View Plan routing
+    if not frappe.db.exists("Custom Field", {"dt": "Planning Sheet Item", "fieldname": "custom_production_plan"}):
+        pp_cf = frappe.get_doc({
+            "doctype": "Custom Field",
+            "dt": "Planning Sheet Item",
+            "fieldname": "custom_production_plan",
+            "label": "Production Plan",
+            "fieldtype": "Link",
+            "options": "Production Plan",
+            "insert_after": "custom_plan_code",
+            "read_only": 1,
+        })
+        pp_cf.insert(ignore_permissions=True)
+
+    frappe.db.commit()
+    return "Custom fields synced successfully."
+
+
+@frappe.whitelist()
+def backfill_item_level_production_plan_links(planning_sheet_name=None):
+    """Backfill Planning Sheet Item -> Production Plan links for legacy data."""
+    frappe.only_for("System Manager")
+
+    psi_pp_field = _psi_production_plan_field()
+    if not psi_pp_field:
+        return {"status": "error", "message": "Planning Sheet Item production plan field not found. Run sync_custom_fields first."}
+
+    filters = {}
+    if planning_sheet_name:
+        filters["parent"] = planning_sheet_name
+
+    rows = frappe.get_all(
+        "Planning Sheet Item",
+        filters=filters,
+        fields=["name", "parent", "sales_order_item", "custom_sales_order_item"],
+        limit_page_length=0,
+    )
+
+    linked = 0
+    unresolved = 0
+
+    for r in rows:
+        existing_pp = frappe.db.get_value("Planning Sheet Item", r.name, psi_pp_field)
+        if existing_pp:
+            continue
+
+        so_item = r.get("sales_order_item") or r.get("custom_sales_order_item")
+        pp_id = _resolve_pp_by_sales_order_item(so_item) if so_item else None
+
+        if not pp_id:
+            # Fallback to header-level PP field
+            pp_id = frappe.db.get_value("Planning sheet", r.parent, "custom_production_plan") if frappe.db.has_column("Planning sheet", "custom_production_plan") else None
+            if (not pp_id) and frappe.db.has_column("Planning sheet", "production_plan"):
+                pp_id = frappe.db.get_value("Planning sheet", r.parent, "production_plan")
+
+        if pp_id:
+            frappe.db.set_value("Planning Sheet Item", r.name, psi_pp_field, pp_id)
+            linked += 1
+        else:
+            unresolved += 1
+
+    frappe.db.commit()
+    return {
+        "status": "success",
+        "linked": linked,
+        "unresolved": unresolved,
+        "scanned": len(rows),
+        "field": psi_pp_field,
+    }
+
+
+@frappe.whitelist()
+def diagnose_sales_order_planning_sheets(sales_order):
+    """Diagnostic helper for singleton enforcement and legacy duplicates."""
+    if not sales_order:
+        return {"status": "error", "message": "sales_order is required"}
+
+    sheets = frappe.get_all(
+        "Planning sheet",
+        filters={"sales_order": sales_order},
+        fields=["name", "docstatus", "creation", "custom_plan_name", "custom_pb_plan_name"],
+        order_by="creation asc",
+        limit_page_length=0,
+    )
+    return {
+        "status": "success",
+        "sales_order": sales_order,
+        "count": len(sheets),
+        "sheets": sheets,
+    }
 
 
 @frappe.whitelist()
@@ -6379,7 +6531,7 @@ def run_orphan_cleanup():
 
 
 @frappe.whitelist()
-def get_planning_sheet_pp_id(planning_sheet_name):
+def get_planning_sheet_pp_id(planning_sheet_name, sales_order_item=None, planning_sheet_item=None):
     """
     Fetch the Production Plan ID linked to a Planning Sheet.
     Returns the PP ID so it can be viewed in a new tab.
@@ -6395,6 +6547,26 @@ def get_planning_sheet_pp_id(planning_sheet_name):
 
         sheet = frappe.get_doc("Planning sheet", planning_sheet_name)
         pp_id = None
+
+        # Strategy 0: exact item-level linkage from clicked row item
+        psi_pp_field = _psi_production_plan_field()
+        if not planning_sheet_item and sales_order_item:
+            planning_sheet_item = frappe.db.get_value(
+                "Planning Sheet Item",
+                {"parent": planning_sheet_name, "sales_order_item": sales_order_item},
+                "name",
+            ) or frappe.db.get_value(
+                "Planning Sheet Item",
+                {"parent": planning_sheet_name, "custom_sales_order_item": sales_order_item},
+                "name",
+            )
+
+        if planning_sheet_item and psi_pp_field and frappe.db.exists("Planning Sheet Item", planning_sheet_item):
+            pp_id = frappe.db.get_value("Planning Sheet Item", planning_sheet_item, psi_pp_field)
+
+        # Strategy 0.5: resolve by Production Plan Item + sales_order_item
+        if (not pp_id) and sales_order_item:
+            pp_id = _resolve_pp_by_sales_order_item(sales_order_item)
 
         # Strategy 1: direct link fields on Planning sheet
         if frappe.db.has_column("Planning sheet", "custom_production_plan"):
