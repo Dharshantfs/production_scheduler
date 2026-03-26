@@ -7,27 +7,27 @@ import datetime
 
 
 def _resolve_customer_link(raw_customer, party_code=None):
-	"""Return a valid Customer docname for link-field assignments."""
-	if not raw_customer:
-		if party_code and frappe.db.exists("Customer", party_code):
-			return party_code
-		return ""
+    """Return a valid Customer docname for link-field assignments."""
+    if not raw_customer:
+        if party_code and frappe.db.exists("Customer", party_code):
+            return party_code
+        return ""
 
-	raw_customer = str(raw_customer).strip()
-	if not raw_customer:
-		return ""
+    raw_customer = str(raw_customer).strip()
+    if not raw_customer:
+        return ""
 
-	if frappe.db.exists("Customer", raw_customer):
-		return raw_customer
+    if frappe.db.exists("Customer", raw_customer):
+        return raw_customer
 
-	by_name = frappe.db.get_value("Customer", {"customer_name": raw_customer}, "name")
-	if by_name:
-		return by_name
+    by_name = frappe.db.get_value("Customer", {"customer_name": raw_customer}, "name")
+    if by_name:
+        return by_name
 
-	if party_code and frappe.db.exists("Customer", party_code):
-		return party_code
+    if party_code and frappe.db.exists("Customer", party_code):
+        return party_code
 
-	return ""
+    return ""
 
 def generate_party_code(doc):
     """One Sales Order = One Party Code.
@@ -97,12 +97,12 @@ def generate_party_code(doc):
 
 # --- DEFINITIONS ---
 PREMIUM_SPECIAL_QUALITIES = [
-	"PREMIUM - HYDROPHOBIC",
-	"PREMIUM - FR BS5867II PART 2 TYPE B",
-	"PREMIUM - FR + ANTI MICROBIAL",
-	"PREMIUM - FR FMV SS 302",
-	"PREMIUM - HYDROPHILIC",
-	"PREMIUM - UV",
+    "PREMIUM - HYDROPHOBIC",
+    "PREMIUM - FR BS5867II PART 2 TYPE B",
+    "PREMIUM - FR + ANTI MICROBIAL",
+    "PREMIUM - FR FMV SS 302",
+    "PREMIUM - HYDROPHILIC",
+    "PREMIUM - UV",
 ]
 
 UNIT_1 = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER"] + PREMIUM_SPECIAL_QUALITIES
@@ -111,12 +111,12 @@ UNIT_3 = ["PREMIUM", "PLATINUM", "SUPER PLATINUM", "GOLD", "SILVER", "BRONZE"] +
 UNIT_4 = ["PREMIUM", "PLATINUM", "GOLD", "SILVER", "BRONZE", "CLASSIC", "CRT"] + PREMIUM_SPECIAL_QUALITIES
 
 QUAL_LIST = ["SUPER PLATINUM", "SUPER CLASSIC", "SUPER ECO", "ECO SPECIAL", "ECO GREEN",
-			 "ECO SPL", "LIFE STYLE", "LIFESTYLE", "PREMIUM", "PLATINUM", "CLASSIC", "CRT",
-			 "DELUXE", "BRONZE", "SILVER", "ULTRA", "GOLD", "UV"] + PREMIUM_SPECIAL_QUALITIES
+             "ECO SPL", "LIFE STYLE", "LIFESTYLE", "PREMIUM", "PLATINUM", "CLASSIC", "CRT",
+             "DELUXE", "BRONZE", "SILVER", "ULTRA", "GOLD", "UV"] + PREMIUM_SPECIAL_QUALITIES
 QUAL_LIST.sort(key=len, reverse=True)
 
 def _normalize_quality_key(text):
-	return re.sub(r"[^A-Z0-9]+", "", str(text or "").upper())
+    return re.sub(r"[^A-Z0-9]+", "", str(text or "").upper())
 
 COL_LIST = ["BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE", "BLEACH WHITE", "BLEACH WHITE 1.0", "BLEACH WHITE 2.0", "WHITE MIX", "WHITE","BRIGHT IVORY","CREAM 2.0", "CREAM 3.0", "CREAM 4.0", "CREAM 5.0", "GOLDEN YELLOW 4.0 SPL", "GOLDEN YELLOW 1.0", "GOLDEN YELLOW 2.0", "GOLDEN YELLOW 3.0", "GOLDEN YELLOW", "LEMON YELLOW 1.0", "LEMON YELLOW 3.0", "LEMON YELLOW", "BRIGHT ORANGE", "DARK ORANGE", "ORANGE 2.0", "PINK 7.0 DARK", "PINK 6.0 DARK", "DARK PINK", "BABY PINK", "PINK 1.0", "PINK 2.0", "PINK 3.0", "PINK 5.0", "CRIMSON RED", "RED", "LIGHT MAROON", "DARK MAROON", "MAROON 1.0", "MAROON 2.0", "BLUE 13.0 INK BLUE", "BLUE 12.0 SPL NAVY BLUE", "BLUE 11.0 NAVY BLUE", "BLUE 8.0 DARK ROYAL BLUE", "BLUE 7.0 DARK BLUE", "BLUE 6.0 ROYAL BLUE", "LIGHT PEACOCK BLUE", "PEACOCK BLUE", "LIGHT MEDICAL BLUE", "MEDICAL BLUE", "ROYAL BLUE", "NAVY BLUE", "SKY BLUE", "LIGHT BLUE", "BLUE 9.0", "BLUE 4.0", "BLUE 2.0", "BLUE 1.0", "BLUE", "PURPLE 4.0 BLACKBERRY", "PURPLE 1.0", "PURPLE 2.0", "PURPLE 3.0", "VIOLET", "VOILET", "GREEN 13.0 ARMY GREEN", "GREEN 12.0 OLIVE GREEN", "GREEN 11.0 DARK GREEN", "GREEN 10.0", "GREEN 9.0 BOTTLE GREEN", "GREEN 8.0 APPLE GREEN", "GREEN 7.0", "GREEN 6.0", "GREEN 5.0 GRASS GREEN", "GREEN 4.0", "GREEN 3.0 RELIANCE GREEN", "GREEN 2.0 TORQUISE GREEN", "GREEN 1.0 MINT", "MEDICAL GREEN", "RELIANCE GREEN", "PARROT GREEN", "GREEN", "SILVER 1.0", "SILVER 2.0", "LIGHT GREY", "DARK GREY", "GREY 1.0", "CHOCOLATE BROWN 2.0", "CHOCOLATE BROWN", "CHOCOLATE BLACK", "BROWN 3.0 DARK COFFEE", "BROWN 2.0 DARK", "BROWN 1.0", "CHIKOO 1.0", "CHIKOO 2.0", "BEIGE 1.0", "BEIGE 2.0", "BEIGE 3.0", "BEIGE 4.0", "BEIGE 5.0", "LIGHT BEIGE", "DARK BEIGE", "BEIGE MIX", "BLACK MIX", "COLOR MIX", "BLACK"]
 COL_LIST.sort(key=len, reverse=True)
@@ -131,19 +131,19 @@ def _populate_planning_sheet_items(ps, doc):
     Populates items from a Sales Order into a Planning Sheet.
     Includes strict de-duplication based on sales_order_item.
     """
-	existing_items = [it.sales_order_item for it in ps.items]
+    existing_items = [it.sales_order_item for it in ps.items]
 
-	# Pull exact names from Quality Master so parsed quality matches ERPNext doctype names.
-	quality_lookup = list(QUAL_LIST)
-	try:
-		qm_names = frappe.get_all("Quality Master", pluck="name") or []
-		for qn in qm_names:
-			qn_up = str(qn or "").upper().strip()
-			if qn_up and qn_up not in quality_lookup:
-				quality_lookup.append(qn_up)
-	except Exception:
-		pass
-	quality_lookup.sort(key=len, reverse=True)
+    # Pull exact names from Quality Master so parsed quality matches ERPNext doctype names.
+    quality_lookup = list(QUAL_LIST)
+    try:
+        qm_names = frappe.get_all("Quality Master", pluck="name") or []
+        for qn in qm_names:
+            qn_up = str(qn or "").upper().strip()
+            if qn_up and qn_up not in quality_lookup:
+                quality_lookup.append(qn_up)
+    except Exception:
+        pass
+    quality_lookup.sort(key=len, reverse=True)
     
     for it in doc.items:
         if it.name in existing_items:
@@ -214,11 +214,11 @@ def _populate_planning_sheet_items(ps, doc):
                 pass # Fallback to string matching if DB fails
 
         # Fallback to String Matching
-		search_text = " " + " ".join(words) + " "
-		search_norm = _normalize_quality_key(search_text)
+        search_text = " " + " ".join(words) + " "
+        search_norm = _normalize_quality_key(search_text)
         if not qual:
-			for q in quality_lookup:
-				if _normalize_quality_key(q) and _normalize_quality_key(q) in search_norm:
+            for q in quality_lookup:
+                if _normalize_quality_key(q) and _normalize_quality_key(q) in search_norm:
                     qual = q
                     break
         if not col:
@@ -247,14 +247,14 @@ def _populate_planning_sheet_items(ps, doc):
                   "LIFESTYLE": 9, "ECOSPECIAL": 10, "ECOGREEN": 11, "SUPERECO": 12, "ULTRA": 13, "DELUXE": 14 
               },
               "Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
-			  "Unit 4": { "PREMIUM": 1, "PLATINUM": 2, "GOLD": 3, "SILVER": 4, "BRONZE": 5, "CLASSIC": 6, "CRT": 6 }
+              "Unit 4": { "PREMIUM": 1, "PLATINUM": 2, "GOLD": 3, "SILVER": 4, "BRONZE": 5, "CLASSIC": 6, "CRT": 6 }
             }
             
             best_unit = "Unit 1"
             best_score = 999
             
             for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
-				score = QUALITY_PRIORITY.get(u, {}).get(q_key)
+                score = QUALITY_PRIORITY.get(u, {}).get(q_key)
                 if score is not None and score < best_score:
                     best_score = score
                     best_unit = u
@@ -306,13 +306,13 @@ WHITE_COLORS = {
 }
 
 def _normalize_unit(raw):
-	"""Returns title-case unit names like 'Unit 1', 'Unit 2', etc. from any raw string."""
-	r = (raw or "").strip().upper().replace(" ", "")
-	if "UNIT1" in r: return "Unit 1"
-	if "UNIT2" in r: return "Unit 2"
-	if "UNIT3" in r: return "Unit 3"
-	if "UNIT4" in r: return "Unit 4"
-	return "Mixed"
+    """Returns title-case unit names like 'Unit 1', 'Unit 2', etc. from any raw string."""
+    r = (raw or "").strip().upper().replace(" ", "")
+    if "UNIT1" in r: return "Unit 1"
+    if "UNIT2" in r: return "Unit 2"
+    if "UNIT3" in r: return "Unit 3"
+    if "UNIT4" in r: return "Unit 4"
+    return "Mixed"
 
 def _get_standard_month_name(month_index):
     # month_index 1-12
@@ -415,150 +415,150 @@ def _strip_legacy_prefixes(name):
     return name.strip()
 
 HARD_LIMITS = {
-	"Unit 1": 4.4,
-	"Unit 2": 12.0,
-	"Unit 3": 9.0,
-	"Unit 4": 5.5
+    "Unit 1": 4.4,
+    "Unit 2": 12.0,
+    "Unit 3": 9.0,
+    "Unit 4": 5.5
 }
 SOFT_LIMITS = {
-	"Unit 1": 4.0,
-	"Unit 2": 9.0,
-	"Unit 3": 7.8,
-	"Unit 4": 4.0
+    "Unit 1": 4.0,
+    "Unit 2": 9.0,
+    "Unit 3": 7.8,
+    "Unit 4": 4.0
 }
 
 UNIT_QUALITY_MAP = {
-	"Unit 1": UNIT_1,
-	"Unit 2": UNIT_2,
-	"Unit 3": UNIT_3,
-	"Unit 4": UNIT_4
+    "Unit 1": UNIT_1,
+    "Unit 2": UNIT_2,
+    "Unit 3": UNIT_3,
+    "Unit 4": UNIT_4
 }
 
 def is_quality_allowed(unit, quality):
-	"""Checks if a quality is allowed for a unit."""
-	if not quality or not unit: return True
-	if unit == "Unit 2": return True # As per user request, all qualities allowed in Unit 2
-	if unit not in UNIT_QUALITY_MAP: return True
+    """Checks if a quality is allowed for a unit."""
+    if not quality or not unit: return True
+    if unit == "Unit 2": return True # As per user request, all qualities allowed in Unit 2
+    if unit not in UNIT_QUALITY_MAP: return True
 
-	# Allow premium special variants in all units.
-	q_match = _normalize_quality_key(quality)
-	if q_match in [_normalize_quality_key(v) for v in PREMIUM_SPECIAL_QUALITIES]:
-		return True
+    # Allow premium special variants in all units.
+    q_match = _normalize_quality_key(quality)
+    if q_match in [_normalize_quality_key(v) for v in PREMIUM_SPECIAL_QUALITIES]:
+        return True
 
-	allowed = [_normalize_quality_key(q) for q in UNIT_QUALITY_MAP[unit]]
-	return q_match in allowed
+    allowed = [_normalize_quality_key(q) for q in UNIT_QUALITY_MAP[unit]]
+    return q_match in allowed
 
 def is_sheet_locked(sheet_name):
-	"""Checks if a sheet is locked (either submitted or belongs to a locked plan)."""
-	try:
-		sheet = frappe.get_doc("Planning sheet", sheet_name)
-		if sheet.docstatus != 0:
-			return True
-		
-		# Check if its plans are locked
-		cc_plan = sheet.get("custom_plan_name") or "Default"
-		
-		# We need to fetch persisted plans to check lock status
-		from production_scheduler.api import get_persisted_plans
-		
-		cc_plans = get_persisted_plans("color_chart")
-		if any(p["name"] == cc_plan and p.get("locked") for p in cc_plans):
-			return True
-			
-		return False
-				
-		return False
-	except Exception:
-		return False
+    """Checks if a sheet is locked (either submitted or belongs to a locked plan)."""
+    try:
+        sheet = frappe.get_doc("Planning sheet", sheet_name)
+        if sheet.docstatus != 0:
+            return True
+        
+        # Check if its plans are locked
+        cc_plan = sheet.get("custom_plan_name") or "Default"
+        
+        # We need to fetch persisted plans to check lock status
+        from production_scheduler.api import get_persisted_plans
+        
+        cc_plans = get_persisted_plans("color_chart")
+        if any(p["name"] == cc_plan and p.get("locked") for p in cc_plans):
+            return True
+            
+        return False
+                
+        return False
+    except Exception:
+        return False
 
 # Cache for column existence check
 _planned_date_col_exists = None
 def _has_planned_date_column():
-	"""Check if custom_planned_date column exists on Planning sheet table."""
-	global _planned_date_col_exists
-	if _planned_date_col_exists is None:
-		try:
-			frappe.db.sql("SELECT custom_planned_date FROM `tabPlanning sheet` LIMIT 1")
-			_planned_date_col_exists = True
-		except Exception:
-			_planned_date_col_exists = False
-	return _planned_date_col_exists
+    """Check if custom_planned_date column exists on Planning sheet table."""
+    global _planned_date_col_exists
+    if _planned_date_col_exists is None:
+        try:
+            frappe.db.sql("SELECT custom_planned_date FROM `tabPlanning sheet` LIMIT 1")
+            _planned_date_col_exists = True
+        except Exception:
+            _planned_date_col_exists = False
+    return _planned_date_col_exists
 
 _approval_status_col_exists = None
 def _has_approval_status_column():
-	"""Check if custom_approval_status column exists on Planning sheet table."""
-	global _approval_status_col_exists
-	if _approval_status_col_exists is None:
-		try:
-			frappe.db.sql("SELECT custom_approval_status FROM `tabPlanning sheet` LIMIT 1")
-			_approval_status_col_exists = True
-		except Exception:
-			_approval_status_col_exists = False
-	return _approval_status_col_exists
+    """Check if custom_approval_status column exists on Planning sheet table."""
+    global _approval_status_col_exists
+    if _approval_status_col_exists is None:
+        try:
+            frappe.db.sql("SELECT custom_approval_status FROM `tabPlanning sheet` LIMIT 1")
+            _approval_status_col_exists = True
+        except Exception:
+            _approval_status_col_exists = False
+    return _approval_status_col_exists
 
 _draft_fields_exist = None
 def _has_draft_fields():
-	"""Check if custom_draft_planned_date/idx columns exist."""
-	global _draft_fields_exist
-	if _draft_fields_exist is None:
-		try:
-			frappe.db.sql("SELECT custom_draft_planned_date FROM `tabPlanning sheet` LIMIT 1")
-			_draft_fields_exist = True
-		except Exception:
-			_draft_fields_exist = False
-	return _draft_fields_exist
+    """Check if custom_draft_planned_date/idx columns exist."""
+    global _draft_fields_exist
+    if _draft_fields_exist is None:
+        try:
+            frappe.db.sql("SELECT custom_draft_planned_date FROM `tabPlanning sheet` LIMIT 1")
+            _draft_fields_exist = True
+        except Exception:
+            _draft_fields_exist = False
+    return _draft_fields_exist
 
 def _effective_date_expr(alias="p"):
-	"""Returns SQL expression for effective date."""
-	if _has_planned_date_column():
-		return f"COALESCE({alias}.custom_planned_date, {alias}.ordered_date)"
-	return f"{alias}.ordered_date"
+    """Returns SQL expression for effective date."""
+    if _has_planned_date_column():
+        return f"COALESCE({alias}.custom_planned_date, {alias}.ordered_date)"
+    return f"{alias}.ordered_date"
 
 def get_unit_load(date, unit, plan_name=None, pb_only=0):
-	"""Calculates current load (in Tons) for a unit on a given date.
-	Filtered per-plan so each plan has its own independent capacity.
-	Uses custom_item_planned_date if set, otherwise falls back to parent.
-	"""
-	# Priority: Item Date -> Sheet Date -> Sheet Ordered Date
-	eff = "COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)"
-	pb_only = cint(pb_only)
-	# Build plan filter ΓÇö each plan is treated independently
-	if plan_name and plan_name != "__all__":
-		if plan_name == "Default":
-			plan_cond = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
-			params = (date, unit)
-		else:
-			plan_cond = "AND p.custom_plan_name = %s"
-			params = (date, unit, plan_name)
-	else:
-		# No plan filter ΓÇö sum all (used internally for global capacity checks)
-		plan_cond = ""
-		params = (date, unit)
+    """Calculates current load (in Tons) for a unit on a given date.
+    Filtered per-plan so each plan has its own independent capacity.
+    Uses custom_item_planned_date if set, otherwise falls back to parent.
+    """
+    # Priority: Item Date -> Sheet Date -> Sheet Ordered Date
+    eff = "COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)"
+    pb_only = cint(pb_only)
+    # Build plan filter ΓÇö each plan is treated independently
+    if plan_name and plan_name != "__all__":
+        if plan_name == "Default":
+            plan_cond = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
+            params = (date, unit)
+        else:
+            plan_cond = "AND p.custom_plan_name = %s"
+            params = (date, unit, plan_name)
+    else:
+        # No plan filter ΓÇö sum all (used internally for global capacity checks)
+        plan_cond = ""
+        params = (date, unit)
 
-	# Optional Production Board-only mode:
-	# Only count items/sheets explicitly pushed/planned to PB.
-	pb_cond = ""
-	if pb_only and _has_planned_date_column():
-		pb_cond = "AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
-	
-	# MIX WASTE EXCLUSION:
-	# Matches frontend logic (is_mix_roll || itemName.startsWith('MIX'))
-	mix_cond = "AND i.item_name NOT LIKE 'MIX%%'"
-	
-	sql = f"""
-		SELECT SUM(i.qty) as total_qty
-		FROM `tabPlanning Sheet Item` i
-		JOIN `tabPlanning sheet` p ON i.parent = p.name
-		WHERE {eff} = %s
-		  AND i.unit = %s
-		  AND p.docstatus < 2
-		  AND i.docstatus < 2
-		  {plan_cond}
-		  {pb_cond}
-		  {mix_cond}
-	"""
-	result = frappe.db.sql(sql, params)
-	return flt(result[0][0]) / 1000.0 if result and result[0][0] else 0.0
+    # Optional Production Board-only mode:
+    # Only count items/sheets explicitly pushed/planned to PB.
+    pb_cond = ""
+    if pb_only and _has_planned_date_column():
+        pb_cond = "AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
+    
+    # MIX WASTE EXCLUSION:
+    # Matches frontend logic (is_mix_roll || itemName.startsWith('MIX'))
+    mix_cond = "AND i.item_name NOT LIKE 'MIX%%'"
+    
+    sql = f"""
+        SELECT SUM(i.qty) as total_qty
+        FROM `tabPlanning Sheet Item` i
+        JOIN `tabPlanning sheet` p ON i.parent = p.name
+        WHERE {eff} = %s
+          AND i.unit = %s
+          AND p.docstatus < 2
+          AND i.docstatus < 2
+          {plan_cond}
+          {pb_cond}
+          {mix_cond}
+    """
+    result = frappe.db.sql(sql, params)
+    return flt(result[0][0]) / 1000.0 if result and result[0][0] else 0.0
 
 # ===========================
 # EQUIPMENT MAINTENANCE HELPERS
@@ -566,1096 +566,1096 @@ def get_unit_load(date, unit, plan_name=None, pb_only=0):
 
 @frappe.whitelist()
 def get_maintenance_windows(unit, start_date, end_date):
-	"""
-	Query all maintenance periods for a unit within a date range.
-	Returns: dict {date: [list of maintenance records]}
-	"""
-	from frappe.utils import getdate, add_days
-	
-	start_dt = getdate(start_date)
-	end_dt = getdate(end_date)
-	
-	if not frappe.db.exists("DocType", "Equipment Maintenance"):
-		return {}
-	
-	records = frappe.db.sql("""
-		SELECT name, unit, maintenance_type, start_date, end_date, status
-		FROM `tabEquipment Maintenance`
-		WHERE unit = %s
-		  AND start_date <= %s
-		  AND end_date >= %s
-		  AND docstatus < 2
-	""", (unit, end_dt, start_dt), as_dict=True)
-	
-	# Build date map
-	result = {}
-	for rec in records:
-		current = getdate(rec.start_date)
-		end = getdate(rec.end_date)
-		while current <= end:
-			date_str = str(current)
-			if date_str not in result:
-				result[date_str] = []
-			result[date_str].append({
-				"type": rec.maintenance_type,
-				"start_date": str(rec.start_date),
-				"end_date": str(rec.end_date),
-				"status": rec.status
-			})
-			current = add_days(current, 1)
-	
-	return result
+    """
+    Query all maintenance periods for a unit within a date range.
+    Returns: dict {date: [list of maintenance records]}
+    """
+    from frappe.utils import getdate, add_days
+    
+    start_dt = getdate(start_date)
+    end_dt = getdate(end_date)
+    
+    if not frappe.db.exists("DocType", "Equipment Maintenance"):
+        return {}
+    
+    records = frappe.db.sql("""
+        SELECT name, unit, maintenance_type, start_date, end_date, status
+        FROM `tabEquipment Maintenance`
+        WHERE unit = %s
+          AND start_date <= %s
+          AND end_date >= %s
+          AND docstatus < 2
+    """, (unit, end_dt, start_dt), as_dict=True)
+    
+    # Build date map
+    result = {}
+    for rec in records:
+        current = getdate(rec.start_date)
+        end = getdate(rec.end_date)
+        while current <= end:
+            date_str = str(current)
+            if date_str not in result:
+                result[date_str] = []
+            result[date_str].append({
+                "type": rec.maintenance_type,
+                "start_date": str(rec.start_date),
+                "end_date": str(rec.end_date),
+                "status": rec.status
+            })
+            current = add_days(current, 1)
+    
+    return result
 
 def is_date_under_maintenance(unit, date_string):
-	"""Check if specific date has maintenance scheduled for unit."""
-	from frappe.utils import getdate
-	
-	if not frappe.db.exists("DocType", "Equipment Maintenance"):
-		return False
-	
-	check_date = getdate(date_string)
-	
-	count = frappe.db.sql("""
-		SELECT COUNT(*) as cnt
-		FROM `tabEquipment Maintenance`
-		WHERE unit = %s
-		  AND start_date <= %s
-		  AND end_date >= %s
-		  AND docstatus < 2
-	""", (unit, check_date, check_date))
-	
-	return count[0][0] > 0 if count else False
+    """Check if specific date has maintenance scheduled for unit."""
+    from frappe.utils import getdate
+    
+    if not frappe.db.exists("DocType", "Equipment Maintenance"):
+        return False
+    
+    check_date = getdate(date_string)
+    
+    count = frappe.db.sql("""
+        SELECT COUNT(*) as cnt
+        FROM `tabEquipment Maintenance`
+        WHERE unit = %s
+          AND start_date <= %s
+          AND end_date >= %s
+          AND docstatus < 2
+    """, (unit, check_date, check_date))
+    
+    return count[0][0] > 0 if count else False
 
 def get_maintenance_info_on_date(unit, date_string):
-	"""Get maintenance details if date is under maintenance."""
-	from frappe.utils import getdate
-	
-	if not frappe.db.exists("DocType", "Equipment Maintenance"):
-		return None
-	
-	check_date = getdate(date_string)
-	
-	rec = frappe.db.sql("""
-		SELECT name, maintenance_type, start_date, end_date, status
-		FROM `tabEquipment Maintenance`
-		WHERE unit = %s
-		  AND start_date <= %s
-		  AND end_date >= %s
-		  AND docstatus < 2
-		LIMIT 1
-	""", (unit, check_date, check_date), as_dict=True)
-	
-	if rec:
-		return {
-			"type": rec[0].maintenance_type,
-			"start_date": str(rec[0].start_date),
-			"end_date": str(rec[0].end_date),
-			"status": rec[0].status
-		}
-	return None
+    """Get maintenance details if date is under maintenance."""
+    from frappe.utils import getdate
+    
+    if not frappe.db.exists("DocType", "Equipment Maintenance"):
+        return None
+    
+    check_date = getdate(date_string)
+    
+    rec = frappe.db.sql("""
+        SELECT name, maintenance_type, start_date, end_date, status
+        FROM `tabEquipment Maintenance`
+        WHERE unit = %s
+          AND start_date <= %s
+          AND end_date >= %s
+          AND docstatus < 2
+        LIMIT 1
+    """, (unit, check_date, check_date), as_dict=True)
+    
+    if rec:
+        return {
+            "type": rec[0].maintenance_type,
+            "start_date": str(rec[0].start_date),
+            "end_date": str(rec[0].end_date),
+            "status": rec[0].status
+        }
+    return None
 
 def get_next_available_date_skipping_maintenance(unit, start_date, required_tons=0, days_ahead=30):
-	"""Find next date where unit has capacity and is NOT under maintenance."""
-	from frappe.utils import getdate, add_days
-	
-	if not unit or not start_date:
-		return {"date": None}
-	
-	start_dt = getdate(start_date)
-	required = flt(required_tons)
-	days_ahead = cint(days_ahead) or 30
-	limit = HARD_LIMITS.get(unit, 999.0)
-	
-	for i in range(days_ahead + 1):
-		candidate = add_days(start_dt, i)
-		candidate_str = str(candidate)
-		
-		# Skip if under maintenance
-		if is_date_under_maintenance(unit, candidate_str):
-			continue
-		
-		load = get_unit_load(candidate_str, unit, "__all__", pb_only=0)
-		if load + required <= (limit * 1.05):
-			return {
-				"date": candidate_str,
-				"current_load": load,
-				"limit": limit,
-				"reason": "available"
-			}
-	
-	# Fallback suggestion
-	fallback = add_days(start_dt, 1)
-	return {
-		"date": str(fallback),
-		"current_load": get_unit_load(str(fallback), unit, "__all__", pb_only=0),
-		"limit": limit,
-		"reason": "no_clean_slot_found"
-	}
+    """Find next date where unit has capacity and is NOT under maintenance."""
+    from frappe.utils import getdate, add_days
+    
+    if not unit or not start_date:
+        return {"date": None}
+    
+    start_dt = getdate(start_date)
+    required = flt(required_tons)
+    days_ahead = cint(days_ahead) or 30
+    limit = HARD_LIMITS.get(unit, 999.0)
+    
+    for i in range(days_ahead + 1):
+        candidate = add_days(start_dt, i)
+        candidate_str = str(candidate)
+        
+        # Skip if under maintenance
+        if is_date_under_maintenance(unit, candidate_str):
+            continue
+        
+        load = get_unit_load(candidate_str, unit, "__all__", pb_only=0)
+        if load + required <= (limit * 1.05):
+            return {
+                "date": candidate_str,
+                "current_load": load,
+                "limit": limit,
+                "reason": "available"
+            }
+    
+    # Fallback suggestion
+    fallback = add_days(start_dt, 1)
+    return {
+        "date": str(fallback),
+        "current_load": get_unit_load(str(fallback), unit, "__all__", pb_only=0),
+        "limit": limit,
+        "reason": "no_clean_slot_found"
+    }
 
 @frappe.whitelist()
 def add_equipment_maintenance(unit, maintenance_type, start_date, end_date, notes=None):
-	"""Create new Equipment Maintenance record."""
-	import json
+    """Create new Equipment Maintenance record."""
+    import json
 
-	if not frappe.db.exists("DocType", "Equipment Maintenance"):
-		return {"status": "error", "message": "Equipment Maintenance module not found"}
-	
-	doc = frappe.get_doc({
-		"doctype": "Equipment Maintenance",
-		"unit": unit,
-		"maintenance_type": maintenance_type,
-		"start_date": start_date,
-		"end_date": end_date,
-		"notes": notes or "",
-		"status": "Planned"
-	})
-	doc.insert(ignore_permissions=False)
+    if not frappe.db.exists("DocType", "Equipment Maintenance"):
+        return {"status": "error", "message": "Equipment Maintenance module not found"}
+    
+    doc = frappe.get_doc({
+        "doctype": "Equipment Maintenance",
+        "unit": unit,
+        "maintenance_type": maintenance_type,
+        "start_date": start_date,
+        "end_date": end_date,
+        "notes": notes or "",
+        "status": "Planned"
+    })
+    doc.insert(ignore_permissions=False)
 
-	# NEW BEHAVIOR: As soon as maintenance is added, move affected orders forward.
-	cascade_result = cascade_orders_after_maintenance_removal(unit, start_date, end_date)
-	movement_log = cascade_result.get("movement_log") or []
+    # NEW BEHAVIOR: As soon as maintenance is added, move affected orders forward.
+    cascade_result = cascade_orders_after_maintenance_removal(unit, start_date, end_date)
+    movement_log = cascade_result.get("movement_log") or []
 
-	# Persist original->new date movements on the maintenance record so delete can restore backward.
-	if movement_log:
-		marker = "MAINTENANCE_CASCADE_LOG::"
-		user_notes = (notes or "").strip()
-		log_line = marker + json.dumps(movement_log, separators=(",", ":"))
-		stored_notes = f"{user_notes}\n\n{log_line}" if user_notes else log_line
-		frappe.db.set_value("Equipment Maintenance", doc.name, "notes", stored_notes, update_modified=False)
-		frappe.cache().set_value(f"maintenance_cascade_log::{doc.name}", movement_log)
+    # Persist original->new date movements on the maintenance record so delete can restore backward.
+    if movement_log:
+        marker = "MAINTENANCE_CASCADE_LOG::"
+        user_notes = (notes or "").strip()
+        log_line = marker + json.dumps(movement_log, separators=(",", ":"))
+        stored_notes = f"{user_notes}\n\n{log_line}" if user_notes else log_line
+        frappe.db.set_value("Equipment Maintenance", doc.name, "notes", stored_notes, update_modified=False)
+        frappe.cache().set_value(f"maintenance_cascade_log::{doc.name}", movement_log)
 
-	frappe.db.commit()
-	
-	return {
-		"status": "success",
-		"message": f"Maintenance scheduled for {unit} from {start_date} to {end_date}. Moved {cascade_result.get('cascaded_count', 0)} items forward.",
-		"cascaded_count": cascade_result.get("cascaded_count", 0),
-		"name": doc.name
-	}
+    frappe.db.commit()
+    
+    return {
+        "status": "success",
+        "message": f"Maintenance scheduled for {unit} from {start_date} to {end_date}. Moved {cascade_result.get('cascaded_count', 0)} items forward.",
+        "cascaded_count": cascade_result.get("cascaded_count", 0),
+        "name": doc.name
+    }
 
 @frappe.whitelist()
 def cascade_orders_after_maintenance_removal(unit, maint_start_date, maint_end_date):
-	"""
-	Move items planned inside a maintenance window forward to next available dates.
-	(Used at maintenance creation time.)
-	"""
-	from frappe.utils import getdate, add_days
-	
-	if not unit or not maint_start_date or not maint_end_date:
-		return {"status": "error", "message": "Missing parameters"}
-	
-	start_dt = getdate(maint_start_date)
-	end_dt = getdate(maint_end_date)
-	
-	# Find all items planned between maintenance start and end dates
-	items = frappe.db.sql("""
-		SELECT i.name, i.qty, i.unit, COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as effective_planned_date
-		FROM `tabPlanning Sheet Item` i
-		JOIN `tabPlanning sheet` p ON i.parent = p.name
-		WHERE i.unit = %s
-		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) >= %s
-		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= %s
-		  AND p.docstatus < 2
-		  AND i.docstatus < 2
-	""", (unit, start_dt, end_dt), as_dict=True)
-	
-	if not items:
-		return {"status": "success", "message": "No items to cascade", "cascaded_count": 0}
-	
-	has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
-	cascaded_count = 0
-	local_loads = {}
-	movement_log = []
-	
-	for item in items:
-		if not has_item_planned_col:
-			continue
-		
-		item_name = item.get("name")
-		qty_tons = flt(item.get("qty")) / 1000.0
-		unit_limit = HARD_LIMITS.get(unit, 999.0)
-		current_date = getdate(item.get("effective_planned_date"))
-		original_date_str = current_date.strftime("%Y-%m-%d")
-		
-		# Find next available date (skipping maintenance)
-		candidate = add_days(current_date, 1)
-		found_slot = False
-		
-		for i in range(30):  # Look ahead 30 days
-			candidate_str = candidate if isinstance(candidate, str) else candidate.strftime("%Y-%m-%d")
-			
-			# Skip if under maintenance
-			if is_date_under_maintenance(unit, candidate_str):
-				candidate = add_days(candidate, 1)
-				continue
-			
-			load_key = (candidate_str, unit)
-			if load_key not in local_loads:
-				local_loads[load_key] = get_unit_load(candidate_str, unit, "__all__", pb_only=1)
-			
-			current_load = local_loads[load_key]
-			
-			if (current_load + qty_tons <= unit_limit * 1.05) or (current_load == 0 and qty_tons >= unit_limit):
-				local_loads[load_key] = current_load + qty_tons
-				# Update item's planned date
-				frappe.db.sql("""
-					UPDATE `tabPlanning Sheet Item`
-					SET custom_item_planned_date = %s
-					WHERE name = %s
-				""", (candidate_str, item_name))
-				movement_log.append({
-					"item_name": item_name,
-					"from_date": original_date_str,
-					"to_date": candidate_str
-				})
-				cascaded_count += 1
-				found_slot = True
-				break
-			
-			candidate = add_days(candidate, 1)
-	
-	frappe.db.commit()
-	
-	return {
-		"status": "success",
-		"message": f"Cascaded {cascaded_count} items to next available dates",
-		"cascaded_count": cascaded_count,
-		"movement_log": movement_log
-	}
+    """
+    Move items planned inside a maintenance window forward to next available dates.
+    (Used at maintenance creation time.)
+    """
+    from frappe.utils import getdate, add_days
+    
+    if not unit or not maint_start_date or not maint_end_date:
+        return {"status": "error", "message": "Missing parameters"}
+    
+    start_dt = getdate(maint_start_date)
+    end_dt = getdate(maint_end_date)
+    
+    # Find all items planned between maintenance start and end dates
+    items = frappe.db.sql("""
+        SELECT i.name, i.qty, i.unit, COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as effective_planned_date
+        FROM `tabPlanning Sheet Item` i
+        JOIN `tabPlanning sheet` p ON i.parent = p.name
+        WHERE i.unit = %s
+          AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) >= %s
+          AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= %s
+          AND p.docstatus < 2
+          AND i.docstatus < 2
+    """, (unit, start_dt, end_dt), as_dict=True)
+    
+    if not items:
+        return {"status": "success", "message": "No items to cascade", "cascaded_count": 0}
+    
+    has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+    cascaded_count = 0
+    local_loads = {}
+    movement_log = []
+    
+    for item in items:
+        if not has_item_planned_col:
+            continue
+        
+        item_name = item.get("name")
+        qty_tons = flt(item.get("qty")) / 1000.0
+        unit_limit = HARD_LIMITS.get(unit, 999.0)
+        current_date = getdate(item.get("effective_planned_date"))
+        original_date_str = current_date.strftime("%Y-%m-%d")
+        
+        # Find next available date (skipping maintenance)
+        candidate = add_days(current_date, 1)
+        found_slot = False
+        
+        for i in range(30):  # Look ahead 30 days
+            candidate_str = candidate if isinstance(candidate, str) else candidate.strftime("%Y-%m-%d")
+            
+            # Skip if under maintenance
+            if is_date_under_maintenance(unit, candidate_str):
+                candidate = add_days(candidate, 1)
+                continue
+            
+            load_key = (candidate_str, unit)
+            if load_key not in local_loads:
+                local_loads[load_key] = get_unit_load(candidate_str, unit, "__all__", pb_only=1)
+            
+            current_load = local_loads[load_key]
+            
+            if (current_load + qty_tons <= unit_limit * 1.05) or (current_load == 0 and qty_tons >= unit_limit):
+                local_loads[load_key] = current_load + qty_tons
+                # Update item's planned date
+                frappe.db.sql("""
+                    UPDATE `tabPlanning Sheet Item`
+                    SET custom_item_planned_date = %s
+                    WHERE name = %s
+                """, (candidate_str, item_name))
+                movement_log.append({
+                    "item_name": item_name,
+                    "from_date": original_date_str,
+                    "to_date": candidate_str
+                })
+                cascaded_count += 1
+                found_slot = True
+                break
+            
+            candidate = add_days(candidate, 1)
+    
+    frappe.db.commit()
+    
+    return {
+        "status": "success",
+        "message": f"Cascaded {cascaded_count} items to next available dates",
+        "cascaded_count": cascaded_count,
+        "movement_log": movement_log
+    }
 
 @frappe.whitelist()
 def forward_orders_from_date_range(cascade_start_date, cascade_end_date, plan_name=None):
-	"""
-	Forward ALL orders queued on cascade_start_date to cascade_end_date
-	to next available dates (after the cascade ends).
-	
-	Used when pushing colors - automatically clears the cascade range.
-	
-	Args:
-		cascade_start_date: Start of cascade range (e.g. '2026-03-08')
-		cascade_end_date: End of cascade range (e.g. '2026-03-16')
-		plan_name: Plan name to filter by (optional)
-	
-	Returns:
-		{
-			"status": "success|error",
-			"forwarded_count": number of items moved,
-			"dates_cleared": list of dates that were cleared,
-			"movement_log": [{"item_name": "...", "from_date": "...", "to_date": "...", "unit": "..."}, ...]
-		}
-	"""
-	from frappe.utils import getdate, add_days
-	import datetime
-	
-	if not cascade_start_date or not cascade_end_date:
-		return {"status": "error", "message": "Missing cascade date range"}
-	
-	start_dt = getdate(cascade_start_date)
-	end_dt = getdate(cascade_end_date)
-	
-	if not frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-		return {"status": "error", "message": "Required column custom_item_planned_date not found"}
-	
-	# Find ALL items (any type) queued on dates in the cascade range
-	items = frappe.db.sql("""
-		SELECT 
-			i.name, 
-			i.qty, 
-			i.unit, 
-			i.color,
-			COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as effective_planned_date
-		FROM `tabPlanning Sheet Item` i
-		JOIN `tabPlanning sheet` p ON i.parent = p.name
-		WHERE p.docstatus < 2
-		  AND i.docstatus < 2
-		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) >= %s
-		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= %s
-	""", (start_dt, end_dt), as_dict=True)
-	
-	if not items:
-		# Generate date list for cleared dates
-		dates_cleared = []
-		current = start_dt
-		while current <= end_dt:
-			dates_cleared.append(str(current))
-			current = add_days(current, 1)
-		
-		return {
-			"status": "success",
-			"message": "No items to forward",
-			"forwarded_count": 0,
-			"dates_cleared": dates_cleared,
-			"movement_log": []
-		}
-	
-	# Group items by unit for independent cascading
-	items_by_unit = {}
-	for item in items:
-		unit = item.get("unit") or "Unit 1"
-		if unit not in items_by_unit:
-			items_by_unit[unit] = []
-		items_by_unit[unit].append(item)
-	
-	forwarded_count = 0
-	movement_log = []
-	local_loads = {}  # (date, unit) -> current load in tons
-	
-	# Generate date list for cleared dates
-	dates_cleared = []
-	current = start_dt
-	while current <= end_dt:
-		dates_cleared.append(str(current))
-		current = add_days(current, 1)
-	
-	# Process each unit independently
-	for unit, unit_items in items_by_unit.items():
-		unit_limit = HARD_LIMITS.get(unit, 999.0)
-		
-		for item in unit_items:
-			item_name = item.get("name")
-			qty_tons = flt(item.get("qty")) / 1000.0
-			original_date = getdate(item.get("effective_planned_date"))
-			original_date_str = str(original_date)
-			color = item.get("color") or ""
-			
-			# Start looking from the day AFTER cascade_end_date
-			candidate = add_days(end_dt, 1)
-			forward_found = False
-			
-			# Search up to 60 days ahead for available slot
-			for search_days in range(60):
-				candidate_str = str(candidate) if isinstance(candidate, str) else candidate.strftime("%Y-%m-%d")
-				
-				# Skip if under maintenance
-				if is_date_under_maintenance(unit, candidate_str):
-					candidate = add_days(candidate, 1)
-					continue
-				
-				# Check current load for this date/unit
-				load_key = (candidate_str, unit)
-				if load_key not in local_loads:
-					local_loads[load_key] = get_unit_load(candidate_str, unit, "__all__", pb_only=1)
-				
-				current_load = local_loads[load_key]
-				
-				# Check if item fits (with 5% buffer) or if day is empty but item is oversized
-				if (current_load + qty_tons <= unit_limit * 1.05) or (current_load == 0 and qty_tons >= unit_limit):
-					local_loads[load_key] = current_load + qty_tons
-					
-					# Update the item's planned date
-					frappe.db.sql("""
-						UPDATE `tabPlanning Sheet Item`
-						SET custom_item_planned_date = %s
-						WHERE name = %s
-					""", (candidate_str, item_name))
-					
-					movement_log.append({
-						"item_name": item_name,
-						"color": color,
-						"from_date": original_date_str,
-						"to_date": candidate_str,
-						"unit": unit,
-						"qty_tons": round(qty_tons, 2)
-					})
-					
-					forwarded_count += 1
-					forward_found = True
-					break
-				
-				candidate = add_days(candidate, 1)
-			
-			if not forward_found:
-				frappe.log_error(f"Could not forward item {item_name} from {original_date_str} - no available slot found in 60 days", "Forward Orders Error")
-	
-	frappe.db.commit()
-	
-	return {
-		"status": "success",
-		"message": f"Forwarded {forwarded_count} items from cascade range {cascade_start_date} to {cascade_end_date}",
-		"forwarded_count": forwarded_count,
-		"dates_cleared": dates_cleared,
-		"movement_log": movement_log
-	}
+    """
+    Forward ALL orders queued on cascade_start_date to cascade_end_date
+    to next available dates (after the cascade ends).
+    
+    Used when pushing colors - automatically clears the cascade range.
+    
+    Args:
+        cascade_start_date: Start of cascade range (e.g. '2026-03-08')
+        cascade_end_date: End of cascade range (e.g. '2026-03-16')
+        plan_name: Plan name to filter by (optional)
+    
+    Returns:
+        {
+            "status": "success|error",
+            "forwarded_count": number of items moved,
+            "dates_cleared": list of dates that were cleared,
+            "movement_log": [{"item_name": "...", "from_date": "...", "to_date": "...", "unit": "..."}, ...]
+        }
+    """
+    from frappe.utils import getdate, add_days
+    import datetime
+    
+    if not cascade_start_date or not cascade_end_date:
+        return {"status": "error", "message": "Missing cascade date range"}
+    
+    start_dt = getdate(cascade_start_date)
+    end_dt = getdate(cascade_end_date)
+    
+    if not frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+        return {"status": "error", "message": "Required column custom_item_planned_date not found"}
+    
+    # Find ALL items (any type) queued on dates in the cascade range
+    items = frappe.db.sql("""
+        SELECT 
+            i.name, 
+            i.qty, 
+            i.unit, 
+            i.color,
+            COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as effective_planned_date
+        FROM `tabPlanning Sheet Item` i
+        JOIN `tabPlanning sheet` p ON i.parent = p.name
+        WHERE p.docstatus < 2
+          AND i.docstatus < 2
+          AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) >= %s
+          AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= %s
+    """, (start_dt, end_dt), as_dict=True)
+    
+    if not items:
+        # Generate date list for cleared dates
+        dates_cleared = []
+        current = start_dt
+        while current <= end_dt:
+            dates_cleared.append(str(current))
+            current = add_days(current, 1)
+        
+        return {
+            "status": "success",
+            "message": "No items to forward",
+            "forwarded_count": 0,
+            "dates_cleared": dates_cleared,
+            "movement_log": []
+        }
+    
+    # Group items by unit for independent cascading
+    items_by_unit = {}
+    for item in items:
+        unit = item.get("unit") or "Unit 1"
+        if unit not in items_by_unit:
+            items_by_unit[unit] = []
+        items_by_unit[unit].append(item)
+    
+    forwarded_count = 0
+    movement_log = []
+    local_loads = {}  # (date, unit) -> current load in tons
+    
+    # Generate date list for cleared dates
+    dates_cleared = []
+    current = start_dt
+    while current <= end_dt:
+        dates_cleared.append(str(current))
+        current = add_days(current, 1)
+    
+    # Process each unit independently
+    for unit, unit_items in items_by_unit.items():
+        unit_limit = HARD_LIMITS.get(unit, 999.0)
+        
+        for item in unit_items:
+            item_name = item.get("name")
+            qty_tons = flt(item.get("qty")) / 1000.0
+            original_date = getdate(item.get("effective_planned_date"))
+            original_date_str = str(original_date)
+            color = item.get("color") or ""
+            
+            # Start looking from the day AFTER cascade_end_date
+            candidate = add_days(end_dt, 1)
+            forward_found = False
+            
+            # Search up to 60 days ahead for available slot
+            for search_days in range(60):
+                candidate_str = str(candidate) if isinstance(candidate, str) else candidate.strftime("%Y-%m-%d")
+                
+                # Skip if under maintenance
+                if is_date_under_maintenance(unit, candidate_str):
+                    candidate = add_days(candidate, 1)
+                    continue
+                
+                # Check current load for this date/unit
+                load_key = (candidate_str, unit)
+                if load_key not in local_loads:
+                    local_loads[load_key] = get_unit_load(candidate_str, unit, "__all__", pb_only=1)
+                
+                current_load = local_loads[load_key]
+                
+                # Check if item fits (with 5% buffer) or if day is empty but item is oversized
+                if (current_load + qty_tons <= unit_limit * 1.05) or (current_load == 0 and qty_tons >= unit_limit):
+                    local_loads[load_key] = current_load + qty_tons
+                    
+                    # Update the item's planned date
+                    frappe.db.sql("""
+                        UPDATE `tabPlanning Sheet Item`
+                        SET custom_item_planned_date = %s
+                        WHERE name = %s
+                    """, (candidate_str, item_name))
+                    
+                    movement_log.append({
+                        "item_name": item_name,
+                        "color": color,
+                        "from_date": original_date_str,
+                        "to_date": candidate_str,
+                        "unit": unit,
+                        "qty_tons": round(qty_tons, 2)
+                    })
+                    
+                    forwarded_count += 1
+                    forward_found = True
+                    break
+                
+                candidate = add_days(candidate, 1)
+            
+            if not forward_found:
+                frappe.log_error(f"Could not forward item {item_name} from {original_date_str} - no available slot found in 60 days", "Forward Orders Error")
+    
+    frappe.db.commit()
+    
+    return {
+        "status": "success",
+        "message": f"Forwarded {forwarded_count} items from cascade range {cascade_start_date} to {cascade_end_date}",
+        "forwarded_count": forwarded_count,
+        "dates_cleared": dates_cleared,
+        "movement_log": movement_log
+    }
 
 def _extract_maintenance_cascade_log(notes_text):
-	"""Read embedded movement log from maintenance notes."""
-	import json
+    """Read embedded movement log from maintenance notes."""
+    import json
 
-	marker = "MAINTENANCE_CASCADE_LOG::"
-	if not notes_text or marker not in notes_text:
-		return []
+    marker = "MAINTENANCE_CASCADE_LOG::"
+    if not notes_text or marker not in notes_text:
+        return []
 
-	raw = notes_text.split(marker, 1)[1].strip()
-	if "\n" in raw:
-		raw = raw.split("\n", 1)[0].strip()
+    raw = notes_text.split(marker, 1)[1].strip()
+    if "\n" in raw:
+        raw = raw.split("\n", 1)[0].strip()
 
-	try:
-		parsed = json.loads(raw)
-		return parsed if isinstance(parsed, list) else []
-	except Exception:
-		return []
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
 
 def _restore_orders_to_original_dates(unit, movement_log):
-	"""Restore moved items back to their original dates after maintenance is deleted."""
-	from frappe.utils import getdate
+    """Restore moved items back to their original dates after maintenance is deleted."""
+    from frappe.utils import getdate
 
-	if not movement_log:
-		return {"restored_count": 0, "skipped_count": 0}
+    if not movement_log:
+        return {"restored_count": 0, "skipped_count": 0}
 
-	if not frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-		return {"restored_count": 0, "skipped_count": len(movement_log)}
+    if not frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+        return {"restored_count": 0, "skipped_count": len(movement_log)}
 
-	restored_count = 0
-	skipped_count = 0
+    restored_count = 0
+    skipped_count = 0
 
-	for move in movement_log:
-		item_name = move.get("item_name")
-		from_date = move.get("from_date")
-		to_date = move.get("to_date")
+    for move in movement_log:
+        item_name = move.get("item_name")
+        from_date = move.get("from_date")
+        to_date = move.get("to_date")
 
-		if not item_name or not from_date or not to_date:
-			skipped_count += 1
-			continue
+        if not item_name or not from_date or not to_date:
+            skipped_count += 1
+            continue
 
-		row = frappe.db.sql("""
-			SELECT i.unit, COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) AS effective_planned_date
-			FROM `tabPlanning Sheet Item` i
-			JOIN `tabPlanning sheet` p ON p.name = i.parent
-			WHERE i.name = %s
-			  AND p.docstatus < 2
-			  AND i.docstatus < 2
-			LIMIT 1
-		""", (item_name,), as_dict=True)
+        row = frappe.db.sql("""
+            SELECT i.unit, COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) AS effective_planned_date
+            FROM `tabPlanning Sheet Item` i
+            JOIN `tabPlanning sheet` p ON p.name = i.parent
+            WHERE i.name = %s
+              AND p.docstatus < 2
+              AND i.docstatus < 2
+            LIMIT 1
+        """, (item_name,), as_dict=True)
 
-		if not row:
-			skipped_count += 1
-			continue
+        if not row:
+            skipped_count += 1
+            continue
 
-		current_unit = row[0].get("unit")
-		current_effective = str(getdate(row[0].get("effective_planned_date")))
+        current_unit = row[0].get("unit")
+        current_effective = str(getdate(row[0].get("effective_planned_date")))
 
-		# Restore if item is still on or after the maintenance-shifted date.
-		# This allows rollback even when later logic pushed it further forward.
-		if current_unit != unit or current_effective < str(getdate(to_date)):
-			skipped_count += 1
-			continue
+        # Restore if item is still on or after the maintenance-shifted date.
+        # This allows rollback even when later logic pushed it further forward.
+        if current_unit != unit or current_effective < str(getdate(to_date)):
+            skipped_count += 1
+            continue
 
-		# Avoid restoring into another active maintenance window.
-		if is_date_under_maintenance(unit, from_date):
-			skipped_count += 1
-			continue
+        # Avoid restoring into another active maintenance window.
+        if is_date_under_maintenance(unit, from_date):
+            skipped_count += 1
+            continue
 
-		frappe.db.sql("""
-			UPDATE `tabPlanning Sheet Item`
-			SET custom_item_planned_date = %s
-			WHERE name = %s
-		""", (from_date, item_name))
-		restored_count += 1
+        frappe.db.sql("""
+            UPDATE `tabPlanning Sheet Item`
+            SET custom_item_planned_date = %s
+            WHERE name = %s
+        """, (from_date, item_name))
+        restored_count += 1
 
-	frappe.db.commit()
-	return {"restored_count": restored_count, "skipped_count": skipped_count}
+    frappe.db.commit()
+    return {"restored_count": restored_count, "skipped_count": skipped_count}
 
 def _fallback_restore_by_range(unit, maint_start_date, maint_end_date):
-	"""Fallback restore when movement log is missing/corrupted: pull next-day shifted items back into the maintenance window dates."""
-	from frappe.utils import getdate, add_days
+    """Fallback restore when movement log is missing/corrupted: pull next-day shifted items back into the maintenance window dates."""
+    from frappe.utils import getdate, add_days
 
-	if not frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-		return {"restored_count": 0, "skipped_count": 0}
+    if not frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+        return {"restored_count": 0, "skipped_count": 0}
 
-	start_dt = getdate(maint_start_date)
-	end_dt = getdate(maint_end_date)
-	window_days = (end_dt - start_dt).days + 1
-	search_end = add_days(end_dt, max(3, window_days + 2))
+    start_dt = getdate(maint_start_date)
+    end_dt = getdate(maint_end_date)
+    window_days = (end_dt - start_dt).days + 1
+    search_end = add_days(end_dt, max(3, window_days + 2))
 
-	rows = frappe.db.sql("""
-		SELECT i.name, i.unit, i.qty,
-		       DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) AS effective_planned_date
-		FROM `tabPlanning Sheet Item` i
-		JOIN `tabPlanning sheet` p ON p.name = i.parent
-		WHERE i.unit = %s
-		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) > %s
-		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= %s
-		  AND p.docstatus < 2
-		  AND i.docstatus < 2
-		ORDER BY DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) ASC, i.idx ASC
-	""", (unit, end_dt, search_end), as_dict=True)
+    rows = frappe.db.sql("""
+        SELECT i.name, i.unit, i.qty,
+               DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) AS effective_planned_date
+        FROM `tabPlanning Sheet Item` i
+        JOIN `tabPlanning sheet` p ON p.name = i.parent
+        WHERE i.unit = %s
+          AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) > %s
+          AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= %s
+          AND p.docstatus < 2
+          AND i.docstatus < 2
+        ORDER BY DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) ASC, i.idx ASC
+    """, (unit, end_dt, search_end), as_dict=True)
 
-	if not rows:
-		return {"restored_count": 0, "skipped_count": 0}
+    if not rows:
+        return {"restored_count": 0, "skipped_count": 0}
 
-	local_loads = {}
-	restored = 0
-	skipped = 0
-	unit_limit = HARD_LIMITS.get(unit, 999.0)
+    local_loads = {}
+    restored = 0
+    skipped = 0
+    unit_limit = HARD_LIMITS.get(unit, 999.0)
 
-	for r in rows:
-		item_name = r.get("name")
-		qty_tons = flt(r.get("qty")) / 1000.0
+    for r in rows:
+        item_name = r.get("name")
+        qty_tons = flt(r.get("qty")) / 1000.0
 
-		placed = False
-		for day_offset in range(window_days):
-			candidate = add_days(start_dt, day_offset)
-			candidate_str = candidate if isinstance(candidate, str) else candidate.strftime("%Y-%m-%d")
+        placed = False
+        for day_offset in range(window_days):
+            candidate = add_days(start_dt, day_offset)
+            candidate_str = candidate if isinstance(candidate, str) else candidate.strftime("%Y-%m-%d")
 
-			if is_date_under_maintenance(unit, candidate_str):
-				continue
+            if is_date_under_maintenance(unit, candidate_str):
+                continue
 
-			load_key = (candidate_str, unit)
-			if load_key not in local_loads:
-				local_loads[load_key] = get_unit_load(candidate_str, unit, "__all__", pb_only=1)
+            load_key = (candidate_str, unit)
+            if load_key not in local_loads:
+                local_loads[load_key] = get_unit_load(candidate_str, unit, "__all__", pb_only=1)
 
-			current_load = local_loads[load_key]
-			if (current_load + qty_tons <= unit_limit * 1.05) or (current_load == 0 and qty_tons >= unit_limit):
-				frappe.db.sql("""
-					UPDATE `tabPlanning Sheet Item`
-					SET custom_item_planned_date = %s
-					WHERE name = %s
-				""", (candidate_str, item_name))
-				local_loads[load_key] = current_load + qty_tons
-				restored += 1
-				placed = True
-				break
+            current_load = local_loads[load_key]
+            if (current_load + qty_tons <= unit_limit * 1.05) or (current_load == 0 and qty_tons >= unit_limit):
+                frappe.db.sql("""
+                    UPDATE `tabPlanning Sheet Item`
+                    SET custom_item_planned_date = %s
+                    WHERE name = %s
+                """, (candidate_str, item_name))
+                local_loads[load_key] = current_load + qty_tons
+                restored += 1
+                placed = True
+                break
 
-		if not placed:
-			skipped += 1
+        if not placed:
+            skipped += 1
 
-	frappe.db.commit()
-	return {"restored_count": restored, "skipped_count": skipped}
+    frappe.db.commit()
+    return {"restored_count": restored, "skipped_count": skipped}
 
 @frappe.whitelist()
 def delete_maintenance_and_cascade(maintenance_record_name):
-	"""
-	Delete a maintenance record and restore previously moved orders backward.
-	This is called from the frontend when user clicks "Remove" on maintenance.
-	"""
-	if not maintenance_record_name:
-		return {"status": "error", "message": "No maintenance record specified"}
-	
-	# Fetch maintenance record details before deletion
-	maint_doc = frappe.db.get_value(
-		"Equipment Maintenance",
-		maintenance_record_name,
-		["unit", "start_date", "end_date", "notes"],
-		as_dict=True
-	)
-	
-	if not maint_doc:
-		return {"status": "error", "message": "Maintenance record not found"}
-	
-	unit = maint_doc.get("unit")
-	start_date = maint_doc.get("start_date")
-	end_date = maint_doc.get("end_date")
-	notes = maint_doc.get("notes")
-	movement_log = frappe.cache().get_value(f"maintenance_cascade_log::{maintenance_record_name}") or _extract_maintenance_cascade_log(notes)
-	
-	# Delete the maintenance record
-	frappe.delete_doc("Equipment Maintenance", maintenance_record_name)
+    """
+    Delete a maintenance record and restore previously moved orders backward.
+    This is called from the frontend when user clicks "Remove" on maintenance.
+    """
+    if not maintenance_record_name:
+        return {"status": "error", "message": "No maintenance record specified"}
+    
+    # Fetch maintenance record details before deletion
+    maint_doc = frappe.db.get_value(
+        "Equipment Maintenance",
+        maintenance_record_name,
+        ["unit", "start_date", "end_date", "notes"],
+        as_dict=True
+    )
+    
+    if not maint_doc:
+        return {"status": "error", "message": "Maintenance record not found"}
+    
+    unit = maint_doc.get("unit")
+    start_date = maint_doc.get("start_date")
+    end_date = maint_doc.get("end_date")
+    notes = maint_doc.get("notes")
+    movement_log = frappe.cache().get_value(f"maintenance_cascade_log::{maintenance_record_name}") or _extract_maintenance_cascade_log(notes)
+    
+    # Delete the maintenance record
+    frappe.delete_doc("Equipment Maintenance", maintenance_record_name)
 
-	restore_result = _restore_orders_to_original_dates(unit, movement_log)
-	if restore_result.get("restored_count", 0) == 0:
-		fallback = _fallback_restore_by_range(unit, start_date, end_date)
-		restore_result["restored_count"] = restore_result.get("restored_count", 0) + fallback.get("restored_count", 0)
-		restore_result["skipped_count"] = restore_result.get("skipped_count", 0) + fallback.get("skipped_count", 0)
+    restore_result = _restore_orders_to_original_dates(unit, movement_log)
+    if restore_result.get("restored_count", 0) == 0:
+        fallback = _fallback_restore_by_range(unit, start_date, end_date)
+        restore_result["restored_count"] = restore_result.get("restored_count", 0) + fallback.get("restored_count", 0)
+        restore_result["skipped_count"] = restore_result.get("skipped_count", 0) + fallback.get("skipped_count", 0)
 
-	try:
-		frappe.cache().delete_value(f"maintenance_cascade_log::{maintenance_record_name}")
-	except Exception:
-		pass
+    try:
+        frappe.cache().delete_value(f"maintenance_cascade_log::{maintenance_record_name}")
+    except Exception:
+        pass
 
-	return {
-		"status": "success",
-		"message": f"Maintenance removed. Restored {restore_result.get('restored_count', 0)} items to original dates.",
-		"restored_count": restore_result.get("restored_count", 0),
-		"skipped_count": restore_result.get("skipped_count", 0)
-	}
+    return {
+        "status": "success",
+        "message": f"Maintenance removed. Restored {restore_result.get('restored_count', 0)} items to original dates.",
+        "restored_count": restore_result.get("restored_count", 0),
+        "skipped_count": restore_result.get("skipped_count", 0)
+    }
 
 @frappe.whitelist()
 def get_all_equipment_maintenance(start_date=None, end_date=None):
-	"""Get all maintenance records, optionally filtered by date range."""
-	if not frappe.db.exists("DocType", "Equipment Maintenance"):
-		return []
-	
-	if start_date and end_date:
-		# Find records that overlap with the date range
-		records = frappe.db.sql("""
-			SELECT name, unit, maintenance_type, start_date, end_date, status, notes
-			FROM `tabEquipment Maintenance`
-			WHERE start_date <= %s
-			  AND end_date >= %s
-			  AND docstatus < 2
-			ORDER BY unit, start_date
-		""", (end_date, start_date), as_dict=True)
-		return records
-	else:
-		records = frappe.get_all("Equipment Maintenance",
-			filters={"docstatus": ["<", 2]},
-			fields=["name", "unit", "maintenance_type", "start_date", "end_date", "status", "notes"],
-			order_by="unit, start_date"
-		)
-		return records
+    """Get all maintenance records, optionally filtered by date range."""
+    if not frappe.db.exists("DocType", "Equipment Maintenance"):
+        return []
+    
+    if start_date and end_date:
+        # Find records that overlap with the date range
+        records = frappe.db.sql("""
+            SELECT name, unit, maintenance_type, start_date, end_date, status, notes
+            FROM `tabEquipment Maintenance`
+            WHERE start_date <= %s
+              AND end_date >= %s
+              AND docstatus < 2
+            ORDER BY unit, start_date
+        """, (end_date, start_date), as_dict=True)
+        return records
+    else:
+        records = frappe.get_all("Equipment Maintenance",
+            filters={"docstatus": ["<", 2]},
+            fields=["name", "unit", "maintenance_type", "start_date", "end_date", "status", "notes"],
+            order_by="unit, start_date"
+        )
+        return records
 
 def find_best_slot(item_qty_tons, quality, preferred_unit, start_date, recursion_depth=0):
-	"""
-	Recursive function to find the best available slot (Date/Unit).
-	Order:
-	1. Preferred Unit (on Date)
-	2. Neighbor Units (on Date) - Must support Quality
-	3. Next Day (Recurse)
-	"""
-	if recursion_depth > 30: # Look ahead max 30 days
-		return None # No slot found
+    """
+    Recursive function to find the best available slot (Date/Unit).
+    Order:
+    1. Preferred Unit (on Date)
+    2. Neighbor Units (on Date) - Must support Quality
+    3. Next Day (Recurse)
+    """
+    if recursion_depth > 30: # Look ahead max 30 days
+        return None # No slot found
 
-	check_date = getdate(start_date)
-	
-	# 1. Check Preferred Unit
-	if preferred_unit and preferred_unit in HARD_LIMITS:
-		current_load = get_unit_load(check_date, preferred_unit)
-		if current_load + item_qty_tons <= HARD_LIMITS[preferred_unit]:
-			return {"date": check_date, "unit": preferred_unit}
+    check_date = getdate(start_date)
+    
+    # 1. Check Preferred Unit
+    if preferred_unit and preferred_unit in HARD_LIMITS:
+        current_load = get_unit_load(check_date, preferred_unit)
+        if current_load + item_qty_tons <= HARD_LIMITS[preferred_unit]:
+            return {"date": check_date, "unit": preferred_unit}
 
-	# 2. Check Neighbor Units (on same date)
-	compatible_units = []
-	for unit, valid_qualities in UNIT_QUALITY_MAP.items():
-		if unit == preferred_unit: continue
-		if quality in valid_qualities:
-			compatible_units.append(unit)
-	
-	# Check Neighbors
-	for unit in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
-		if unit in compatible_units and unit in HARD_LIMITS:
-			load = get_unit_load(check_date, unit)
-			if load + item_qty_tons <= HARD_LIMITS[unit]:
-				return {"date": check_date, "unit": unit}
+    # 2. Check Neighbor Units (on same date)
+    compatible_units = []
+    for unit, valid_qualities in UNIT_QUALITY_MAP.items():
+        if unit == preferred_unit: continue
+        if quality in valid_qualities:
+            compatible_units.append(unit)
+    
+    # Check Neighbors
+    for unit in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
+        if unit in compatible_units and unit in HARD_LIMITS:
+            load = get_unit_load(check_date, unit)
+            if load + item_qty_tons <= HARD_LIMITS[unit]:
+                return {"date": check_date, "unit": unit}
 
-	# 3. Next Day (Recurse)
-	next_date = frappe.utils.add_days(check_date, 1)
-	return find_best_slot(item_qty_tons, quality, preferred_unit, next_date, recursion_depth + 1)
+    # 3. Next Day (Recurse)
+    next_date = frappe.utils.add_days(check_date, 1)
+    return find_best_slot(item_qty_tons, quality, preferred_unit, next_date, recursion_depth + 1)
 
 
 def get_preferred_unit(quality):
-	"""Determines the best unit based on Item Quality."""
-	if not quality: return "Unit 1"
+    """Determines the best unit based on Item Quality."""
+    if not quality: return "Unit 1"
 
-	q_up = _normalize_quality_key(quality)
-	q_key = "PREMIUM" if q_up.startswith("PREMIUM") else q_up
-	QUALITY_PRIORITY = {
-		"Unit 1": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5 },
-		"Unit 2": { 
-			"GOLD": 1, "SILVER": 2, "BRONZE": 3, "CLASSIC": 4, "SUPERCLASSIC": 5, 
-			"LIFESTYLE": 6, "ECOSPECIAL": 7, "ECOGREEN": 8, "SUPERECO": 9, "ULTRA": 10, "DELUXE": 11 
-		},
-		"Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
-		"Unit 4": { "PREMIUM": 1, "GOLD": 2, "SILVER": 3, "BRONZE": 4, "CLASSIC": 5, "CRT": 5 }
-	}
-	
-	best_unit = "Unit 1"
-	best_score = 999
-	
-	for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
-		score = QUALITY_PRIORITY.get(u, {}).get(q_key)
-		if score is not None and score < best_score:
-			best_score = score
-			best_unit = u
-			
-	if best_score < 999:
-		return best_unit
+    q_up = _normalize_quality_key(quality)
+    q_key = "PREMIUM" if q_up.startswith("PREMIUM") else q_up
+    QUALITY_PRIORITY = {
+        "Unit 1": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5 },
+        "Unit 2": { 
+            "GOLD": 1, "SILVER": 2, "BRONZE": 3, "CLASSIC": 4, "SUPERCLASSIC": 5, 
+            "LIFESTYLE": 6, "ECOSPECIAL": 7, "ECOGREEN": 8, "SUPERECO": 9, "ULTRA": 10, "DELUXE": 11 
+        },
+        "Unit 3": { "PREMIUM": 1, "PLATINUM": 2, "SUPERPLATINUM": 3, "GOLD": 4, "SILVER": 5, "BRONZE": 6 },
+        "Unit 4": { "PREMIUM": 1, "GOLD": 2, "SILVER": 3, "BRONZE": 4, "CLASSIC": 5, "CRT": 5 }
+    }
+    
+    best_unit = "Unit 1"
+    best_score = 999
+    
+    for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
+        score = QUALITY_PRIORITY.get(u, {}).get(q_key)
+        if score is not None and score < best_score:
+            best_score = score
+            best_unit = u
+            
+    if best_score < 999:
+        return best_unit
 
-	# Fallback if quality not mapped in priority dict
-	if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 1", [])]: return "Unit 1"
-	if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 2", [])]: return "Unit 2"
-	if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 3", [])]: return "Unit 3"
-	if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 4", [])]: return "Unit 4"
-	return "Unit 1"
+    # Fallback if quality not mapped in priority dict
+    if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 1", [])]: return "Unit 1"
+    if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 2", [])]: return "Unit 2"
+    if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 3", [])]: return "Unit 3"
+    if q_up in [_normalize_quality_key(v) for v in UNIT_QUALITY_MAP.get("Unit 4", [])]: return "Unit 4"
+    return "Unit 1"
 
 def generate_plan_code(date_str, unit, plan_name):
-	"""
-	Generates a readable plan code: {YY}{MonthLetter}{Unit}-{PlanName}
-	e.g. 26CU1-PLAN 1
-	"""
-	if not str(date_str) or not plan_name or not unit:
-		return ""
-	
-	try:
-		# Robust unit normalization for code generation
-		u_clean = str(unit).upper().replace(" ", "")
-		if "UNIT1" in u_clean: u_code = "U1"
-		elif "UNIT2" in u_clean: u_code = "U2"
-		elif "UNIT3" in u_clean: u_code = "U3"
-		elif "UNIT4" in u_clean: u_code = "U4"
-		else: return ""
+    """
+    Generates a readable plan code: {YY}{MonthLetter}{Unit}-{PlanName}
+    e.g. 26CU1-PLAN 1
+    """
+    if not str(date_str) or not plan_name or not unit:
+        return ""
+    
+    try:
+        # Robust unit normalization for code generation
+        u_clean = str(unit).upper().replace(" ", "")
+        if "UNIT1" in u_clean: u_code = "U1"
+        elif "UNIT2" in u_clean: u_code = "U2"
+        elif "UNIT3" in u_clean: u_code = "U3"
+        elif "UNIT4" in u_clean: u_code = "U4"
+        else: return ""
 
-		d = frappe.utils.getdate(str(date_str))
-		yy = str(d.year)[-2:]
-		# Month letters mapping (A-L)
-		month_letters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"]
-		month_char = month_letters[d.month - 1]
-		
-		# Strip Month/Week prefix (e.g., "MARCH W10 26 PLAN 1" -> "PLAN 1")
-		clean_plan = _strip_legacy_prefixes(plan_name)
-		
-		return f"{yy}{month_char}{u_code}-{clean_plan}"
-	except Exception:
-		return ""
+        d = frappe.utils.getdate(str(date_str))
+        yy = str(d.year)[-2:]
+        # Month letters mapping (A-L)
+        month_letters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"]
+        month_char = month_letters[d.month - 1]
+        
+        # Strip Month/Week prefix (e.g., "MARCH W10 26 PLAN 1" -> "PLAN 1")
+        clean_plan = _strip_legacy_prefixes(plan_name)
+        
+        return f"{yy}{month_char}{u_code}-{clean_plan}"
+    except Exception:
+        return ""
 
 def update_sheet_plan_codes(sheet_doc):
-	"""
-	Calculates and sets the `custom_plan_code` for each item, and aggregates them on the header.
-	Must be called right before saving a sheet or after manual SQL updates.
-	"""
-	sheet_date = sheet_doc.get("custom_planned_date") or sheet_doc.get("ordered_date")
-	# Look at PB plan if it exists, otherwise rely on CC plan
-	active_plan = sheet_doc.get("custom_plan_name") or "Default"
-	
-	unique_codes = set()
-	
-	for item in sheet_doc.get("items", []):
-		item_unit = item.get("unit")
-		
-		# Robustness: ensure we use the canonical unit name
-		if item_unit:
-			iu_upper = item_unit.upper().replace(" ", "")
-			if "UNIT1" in iu_upper: item_unit = "Unit 1"
-			elif "UNIT2" in iu_upper: item_unit = "Unit 2"
-			elif "UNIT3" in iu_upper: item_unit = "Unit 3"
-			elif "UNIT4" in iu_upper: item_unit = "Unit 4"
+    """
+    Calculates and sets the `custom_plan_code` for each item, and aggregates them on the header.
+    Must be called right before saving a sheet or after manual SQL updates.
+    """
+    sheet_date = sheet_doc.get("custom_planned_date") or sheet_doc.get("ordered_date")
+    # Look at PB plan if it exists, otherwise rely on CC plan
+    active_plan = sheet_doc.get("custom_plan_name") or "Default"
+    
+    unique_codes = set()
+    
+    for item in sheet_doc.get("items", []):
+        item_unit = item.get("unit")
+        
+        # Robustness: ensure we use the canonical unit name
+        if item_unit:
+            iu_upper = item_unit.upper().replace(" ", "")
+            if "UNIT1" in iu_upper: item_unit = "Unit 1"
+            elif "UNIT2" in iu_upper: item_unit = "Unit 2"
+            elif "UNIT3" in iu_upper: item_unit = "Unit 3"
+            elif "UNIT4" in iu_upper: item_unit = "Unit 4"
 
-		item_date = item.get("custom_item_planned_date") or sheet_date
-		code = generate_plan_code(item_date, item_unit, active_plan)
-		item.custom_plan_code = code
-		if code:
-			unique_codes.add(code)
-			
-	# Update parent custom field
-	sheet_doc.custom_plan_code = ", ".join(sorted(unique_codes))
+        item_date = item.get("custom_item_planned_date") or sheet_date
+        code = generate_plan_code(item_date, item_unit, active_plan)
+        item.custom_plan_code = code
+        if code:
+            unique_codes.add(code)
+            
+    # Update parent custom field
+    sheet_doc.custom_plan_code = ", ".join(sorted(unique_codes))
 
 @frappe.whitelist()
 def recalculate_all_plan_codes():
-	"""
-	Bulk recalculates plan codes for all unlocked Planning Sheets.
-	Useful for updating existing records after logic changes.
-	"""
-	sheets = frappe.get_all("Planning sheet", filters={"docstatus": 0})
-	count = 0
-	for s in sheets:
-		try:
-			doc = frappe.get_doc("Planning sheet", s.name)
-			update_sheet_plan_codes(doc)
-			
-			# Update parent
-			frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s", (doc.custom_plan_code, doc.name))
-			
-			# Update children
-			for i in doc.items:
-				frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET custom_plan_code = %s WHERE name = %s", (i.custom_plan_code, i.name))
-			
-			count += 1
-		except Exception:
-			pass
-			
-	frappe.db.commit()
-	return {"status": "success", "count": count}
+    """
+    Bulk recalculates plan codes for all unlocked Planning Sheets.
+    Useful for updating existing records after logic changes.
+    """
+    sheets = frappe.get_all("Planning sheet", filters={"docstatus": 0})
+    count = 0
+    for s in sheets:
+        try:
+            doc = frappe.get_doc("Planning sheet", s.name)
+            update_sheet_plan_codes(doc)
+            
+            # Update parent
+            frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s", (doc.custom_plan_code, doc.name))
+            
+            # Update children
+            for i in doc.items:
+                frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET custom_plan_code = %s WHERE name = %s", (i.custom_plan_code, i.name))
+            
+            count += 1
+        except Exception:
+            pass
+            
+    frappe.db.commit()
+    return {"status": "success", "count": count}
 
 @frappe.whitelist()
 def update_sequence(items):
-	"""
-	Updates the 'idx' of items based on the provided list.
-	items: [{"name": "item_name", "idx": 1}, ...]
-	"""
-	import json
-	if isinstance(items, str):
-		items = json.loads(items)
-		
-	for item in items:
-		if item.get("name") and item.get("idx") is not None:
-			# Use SQL to bypass DocStatus immutability for reordering
-			frappe.db.sql("""
-				UPDATE `tabPlanning Sheet Item`
-				SET idx = %s
-				WHERE name = %s
-			""", (item.get("idx"), item.get("name")))
-			
-	frappe.db.commit()
-	return {"status": "success"}
+    """
+    Updates the 'idx' of items based on the provided list.
+    items: [{"name": "item_name", "idx": 1}, ...]
+    """
+    import json
+    if isinstance(items, str):
+        items = json.loads(items)
+        
+    for item in items:
+        if item.get("name") and item.get("idx") is not None:
+            # Use SQL to bypass DocStatus immutability for reordering
+            frappe.db.sql("""
+                UPDATE `tabPlanning Sheet Item`
+                SET idx = %s
+                WHERE name = %s
+            """, (item.get("idx"), item.get("name")))
+            
+    frappe.db.commit()
+    return {"status": "success"}
 
 
 @frappe.whitelist()
 def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=0, plan_name=None, strict_next_day=0):
-	"""
-	Moves a specific Planning Sheet Item to a new unit/date.
-	If date changes, the item is re-parented to a suitable Planning Sheet for that date.
-	"""
-	target_date = getdate(date)
-	force_move = flt(force_move)
-	perform_split = flt(perform_split)
-	strict_next_day = flt(strict_next_day)
-	
-	# 1. Get Item and Parent Details
-	item = frappe.get_doc("Planning Sheet Item", item_name)
-	parent_sheet = frappe.get_doc("Planning sheet", item.parent)
-	
-	# 2. Docstatus check ΓÇö allow movement even from submitted sheets
-	# (user requested free movement; we use raw SQL to bypass Frappe immutability)
+    """
+    Moves a specific Planning Sheet Item to a new unit/date.
+    If date changes, the item is re-parented to a suitable Planning Sheet for that date.
+    """
+    target_date = getdate(date)
+    force_move = flt(force_move)
+    perform_split = flt(perform_split)
+    strict_next_day = flt(strict_next_day)
+    
+    # 1. Get Item and Parent Details
+    item = frappe.get_doc("Planning Sheet Item", item_name)
+    parent_sheet = frappe.get_doc("Planning sheet", item.parent)
+    
+    # 2. Docstatus check ΓÇö allow movement even from submitted sheets
+    # (user requested free movement; we use raw SQL to bypass Frappe immutability)
 
-	item_wt_tons = flt(item.qty) / 1000.0
-	quality = item.custom_quality or ""
-	
-	# QUALITY ENFORCEMENT
-	if not is_quality_allowed(unit, quality):
-		frappe.throw(_("Quality <b>{}</b> is not allowed in <b>{}</b>.").format(quality, unit))
+    item_wt_tons = flt(item.qty) / 1000.0
+    quality = item.custom_quality or ""
+    
+    # QUALITY ENFORCEMENT
+    if not is_quality_allowed(unit, quality):
+        frappe.throw(_("Quality <b>{}</b> is not allowed in <b>{}</b>.").format(quality, unit))
 
-	# 3. Check Capacity of Target Slot (scoped to this item's plan)
-	current_load = get_unit_load(target_date, unit, plan_name=plan_name or parent_sheet.get("custom_plan_name") or "Default")
-	limit = HARD_LIMITS.get(unit, 999.0)
-	
-	# Moving within same date (even to different unit): subtract item's own weight
-	# to avoid double-counting it and causing false overflow / duplicate creation
-	is_same_date = (str(parent_sheet.get("custom_planned_date") or parent_sheet.ordered_date) == str(target_date))
-	if is_same_date and item.unit == unit:
-		# Same date + same unit: pure reorder, load stays same
-		load_for_check = current_load
-	elif is_same_date:
-		# Same date, different unit: item moves FROM old unit TO new unit.
-		# Don't count the item's own weight in the old unit's load ΓÇö only the new unit's load matters
-		load_for_check = current_load + item_wt_tons
-	else:
-		# Different date: full new load
-		load_for_check = current_load + item_wt_tons
+    # 3. Check Capacity of Target Slot (scoped to this item's plan)
+    current_load = get_unit_load(target_date, unit, plan_name=plan_name or parent_sheet.get("custom_plan_name") or "Default")
+    limit = HARD_LIMITS.get(unit, 999.0)
+    
+    # Moving within same date (even to different unit): subtract item's own weight
+    # to avoid double-counting it and causing false overflow / duplicate creation
+    is_same_date = (str(parent_sheet.get("custom_planned_date") or parent_sheet.ordered_date) == str(target_date))
+    if is_same_date and item.unit == unit:
+        # Same date + same unit: pure reorder, load stays same
+        load_for_check = current_load
+    elif is_same_date:
+        # Same date, different unit: item moves FROM old unit TO new unit.
+        # Don't count the item's own weight in the old unit's load ΓÇö only the new unit's load matters
+        load_for_check = current_load + item_wt_tons
+    else:
+        # Different date: full new load
+        load_for_check = current_load + item_wt_tons
 
-	if load_for_check > limit:
-		# Exceeds Capacity
-		available_space = max(0, limit - current_load)
-		
-		# Scenario A: SMART MOVE (find best slot - checks neighbor units first, then next day)
-		if force_move:
-			best_slot = find_best_slot(item_wt_tons, quality, unit, target_date)
-			if not best_slot:
-				frappe.throw(_("Could not find a valid slot on future dates."))
-			final_unit = best_slot["unit"]
-			final_date = getdate(best_slot["date"])
-			
-		# Scenario A2: STRICT NEXT DAY (same unit, next day - re-check capacity)
-		elif strict_next_day:
-			next_day = frappe.utils.add_days(target_date, 1)
-			next_load = get_unit_load(next_day, unit)
-			next_limit = HARD_LIMITS.get(unit, 999.0)
-			
-			if next_load + item_wt_tons > next_limit:
-				# Next day also full ΓÇö ask user again
-				return {
-					"status": "overflow",
-					"available": max(0, next_limit - next_load),
-					"limit": next_limit,
-					"current_load": next_load,
-					"order_weight": item_wt_tons,
-					"target_date": str(next_day),
-					"target_unit": unit,
-					"message": f"Next day ({next_day}) is also full for {unit}"
-				}
-			else:
-				final_unit = unit
-				final_date = next_day
-			
-		# Scenario B: SMART SPLIT
-		elif perform_split:
-			if available_space < 0.1:
-				frappe.throw(_("Available space ({:.3f}T) is too small to split (Min 0.1T).").format(available_space))
-			
-			# Logic: Reduce original item weight, create new item in Target Unit
-			remainder_qty = item.qty - (available_space * 1000.0)
-			split_qty = available_space * 1000.0
-			
-			# Update Original Item -> This will go to Best Slot
-			item.qty = remainder_qty
-			item.custom_is_split = 1
-			item.save()
-			
-			# Create New Item -> This stays in Target Unit/Date
-			new_item = frappe.copy_doc(item)
-			new_item.name = None
-			new_item.qty = split_qty
-			new_item.unit = unit
-			new_item.custom_is_split = 1
-			new_item.custom_split_from = item.name
-			new_item.insert()
-			
-			# Find best slot for the REMAINDER (Original item)
-			best_slot_rem = find_best_slot(remainder_qty / 1000.0, quality, unit, target_date)
-			if not best_slot_rem:
-				frappe.throw(_("Could not find slot for remaining quantity."))
-			
-			# Move Original Item to the best slot
-			# Note: We recurse or just manually move? Manually move is safer here.
-			# But we need to handle re-parenting if date is different.
-			_move_item_to_slot(item, best_slot_rem["unit"], best_slot_rem["date"], None, plan_name)
-			
-			frappe.db.commit()
-			try:
-				frappe.publish_realtime("production_board_update", {"date": str(best_slot_rem["date"])})
-			except Exception:
-				pass
-			return {"status": "success", "message": "Split successful"}
-			
-		else:
-			# Scenario C: OVERFLOW (Ask User)
-			return {
-				"status": "overflow",
-				"available": available_space,
-				"limit": limit,
-				"current_load": current_load,
-				"order_weight": item_wt_tons
-			}
-	else:
-		final_unit = unit
-		final_date = target_date
+    if load_for_check > limit:
+        # Exceeds Capacity
+        available_space = max(0, limit - current_load)
+        
+        # Scenario A: SMART MOVE (find best slot - checks neighbor units first, then next day)
+        if force_move:
+            best_slot = find_best_slot(item_wt_tons, quality, unit, target_date)
+            if not best_slot:
+                frappe.throw(_("Could not find a valid slot on future dates."))
+            final_unit = best_slot["unit"]
+            final_date = getdate(best_slot["date"])
+            
+        # Scenario A2: STRICT NEXT DAY (same unit, next day - re-check capacity)
+        elif strict_next_day:
+            next_day = frappe.utils.add_days(target_date, 1)
+            next_load = get_unit_load(next_day, unit)
+            next_limit = HARD_LIMITS.get(unit, 999.0)
+            
+            if next_load + item_wt_tons > next_limit:
+                # Next day also full ΓÇö ask user again
+                return {
+                    "status": "overflow",
+                    "available": max(0, next_limit - next_load),
+                    "limit": next_limit,
+                    "current_load": next_load,
+                    "order_weight": item_wt_tons,
+                    "target_date": str(next_day),
+                    "target_unit": unit,
+                    "message": f"Next day ({next_day}) is also full for {unit}"
+                }
+            else:
+                final_unit = unit
+                final_date = next_day
+            
+        # Scenario B: SMART SPLIT
+        elif perform_split:
+            if available_space < 0.1:
+                frappe.throw(_("Available space ({:.3f}T) is too small to split (Min 0.1T).").format(available_space))
+            
+            # Logic: Reduce original item weight, create new item in Target Unit
+            remainder_qty = item.qty - (available_space * 1000.0)
+            split_qty = available_space * 1000.0
+            
+            # Update Original Item -> This will go to Best Slot
+            item.qty = remainder_qty
+            item.custom_is_split = 1
+            item.save()
+            
+            # Create New Item -> This stays in Target Unit/Date
+            new_item = frappe.copy_doc(item)
+            new_item.name = None
+            new_item.qty = split_qty
+            new_item.unit = unit
+            new_item.custom_is_split = 1
+            new_item.custom_split_from = item.name
+            new_item.insert()
+            
+            # Find best slot for the REMAINDER (Original item)
+            best_slot_rem = find_best_slot(remainder_qty / 1000.0, quality, unit, target_date)
+            if not best_slot_rem:
+                frappe.throw(_("Could not find slot for remaining quantity."))
+            
+            # Move Original Item to the best slot
+            # Note: We recurse or just manually move? Manually move is safer here.
+            # But we need to handle re-parenting if date is different.
+            _move_item_to_slot(item, best_slot_rem["unit"], best_slot_rem["date"], None, plan_name)
+            
+            frappe.db.commit()
+            try:
+                frappe.publish_realtime("production_board_update", {"date": str(best_slot_rem["date"])})
+            except Exception:
+                pass
+            return {"status": "success", "message": "Split successful"}
+            
+        else:
+            # Scenario C: OVERFLOW (Ask User)
+            return {
+                "status": "overflow",
+                "available": available_space,
+                "limit": limit,
+                "current_load": current_load,
+                "order_weight": item_wt_tons
+            }
+    else:
+        final_unit = unit
+        final_date = target_date
 
-	# 4. Perform Move
-	# Convert index to int if provided
-	idx_val = int(index) if index else None
-	# If index is 0/None, maybe append? 
-	# User drags to specific position. index is the new index in the list.
-	# We should respect it.
-	
-	_move_item_to_slot(item, final_unit, final_date, idx_val, plan_name)
-	
-	frappe.db.commit()
-	try:
-		frappe.publish_realtime("production_board_update", {"date": str(final_date)})
-	except Exception:
-		pass
-	return {
-		"status": "success", 
-		"moved_to": {"date": final_date, "unit": final_unit}
-	}
+    # 4. Perform Move
+    # Convert index to int if provided
+    idx_val = int(index) if index else None
+    # If index is 0/None, maybe append? 
+    # User drags to specific position. index is the new index in the list.
+    # We should respect it.
+    
+    _move_item_to_slot(item, final_unit, final_date, idx_val, plan_name)
+    
+    frappe.db.commit()
+    try:
+        frappe.publish_realtime("production_board_update", {"date": str(final_date)})
+    except Exception:
+        pass
+    return {
+        "status": "success", 
+        "moved_to": {"date": final_date, "unit": final_unit}
+    }
 
 def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
-	"""Internal helper to move a Planning Sheet Item to a specific slot.
-	Re-parents item if date changes, avoiding moving the entire order."""
-	target_date = getdate(date)
-	source_parent = frappe.get_doc("Planning sheet", item_doc.parent)
-	
-	source_effective_date = getdate(source_parent.get("custom_planned_date") or source_parent.ordered_date)
-	
-	# 1. Date Reparenting (Disabled Per User Request)
-	# The user explicitly requested "NEVER ALLOW NEW PLANNING SHEET" and "ALWASY USE EXISTING PLANNING SHEET".
-	# Therefore, we do not reparent items to new sheets when their date changes.
-	# We rely solely on updating the `custom_item_planned_date` at the item level below.
+    """Internal helper to move a Planning Sheet Item to a specific slot.
+    Re-parents item if date changes, avoiding moving the entire order."""
+    target_date = getdate(date)
+    source_parent = frappe.get_doc("Planning sheet", item_doc.parent)
+    
+    source_effective_date = getdate(source_parent.get("custom_planned_date") or source_parent.ordered_date)
+    
+    # 1. Date Reparenting (Disabled Per User Request)
+    # The user explicitly requested "NEVER ALLOW NEW PLANNING SHEET" and "ALWASY USE EXISTING PLANNING SHEET".
+    # Therefore, we do not reparent items to new sheets when their date changes.
+    # We rely solely on updating the `custom_item_planned_date` at the item level below.
 
-	# 2. Handle IDX Shifting if inserting at specific position
-	# Update Item unit and parent first ΓÇö use raw SQL to bypass docstatus immutability
-	update_fields = {"unit": unit}
-	if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-		update_fields["custom_item_planned_date"] = target_date
-	set_clause = ", ".join([f"`{k}` = %s" for k in update_fields.keys()])
-	frappe.db.sql(
-		f"UPDATE `tabPlanning Sheet Item` SET {set_clause} WHERE name = %s",
-		list(update_fields.values()) + [item_doc.name]
-	)
-	item_doc.unit = unit
-	
-	if new_idx is not None:
-		try:
-			eff = _effective_date_expr("sheet")
-			
-			# Re-load the current parent to ensure we use the TARGET sheet's plan
-			target_parent = frappe.get_doc("Planning sheet", item_doc.parent)
-			pb_plan = target_parent.get("custom_pb_plan_name") or ""
-			if pb_plan:
-				pb_cond = "AND sheet.custom_pb_plan_name = %(pb_plan)s"
-			else:
-				pb_cond = "AND (sheet.custom_pb_plan_name IS NULL OR sheet.custom_pb_plan_name = '')"
+    # 2. Handle IDX Shifting if inserting at specific position
+    # Update Item unit and parent first ΓÇö use raw SQL to bypass docstatus immutability
+    update_fields = {"unit": unit}
+    if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+        update_fields["custom_item_planned_date"] = target_date
+    set_clause = ", ".join([f"`{k}` = %s" for k in update_fields.keys()])
+    frappe.db.sql(
+        f"UPDATE `tabPlanning Sheet Item` SET {set_clause} WHERE name = %s",
+        list(update_fields.values()) + [item_doc.name]
+    )
+    item_doc.unit = unit
+    
+    if new_idx is not None:
+        try:
+            eff = _effective_date_expr("sheet")
+            
+            # Re-load the current parent to ensure we use the TARGET sheet's plan
+            target_parent = frappe.get_doc("Planning sheet", item_doc.parent)
+            pb_plan = target_parent.get("custom_pb_plan_name") or ""
+            if pb_plan:
+                pb_cond = "AND sheet.custom_pb_plan_name = %(pb_plan)s"
+            else:
+                pb_cond = "AND (sheet.custom_pb_plan_name IS NULL OR sheet.custom_pb_plan_name = '')"
 
-			sql_fetch = f"""
-				SELECT item.name 
-				FROM `tabPlanning Sheet Item` item
-				JOIN `tabPlanning sheet` sheet ON item.parent = sheet.name
-				WHERE {eff} = %(target_date)s AND item.unit = %(unit)s AND item.name != %(item_name)s
-				{pb_cond}
-				ORDER BY item.idx ASC, item.creation ASC
-			"""
-			params = {
-				"target_date": target_date,
-				"unit": unit,
-				"item_name": item_doc.name,
-			}
-			if pb_plan:
-				params["pb_plan"] = pb_plan
+            sql_fetch = f"""
+                SELECT item.name 
+                FROM `tabPlanning Sheet Item` item
+                JOIN `tabPlanning sheet` sheet ON item.parent = sheet.name
+                WHERE {eff} = %(target_date)s AND item.unit = %(unit)s AND item.name != %(item_name)s
+                {pb_cond}
+                ORDER BY item.idx ASC, item.creation ASC
+            """
+            params = {
+                "target_date": target_date,
+                "unit": unit,
+                "item_name": item_doc.name,
+            }
+            if pb_plan:
+                params["pb_plan"] = pb_plan
 
-			other_items = frappe.db.sql(sql_fetch, params)
-			others = [r[0] for r in other_items]
-			
-			insert_pos = max(0, new_idx - 1)
-			others.insert(insert_pos, item_doc.name)
-			
-			for i, name in enumerate(others):
-				frappe.db.sql(
-					"UPDATE `tabPlanning Sheet Item` SET idx = %s WHERE name = %s",
-					(i + 1, name),
-				)
-		except Exception as e:
-			frappe.log_error(f"Global Sequence Fix Error: {str(e)}")
+            other_items = frappe.db.sql(sql_fetch, params)
+            others = [r[0] for r in other_items]
+            
+            insert_pos = max(0, new_idx - 1)
+            others.insert(insert_pos, item_doc.name)
+            
+            for i, name in enumerate(others):
+                frappe.db.sql(
+                    "UPDATE `tabPlanning Sheet Item` SET idx = %s WHERE name = %s",
+                    (i + 1, name),
+                )
+        except Exception as e:
+            frappe.log_error(f"Global Sequence Fix Error: {str(e)}")
 
-	# 3. Update Plan Codes for Affected Sheets
-	for sheet_name in set([source_parent.name, item_doc.parent]):
-		if frappe.db.exists("Planning sheet", sheet_name):
-			# Use ignore_cache=True to ensure we see the updated item units/dates
-			doc_sheet = frappe.get_doc("Planning sheet", sheet_name, ignore_cache=True)
-			update_sheet_plan_codes(doc_sheet)
-			frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s", (doc_sheet.custom_plan_code, doc_sheet.name))
-			for d in doc_sheet.items:
-				frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET custom_plan_code = %s WHERE name = %s", (d.custom_plan_code, d.name))
+    # 3. Update Plan Codes for Affected Sheets
+    for sheet_name in set([source_parent.name, item_doc.parent]):
+        if frappe.db.exists("Planning sheet", sheet_name):
+            # Use ignore_cache=True to ensure we see the updated item units/dates
+            doc_sheet = frappe.get_doc("Planning sheet", sheet_name, ignore_cache=True)
+            update_sheet_plan_codes(doc_sheet)
+            frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s", (doc_sheet.custom_plan_code, doc_sheet.name))
+            for d in doc_sheet.items:
+                frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET custom_plan_code = %s WHERE name = %s", (d.custom_plan_code, d.name))
 
 @frappe.whitelist()
 def get_kanban_board(start_date, end_date):
-	start_date = getdate(start_date)
-	end_date = getdate(end_date)
-	
-	sheets = frappe.get_all(
-		"Planning sheet",
-		filters={
-			"ordered_date": ["between", [start_date, end_date]],
-			"docstatus": ["<", 2]
-		},
-		fields=["name", "customer", "party_code", "ordered_date", "dod", "planning_status", "docstatus"],
-		order_by="ordered_date asc"
-	)
-	
-	data = []
-	for sheet in sheets:
-		items = frappe.get_all(
-			"Planning Sheet Item",
-			filters={"parent": sheet.name},
-			fields=["qty", "unit", "custom_quality", "color", "gsm"],
-			order_by="idx"
-		)
-		
-		# Map custom_quality to quality for frontend consistency
-		for item in items:
-			item["quality"] = item.get("custom_quality")
+    start_date = getdate(start_date)
+    end_date = getdate(end_date)
+    
+    sheets = frappe.get_all(
+        "Planning sheet",
+        filters={
+            "ordered_date": ["between", [start_date, end_date]],
+            "docstatus": ["<", 2]
+        },
+        fields=["name", "customer", "party_code", "ordered_date", "dod", "planning_status", "docstatus"],
+        order_by="ordered_date asc"
+    )
+    
+    data = []
+    for sheet in sheets:
+        items = frappe.get_all(
+            "Planning Sheet Item",
+            filters={"parent": sheet.name},
+            fields=["qty", "unit", "custom_quality", "color", "gsm"],
+            order_by="idx"
+        )
+        
+        # Map custom_quality to quality for frontend consistency
+        for item in items:
+            item["quality"] = item.get("custom_quality")
 
-		total_weight = sum([flt(d.qty) for d in items])
-		
-		# Determine Major Unit
-		unit = "Unit 1" # Default
-		if items:
-			# Get most frequent unit
-			units = [d.unit for d in items if d.unit]
-			if units:
-				unit = max(set(units), key=units.count)
-		
-		data.append({
-			"name": sheet.name,
-			"customer": sheet.customer,
-			"party_code": sheet.party_code,
-			"ordered_date": sheet.ordered_date,
-			"dod": sheet.dod,
-			"planning_status": sheet.planning_status,
-			"docstatus": sheet.docstatus,
-			"unit": unit,
-			"total_weight": total_weight,
-			"items": items
-		})
-		
-	return data
+        total_weight = sum([flt(d.qty) for d in items])
+        
+        # Determine Major Unit
+        unit = "Unit 1" # Default
+        if items:
+            # Get most frequent unit
+            units = [d.unit for d in items if d.unit]
+            if units:
+                unit = max(set(units), key=units.count)
+        
+        data.append({
+            "name": sheet.name,
+            "customer": sheet.customer,
+            "party_code": sheet.party_code,
+            "ordered_date": sheet.ordered_date,
+            "dod": sheet.dod,
+            "planning_status": sheet.planning_status,
+            "docstatus": sheet.docstatus,
+            "unit": unit,
+            "total_weight": total_weight,
+            "items": items
+        })
+        
+    return data
 
 # ... (Existing get_color_chart_data, update_item_unit, update_items_bulk, etc. - UNCHANGED) ...
 # I will retain them in the file content if I am replacing strict block, but if I am replacing a range I need to be careful.
@@ -1701,1774 +1701,1774 @@ def get_kanban_board(start_date, end_date):
 
 @frappe.whitelist()
 def get_color_sequence(date, unit, plan_name="Default"):
-	"""Retrieves the saved sequence and status for a unit/plan on a given date."""
-	name = f"CSA-{plan_name}-{unit}-{date}"
-	if frappe.db.exists("Color Sequence Approval", name):
-		doc = frappe.get_doc("Color Sequence Approval", name)
-		return {
-			"sequence": json.loads(doc.sequence_data) if doc.sequence_data else [],
-			"status": doc.status,
-			"modified": doc.modified,
-			"modified_by": doc.modified_by
-		}
-	return {"sequence": [], "status": "Draft", "modified": None, "modified_by": None}
+    """Retrieves the saved sequence and status for a unit/plan on a given date."""
+    name = f"CSA-{plan_name}-{unit}-{date}"
+    if frappe.db.exists("Color Sequence Approval", name):
+        doc = frappe.get_doc("Color Sequence Approval", name)
+        return {
+            "sequence": json.loads(doc.sequence_data) if doc.sequence_data else [],
+            "status": doc.status,
+            "modified": doc.modified,
+            "modified_by": doc.modified_by
+        }
+    return {"sequence": [], "status": "Draft", "modified": None, "modified_by": None}
 
 @frappe.whitelist()
 def get_color_sequences_range(start_date, end_date, unit=None, plan_name="__all__"):
-	"""Fetches all color sequences for a range of dates and units."""
-	filters = {
-		"date": ["between", [start_date, end_date]]
-	}
-	if unit and unit != "All Units":
-		filters["unit"] = _normalize_unit(unit)
-	if plan_name and plan_name != "__all__":
-		filters["plan_name"] = plan_name
-		
-	sequences = frappe.get_all("Color Sequence Approval", 
-		filters=filters, 
-		fields=["name", "date", "unit", "plan_name", "sequence_data", "status"],
-		order_by="modified desc"
-	)
-	
-	result = {}
-	for s in sequences:
-		# Key by unit-date for easy frontend lookup
-		key = f"{s.unit}-{s.date}"
-		# Keep first seen entry (latest modified due to order_by).
-		if key in result:
-			continue
-		result[key] = {
-			"sequence": json.loads(s.sequence_data) if s.sequence_data else [],
-			"status": s.status
-		}
-	return result
+    """Fetches all color sequences for a range of dates and units."""
+    filters = {
+        "date": ["between", [start_date, end_date]]
+    }
+    if unit and unit != "All Units":
+        filters["unit"] = _normalize_unit(unit)
+    if plan_name and plan_name != "__all__":
+        filters["plan_name"] = plan_name
+        
+    sequences = frappe.get_all("Color Sequence Approval", 
+        filters=filters, 
+        fields=["name", "date", "unit", "plan_name", "sequence_data", "status"],
+        order_by="modified desc"
+    )
+    
+    result = {}
+    for s in sequences:
+        # Key by unit-date for easy frontend lookup
+        key = f"{s.unit}-{s.date}"
+        # Keep first seen entry (latest modified due to order_by).
+        if key in result:
+            continue
+        result[key] = {
+            "sequence": json.loads(s.sequence_data) if s.sequence_data else [],
+            "status": s.status
+        }
+    return result
 
 @frappe.whitelist()
 def save_color_sequence(date, unit, sequence_data, plan_name="Default", new_date=None):
-	"""Saves the color arrangement. Handles date changes by renaming the document."""
-	unit = _normalize_unit(unit)
-	name = f"CSA-{plan_name}-{unit}-{date}"
-	
-	# Handle date change (renaming)
-	if new_date and new_date != date:
-		if frappe.db.exists("Color Sequence Approval", name):
-			new_name = f"CSA-{plan_name}-{unit}-{new_date}"
-			if frappe.db.exists("Color Sequence Approval", new_name):
-				frappe.throw(_("An arrangement already exists for {0} on {1} ({2}).").format(unit, new_date, plan_name))
-			
-			# Rename the document to maintain the name pattern
-			frappe.rename_doc("Color Sequence Approval", name, new_name)
-			name = new_name
-			date = new_date
+    """Saves the color arrangement. Handles date changes by renaming the document."""
+    unit = _normalize_unit(unit)
+    name = f"CSA-{plan_name}-{unit}-{date}"
+    
+    # Handle date change (renaming)
+    if new_date and new_date != date:
+        if frappe.db.exists("Color Sequence Approval", name):
+            new_name = f"CSA-{plan_name}-{unit}-{new_date}"
+            if frappe.db.exists("Color Sequence Approval", new_name):
+                frappe.throw(_("An arrangement already exists for {0} on {1} ({2}).").format(unit, new_date, plan_name))
+            
+            # Rename the document to maintain the name pattern
+            frappe.rename_doc("Color Sequence Approval", name, new_name)
+            name = new_name
+            date = new_date
 
-	if not frappe.db.exists("Color Sequence Approval", name):
-		doc = frappe.new_doc("Color Sequence Approval")
-		doc.date = date
-		doc.unit = unit
-		doc.plan_name = plan_name
-		doc.status = "Draft"
-	else:
-		doc = frappe.get_doc("Color Sequence Approval", name)
-		# Update the internal date field just in case
-		doc.date = date
-	
-	if isinstance(sequence_data, str):
-		doc.sequence_data = sequence_data
-	else:
-		doc.sequence_data = json.dumps(sequence_data)
-		
-	doc.save()
-	frappe.db.commit()
-	return {"status": "success", "name": name, "date": date}
+    if not frappe.db.exists("Color Sequence Approval", name):
+        doc = frappe.new_doc("Color Sequence Approval")
+        doc.date = date
+        doc.unit = unit
+        doc.plan_name = plan_name
+        doc.status = "Draft"
+    else:
+        doc = frappe.get_doc("Color Sequence Approval", name)
+        # Update the internal date field just in case
+        doc.date = date
+    
+    if isinstance(sequence_data, str):
+        doc.sequence_data = sequence_data
+    else:
+        doc.sequence_data = json.dumps(sequence_data)
+        
+    doc.save()
+    frappe.db.commit()
+    return {"status": "success", "name": name, "date": date}
 
 @frappe.whitelist()
 def request_sequence_approval(date, unit, plan_name="Default"):
-	"""Users call this to move sequence to 'Pending Approval'."""
-	unit = _normalize_unit(unit)
-	name = f"CSA-{plan_name}-{unit}-{date}"
-	if not frappe.db.exists("Color Sequence Approval", name):
-		frappe.throw(_("Please save the sequence before requesting approval."))
-	
-	frappe.db.set_value("Color Sequence Approval", name, "status", "Pending Approval", update_modified=True)
-	frappe.db.commit()
-	return {"status": "success"}
+    """Users call this to move sequence to 'Pending Approval'."""
+    unit = _normalize_unit(unit)
+    name = f"CSA-{plan_name}-{unit}-{date}"
+    if not frappe.db.exists("Color Sequence Approval", name):
+        frappe.throw(_("Please save the sequence before requesting approval."))
+    
+    frappe.db.set_value("Color Sequence Approval", name, "status", "Pending Approval", update_modified=True)
+    frappe.db.commit()
+    return {"status": "success"}
 
 @frappe.whitelist()
 def approve_sequence(date, unit, plan_name="Default"):
-	"""Managers call this to approve the sequence."""
-	unit = _normalize_unit(unit)
-	name = f"CSA-{plan_name}-{unit}-{date}"
-	if not frappe.db.exists("Color Sequence Approval", name):
-		frappe.throw(_("Sequence record not found."))
-	
-	frappe.db.set_value("Color Sequence Approval", name, "status", "Approved", update_modified=True)
-	frappe.db.commit()
-	return {"status": "success"}
+    """Managers call this to approve the sequence."""
+    unit = _normalize_unit(unit)
+    name = f"CSA-{plan_name}-{unit}-{date}"
+    if not frappe.db.exists("Color Sequence Approval", name):
+        frappe.throw(_("Sequence record not found."))
+    
+    frappe.db.set_value("Color Sequence Approval", name, "status", "Approved", update_modified=True)
+    frappe.db.commit()
+    return {"status": "success"}
 
 @frappe.whitelist()
 def reject_sequence(date, unit, plan_name="Default"):
-	"""Managers call this to reject the sequence."""
-	unit = _normalize_unit(unit)
-	name = f"CSA-{plan_name}-{unit}-{date}"
-	if not frappe.db.exists("Color Sequence Approval", name):
-		frappe.throw(_("Sequence record not found."))
-	
-	frappe.db.set_value("Color Sequence Approval", name, "status", "Rejected", update_modified=True)
-	frappe.db.commit()
-	return {"status": "success"}
+    """Managers call this to reject the sequence."""
+    unit = _normalize_unit(unit)
+    name = f"CSA-{plan_name}-{unit}-{date}"
+    if not frappe.db.exists("Color Sequence Approval", name):
+        frappe.throw(_("Sequence record not found."))
+    
+    frappe.db.set_value("Color Sequence Approval", name, "status", "Rejected", update_modified=True)
+    frappe.db.commit()
+    return {"status": "success"}
 
 @frappe.whitelist()
 def get_pending_approvals():
-	"""Returns color sequence arrangements for history and approval dashboard."""
-	return frappe.get_all("Color Sequence Approval", 
-		filters={"status": ["!=", "Approved"]},
-		fields=["name", "date", "unit", "status", "plan_name", "sequence_data", "modified", "owner"],
-		order_by="modified desc",
-		limit=100
-	)
+    """Returns color sequence arrangements for history and approval dashboard."""
+    return frappe.get_all("Color Sequence Approval", 
+        filters={"status": ["!=", "Approved"]},
+        fields=["name", "date", "unit", "status", "plan_name", "sequence_data", "modified", "owner"],
+        order_by="modified desc",
+        limit=100
+    )
 
 @frappe.whitelist()
 def get_items_by_name(names):
-	"""Returns item details for a list of Planning Sheet Item names."""
-	if isinstance(names, str):
-		names = json.loads(names)
-	if not names:
-		return []
-	
-	return frappe.db.sql(f"""
-		SELECT 
-			i.name, i.color, i.custom_quality as quality, i.qty, p.party_code,
-			p.customer, COALESCE(c.customer_name, p.customer) as customer_name,
-			p.sales_order, i.custom_item_planned_date, i.custom_plan_code,
-			p.custom_pb_plan_name as pbPlanName
-		FROM `tabPlanning Sheet Item` i
-		JOIN `tabPlanning sheet` p ON i.parent = p.name
-		LEFT JOIN `tabCustomer` c ON p.customer = c.name
-		WHERE i.name IN %s
-	""", (names,), as_dict=True)
+    """Returns item details for a list of Planning Sheet Item names."""
+    if isinstance(names, str):
+        names = json.loads(names)
+    if not names:
+        return []
+    
+    return frappe.db.sql(f"""
+        SELECT 
+            i.name, i.color, i.custom_quality as quality, i.qty, p.party_code,
+            p.customer, COALESCE(c.customer_name, p.customer) as customer_name,
+            p.sales_order, i.custom_item_planned_date, i.custom_plan_code,
+            p.custom_pb_plan_name as pbPlanName
+        FROM `tabPlanning Sheet Item` i
+        JOIN `tabPlanning sheet` p ON i.parent = p.name
+        LEFT JOIN `tabCustomer` c ON p.customer = c.name
+        WHERE i.name IN %s
+    """, (names,), as_dict=True)
 
 @frappe.whitelist()
 def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=None, mode=None, planned_only=0):
-	from frappe.utils import getdate
-	
-	# PULL MODE: Return raw items by ordered_date, exclude items with Work Orders
-	if mode == "pull" and date:
-		target_date = getdate(date)
-		
-		# Pull Orders dialog: shows ALL items currently ON the board for source_date.
-		# This includes color items (explicitly pushed, have custom_item_planned_date = target_date)
-		# AND white items (auto-planned, use ordered_date = target_date with no item-level date).
-		has_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
-		clean_white_sql_pull = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
-		
-		# Dynamically detect Sales Order Item column
-		so_item_real_col = "sales_order_item"
-		if not frappe.db.has_column("Planning Sheet Item", so_item_real_col):
-			so_item_real_col = "custom_sales_order_item"
-		
-		# Only use the column if it's found in the physical table
-		columns = frappe.db.get_table_columns("Planning Sheet Item")
-		if so_item_real_col not in columns:
-			so_item_col = "'' as salesOrderItem,"
-		else:
-			so_item_col = f"i.{so_item_real_col} as salesOrderItem,"
+    from frappe.utils import getdate
+    
+    # PULL MODE: Return raw items by ordered_date, exclude items with Work Orders
+    if mode == "pull" and date:
+        target_date = getdate(date)
+        
+        # Pull Orders dialog: shows ALL items currently ON the board for source_date.
+        # This includes color items (explicitly pushed, have custom_item_planned_date = target_date)
+        # AND white items (auto-planned, use ordered_date = target_date with no item-level date).
+        has_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+        clean_white_sql_pull = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
+        
+        # Dynamically detect Sales Order Item column
+        so_item_real_col = "sales_order_item"
+        if not frappe.db.has_column("Planning Sheet Item", so_item_real_col):
+            so_item_real_col = "custom_sales_order_item"
+        
+        # Only use the column if it's found in the physical table
+        columns = frappe.db.get_table_columns("Planning Sheet Item")
+        if so_item_real_col not in columns:
+            so_item_col = "'' as salesOrderItem,"
+        else:
+            so_item_col = f"i.{so_item_real_col} as salesOrderItem,"
 
-		split_col = ""
-		if frappe.db.has_column("Planning Sheet Item", "custom_is_split"):
-			split_col = "i.custom_is_split as isSplit,"
-		else:
-			split_col = "0 as isSplit,"
+        split_col = ""
+        if frappe.db.has_column("Planning Sheet Item", "custom_is_split"):
+            split_col = "i.custom_is_split as isSplit,"
+        else:
+            split_col = "0 as isSplit,"
 
-		if has_col:
-			# All items on board for target_date:
-			# 1. Items with explicit custom_item_planned_date = target_date (colors + manually-moved whites)
-			# 2. White items with ordered_date = target_date and no item-level override
-			items = frappe.db.sql(f"""
-				SELECT 
-					i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
-					i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
-					{so_item_col} {split_col}
-					p.name as planningSheet, p.party_code as partyCode, p.customer,
-					COALESCE(c.customer_name, p.customer) as customer_name,
-					p.ordered_date, p.dod, p.sales_order as salesOrder
-				FROM `tabPlanning Sheet Item` i
-				JOIN `tabPlanning sheet` p ON i.parent = p.name
-				LEFT JOIN `tabCustomer` c ON p.customer = c.name
-				WHERE i.color IS NOT NULL AND i.color != ''
-				  AND p.docstatus < 2
-				  AND DATE(COALESCE(NULLIF(i.custom_item_planned_date, ''), NULLIF(p.custom_planned_date, ''), p.ordered_date)) = DATE(%s)
-				ORDER BY i.unit, i.idx
-			""", (target_date,), as_dict=True)
-		else:
-			# Fallback: use sheet-level date
-			sheet_date_col = "COALESCE(p.custom_planned_date, p.ordered_date)" if frappe.db.has_column("Planning sheet", "custom_planned_date") else "p.ordered_date"
-			items = frappe.db.sql(f"""
-				SELECT 
-					i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
-					i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
-					{so_item_col} {split_col}
-					p.name as planningSheet, p.party_code as partyCode, p.customer,
-				COALESCE(c.customer_name, p.customer) as customer_name,
-				  AND i.color IS NOT NULL AND i.color != ''
-				  AND p.docstatus < 2
-				ORDER BY i.unit, i.idx
-			""", (target_date,), as_dict=True)
-		
-		# Check which planning sheets have Work Orders (those can't be moved)
-		if items:
-			sheet_names = list(set(it.planningSheet for it in items))
-			so_names = list(set(it.salesOrder for it in items if it.salesOrder))
-			
-			wo_sheets = set()
-			# Check WO via Sales Order
-			if so_names:
-				fmt = ','.join(['%s'] * len(so_names))
-				wo_data = frappe.db.sql(f"""
-					SELECT DISTINCT sales_order FROM `tabWork Order`
-					WHERE sales_order IN ({fmt}) AND docstatus < 2
-				""", tuple(so_names))
-				wo_sos = set(r[0] for r in wo_data)
-				for it in items:
-					if it.salesOrder and it.salesOrder in wo_sos:
-						wo_sheets.add(it.planningSheet)
-			
-			# Check WO via Planning Sheet custom field
-			if sheet_names:
-				fmt2 = ','.join(['%s'] * len(sheet_names))
-				try:
-					wo_ps = frappe.db.sql(f"""
-						SELECT DISTINCT custom_planning_sheet FROM `tabWork Order`
-						WHERE custom_planning_sheet IN ({fmt2}) AND docstatus < 2
-					""", tuple(sheet_names))
-					for r in wo_ps:
-						wo_sheets.add(r[0])
-				except Exception:
-					pass
-			
-			# Filter out items that have WO
-			items = [it for it in items if it.planningSheet not in wo_sheets]
-		
-		# Deduplicate if mode is pull or board
-		return _deduplicate_items(items)
+        if has_col:
+            # All items on board for target_date:
+            # 1. Items with explicit custom_item_planned_date = target_date (colors + manually-moved whites)
+            # 2. White items with ordered_date = target_date and no item-level override
+            items = frappe.db.sql(f"""
+                SELECT 
+                    i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
+                    i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
+                    {so_item_col} {split_col}
+                    p.name as planningSheet, p.party_code as partyCode, p.customer,
+                    COALESCE(c.customer_name, p.customer) as customer_name,
+                    p.ordered_date, p.dod, p.sales_order as salesOrder
+                FROM `tabPlanning Sheet Item` i
+                JOIN `tabPlanning sheet` p ON i.parent = p.name
+                LEFT JOIN `tabCustomer` c ON p.customer = c.name
+                WHERE i.color IS NOT NULL AND i.color != ''
+                  AND p.docstatus < 2
+                  AND DATE(COALESCE(NULLIF(i.custom_item_planned_date, ''), NULLIF(p.custom_planned_date, ''), p.ordered_date)) = DATE(%s)
+                ORDER BY i.unit, i.idx
+            """, (target_date,), as_dict=True)
+        else:
+            # Fallback: use sheet-level date
+            sheet_date_col = "COALESCE(p.custom_planned_date, p.ordered_date)" if frappe.db.has_column("Planning sheet", "custom_planned_date") else "p.ordered_date"
+            items = frappe.db.sql(f"""
+                SELECT 
+                    i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
+                    i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
+                    {so_item_col} {split_col}
+                    p.name as planningSheet, p.party_code as partyCode, p.customer,
+                COALESCE(c.customer_name, p.customer) as customer_name,
+                  AND i.color IS NOT NULL AND i.color != ''
+                  AND p.docstatus < 2
+                ORDER BY i.unit, i.idx
+            """, (target_date,), as_dict=True)
+        
+        # Check which planning sheets have Work Orders (those can't be moved)
+        if items:
+            sheet_names = list(set(it.planningSheet for it in items))
+            so_names = list(set(it.salesOrder for it in items if it.salesOrder))
+            
+            wo_sheets = set()
+            # Check WO via Sales Order
+            if so_names:
+                fmt = ','.join(['%s'] * len(so_names))
+                wo_data = frappe.db.sql(f"""
+                    SELECT DISTINCT sales_order FROM `tabWork Order`
+                    WHERE sales_order IN ({fmt}) AND docstatus < 2
+                """, tuple(so_names))
+                wo_sos = set(r[0] for r in wo_data)
+                for it in items:
+                    if it.salesOrder and it.salesOrder in wo_sos:
+                        wo_sheets.add(it.planningSheet)
+            
+            # Check WO via Planning Sheet custom field
+            if sheet_names:
+                fmt2 = ','.join(['%s'] * len(sheet_names))
+                try:
+                    wo_ps = frappe.db.sql(f"""
+                        SELECT DISTINCT custom_planning_sheet FROM `tabWork Order`
+                        WHERE custom_planning_sheet IN ({fmt2}) AND docstatus < 2
+                    """, tuple(sheet_names))
+                    for r in wo_ps:
+                        wo_sheets.add(r[0])
+                except Exception:
+                    pass
+            
+            # Filter out items that have WO
+            items = [it for it in items if it.planningSheet not in wo_sheets]
+        
+        # Deduplicate if mode is pull or board
+        return _deduplicate_items(items)
 
-	# PULL_BOARD MODE (Production Board only): items already ON the board for this date
-	# Use item-level custom_item_planned_date when set, else sheet custom_planned_date
-	if mode == "pull_board" and date:
-		target_date = getdate(date)
-		has_item_planned = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
-		has_sheet_planned = frappe.db.has_column("Planning sheet", "custom_planned_date")
-		# Effective date: prefer item level, then sheet level, fallback to ordered_date (for auto-whites)
-		item_date_expr = (
-			"COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) = %s"
-			if (has_item_planned and has_sheet_planned)
-			else "COALESCE(p.custom_planned_date, p.ordered_date) = %s" if has_sheet_planned else "p.ordered_date = %s"
-		)
-		sheet_pushed = "" # No longer require sheet-level push check
+    # PULL_BOARD MODE (Production Board only): items already ON the board for this date
+    # Use item-level custom_item_planned_date when set, else sheet custom_planned_date
+    if mode == "pull_board" and date:
+        target_date = getdate(date)
+        has_item_planned = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+        has_sheet_planned = frappe.db.has_column("Planning sheet", "custom_planned_date")
+        # Effective date: prefer item level, then sheet level, fallback to ordered_date (for auto-whites)
+        item_date_expr = (
+            "COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) = %s"
+            if (has_item_planned and has_sheet_planned)
+            else "COALESCE(p.custom_planned_date, p.ordered_date) = %s" if has_sheet_planned else "p.ordered_date = %s"
+        )
+        sheet_pushed = "" # No longer require sheet-level push check
 
-		# Dynamically detect Sales Order Item column
-		so_item_real_col = "sales_order_item"
-		columns = frappe.db.get_table_columns("Planning Sheet Item")
-		if "sales_order_item" not in columns and "custom_sales_order_item" in columns:
-			so_item_real_col = "custom_sales_order_item"
-		
-		if so_item_real_col not in columns:
-			so_item_col = "'' as salesOrderItem,"
-		else:
-			so_item_col = f"i.{so_item_real_col} as salesOrderItem,"
-		split_col = "i.custom_is_split as isSplit," if frappe.db.has_column("Planning Sheet Item", "custom_is_split") else "0 as isSplit,"
+        # Dynamically detect Sales Order Item column
+        so_item_real_col = "sales_order_item"
+        columns = frappe.db.get_table_columns("Planning Sheet Item")
+        if "sales_order_item" not in columns and "custom_sales_order_item" in columns:
+            so_item_real_col = "custom_sales_order_item"
+        
+        if so_item_real_col not in columns:
+            so_item_col = "'' as salesOrderItem,"
+        else:
+            so_item_col = f"i.{so_item_real_col} as salesOrderItem,"
+        split_col = "i.custom_is_split as isSplit," if frappe.db.has_column("Planning Sheet Item", "custom_is_split") else "0 as isSplit,"
 
-		clean_white_sql_pb = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
+        clean_white_sql_pb = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
 
-		items = frappe.db.sql(f"""
-			SELECT
-				i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
-				i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
-				i.custom_item_planned_date,
-				{so_item_col} {split_col}
-				p.name as planningSheet, p.party_code as partyCode, p.customer,
-				COALESCE(c.customer_name, p.customer) as customer_name,
-				p.ordered_date, p.dod, p.sales_order as salesOrder,
-				COALESCE(p.custom_pb_plan_name, '') as pbPlanName,
-				COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as planned_date
-			FROM `tabPlanning Sheet Item` i
-			JOIN `tabPlanning sheet` p ON i.parent = p.name
-			LEFT JOIN `tabCustomer` c ON p.customer = c.name
-			WHERE {item_date_expr}
-			  AND i.color IS NOT NULL AND i.color != ''
-			  AND (
-			      (i.custom_quality IS NOT NULL AND i.custom_quality != '')
-			      OR REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql_pb})
-			  )
-			  {sheet_pushed}
-			  AND p.docstatus < 2
-			ORDER BY i.unit, i.idx
-		""", (target_date,), as_dict=True)
+        items = frappe.db.sql(f"""
+            SELECT
+                i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
+                i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
+                i.custom_item_planned_date,
+                {so_item_col} {split_col}
+                p.name as planningSheet, p.party_code as partyCode, p.customer,
+                COALESCE(c.customer_name, p.customer) as customer_name,
+                p.ordered_date, p.dod, p.sales_order as salesOrder,
+                COALESCE(p.custom_pb_plan_name, '') as pbPlanName,
+                COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as planned_date
+            FROM `tabPlanning Sheet Item` i
+            JOIN `tabPlanning sheet` p ON i.parent = p.name
+            LEFT JOIN `tabCustomer` c ON p.customer = c.name
+            WHERE {item_date_expr}
+              AND i.color IS NOT NULL AND i.color != ''
+              AND (
+                  (i.custom_quality IS NOT NULL AND i.custom_quality != '')
+                  OR REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql_pb})
+              )
+              {sheet_pushed}
+              AND p.docstatus < 2
+            ORDER BY i.unit, i.idx
+        """, (target_date,), as_dict=True)
 
-		# Visibility check:
-		# - White items: always visible if they match the date
-		# - Color items: MUST have custom_item_planned_date set (signifies 'pushed')
-		items = [
-			it for it in (items or [])
-			if _is_white_color(it.get("color")) or it.get("custom_item_planned_date")
-		]
+        # Visibility check:
+        # - White items: always visible if they match the date
+        # - Color items: MUST have custom_item_planned_date set (signifies 'pushed')
+        items = [
+            it for it in (items or [])
+            if _is_white_color(it.get("color")) or it.get("custom_item_planned_date")
+        ]
 
-		if items:
-			sheet_names = list(set(it.planningSheet for it in items))
-			so_names = list(set(it.salesOrder for it in items if it.salesOrder))
-			wo_sheets = set()
-			if so_names:
-				fmt = ','.join(['%s'] * len(so_names))
-				for r in frappe.db.sql(f"SELECT DISTINCT sales_order FROM `tabWork Order` WHERE sales_order IN ({fmt}) AND docstatus < 2", tuple(so_names)):
-					wo_sheets.add(r[0])
-			if sheet_names:
-				fmt2 = ','.join(['%s'] * len(sheet_names))
-				try:
-					for r in frappe.db.sql(f"SELECT DISTINCT custom_planning_sheet FROM `tabWork Order` WHERE custom_planning_sheet IN ({fmt2}) AND docstatus < 2", tuple(sheet_names)):
-						wo_sheets.add(r[0])
-				except Exception:
-					pass
-			items = [it for it in items if it.planningSheet not in wo_sheets]
-		return _deduplicate_items(items) if items else []
+        if items:
+            sheet_names = list(set(it.planningSheet for it in items))
+            so_names = list(set(it.salesOrder for it in items if it.salesOrder))
+            wo_sheets = set()
+            if so_names:
+                fmt = ','.join(['%s'] * len(so_names))
+                for r in frappe.db.sql(f"SELECT DISTINCT sales_order FROM `tabWork Order` WHERE sales_order IN ({fmt}) AND docstatus < 2", tuple(so_names)):
+                    wo_sheets.add(r[0])
+            if sheet_names:
+                fmt2 = ','.join(['%s'] * len(sheet_names))
+                try:
+                    for r in frappe.db.sql(f"SELECT DISTINCT custom_planning_sheet FROM `tabWork Order` WHERE custom_planning_sheet IN ({fmt2}) AND docstatus < 2", tuple(sheet_names)):
+                        wo_sheets.add(r[0])
+                except Exception:
+                    pass
+            items = [it for it in items if it.planningSheet not in wo_sheets]
+        return _deduplicate_items(items) if items else []
 
-	# Support both single date and range
-	if start_date and end_date:
-		query_start = getdate(start_date)
-		query_end = getdate(end_date)
-	elif date:
-		# Check if multiple dates are provided (comma separated)
-		if "," in str(date):
-			target_dates = [getdate(d.strip()) for d in str(date).split(",") if d.strip()]
-		else:
-			target_dates = [getdate(date)]
-	else:
-		return []
+    # Support both single date and range
+    if start_date and end_date:
+        query_start = getdate(start_date)
+        query_end = getdate(end_date)
+    elif date:
+        # Check if multiple dates are provided (comma separated)
+        if "," in str(date):
+            target_dates = [getdate(d.strip()) for d in str(date).split(",") if d.strip()]
+        else:
+            target_dates = [getdate(date)]
+    else:
+        return []
 
-	# Build SQL for date filtering ΓÇö support split dates (pushed vs unpushed)
-	# IMPORTANT: For sheet fetching, we must use sheet-level fields. Item-level overrides
-	# are handled via EXISTS later in planned_only mode.
-	eff_pushed = "COALESCE(p.custom_planned_date, p.ordered_date)"
-	eff_ordered = "p.ordered_date"
-	
-	plan_condition = ""
-	params = []
-	has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
-	
-	if start_date and end_date:
-		date_condition = f"({eff_ordered} BETWEEN %s AND %s OR {eff_pushed} BETWEEN %s AND %s)"
-		params.extend([query_start, query_end, query_start, query_end])
-		if has_item_planned_col:
-			date_condition = f"({date_condition} OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi WHERE psi.parent = p.name AND psi.custom_item_planned_date BETWEEN %s AND %s))"
-			params.extend([query_start, query_end])
-	else:
-		if len(target_dates) > 1:
-			fmt = ','.join(['%s'] * len(target_dates))
-			date_condition = f"({eff_ordered} IN ({fmt}) OR {eff_pushed} IN ({fmt}))"
-			params.extend(target_dates)
-			params.extend(target_dates)
-			if has_item_planned_col:
-				date_condition = f"({date_condition} OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi WHERE psi.parent = p.name AND psi.custom_item_planned_date IN ({fmt})))"
-				params.extend(target_dates)
-		else:
-			date_condition = f"({eff_ordered} = %s OR {eff_pushed} = %s)"
-			params.append(target_dates[0])
-			params.append(target_dates[0])
-			if has_item_planned_col:
-				date_condition = f"({date_condition} OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi WHERE psi.parent = p.name AND DATE(psi.custom_item_planned_date) = DATE(%s)))"
-				params.append(target_dates[0])
-	
-	if plan_name == "__all__":
-		plan_condition = ""  # No plan filter ΓÇö return all items
-	elif plan_name and plan_name != "Default":
-		# Search for BOTH the base name, contextual name, and any legacy variations
-		valid_names = [plan_name]
-		for d in target_dates:
-			ctx_name = _get_contextual_plan_name(plan_name, d)
-			if ctx_name not in valid_names:
-				valid_names.append(ctx_name)
-		
-		# Proactively find legacy candidates in the DB that match this base name when stripped
-		db_names = frappe.db.sql("SELECT DISTINCT custom_plan_name FROM `tabPlanning sheet` WHERE custom_plan_name IS NOT NULL AND custom_plan_name != ''", as_list=1)
-		for row in db_names:
-			full_db_name = row[0]
-			if _strip_legacy_prefixes(full_db_name) == plan_name:
-				if full_db_name not in valid_names:
-					valid_names.append(full_db_name)
-		
-		fmt = ','.join(['%s'] * len(valid_names))
-		plan_condition = f"AND p.custom_plan_name IN ({fmt})"
-		params.extend(valid_names)
-	else:
-		plan_condition = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
+    # Build SQL for date filtering ΓÇö support split dates (pushed vs unpushed)
+    # IMPORTANT: For sheet fetching, we must use sheet-level fields. Item-level overrides
+    # are handled via EXISTS later in planned_only mode.
+    eff_pushed = "COALESCE(p.custom_planned_date, p.ordered_date)"
+    eff_ordered = "p.ordered_date"
+    
+    plan_condition = ""
+    params = []
+    has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+    
+    if start_date and end_date:
+        date_condition = f"({eff_ordered} BETWEEN %s AND %s OR {eff_pushed} BETWEEN %s AND %s)"
+        params.extend([query_start, query_end, query_start, query_end])
+        if has_item_planned_col:
+            date_condition = f"({date_condition} OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi WHERE psi.parent = p.name AND psi.custom_item_planned_date BETWEEN %s AND %s))"
+            params.extend([query_start, query_end])
+    else:
+        if len(target_dates) > 1:
+            fmt = ','.join(['%s'] * len(target_dates))
+            date_condition = f"({eff_ordered} IN ({fmt}) OR {eff_pushed} IN ({fmt}))"
+            params.extend(target_dates)
+            params.extend(target_dates)
+            if has_item_planned_col:
+                date_condition = f"({date_condition} OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi WHERE psi.parent = p.name AND psi.custom_item_planned_date IN ({fmt})))"
+                params.extend(target_dates)
+        else:
+            date_condition = f"({eff_ordered} = %s OR {eff_pushed} = %s)"
+            params.append(target_dates[0])
+            params.append(target_dates[0])
+            if has_item_planned_col:
+                date_condition = f"({date_condition} OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi WHERE psi.parent = p.name AND DATE(psi.custom_item_planned_date) = DATE(%s)))"
+                params.append(target_dates[0])
+    
+    if plan_name == "__all__":
+        plan_condition = ""  # No plan filter ΓÇö return all items
+    elif plan_name and plan_name != "Default":
+        # Search for BOTH the base name, contextual name, and any legacy variations
+        valid_names = [plan_name]
+        for d in target_dates:
+            ctx_name = _get_contextual_plan_name(plan_name, d)
+            if ctx_name not in valid_names:
+                valid_names.append(ctx_name)
+        
+        # Proactively find legacy candidates in the DB that match this base name when stripped
+        db_names = frappe.db.sql("SELECT DISTINCT custom_plan_name FROM `tabPlanning sheet` WHERE custom_plan_name IS NOT NULL AND custom_plan_name != ''", as_list=1)
+        for row in db_names:
+            full_db_name = row[0]
+            if _strip_legacy_prefixes(full_db_name) == plan_name:
+                if full_db_name not in valid_names:
+                    valid_names.append(full_db_name)
+        
+        fmt = ','.join(['%s'] * len(valid_names))
+        plan_condition = f"AND p.custom_plan_name IN ({fmt})"
+        params.extend(valid_names)
+    else:
+        plan_condition = "AND (p.custom_plan_name IS NULL OR p.custom_plan_name = '' OR p.custom_plan_name = 'Default')"
 
-	# Production Board only: require custom_planned_date to be set (scheduled).
-	# IMPORTANT: We do NOT require custom_pb_plan_name here because "white" orders
-	# are allowed to appear directly on the Production Board without being pushed.
-	# Non-white items are filtered per-item later unless they belong to a PB plan.
-	if cint(planned_only) and _has_planned_date_column():
-		# Allow sheets where EITHER the sheet has custom_planned_date OR items have custom_item_planned_date
-		has_item_planned = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
-		if has_item_planned:
-			plan_condition += """ AND (
-				(p.custom_planned_date IS NOT NULL AND p.custom_planned_date != '')
-				OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi 
-				           WHERE psi.parent = p.name 
-				           AND psi.custom_item_planned_date IS NOT NULL 
-				           AND psi.custom_item_planned_date != '')
-			)"""
-		else:
-			plan_condition += " AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
-	
-	# Build SELECT fields ΓÇö include columns only if they exist
-	fields = ["p.name", "p.customer", "p.party_code", "c.customer_name as party_name", "p.dod", "p.ordered_date", 
-			  "p.planning_status", "p.docstatus", "p.sales_order", "p.custom_plan_name", "p.custom_pb_plan_name",
-			  "COALESCE(p.custom_plan_name, 'Default') as planName"]
-	
-	if _has_planned_date_column():
-		fields.append("p.custom_planned_date")
-	
-	if _has_approval_status_column():
-		fields.append("p.custom_approval_status")
-		
-	if _has_draft_fields():
-		fields.append("p.custom_draft_planned_date")
-		fields.append("p.custom_draft_idx")
-		
-	fields_str = ", ".join(fields)
-	
-	has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
-	eff = _effective_date_expr("p")
+    # Production Board only: require custom_planned_date to be set (scheduled).
+    # IMPORTANT: We do NOT require custom_pb_plan_name here because "white" orders
+    # are allowed to appear directly on the Production Board without being pushed.
+    # Non-white items are filtered per-item later unless they belong to a PB plan.
+    if cint(planned_only) and _has_planned_date_column():
+        # Allow sheets where EITHER the sheet has custom_planned_date OR items have custom_item_planned_date
+        has_item_planned = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+        if has_item_planned:
+            plan_condition += """ AND (
+                (p.custom_planned_date IS NOT NULL AND p.custom_planned_date != '')
+                OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi 
+                           WHERE psi.parent = p.name 
+                           AND psi.custom_item_planned_date IS NOT NULL 
+                           AND psi.custom_item_planned_date != '')
+            )"""
+        else:
+            plan_condition += " AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
+    
+    # Build SELECT fields ΓÇö include columns only if they exist
+    fields = ["p.name", "p.customer", "p.party_code", "c.customer_name as party_name", "p.dod", "p.ordered_date", 
+              "p.planning_status", "p.docstatus", "p.sales_order", "p.custom_plan_name", "p.custom_pb_plan_name",
+              "COALESCE(p.custom_plan_name, 'Default') as planName"]
+    
+    if _has_planned_date_column():
+        fields.append("p.custom_planned_date")
+    
+    if _has_approval_status_column():
+        fields.append("p.custom_approval_status")
+        
+    if _has_draft_fields():
+        fields.append("p.custom_draft_planned_date")
+        fields.append("p.custom_draft_idx")
+        
+    fields_str = ", ".join(fields)
+    
+    has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+    eff = _effective_date_expr("p")
 
-	if cint(planned_only) and has_item_planned_col and not (start_date and end_date):
-		# For planned_only mode: also include sheets that have items with custom_item_planned_date
-		# matching target date (even if sheet's ordered_date is different).
-		# This handles items whose dates were manually overridden at item level.
-		if len(target_dates) == 1:
-			item_date_param = target_dates[0]
-		else:
-			item_date_param = None  # Only handle single target date case here
-		
-		if item_date_param:
-			planning_sheets = frappe.db.sql(f"""
-				SELECT {fields_str}, {eff} as effective_date
-				FROM `tabPlanning sheet` p
-				LEFT JOIN `tabCustomer` c ON p.customer = c.name
-				WHERE (
-					{date_condition}
-					OR EXISTS (
-						SELECT 1 FROM `tabPlanning Sheet Item` psi
-						WHERE psi.parent = p.name
-						AND DATE(psi.custom_item_planned_date) = DATE(%s)
-					)
-				)
-				AND p.docstatus < 2
-				{plan_condition}
-				ORDER BY {eff} ASC, p.creation ASC
-			""", tuple(params) + (item_date_param,), as_dict=True)
-		else:
-			planning_sheets = frappe.db.sql(f"""
-				SELECT {fields_str}, {eff} as effective_date
-				FROM `tabPlanning sheet` p
-				LEFT JOIN `tabCustomer` c ON p.customer = c.name
-				WHERE {date_condition} AND p.docstatus < 2
-				{plan_condition}
-				ORDER BY {eff} ASC, p.creation ASC
-			""", tuple(params), as_dict=True)
-	else:
-		planning_sheets = frappe.db.sql(f"""
-			SELECT {fields_str}, {eff} as effective_date
-			FROM `tabPlanning sheet` p
-			LEFT JOIN `tabCustomer` c ON p.customer = c.name
-			WHERE {date_condition} AND p.docstatus < 2
-			{plan_condition}
-			ORDER BY {eff} ASC, p.creation ASC
-		""", tuple(params), as_dict=True)
+    if cint(planned_only) and has_item_planned_col and not (start_date and end_date):
+        # For planned_only mode: also include sheets that have items with custom_item_planned_date
+        # matching target date (even if sheet's ordered_date is different).
+        # This handles items whose dates were manually overridden at item level.
+        if len(target_dates) == 1:
+            item_date_param = target_dates[0]
+        else:
+            item_date_param = None  # Only handle single target date case here
+        
+        if item_date_param:
+            planning_sheets = frappe.db.sql(f"""
+                SELECT {fields_str}, {eff} as effective_date
+                FROM `tabPlanning sheet` p
+                LEFT JOIN `tabCustomer` c ON p.customer = c.name
+                WHERE (
+                    {date_condition}
+                    OR EXISTS (
+                        SELECT 1 FROM `tabPlanning Sheet Item` psi
+                        WHERE psi.parent = p.name
+                        AND DATE(psi.custom_item_planned_date) = DATE(%s)
+                    )
+                )
+                AND p.docstatus < 2
+                {plan_condition}
+                ORDER BY {eff} ASC, p.creation ASC
+            """, tuple(params) + (item_date_param,), as_dict=True)
+        else:
+            planning_sheets = frappe.db.sql(f"""
+                SELECT {fields_str}, {eff} as effective_date
+                FROM `tabPlanning sheet` p
+                LEFT JOIN `tabCustomer` c ON p.customer = c.name
+                WHERE {date_condition} AND p.docstatus < 2
+                {plan_condition}
+                ORDER BY {eff} ASC, p.creation ASC
+            """, tuple(params), as_dict=True)
+    else:
+        planning_sheets = frappe.db.sql(f"""
+            SELECT {fields_str}, {eff} as effective_date
+            FROM `tabPlanning sheet` p
+            LEFT JOIN `tabCustomer` c ON p.customer = c.name
+            WHERE {date_condition} AND p.docstatus < 2
+            {plan_condition}
+            ORDER BY {eff} ASC, p.creation ASC
+        """, tuple(params), as_dict=True)
 
-	# Fetch delivery statuses for referenced Sales Orders
-	so_names = [d.sales_order for d in planning_sheets if d.sales_order]
-	sheet_names = [d.name for d in planning_sheets]
-	
-	so_status_map = {}
-	so_pp_map = {}
-	so_wo_map = {}
-	sheet_pp_map = {}
-	pp_wo_map = {}
-	
-	valid_pps = set()
-	
-	if so_names:
-		sos = frappe.get_all("Sales Order", filters={"name": ["in", so_names]}, fields=["name", "delivery_status"])
-		for s in sos:
-			so_status_map[s.name] = s.delivery_status
-			
-		format_string_so = ','.join(['%s'] * len(so_names))
-		
-		# Check Production Plan via Sales Order
-		pp_data = frappe.db.sql(f"""
-			SELECT sales_order, parent 
-			FROM `tabProduction Plan Sales Order` 
-			WHERE sales_order IN ({format_string_so}) AND docstatus < 2
-		""", tuple(so_names), as_dict=True)
-		for row in pp_data:
-			so_pp_map[row.sales_order] = row.parent
-			valid_pps.add(row.parent)
-			
-		# Check Work Order via Sales Order
-		wo_data_so = frappe.db.sql(f"""
-			SELECT sales_order, name 
-			FROM `tabWork Order` 
-			WHERE sales_order IN ({format_string_so}) AND docstatus < 2
-		""", tuple(so_names), as_dict=True)
-		for row in wo_data_so:
-			so_wo_map[row.sales_order] = row.name
+    # Fetch delivery statuses for referenced Sales Orders
+    so_names = [d.sales_order for d in planning_sheets if d.sales_order]
+    sheet_names = [d.name for d in planning_sheets]
+    
+    so_status_map = {}
+    so_pp_map = {}
+    so_wo_map = {}
+    sheet_pp_map = {}
+    pp_wo_map = {}
+    
+    valid_pps = set()
+    
+    if so_names:
+        sos = frappe.get_all("Sales Order", filters={"name": ["in", so_names]}, fields=["name", "delivery_status"])
+        for s in sos:
+            so_status_map[s.name] = s.delivery_status
+            
+        format_string_so = ','.join(['%s'] * len(so_names))
+        
+        # Check Production Plan via Sales Order
+        pp_data = frappe.db.sql(f"""
+            SELECT sales_order, parent 
+            FROM `tabProduction Plan Sales Order` 
+            WHERE sales_order IN ({format_string_so}) AND docstatus < 2
+        """, tuple(so_names), as_dict=True)
+        for row in pp_data:
+            so_pp_map[row.sales_order] = row.parent
+            valid_pps.add(row.parent)
+            
+        # Check Work Order via Sales Order
+        wo_data_so = frappe.db.sql(f"""
+            SELECT sales_order, name 
+            FROM `tabWork Order` 
+            WHERE sales_order IN ({format_string_so}) AND docstatus < 2
+        """, tuple(so_names), as_dict=True)
+        for row in wo_data_so:
+            so_wo_map[row.sales_order] = row.name
 
-	if sheet_names:
-		format_string_sheet = ','.join(['%s'] * len(sheet_names))
-		# Check Production Plan via Planning Sheet custom field
-		# Wrap in try-except in case custom field doesn't exist
-		try:
-			pp_sheet_data = frappe.db.sql(f"""
-				SELECT custom_planning_sheet as planning_sheet, name 
-				FROM `tabProduction Plan` 
-				WHERE custom_planning_sheet IN ({format_string_sheet}) AND docstatus < 2
-			""", tuple(sheet_names), as_dict=True)
-			for row in pp_sheet_data:
-				sheet_pp_map[row.planning_sheet] = row.name
-				valid_pps.add(row.name)
-		except Exception:
-			pass
-			
-	if valid_pps:
-		format_string_pp = ','.join(['%s'] * len(valid_pps))
-		# Check Work Order via Production Plan
-		wo_data_pp = frappe.db.sql(f"""
-			SELECT production_plan, name, produced_qty, qty
-			FROM `tabWork Order` 
-			WHERE production_plan IN ({format_string_pp}) AND docstatus < 2
-		""", tuple(valid_pps), as_dict=True)
-		for row in wo_data_pp:
-			if row.production_plan not in pp_wo_map:
-				pp_wo_map[row.production_plan] = []
-			pp_wo_map[row.production_plan].append({
-				"name": row.name,
-				"produced_qty": flt(row.produced_qty),
-				"qty": flt(row.qty)
-			})
+    if sheet_names:
+        format_string_sheet = ','.join(['%s'] * len(sheet_names))
+        # Check Production Plan via Planning Sheet custom field
+        # Wrap in try-except in case custom field doesn't exist
+        try:
+            pp_sheet_data = frappe.db.sql(f"""
+                SELECT custom_planning_sheet as planning_sheet, name 
+                FROM `tabProduction Plan` 
+                WHERE custom_planning_sheet IN ({format_string_sheet}) AND docstatus < 2
+            """, tuple(sheet_names), as_dict=True)
+            for row in pp_sheet_data:
+                sheet_pp_map[row.planning_sheet] = row.name
+                valid_pps.add(row.name)
+        except Exception:
+            pass
+            
+    if valid_pps:
+        format_string_pp = ','.join(['%s'] * len(valid_pps))
+        # Check Work Order via Production Plan
+        wo_data_pp = frappe.db.sql(f"""
+            SELECT production_plan, name, produced_qty, qty
+            FROM `tabWork Order` 
+            WHERE production_plan IN ({format_string_pp}) AND docstatus < 2
+        """, tuple(valid_pps), as_dict=True)
+        for row in wo_data_pp:
+            if row.production_plan not in pp_wo_map:
+                pp_wo_map[row.production_plan] = []
+            pp_wo_map[row.production_plan].append({
+                "name": row.name,
+                "produced_qty": flt(row.produced_qty),
+                "qty": flt(row.qty)
+            })
 
-	data = []
-	for sheet in planning_sheets:
-		items = frappe.get_all(
-			"Planning Sheet Item",
-			filters={"parent": sheet.name},
-			fields=["*"],
-			order_by="idx"
-		)
-		
-		# Determine PP and WO boolean states for this sheet
-		sheet_has_pp = False
-		sheet_has_wo = False
-		
-		my_pp_name = sheet_pp_map.get(sheet.name)
-		if not my_pp_name and sheet.sales_order:
-			my_pp_name = so_pp_map.get(sheet.sales_order)
-			
-		if my_pp_name:
-			sheet_has_pp = True
-			
-		# Calculate Produced Qty
-		produced_weight = 0
-		if my_pp_name and my_pp_name in pp_wo_map:
-			sheet_has_wo = True
-			# Sum produced_qty from all WOs for this PP (heuristic)
-			produced_weight = sum([w["produced_qty"] for w in pp_wo_map[my_pp_name]])
-		elif sheet.sales_order and sheet.sales_order in so_wo_map:
-			sheet_has_wo = True
-			# Fallback if we only have one WO link
-			wo_name = so_wo_map.get(sheet.sales_order)
-			produced_weight = frappe.db.get_value("Work Order", wo_name, "produced_qty") or 0
+    data = []
+    for sheet in planning_sheets:
+        items = frappe.get_all(
+            "Planning Sheet Item",
+            filters={"parent": sheet.name},
+            fields=["*"],
+            order_by="idx"
+        )
+        
+        # Determine PP and WO boolean states for this sheet
+        sheet_has_pp = False
+        sheet_has_wo = False
+        
+        my_pp_name = sheet_pp_map.get(sheet.name)
+        if not my_pp_name and sheet.sales_order:
+            my_pp_name = so_pp_map.get(sheet.sales_order)
+            
+        if my_pp_name:
+            sheet_has_pp = True
+            
+        # Calculate Produced Qty
+        produced_weight = 0
+        if my_pp_name and my_pp_name in pp_wo_map:
+            sheet_has_wo = True
+            # Sum produced_qty from all WOs for this PP (heuristic)
+            produced_weight = sum([w["produced_qty"] for w in pp_wo_map[my_pp_name]])
+        elif sheet.sales_order and sheet.sales_order in so_wo_map:
+            sheet_has_wo = True
+            # Fallback if we only have one WO link
+            wo_name = so_wo_map.get(sheet.sales_order)
+            produced_weight = frappe.db.get_value("Work Order", wo_name, "produced_qty") or 0
 
-		for item in items:
-			color = (item.get("color") or item.get("colour") or "").strip()
-			quality = (item.get("custom_quality") or "").strip()
-			
-			# Fallback for missing data instead of skipping (prevents "hidden" orders)
-			if not color: color = "Unknown Color"
-			if not quality: quality = "Unknown Quality"
-			if color.upper() == "NO COLOR":
-				continue
+        for item in items:
+            color = (item.get("color") or item.get("colour") or "").strip()
+            quality = (item.get("custom_quality") or "").strip()
+            
+            # Fallback for missing data instead of skipping (prevents "hidden" orders)
+            if not color: color = "Unknown Color"
+            if not quality: quality = "Unknown Quality"
+            if color.upper() == "NO COLOR":
+                continue
 
-			# ΓöÇΓöÇ KEY FIX: Restore missing item details from sheet data ΓöÇΓöÇ
-			unit = (item.get("unit") or sheet.get("unit") or "Unit 1").strip()
-			if unit.upper() in ["UNIT 1", "UNIT 2", "UNIT 3", "UNIT 4"]:
-				unit = unit.title()
-			
-			effective_date_str = str(item.get("ordered_date") or sheet.get("ordered_date") or "")
-			
-			# ΓöÇΓöÇ Granular filtering: determine if item belongs to the current date view ΓöÇΓöÇ
-			item_pdate = item.get("custom_item_planned_date")
-			is_white = _is_white_color(color)
-			
-			# Effective item date for filtering: 
-			# Unpushed non-white items stick to ordered_date.
-			# Pushed items (or auto-pushed whites) stick to their planned/pushed date.
-			i_eff_pdate = item_pdate or (sheet.get("custom_planned_date") if is_white else None) or sheet.get("ordered_date")
-			
-			if date or (start_date and end_date):
-				try:
-					it_pdt_norm = getdate(str(i_eff_pdate)) if i_eff_pdate else None
-				except Exception:
-					it_pdt_norm = None
-				
-				if it_pdt_norm:
-					if start_date and end_date:
-						if not (it_pdt_norm >= query_start and it_pdt_norm <= query_end):
-							continue
-					elif target_dates:
-						if it_pdt_norm not in target_dates:
-							continue
+            # ΓöÇΓöÇ KEY FIX: Restore missing item details from sheet data ΓöÇΓöÇ
+            unit = (item.get("unit") or sheet.get("unit") or "Unit 1").strip()
+            if unit.upper() in ["UNIT 1", "UNIT 2", "UNIT 3", "UNIT 4"]:
+                unit = unit.title()
+            
+            effective_date_str = str(item.get("ordered_date") or sheet.get("ordered_date") or "")
+            
+            # ΓöÇΓöÇ Granular filtering: determine if item belongs to the current date view ΓöÇΓöÇ
+            item_pdate = item.get("custom_item_planned_date")
+            is_white = _is_white_color(color)
+            
+            # Effective item date for filtering: 
+            # Unpushed non-white items stick to ordered_date.
+            # Pushed items (or auto-pushed whites) stick to their planned/pushed date.
+            i_eff_pdate = item_pdate or (sheet.get("custom_planned_date") if is_white else None) or sheet.get("ordered_date")
+            
+            if date or (start_date and end_date):
+                try:
+                    it_pdt_norm = getdate(str(i_eff_pdate)) if i_eff_pdate else None
+                except Exception:
+                    it_pdt_norm = None
+                
+                if it_pdt_norm:
+                    if start_date and end_date:
+                        if not (it_pdt_norm >= query_start and it_pdt_norm <= query_end):
+                            continue
+                    elif target_dates:
+                        if it_pdt_norm not in target_dates:
+                            continue
 
-			# Production Board special filtering: only show scheduled items if planned_only is requested
-			if cint(planned_only):
-				# NON-WHITE items MUST be explicitly pushed (have a planned date)
-				if not is_white and not item_pdate:
-					continue
+            # Production Board special filtering: only show scheduled items if planned_only is requested
+            if cint(planned_only):
+                # NON-WHITE items MUST be explicitly pushed (have a planned date)
+                if not is_white and not item_pdate:
+                    continue
 
-			data.append({
-				"name": "{}-{}".format(sheet.name, item.get("idx", 0)),
-				"itemName": item.name,
-				"description": item.item_name or "",
-				"planningSheet": sheet.name,
-				"customer": sheet.customer,
-				"customer_name": (sheet.get("party_name") or sheet.customer or sheet.party_code or ""),
-				"partyCode": sheet.party_code,
-				"planningStatus": sheet.planning_status or "Draft",
-				"docstatus": sheet.docstatus,
-				"orderDate": effective_date_str,
-				"color": color.upper().strip(),
-				"quality": item.get("custom_quality") or item.get("quality") or "",
-				"gsm": item.get("gsm") or "",
-				"qty": flt(item.get("qty", 0)),
-				"idx": item.get("idx", 0),
-				"width": flt(item.get("width") or item.get("custom_width") or item.get("width_inches") or item.get("width_inch") or item.get("width_in") or 0),
-				"unit": unit,
-				"planName": sheet.get("planName") or sheet.get("custom_plan_name") or "Default",
-				"pbPlanName": sheet.get("custom_pb_plan_name") or "",
-				"planCode": item.get("custom_plan_code") or "",
-				"ordered_date": str(sheet.ordered_date) if sheet.ordered_date else "",
-				"planned_date": str(item_pdate or (sheet.get("custom_planned_date") if is_white else "")),
-				"plannedDate": str(item_pdate or (sheet.get("custom_planned_date") if is_white else "")),
-				"dod": str(sheet.dod) if sheet.dod else "",
-				"delivery_status": so_status_map.get(sheet.sales_order) or "Not Delivered",
-				"has_pp": sheet_has_pp,
-				"has_wo": sheet_has_wo,
-				"produced_qty": flt(produced_weight),
-				"salesOrderItem": item.get("sales_order_item") or item.get("custom_sales_order_item"),
-				"isSplit": item.get("custom_is_split")
-			})
+            data.append({
+                "name": "{}-{}".format(sheet.name, item.get("idx", 0)),
+                "itemName": item.name,
+                "description": item.item_name or "",
+                "planningSheet": sheet.name,
+                "customer": sheet.customer,
+                "customer_name": (sheet.get("party_name") or sheet.customer or sheet.party_code or ""),
+                "partyCode": sheet.party_code,
+                "planningStatus": sheet.planning_status or "Draft",
+                "docstatus": sheet.docstatus,
+                "orderDate": effective_date_str,
+                "color": color.upper().strip(),
+                "quality": item.get("custom_quality") or item.get("quality") or "",
+                "gsm": item.get("gsm") or "",
+                "qty": flt(item.get("qty", 0)),
+                "idx": item.get("idx", 0),
+                "width": flt(item.get("width") or item.get("custom_width") or item.get("width_inches") or item.get("width_inch") or item.get("width_in") or 0),
+                "unit": unit,
+                "planName": sheet.get("planName") or sheet.get("custom_plan_name") or "Default",
+                "pbPlanName": sheet.get("custom_pb_plan_name") or "",
+                "planCode": item.get("custom_plan_code") or "",
+                "ordered_date": str(sheet.ordered_date) if sheet.ordered_date else "",
+                "planned_date": str(item_pdate or (sheet.get("custom_planned_date") if is_white else "")),
+                "plannedDate": str(item_pdate or (sheet.get("custom_planned_date") if is_white else "")),
+                "dod": str(sheet.dod) if sheet.dod else "",
+                "delivery_status": so_status_map.get(sheet.sales_order) or "Not Delivered",
+                "has_pp": sheet_has_pp,
+                "has_wo": sheet_has_wo,
+                "produced_qty": flt(produced_weight),
+                "salesOrderItem": item.get("sales_order_item") or item.get("custom_sales_order_item"),
+                "isSplit": item.get("custom_is_split")
+            })
 
-	if cint(planned_only) and plan_name == "__all__":
-		return _deduplicate_items(data)
+    if cint(planned_only) and plan_name == "__all__":
+        return _deduplicate_items(data)
 
-	return data
+    return data
 
 def _deduplicate_items(items):
-	"""
-	Helper to prevent duplicate orders appearing in board/list views.
-	Groups by sales_order_item and prioritizes:
-	1. Scheduled items (in custom plans) over Draft items (in Default).
-	2. Newer items (higher idx or recent creation) over older ones.
-	Legitimate splits (custom_is_split=1) are PRESERVED.
-	"""
-	seen = {}
-	result = []
-	for item in items:
-		# Support both dict keys (camelCase vs snake_case) 
-		so_item = item.get("salesOrderItem") or item.get("sales_order_item")
-		is_split = item.get("isSplit") or item.get("custom_is_split")
-		
-		if is_split or not so_item:
-			result.append(item)
-			continue
-			
-		if so_item not in seen:
-			seen[so_item] = item
-			result.append(item)
-		else:
-			existing = seen[so_item]
-			e_plan_raw = existing.get("planName") or existing.get("custom_plan_name") or "Default"
-			i_plan_raw = item.get("planName") or item.get("custom_plan_name") or "Default"
-			
-			# Strip legacy prefixes for logic consistency (e.g. 'MARCH W12 26 PLAN 1' -> 'PLAN 1')
-			e_plan = _strip_legacy_prefixes(e_plan_raw)
-			i_plan = _strip_legacy_prefixes(i_plan_raw)
-			
-			replace = False
-			# Priority 1: Specific Plan > Default
-			if e_plan == "Default" and i_plan != "Default":
-				replace = True
-			# Priority 2: Newer Sheet wins if both are specific plans or both are Default
-			# Since items is ordered by creation, 'item' is newer than 'existing'
-			elif e_plan == i_plan or (e_plan != "Default" and i_plan != "Default"):
-				replace = True
-				
-			if replace:
-				if existing in result:
-					result.remove(existing)
-				seen[so_item] = item
-				result.append(item)
-	return result
+    """
+    Helper to prevent duplicate orders appearing in board/list views.
+    Groups by sales_order_item and prioritizes:
+    1. Scheduled items (in custom plans) over Draft items (in Default).
+    2. Newer items (higher idx or recent creation) over older ones.
+    Legitimate splits (custom_is_split=1) are PRESERVED.
+    """
+    seen = {}
+    result = []
+    for item in items:
+        # Support both dict keys (camelCase vs snake_case) 
+        so_item = item.get("salesOrderItem") or item.get("sales_order_item")
+        is_split = item.get("isSplit") or item.get("custom_is_split")
+        
+        if is_split or not so_item:
+            result.append(item)
+            continue
+            
+        if so_item not in seen:
+            seen[so_item] = item
+            result.append(item)
+        else:
+            existing = seen[so_item]
+            e_plan_raw = existing.get("planName") or existing.get("custom_plan_name") or "Default"
+            i_plan_raw = item.get("planName") or item.get("custom_plan_name") or "Default"
+            
+            # Strip legacy prefixes for logic consistency (e.g. 'MARCH W12 26 PLAN 1' -> 'PLAN 1')
+            e_plan = _strip_legacy_prefixes(e_plan_raw)
+            i_plan = _strip_legacy_prefixes(i_plan_raw)
+            
+            replace = False
+            # Priority 1: Specific Plan > Default
+            if e_plan == "Default" and i_plan != "Default":
+                replace = True
+            # Priority 2: Newer Sheet wins if both are specific plans or both are Default
+            # Since items is ordered by creation, 'item' is newer than 'existing'
+            elif e_plan == i_plan or (e_plan != "Default" and i_plan != "Default"):
+                replace = True
+                
+            if replace:
+                if existing in result:
+                    result.remove(existing)
+                seen[so_item] = item
+                result.append(item)
+    return result
 
-	return data
+    return data
 
 
 @frappe.whitelist()
 def get_orders_for_date(date):
-	"""Returns all Planning Sheet Items for a specific date (used by Pull Orders dialog)."""
-	if not date:
-		return []
-	target_date = getdate(date)
-	eff = _effective_date_expr("p")
-	extra_fields = ", p.custom_planned_date" if _has_planned_date_column() else ""
-	
-	items = frappe.db.sql(f"""
-		SELECT 
-			i.name, i.item_code, i.item_name, i.qty, i.uom, i.unit,
-			i.color, i.custom_quality as quality, i.gsm, i.width,
-			p.name as planning_sheet, p.party_code, p.customer,
-			COALESCE(c.customer_name, p.customer) as customer_name,
-			p.ordered_date{extra_fields},
-			{eff} as effective_date
-		FROM `tabPlanning Sheet Item` i
-		JOIN `tabPlanning sheet` p ON i.parent = p.name
-		LEFT JOIN `tabCustomer` c ON p.customer = c.name
-		WHERE {eff} = %s
-		  AND p.docstatus < 2
-		ORDER BY i.unit, i.idx
-	""", (target_date,), as_dict=True)
-	
-	return items
+    """Returns all Planning Sheet Items for a specific date (used by Pull Orders dialog)."""
+    if not date:
+        return []
+    target_date = getdate(date)
+    eff = _effective_date_expr("p")
+    extra_fields = ", p.custom_planned_date" if _has_planned_date_column() else ""
+    
+    items = frappe.db.sql(f"""
+        SELECT 
+            i.name, i.item_code, i.item_name, i.qty, i.uom, i.unit,
+            i.color, i.custom_quality as quality, i.gsm, i.width,
+            p.name as planning_sheet, p.party_code, p.customer,
+            COALESCE(c.customer_name, p.customer) as customer_name,
+            p.ordered_date{extra_fields},
+            {eff} as effective_date
+        FROM `tabPlanning Sheet Item` i
+        JOIN `tabPlanning sheet` p ON i.parent = p.name
+        LEFT JOIN `tabCustomer` c ON p.customer = c.name
+        WHERE {eff} = %s
+          AND p.docstatus < 2
+        ORDER BY i.unit, i.idx
+    """, (target_date,), as_dict=True)
+    
+    return items
 
 
 
 @frappe.whitelist()
 def update_item_unit(item_name, unit):
-	if not item_name or not unit:
-		frappe.throw(_("Item Name and Unit are required"))
+    if not item_name or not unit:
+        frappe.throw(_("Item Name and Unit are required"))
 
-	frappe.db.set_value("Planning Sheet Item", item_name, "unit", unit)
-	return {"status": "success"}
+    frappe.db.set_value("Planning Sheet Item", item_name, "unit", unit)
+    return {"status": "success"}
 
 
 @frappe.whitelist()
 def update_items_bulk(items, plan_name=None):
-	"""Bulk move/update Planning Sheet Items.
+    """Bulk move/update Planning Sheet Items.
 
-	Each entry in ``items`` can optionally specify:
-	- name: Planning Sheet Item name (required)
-	- unit: target unit (optional, falls back to current)
-	- date: target date as string (optional, falls back to current effective date)
-	- index: desired 1-based position within the (unit, date, plan) slot (optional)
-	- force_move / perform_split / strict_next_day: forwarded to update_schedule
+    Each entry in ``items`` can optionally specify:
+    - name: Planning Sheet Item name (required)
+    - unit: target unit (optional, falls back to current)
+    - date: target date as string (optional, falls back to current effective date)
+    - index: desired 1-based position within the (unit, date, plan) slot (optional)
+    - force_move / perform_split / strict_next_day: forwarded to update_schedule
 
-	We intentionally route through ``update_schedule`` so that capacity rules,
-	quality rules, and idx-based re-sequencing remain consistent with
-	single-item drag-and-drop behaviour on the board.
-	"""
-	import json
+    We intentionally route through ``update_schedule`` so that capacity rules,
+    quality rules, and idx-based re-sequencing remain consistent with
+    single-item drag-and-drop behaviour on the board.
+    """
+    import json
 
-	if isinstance(items, str):
-		items = json.loads(items)
-	
-	if not items:
-		return {"status": "success", "count": 0}
+    if isinstance(items, str):
+        items = json.loads(items)
+    
+    if not items:
+        return {"status": "success", "count": 0}
 
-	moved_dates = set()
-	count = 0
+    moved_dates = set()
+    count = 0
 
-	for row in items:
-		name = row.get("name")
-		if not name:
-			continue
+    for row in items:
+        name = row.get("name")
+        if not name:
+            continue
 
-		# Fetch current state to provide sensible fallbacks
-		current = frappe.db.get_value(
-			"Planning Sheet Item",
-			name,
-			["unit", "parent"],
-			as_dict=True,
-		)
-		if not current:
-			continue
+        # Fetch current state to provide sensible fallbacks
+        current = frappe.db.get_value(
+            "Planning Sheet Item",
+            name,
+            ["unit", "parent"],
+            as_dict=True,
+        )
+        if not current:
+            continue
 
-		target_unit = row.get("unit") or current.unit
+        target_unit = row.get("unit") or current.unit
 
-		# Resolve effective date via parent sheet if not explicitly provided
-		target_date = row.get("date")
-		if not target_date:
-			parent_sheet = frappe.db.get_value(
-				"Planning sheet",
-				current.parent,
-				["custom_planned_date", "ordered_date"],
-				as_dict=True,
-			)
-			if parent_sheet:
-				target_date = parent_sheet.custom_planned_date or parent_sheet.ordered_date
+        # Resolve effective date via parent sheet if not explicitly provided
+        target_date = row.get("date")
+        if not target_date:
+            parent_sheet = frappe.db.get_value(
+                "Planning sheet",
+                current.parent,
+                ["custom_planned_date", "ordered_date"],
+                as_dict=True,
+            )
+            if parent_sheet:
+                target_date = parent_sheet.custom_planned_date or parent_sheet.ordered_date
 
-		if not target_date:
-			# If we still don't have a date, skip this item
-			continue
+        if not target_date:
+            # If we still don't have a date, skip this item
+            continue
 
-		index = row.get("index") or 0
-		force_move = row.get("force_move", 0)
-		perform_split = row.get("perform_split", 0)
-		strict_next_day = row.get("strict_next_day", 0)
+        index = row.get("index") or 0
+        force_move = row.get("force_move", 0)
+        perform_split = row.get("perform_split", 0)
+        strict_next_day = row.get("strict_next_day", 0)
 
-		res = update_schedule(
-			name,
-			target_unit,
-			target_date,
-			index=index,
-			force_move=force_move,
-			perform_split=perform_split,
-			plan_name=plan_name,
-			strict_next_day=strict_next_day,
-		)
+        res = update_schedule(
+            name,
+            target_unit,
+            target_date,
+            index=index,
+            force_move=force_move,
+            perform_split=perform_split,
+            plan_name=plan_name,
+            strict_next_day=strict_next_day,
+        )
 
-		if isinstance(res, dict) and res.get("status") == "success":
-			moved_dates.add(str(target_date))
-			count += 1
+        if isinstance(res, dict) and res.get("status") == "success":
+            moved_dates.add(str(target_date))
+            count += 1
 
-	# Fire a coarse realtime update for all affected dates
-	for d in moved_dates:
-		try:
-			frappe.publish_realtime("production_board_update", {"date": d})
-		except Exception:
-			pass
+    # Fire a coarse realtime update for all affected dates
+    for d in moved_dates:
+        try:
+            frappe.publish_realtime("production_board_update", {"date": d})
+        except Exception:
+            pass
 
-	return {
-		"status": "success",
-		"count": count,
-		"skipped": 0,
-		"dates": sorted(list(moved_dates))
-	}
+    return {
+        "status": "success",
+        "count": count,
+        "skipped": 0,
+        "dates": sorted(list(moved_dates))
+    }
 
 
 @frappe.whitelist()
 def bulk_confirm_orders(items):
-	"""
-	Confirms multiple orders from the Production Board.
-	Updates custom_production_status on the linked Sales Order to 'Confirmed'.
-	"""
-	import json
-	if isinstance(items, str):
-		items = json.loads(items)
-	
-	if not items:
-		return {"status": "error", "message": "No items selected"}
+    """
+    Confirms multiple orders from the Production Board.
+    Updates custom_production_status on the linked Sales Order to 'Confirmed'.
+    """
+    import json
+    if isinstance(items, str):
+        items = json.loads(items)
+    
+    if not items:
+        return {"status": "error", "message": "No items selected"}
 
-	count = 0
-	for item_name in items:
-		# Planning Sheet -> Sales Order
-		parent_sheet = frappe.db.get_value("Planning Sheet Item", item_name, "parent")
-		if parent_sheet:
-			so_name = frappe.db.get_value("Planning sheet", parent_sheet, "sales_order")
-			if so_name:
-				# Set Sales Order status to Confirmed
-				frappe.db.set_value("Sales Order", so_name, "custom_production_status", "Confirmed")
-				# Update Planning Sheet status to Finalized
-				frappe.db.set_value("Planning sheet", parent_sheet, "planning_status", "Finalized")
-				count += 1
-	
-	frappe.db.commit()
-	# Trigger realtime update
-	frappe.publish_realtime("production_board_update", {"type": "confirmation"})
-	
-	return {"status": "success", "message": f"Successfully confirmed {count} orders.", "count": count}
+    count = 0
+    for item_name in items:
+        # Planning Sheet -> Sales Order
+        parent_sheet = frappe.db.get_value("Planning Sheet Item", item_name, "parent")
+        if parent_sheet:
+            so_name = frappe.db.get_value("Planning sheet", parent_sheet, "sales_order")
+            if so_name:
+                # Set Sales Order status to Confirmed
+                frappe.db.set_value("Sales Order", so_name, "custom_production_status", "Confirmed")
+                # Update Planning Sheet status to Finalized
+                frappe.db.set_value("Planning sheet", parent_sheet, "planning_status", "Finalized")
+                count += 1
+    
+    frappe.db.commit()
+    # Trigger realtime update
+    frappe.publish_realtime("production_board_update", {"type": "confirmation"})
+    
+    return {"status": "success", "message": f"Successfully confirmed {count} orders.", "count": count}
 
 
 @frappe.whitelist()
 def get_plans(date=None, start_date=None, end_date=None, **kwargs):
-	"""Get unique plan names for a date or date range."""
-	eff = _effective_date_expr("p")
-	
-	if start_date and end_date:
-		query_start = getdate(start_date)
-		query_end = getdate(end_date)
-		date_condition = f"{eff} BETWEEN %s AND %s"
-		params = [query_start, query_end]
-	elif date:
-		if "," in str(date):
-			target_dates = [getdate(d.strip()) for d in str(date).split(",") if d.strip()]
-			fmt = ','.join(['%s'] * len(target_dates))
-			date_condition = f"{eff} IN ({fmt})"
-			params = target_dates
-		else:
-			target_date = getdate(date)
-			date_condition = f"{eff} = %s"
-			params = [target_date]
-	else:
-		return ["Default"]
-	
-	plans = frappe.db.sql(f"""
-		SELECT DISTINCT IFNULL(p.custom_plan_name, 'Default') as plan_name
-		FROM `tabPlanning sheet` p
-		WHERE {date_condition} AND p.docstatus < 2
-		ORDER BY plan_name ASC
-	""", tuple(params), as_dict=True)
-	
-	unique_plans = [p.plan_name or "Default" for p in plans]
-	if "Default" not in unique_plans:
-		unique_plans.insert(0, "Default")
-	# Ensure Default is first
-	if unique_plans[0] != "Default":
-		unique_plans.remove("Default")
-		unique_plans.insert(0, "Default")
-	
-	return unique_plans
+    """Get unique plan names for a date or date range."""
+    eff = _effective_date_expr("p")
+    
+    if start_date and end_date:
+        query_start = getdate(start_date)
+        query_end = getdate(end_date)
+        date_condition = f"{eff} BETWEEN %s AND %s"
+        params = [query_start, query_end]
+    elif date:
+        if "," in str(date):
+            target_dates = [getdate(d.strip()) for d in str(date).split(",") if d.strip()]
+            fmt = ','.join(['%s'] * len(target_dates))
+            date_condition = f"{eff} IN ({fmt})"
+            params = target_dates
+        else:
+            target_date = getdate(date)
+            date_condition = f"{eff} = %s"
+            params = [target_date]
+    else:
+        return ["Default"]
+    
+    plans = frappe.db.sql(f"""
+        SELECT DISTINCT IFNULL(p.custom_plan_name, 'Default') as plan_name
+        FROM `tabPlanning sheet` p
+        WHERE {date_condition} AND p.docstatus < 2
+        ORDER BY plan_name ASC
+    """, tuple(params), as_dict=True)
+    
+    unique_plans = [p.plan_name or "Default" for p in plans]
+    if "Default" not in unique_plans:
+        unique_plans.insert(0, "Default")
+    # Ensure Default is first
+    if unique_plans[0] != "Default":
+        unique_plans.remove("Default")
+        unique_plans.insert(0, "Default")
+    
+    return unique_plans
 
 # --------------------------------------------------------------------------------
 # Persistent Plans System
 # --------------------------------------------------------------------------------
 
 def get_persisted_plans(plan_type):
-	"""Returns list of dicts: [{'name': '...', 'locked': 0}] from frappe.defaults"""
-	key = f"production_scheduler_{plan_type}_plans"
-	val = frappe.defaults.get_global_default(key)
-	if val:
-		import json
-		try:
-			return json.loads(val)
-		except:
-			pass
-	if plan_type == "color_chart":
-		return [{"name": "Default", "locked": 0}]
-	return []
+    """Returns list of dicts: [{'name': '...', 'locked': 0}] from frappe.defaults"""
+    key = f"production_scheduler_{plan_type}_plans"
+    val = frappe.defaults.get_global_default(key)
+    if val:
+        import json
+        try:
+            return json.loads(val)
+        except:
+            pass
+    if plan_type == "color_chart":
+        return [{"name": "Default", "locked": 0}]
+    return []
 
 @frappe.whitelist()
 def add_persistent_plan(plan_type, name):
-	plans = get_persisted_plans(plan_type)
-	if not any(p.get("name") == name for p in plans):
-		plans.append({"name": name, "locked": 0})
-		import json
-		frappe.defaults.set_global_default(f"production_scheduler_{plan_type}_plans", json.dumps(plans))
-	return plans
+    plans = get_persisted_plans(plan_type)
+    if not any(p.get("name") == name for p in plans):
+        plans.append({"name": name, "locked": 0})
+        import json
+        frappe.defaults.set_global_default(f"production_scheduler_{plan_type}_plans", json.dumps(plans))
+    return plans
 
 @frappe.whitelist()
 def toggle_plan_lock(plan_type, name, locked):
-	plans = get_persisted_plans(plan_type)
-	for p in plans:
-		if p.get("name") == name:
-			p["locked"] = int(locked)
-	import json
-	frappe.defaults.set_global_default(f"production_scheduler_{plan_type}_plans", json.dumps(plans))
-	return plans
+    plans = get_persisted_plans(plan_type)
+    for p in plans:
+        if p.get("name") == name:
+            p["locked"] = int(locked)
+    import json
+    frappe.defaults.set_global_default(f"production_scheduler_{plan_type}_plans", json.dumps(plans))
+    return plans
 
 @frappe.whitelist()
 def get_active_plans():
-	cc_plans = get_persisted_plans("color_chart")
-	pb_plans = get_persisted_plans("production_board")
-	active_cc = next((p["name"] for p in cc_plans if not p.get("locked")), "Default")
-	active_pb = next((p["name"] for p in pb_plans if not p.get("locked")), "")
-	return {"color_chart": active_cc, "production_board": active_pb}
+    cc_plans = get_persisted_plans("color_chart")
+    pb_plans = get_persisted_plans("production_board")
+    active_cc = next((p["name"] for p in cc_plans if not p.get("locked")), "Default")
+    active_pb = next((p["name"] for p in pb_plans if not p.get("locked")), "")
+    return {"color_chart": active_cc, "production_board": active_pb}
 
 # --------------------------------------------------------------------------------
 # Persistent Plans System
 # --------------------------------------------------------------------------------
 
 def get_persisted_plans(plan_type):
-	"""Returns list of dicts: [{'name': '...', 'locked': 0}] from frappe.defaults"""
-	key = f"production_scheduler_{plan_type}_plans"
-	val = frappe.defaults.get_global_default(key)
-	if val:
-		import json
-		try:
-			plans = json.loads(val)
-			if isinstance(plans, str):
-				plans = json.loads(plans)
-			if not isinstance(plans, list):
-				plans = []
-			if not any(isinstance(p, dict) and p.get("name") == "Default" for p in plans):
-				plans.insert(0, {"name": "Default", "locked": 0})
-			return plans
-		except:
-			pass
-	if plan_type == "color_chart":
-		return [{"name": "Default", "locked": 0}]
-	return []
+    """Returns list of dicts: [{'name': '...', 'locked': 0}] from frappe.defaults"""
+    key = f"production_scheduler_{plan_type}_plans"
+    val = frappe.defaults.get_global_default(key)
+    if val:
+        import json
+        try:
+            plans = json.loads(val)
+            if isinstance(plans, str):
+                plans = json.loads(plans)
+            if not isinstance(plans, list):
+                plans = []
+            if not any(isinstance(p, dict) and p.get("name") == "Default" for p in plans):
+                plans.insert(0, {"name": "Default", "locked": 0})
+            return plans
+        except:
+            pass
+    if plan_type == "color_chart":
+        return [{"name": "Default", "locked": 0}]
+    return []
 
 @frappe.whitelist()
 def add_persistent_plan(plan_type, name):
-	plans = get_persisted_plans(plan_type)
-	if not any(p.get("name") == name for p in plans):
-		plans.append({"name": name, "locked": 0})
-		import json
-		frappe.defaults.set_global_default(f"production_scheduler_{plan_type}_plans", json.dumps(plans))
-	return plans
+    plans = get_persisted_plans(plan_type)
+    if not any(p.get("name") == name for p in plans):
+        plans.append({"name": name, "locked": 0})
+        import json
+        frappe.defaults.set_global_default(f"production_scheduler_{plan_type}_plans", json.dumps(plans))
+    return plans
 
 @frappe.whitelist()
 def toggle_plan_lock(plan_type, name, locked):
-	plans = get_persisted_plans(plan_type)
-	for p in plans:
-		if p.get("name") == name:
-			p["locked"] = int(locked)
-	import json
-	frappe.defaults.set_global_default(f"production_scheduler_{plan_type}_plans", json.dumps(plans))
-	return plans
+    plans = get_persisted_plans(plan_type)
+    for p in plans:
+        if p.get("name") == name:
+            p["locked"] = int(locked)
+    import json
+    frappe.defaults.set_global_default(f"production_scheduler_{plan_type}_plans", json.dumps(plans))
+    return plans
 
 @frappe.whitelist()
 def get_active_plans():
-	cc_plans = get_persisted_plans("color_chart")
-	pb_plans = get_persisted_plans("production_board")
-	active_cc = next((p["name"] for p in cc_plans if not p.get("locked")), "Default")
-	active_pb = next((p["name"] for p in pb_plans if not p.get("locked")), "")
-	return {"color_chart": active_cc, "production_board": active_pb}
+    cc_plans = get_persisted_plans("color_chart")
+    pb_plans = get_persisted_plans("production_board")
+    active_cc = next((p["name"] for p in cc_plans if not p.get("locked")), "Default")
+    active_pb = next((p["name"] for p in pb_plans if not p.get("locked")), "")
+    return {"color_chart": active_cc, "production_board": active_pb}
 
 
 @frappe.whitelist()
 def get_monthly_plans(start_date, end_date):
-	query_start = getdate(start_date)
-	query_end = getdate(end_date)
-	
-	plans = frappe.db.get_all(
-		"Planning sheet", 
-		filters={
-			"ordered_date": ["between", [query_start, query_end]],
-			"docstatus": ["<", 2]
-		}, 
-		fields=["custom_plan_name"]
-	)
-	
-	# Extract base names and merge duplicates
-	db_raw = set([p.custom_plan_name or "Default" for p in plans])
-	persisted_raw = get_persisted_plans("color_chart")
+    query_start = getdate(start_date)
+    query_end = getdate(end_date)
+    
+    plans = frappe.db.get_all(
+        "Planning sheet", 
+        filters={
+            "ordered_date": ["between", [query_start, query_end]],
+            "docstatus": ["<", 2]
+        }, 
+        fields=["custom_plan_name"]
+    )
+    
+    # Extract base names and merge duplicates
+    db_raw = set([p.custom_plan_name or "Default" for p in plans])
+    persisted_raw = get_persisted_plans("color_chart")
 
-	merged_plans = {} # base_name -> {locked: bool}
+    merged_plans = {} # base_name -> {locked: bool}
 
-	# Process DB plans
-	for name in db_raw:
-		base = _strip_legacy_prefixes(name)
-		if base not in merged_plans:
-			merged_plans[base] = {"locked": 0}
+    # Process DB plans
+    for name in db_raw:
+        base = _strip_legacy_prefixes(name)
+        if base not in merged_plans:
+            merged_plans[base] = {"locked": 0}
 
-	# Process Persisted plans (global defaults)
-	for p in persisted_raw:
-		base = _strip_legacy_prefixes(p["name"])
-		# If both are present, we prefer the lock status of the "cleaner" or explicit one
-		is_locked = p.get("locked", 0)
-		if base not in merged_plans or is_locked:
-			merged_plans[base] = {"locked": is_locked}
+    # Process Persisted plans (global defaults)
+    for p in persisted_raw:
+        base = _strip_legacy_prefixes(p["name"])
+        # If both are present, we prefer the lock status of the "cleaner" or explicit one
+        is_locked = p.get("locked", 0)
+        if base not in merged_plans or is_locked:
+            merged_plans[base] = {"locked": is_locked}
 
-	sorted_names = sorted(merged_plans.keys())
-	if "Default" in sorted_names:
-		sorted_names.remove("Default")
-		sorted_names.insert(0, "Default")
-		
-	return [{"name": n, "locked": merged_plans[n]["locked"]} for n in sorted_names]
+    sorted_names = sorted(merged_plans.keys())
+    if "Default" in sorted_names:
+        sorted_names.remove("Default")
+        sorted_names.insert(0, "Default")
+        
+    return [{"name": n, "locked": merged_plans[n]["locked"]} for n in sorted_names]
 
 @frappe.whitelist()
 def migrate_to_full_plan_names():
-	"""
-	Migration Script (One-time):
-	Converts all existing 'custom_plan_name' (e.g. 'PLAN 1') to the full 
-	prefixed format (e.g. 'MARCH W12 26 PLAN 1') based on the sheet's 
-	ordered_date / custom_planned_date.
-	
-	Also updates the Global Defaults for persisted plans.
-	"""
-	sheets = frappe.db.get_all("Planning sheet", filters={"docstatus": ["<", 2]}, fields=["name", "custom_plan_name", "ordered_date", "custom_planned_date"])
-	
-	updated_sheets = 0
-	new_global_plans = set()
-	
-	for s in sheets:
-		if not s.custom_plan_name or s.custom_plan_name == "Default":
-			continue
-			
-		full_name = _get_contextual_plan_name(s.custom_plan_name, s.custom_planned_date or s.ordered_date)
-		
-		if full_name != s.custom_plan_name:
-			frappe.db.set_value("Planning sheet", s.name, "custom_plan_name", full_name, update_modified=False)
-			updated_sheets += 1
-		
-		new_global_plans.add(full_name)
-	
-	# Update Persisted Plans in Global Defaults
-	# We merge existing persisted plans but using their full names if possible
-	old_persisted = get_persisted_plans("color_chart")
-	# For each persisted plan, if it's a base name, we might not know the date.
-	# But we can at least ensure if any sheet uses it, it's kept.
-	
-	current_full_list = [{"name": p["name"], "locked": p.get("locked", 0)} for p in old_persisted]
-	# (Note: we don't automatically know which month to prefix a generic "PLAN 1" in defaults,
-	# but the sheets update above will capture all actually used ones.)
-	
-	for full in new_global_plans:
-		if not any(p["name"] == full for p in current_full_list):
-			current_full_list.append({"name": full, "locked": 0})
-			
-	import json
-	frappe.defaults.set_global_default("production_scheduler_color_chart_plans", json.dumps(current_full_list))
-	
-	frappe.db.commit()
-	
-	return {
-		"status": "success",
-		"message": f"Updated {updated_sheets} sheets. Refined persisted plans list.",
-		"total_plans": len(current_full_list)
-	}
+    """
+    Migration Script (One-time):
+    Converts all existing 'custom_plan_name' (e.g. 'PLAN 1') to the full 
+    prefixed format (e.g. 'MARCH W12 26 PLAN 1') based on the sheet's 
+    ordered_date / custom_planned_date.
+    
+    Also updates the Global Defaults for persisted plans.
+    """
+    sheets = frappe.db.get_all("Planning sheet", filters={"docstatus": ["<", 2]}, fields=["name", "custom_plan_name", "ordered_date", "custom_planned_date"])
+    
+    updated_sheets = 0
+    new_global_plans = set()
+    
+    for s in sheets:
+        if not s.custom_plan_name or s.custom_plan_name == "Default":
+            continue
+            
+        full_name = _get_contextual_plan_name(s.custom_plan_name, s.custom_planned_date or s.ordered_date)
+        
+        if full_name != s.custom_plan_name:
+            frappe.db.set_value("Planning sheet", s.name, "custom_plan_name", full_name, update_modified=False)
+            updated_sheets += 1
+        
+        new_global_plans.add(full_name)
+    
+    # Update Persisted Plans in Global Defaults
+    # We merge existing persisted plans but using their full names if possible
+    old_persisted = get_persisted_plans("color_chart")
+    # For each persisted plan, if it's a base name, we might not know the date.
+    # But we can at least ensure if any sheet uses it, it's kept.
+    
+    current_full_list = [{"name": p["name"], "locked": p.get("locked", 0)} for p in old_persisted]
+    # (Note: we don't automatically know which month to prefix a generic "PLAN 1" in defaults,
+    # but the sheets update above will capture all actually used ones.)
+    
+    for full in new_global_plans:
+        if not any(p["name"] == full for p in current_full_list):
+            current_full_list.append({"name": full, "locked": 0})
+            
+    import json
+    frappe.defaults.set_global_default("production_scheduler_color_chart_plans", json.dumps(current_full_list))
+    
+    frappe.db.commit()
+    
+    return {
+        "status": "success",
+        "message": f"Updated {updated_sheets} sheets. Refined persisted plans list.",
+        "total_plans": len(current_full_list)
+    }
 
 @frappe.whitelist()
 def cleanup_legacy_plans():
-	pass
+    pass
 
 @frappe.whitelist()
 def create_plan_name_field():
-	if not frappe.db.exists('Custom Field', 'Planning sheet-custom_plan_name'):
-		custom_field = frappe.get_doc({
-			"doctype": "Custom Field",
-			"dt": "Planning sheet",
-			"fieldname": "custom_plan_name",
-			"label": "Plan Name",
-			"fieldtype": "Data",
-			"insert_after": "planning_status"
-		})
-		custom_field.insert(ignore_permissions=True)
-	
-	# Create Planned Date custom field
-	if not frappe.db.exists('Custom Field', 'Planning sheet-custom_planned_date'):
-		custom_field2 = frappe.get_doc({
-			"doctype": "Custom Field",
-			"dt": "Planning sheet",
-			"fieldname": "custom_planned_date",
-			"label": "Planned Date",
-			"fieldtype": "Date",
-			"insert_after": "ordered_date",
-			"description": "Actual planned production date. If empty, ordered_date is used."
-		})
-		custom_field2.insert(ignore_permissions=True)
-	
-	
-	# Fix: Set NULL custom_plan_name to 'Default' so plan filtering works correctly
-	if frappe.db.has_column("Planning sheet", "custom_plan_name"):
-		frappe.db.sql("""
-			UPDATE `tabPlanning sheet` 
-			SET custom_plan_name = 'Default' 
-			WHERE custom_plan_name IS NULL OR custom_plan_name = ''
-		""")
-		frappe.db.commit()
-		
-	# Cleanup: Remove Production Board Plan field as requested
-	if frappe.db.exists('Custom Field', 'Planning sheet-custom_pb_plan_name'):
-		frappe.db.sql("DELETE FROM `tabCustom Field` WHERE name = 'Planning sheet-custom_pb_plan_name'")
-		frappe.db.commit()
+    if not frappe.db.exists('Custom Field', 'Planning sheet-custom_plan_name'):
+        custom_field = frappe.get_doc({
+            "doctype": "Custom Field",
+            "dt": "Planning sheet",
+            "fieldname": "custom_plan_name",
+            "label": "Plan Name",
+            "fieldtype": "Data",
+            "insert_after": "planning_status"
+        })
+        custom_field.insert(ignore_permissions=True)
+    
+    # Create Planned Date custom field
+    if not frappe.db.exists('Custom Field', 'Planning sheet-custom_planned_date'):
+        custom_field2 = frappe.get_doc({
+            "doctype": "Custom Field",
+            "dt": "Planning sheet",
+            "fieldname": "custom_planned_date",
+            "label": "Planned Date",
+            "fieldtype": "Date",
+            "insert_after": "ordered_date",
+            "description": "Actual planned production date. If empty, ordered_date is used."
+        })
+        custom_field2.insert(ignore_permissions=True)
+    
+    
+    # Fix: Set NULL custom_plan_name to 'Default' so plan filtering works correctly
+    if frappe.db.has_column("Planning sheet", "custom_plan_name"):
+        frappe.db.sql("""
+            UPDATE `tabPlanning sheet` 
+            SET custom_plan_name = 'Default' 
+            WHERE custom_plan_name IS NULL OR custom_plan_name = ''
+        """)
+        frappe.db.commit()
+        
+    # Cleanup: Remove Production Board Plan field as requested
+    if frappe.db.exists('Custom Field', 'Planning sheet-custom_pb_plan_name'):
+        frappe.db.sql("DELETE FROM `tabCustom Field` WHERE name = 'Planning sheet-custom_pb_plan_name'")
+        frappe.db.commit()
 
-	# Create Plan Code custom fields for Tracking Code logic
-	if not frappe.db.exists('Custom Field', 'Planning sheet-custom_plan_code'):
-		cf4 = frappe.get_doc({
-			"doctype": "Custom Field",
-			"dt": "Planning sheet",
-			"fieldname": "custom_plan_code",
-			"label": "Plan Code",
-			"fieldtype": "Data",
-			"read_only": 0,
-			"insert_after": "custom_plan_name"
-		})
-		cf4.insert(ignore_permissions=True)
-	else:
-		frappe.db.set_value('Custom Field', 'Planning sheet-custom_plan_code', 'read_only', 0)
-		
-	if not frappe.db.exists('Custom Field', 'Planning Sheet Item-custom_plan_code'):
-		cf5 = frappe.get_doc({
-			"doctype": "Custom Field",
-			"dt": "Planning Sheet Item",
-			"fieldname": "custom_plan_code",
-			"label": "Plan Code",
-			"fieldtype": "Data",
-			"read_only": 0,
-			"insert_after": "color",
-			"in_list_view": 1
-		})
-		cf5.insert(ignore_permissions=True)
-	else:
-		frappe.db.set_value('Custom Field', 'Planning Sheet Item-custom_plan_code', 'read_only', 0)
+    # Create Plan Code custom fields for Tracking Code logic
+    if not frappe.db.exists('Custom Field', 'Planning sheet-custom_plan_code'):
+        cf4 = frappe.get_doc({
+            "doctype": "Custom Field",
+            "dt": "Planning sheet",
+            "fieldname": "custom_plan_code",
+            "label": "Plan Code",
+            "fieldtype": "Data",
+            "read_only": 0,
+            "insert_after": "custom_plan_name"
+        })
+        cf4.insert(ignore_permissions=True)
+    else:
+        frappe.db.set_value('Custom Field', 'Planning sheet-custom_plan_code', 'read_only', 0)
+        
+    if not frappe.db.exists('Custom Field', 'Planning Sheet Item-custom_plan_code'):
+        cf5 = frappe.get_doc({
+            "doctype": "Custom Field",
+            "dt": "Planning Sheet Item",
+            "fieldname": "custom_plan_code",
+            "label": "Plan Code",
+            "fieldtype": "Data",
+            "read_only": 0,
+            "insert_after": "color",
+            "in_list_view": 1
+        })
+        cf5.insert(ignore_permissions=True)
+    else:
+        frappe.db.set_value('Custom Field', 'Planning Sheet Item-custom_plan_code', 'read_only', 0)
 
-	# Create Approval Status custom field on Planning Sheet
-	if not frappe.db.exists('Custom Field', 'Planning sheet-custom_approval_status'):
-		cf6 = frappe.get_doc({
-			"doctype": "Custom Field",
-			"dt": "Planning sheet",
-			"fieldname": "custom_approval_status",
-			"label": "Approval Status",
-			"fieldtype": "Select",
-			"options": "Draft\nPending Approval\nApproved",
-			"default": "Draft",
-			"insert_after": "planning_status"
-		})
-		cf6.insert(ignore_permissions=True)
-	
-	frappe.db.commit()
-	
-	# Automatically kick off a background job to populate old sheets if they are missing codes
-	frappe.enqueue("production_scheduler.api.backfill_plan_codes", queue="short", timeout=300)
+    # Create Approval Status custom field on Planning Sheet
+    if not frappe.db.exists('Custom Field', 'Planning sheet-custom_approval_status'):
+        cf6 = frappe.get_doc({
+            "doctype": "Custom Field",
+            "dt": "Planning sheet",
+            "fieldname": "custom_approval_status",
+            "label": "Approval Status",
+            "fieldtype": "Select",
+            "options": "Draft\nPending Approval\nApproved",
+            "default": "Draft",
+            "insert_after": "planning_status"
+        })
+        cf6.insert(ignore_permissions=True)
+    
+    frappe.db.commit()
+    
+    # Automatically kick off a background job to populate old sheets if they are missing codes
+    frappe.enqueue("production_scheduler.api.backfill_plan_codes", queue="short", timeout=300)
 
-	return {"status": "success"}
+    return {"status": "success"}
 
 @frappe.whitelist()
 def backfill_plan_codes():
-	"""Updates existing Planning Sheets and Items that are missing a plan code."""
-	sheets = frappe.get_all("Planning sheet", filters={"docstatus": ["<", 2]}, fields=["name"])
-	count = 0
-	for s in sheets:
-		from production_scheduler.api import update_sheet_plan_codes
-		try:
-			update_sheet_plan_codes(s.name)
-			count += 1
-		except Exception:
-			pass
-	frappe.db.commit()
-	return {"status": "success", "updated_count": count}
+    """Updates existing Planning Sheets and Items that are missing a plan code."""
+    sheets = frappe.get_all("Planning sheet", filters={"docstatus": ["<", 2]}, fields=["name"])
+    count = 0
+    for s in sheets:
+        from production_scheduler.api import update_sheet_plan_codes
+        try:
+            update_sheet_plan_codes(s.name)
+            count += 1
+        except Exception:
+            pass
+    frappe.db.commit()
+    return {"status": "success", "updated_count": count}
 
 @frappe.whitelist()
 def get_previous_production_date(date):
-	prev_date = frappe.db.get_value(
-		"Planning sheet",
-		{"ordered_date": ["<", date], "docstatus": ["<", 2]},
-		"ordered_date",
-		order_by="ordered_date desc"
-	)
-	return prev_date
+    prev_date = frappe.db.get_value(
+        "Planning sheet",
+        {"ordered_date": ["<", date], "docstatus": ["<", 2]},
+        "ordered_date",
+        order_by="ordered_date desc"
+    )
+    return prev_date
 
 @frappe.whitelist()
 def split_order(item_name, split_qty, target_unit):
-	"""
-	Splits an order: Keeps 'remaining_qty' in original item, creates new item with 'split_qty' in target_unit.
-	"""
-	if not item_name or not split_qty or not target_unit:
-		frappe.throw("Missing required parameters: item_name, split_qty, target_unit")
+    """
+    Splits an order: Keeps 'remaining_qty' in original item, creates new item with 'split_qty' in target_unit.
+    """
+    if not item_name or not split_qty or not target_unit:
+        frappe.throw("Missing required parameters: item_name, split_qty, target_unit")
 
-	doc = frappe.get_doc("Planning Sheet Item", item_name)
-	original_qty = float(doc.qty or 0)
-	split_qty_val = float(split_qty)
+    doc = frappe.get_doc("Planning Sheet Item", item_name)
+    original_qty = float(doc.qty or 0)
+    split_qty_val = float(split_qty)
 
-	if split_qty_val >= original_qty:
-		frappe.throw(f"Split quantity ({split_qty_val}) must be less than original quantity ({original_qty})")
+    if split_qty_val >= original_qty:
+        frappe.throw(f"Split quantity ({split_qty_val}) must be less than original quantity ({original_qty})")
 
-	if split_qty_val <= 0:
-		frappe.throw("Split quantity must be positive")
+    if split_qty_val <= 0:
+        frappe.throw("Split quantity must be positive")
 
-	# 1. Update Original (Reduce Qty)
-	remaining_qty = original_qty - split_qty_val
-	doc.db_set("qty", remaining_qty)
-	
-	# 2. Create Split Item (New Row)
-	new_doc = frappe.copy_doc(doc)
-	new_doc.qty = split_qty_val
-	new_doc.unit = target_unit
-	
-	# Traceability (Try to set custom fields if they exist)
-	# Assuming user will add these fields via Customize Form if not present
+    # 1. Update Original (Reduce Qty)
+    remaining_qty = original_qty - split_qty_val
+    doc.db_set("qty", remaining_qty)
+    
+    # 2. Create Split Item (New Row)
+    new_doc = frappe.copy_doc(doc)
+    new_doc.qty = split_qty_val
+    new_doc.unit = target_unit
+    
+    # Traceability (Try to set custom fields if they exist)
+    # Assuming user will add these fields via Customize Form if not present
         # but we try to set them on the doc object anyway
-	new_doc.custom_split_from = item_name
-	new_doc.custom_is_split = 1
-	
-	new_doc.insert()
-	
-	return {
-		"status": "success",
-		"original_item": doc.name,
-		"remaining_qty": remaining_qty,
-		"new_item": new_doc.name,
-		"split_qty": split_qty_val, 
-		"target_unit": target_unit
-	}
+    new_doc.custom_split_from = item_name
+    new_doc.custom_is_split = 1
+    
+    new_doc.insert()
+    
+    return {
+        "status": "success",
+        "original_item": doc.name,
+        "remaining_qty": remaining_qty,
+        "new_item": new_doc.name,
+        "split_qty": split_qty_val, 
+        "target_unit": target_unit
+    }
 
 @frappe.whitelist()
 def duplicate_unprocessed_orders_to_plan(old_plan, new_plan, date=None, start_date=None, end_date=None):
-	"""
-	Moves unprocessed Planning Sheets from `old_plan` to `new_plan` by updating custom_plan_name.
-	Does NOT create new sheets ΓÇö just updates the plan name on existing ones.
-	Only moves sheets that do NOT have BOTH a Production Plan AND a Work Order.
-	"""
-	if start_date and end_date:
-		query_start = getdate(start_date)
-		query_end = getdate(end_date)
-		sheets = frappe.get_all("Planning sheet", filters={
-			"custom_plan_name": old_plan,
-			"ordered_date": ["between", [query_start, query_end]],
-			"docstatus": ["<", 1] # Only move drafts
-		})
-	elif date:
-		target_date = getdate(date)
-		sheets = frappe.get_all("Planning sheet", filters={
-			"custom_plan_name": old_plan,
-			"ordered_date": target_date,
-			"docstatus": ["<", 1]
-		})
-	else:
-		return {"status": "error", "message": "Date filter required"}
-	
-	count = 0
-	for sheet in sheets:
-		frappe.db.set_value("Planning sheet", sheet.name, "custom_plan_name", new_plan)
-		count += 1
+    """
+    Moves unprocessed Planning Sheets from `old_plan` to `new_plan` by updating custom_plan_name.
+    Does NOT create new sheets ΓÇö just updates the plan name on existing ones.
+    Only moves sheets that do NOT have BOTH a Production Plan AND a Work Order.
+    """
+    if start_date and end_date:
+        query_start = getdate(start_date)
+        query_end = getdate(end_date)
+        sheets = frappe.get_all("Planning sheet", filters={
+            "custom_plan_name": old_plan,
+            "ordered_date": ["between", [query_start, query_end]],
+            "docstatus": ["<", 1] # Only move drafts
+        })
+    elif date:
+        target_date = getdate(date)
+        sheets = frappe.get_all("Planning sheet", filters={
+            "custom_plan_name": old_plan,
+            "ordered_date": target_date,
+            "docstatus": ["<", 1]
+        })
+    else:
+        return {"status": "error", "message": "Date filter required"}
+    
+    count = 0
+    for sheet in sheets:
+        frappe.db.set_value("Planning sheet", sheet.name, "custom_plan_name", new_plan)
+        count += 1
 
-	frappe.db.commit()
-	return {"status": "success", "moved_count": count}
+    frappe.db.commit()
+    return {"status": "success", "moved_count": count}
 
 @frappe.whitelist()
 def delete_plan(plan_name, date=None, start_date=None, end_date=None):
-	"""
-	Deletes a plan by moving all its sheets to 'Default'.
-	"""
-	if not plan_name or plan_name == "Default":
-		return {"status": "error", "message": "Cannot delete Default plan"}
+    """
+    Deletes a plan by moving all its sheets to 'Default'.
+    """
+    if not plan_name or plan_name == "Default":
+        return {"status": "error", "message": "Cannot delete Default plan"}
 
-	if start_date and end_date:
-		query_start = getdate(start_date)
-		query_end = getdate(end_date)
-		sheets = frappe.get_all("Planning sheet", filters={
-			"custom_plan_name": plan_name,
-			"ordered_date": ["between", [query_start, query_end]],
-			"docstatus": ["<", 2]
-		})
-	elif date:
-		target_date = getdate(date)
-		sheets = frappe.get_all("Planning sheet", filters={
-			"custom_plan_name": plan_name,
-			"ordered_date": target_date,
-			"docstatus": ["<", 2]
-		})
-	else:
-		return {"status": "error", "message": "Date filter required"}
+    if start_date and end_date:
+        query_start = getdate(start_date)
+        query_end = getdate(end_date)
+        sheets = frappe.get_all("Planning sheet", filters={
+            "custom_plan_name": plan_name,
+            "ordered_date": ["between", [query_start, query_end]],
+            "docstatus": ["<", 2]
+        })
+    elif date:
+        target_date = getdate(date)
+        sheets = frappe.get_all("Planning sheet", filters={
+            "custom_plan_name": plan_name,
+            "ordered_date": target_date,
+            "docstatus": ["<", 2]
+        })
+    else:
+        return {"status": "error", "message": "Date filter required"}
 
-	count = 0
-	for sheet in sheets:
-		frappe.db.set_value("Planning sheet", sheet.name, "custom_plan_name", "Default")
-		count += 1
+    count = 0
+    for sheet in sheets:
+        frappe.db.set_value("Planning sheet", sheet.name, "custom_plan_name", "Default")
+        count += 1
 
-	# Remove from persistent plans
-	persisted = get_persisted_plans("color_chart")
-	persisted = [p for p in persisted if p["name"] != plan_name]
-	import json
-	frappe.defaults.set_global_default("production_scheduler_color_chart_plans", json.dumps(persisted))
+    # Remove from persistent plans
+    persisted = get_persisted_plans("color_chart")
+    persisted = [p for p in persisted if p["name"] != plan_name]
+    import json
+    frappe.defaults.set_global_default("production_scheduler_color_chart_plans", json.dumps(persisted))
 
-	frappe.db.commit()
-	return {"status": "success", "deleted_count": count}
+    frappe.db.commit()
+    return {"status": "success", "deleted_count": count}
 
 # ΓöÇΓöÇ Beige / buffer colors placed at very end of color sequence ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 BEIGE_COLORS = {
-	"BEIGE 1.0","BEIGE 2.0","BEIGE 3.0","BEIGE 4.0","BEIGE 5.0",
-	"LIGHT BEIGE","DARK BEIGE","BEIGE MIX",
+    "BEIGE 1.0","BEIGE 2.0","BEIGE 3.0","BEIGE 4.0","BEIGE 5.0",
+    "LIGHT BEIGE","DARK BEIGE","BEIGE MIX",
 }
 
 # ΓöÇΓöÇ Very dark colors that should be followed by beige buffers when possible ΓöÇΓöÇ
 VERY_DARK_COLORS = {
-	"BLACK","BLACK MIX","CHOCOLATE BLACK",
-	"CRIMSON RED","RED","DARK MAROON","MAROON 2.0","MAROON 1.0",
-	"BROWN 3.0 DARK COFFEE","BROWN 2.0 DARK",
+    "BLACK","BLACK MIX","CHOCOLATE BLACK",
+    "CRIMSON RED","RED","DARK MAROON","MAROON 2.0","MAROON 1.0",
+    "BROWN 3.0 DARK COFFEE","BROWN 2.0 DARK",
 }
 
 # ΓöÇΓöÇ Color lightΓåÆdark order ΓÇö FINAL USER DEFINED SEQUENCE ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 COLOR_ORDER_LIST = [
-	# 0. White (Universal Starting Point)
-	"BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE",
-	"BLEACH WHITE 1.0", "BLEACH WHITE 2.0", "BLEACH WHITE", "WHITE MIX", "WHITE",
-	
-	# 1. BABY PINK
-	"BABY PINK",
+    # 0. White (Universal Starting Point)
+    "BRIGHT WHITE", "SUPER WHITE", "MILKY WHITE", "SUNSHINE WHITE",
+    "BLEACH WHITE 1.0", "BLEACH WHITE 2.0", "BLEACH WHITE", "WHITE MIX", "WHITE",
+    
+    # 1. BABY PINK
+    "BABY PINK",
 
-	# 2. MEDICAL BLUE
-	"LIGHT MEDICAL BLUE", "MEDICAL BLUE",
+    # 2. MEDICAL BLUE
+    "LIGHT MEDICAL BLUE", "MEDICAL BLUE",
 
-	# 3. MEDICAL GREEN
-	"MEDICAL GREEN",
+    # 3. MEDICAL GREEN
+    "MEDICAL GREEN",
 
-	# 4. IVORY
-	"BRIGHT IVORY", "IVORY", "OFF WHITE",
+    # 4. IVORY
+    "BRIGHT IVORY", "IVORY", "OFF WHITE",
 
-	# 5. CREAM
-	"CREAM 1.0", "CREAM 2.0", "CREAM 3.0", "CREAM 4.0", "CREAM 5.0", "CREAM",
+    # 5. CREAM
+    "CREAM 1.0", "CREAM 2.0", "CREAM 3.0", "CREAM 4.0", "CREAM 5.0", "CREAM",
 
-	# 6. LEMON YELLOW
-	"LEMON YELLOW 1.0", "LEMON YELLOW 3.0", "LEMON YELLOW",
+    # 6. LEMON YELLOW
+    "LEMON YELLOW 1.0", "LEMON YELLOW 3.0", "LEMON YELLOW",
 
-	# 7. GOLDEN YELLOW
-	"GOLDEN YELLOW 4.0 SPL", "GOLDEN YELLOW 1.0", "GOLDEN YELLOW 2.0", "GOLDEN YELLOW 3.0", "GOLDEN YELLOW",
+    # 7. GOLDEN YELLOW
+    "GOLDEN YELLOW 4.0 SPL", "GOLDEN YELLOW 1.0", "GOLDEN YELLOW 2.0", "GOLDEN YELLOW 3.0", "GOLDEN YELLOW",
 
-	# 8. ORANGE
-	"BRIGHT ORANGE", "ORANGE 2.0", "DARK ORANGE", "ORANGE",
+    # 8. ORANGE
+    "BRIGHT ORANGE", "ORANGE 2.0", "DARK ORANGE", "ORANGE",
 
-	# 9. PINK
-	"PINK 1.0", "PINK 2.0", "PINK 3.0", "PINK 5.0", "DARK PINK", "PINK 6.0 DARK", "PINK 7.0 DARK", "PINK",
+    # 9. PINK
+    "PINK 1.0", "PINK 2.0", "PINK 3.0", "PINK 5.0", "DARK PINK", "PINK 6.0 DARK", "PINK 7.0 DARK", "PINK",
 
-	# 10. RED
-	"RED", "CRIMSON RED",
+    # 10. RED
+    "RED", "CRIMSON RED",
 
-	# 11. LIGHT MAROON
-	"LIGHT MAROON", "MAROON 1.0",
+    # 11. LIGHT MAROON
+    "LIGHT MAROON", "MAROON 1.0",
 
-	# 12. DARK MAROON
-	"DARK MAROON", "MAROON 2.0",
+    # 12. DARK MAROON
+    "DARK MAROON", "MAROON 2.0",
 
-	# 13. PEACOCK BLUE
-	"LIGHT PEACOCK BLUE", "PEACOCK BLUE",
+    # 13. PEACOCK BLUE
+    "LIGHT PEACOCK BLUE", "PEACOCK BLUE",
 
-	# 14. ROYAL BLUE
-	"BLUE 1.0", "BLUE 2.0", "BLUE 4.0", "BLUE 9.0", "BLUE",
-	"ROYAL BLUE", "BLUE 6.0 ROYAL BLUE", 
-	"BLUE 7.0 DARK BLUE", "BLUE 8.0 DARK ROYAL BLUE",
+    # 14. ROYAL BLUE
+    "BLUE 1.0", "BLUE 2.0", "BLUE 4.0", "BLUE 9.0", "BLUE",
+    "ROYAL BLUE", "BLUE 6.0 ROYAL BLUE", 
+    "BLUE 7.0 DARK BLUE", "BLUE 8.0 DARK ROYAL BLUE",
 
-	# 15. NAVY BLUE
-	"NAVY BLUE", "BLUE 11.0 NAVY BLUE", "BLUE 12.0 SPL NAVY BLUE", "BLUE 13.0 INK BLUE",
+    # 15. NAVY BLUE
+    "NAVY BLUE", "BLUE 11.0 NAVY BLUE", "BLUE 12.0 SPL NAVY BLUE", "BLUE 13.0 INK BLUE",
 
-	# 16. VOILET
-	"VIOLET", "VOILET",
+    # 16. VOILET
+    "VIOLET", "VOILET",
 
-	# 17. RELIANCE GREEN
-	"GREEN 3.0 RELIANCE GREEN", "RELIANCE GREEN",
+    # 17. RELIANCE GREEN
+    "GREEN 3.0 RELIANCE GREEN", "RELIANCE GREEN",
 
-	# 18. PARROT GREEN
-	"GREEN 1.0 MINT", "GREEN 2.0 TORQUISE GREEN", "PARROT GREEN",
+    # 18. PARROT GREEN
+    "GREEN 1.0 MINT", "GREEN 2.0 TORQUISE GREEN", "PARROT GREEN",
 
-	# 19. SEA GREEN
-	"SEA GREEN",
+    # 19. SEA GREEN
+    "SEA GREEN",
 
-	# 20. ARMY GREEN
-	"GREEN 4.0", "GREEN 5.0 GRASS GREEN", "GREEN 6.0", "GREEN 7.0", "GREEN 8.0 APPLE GREEN",
-	"GREEN 9.0 BOTTLE GREEN", "GREEN 10.0", "PEACOCK GREEN",
-	"GREEN 11.0 DARK GREEN", "GREEN 12.0 OLIVE GREEN", "GREEN 13.0 ARMY GREEN",
-	"GREEN",
+    # 20. ARMY GREEN
+    "GREEN 4.0", "GREEN 5.0 GRASS GREEN", "GREEN 6.0", "GREEN 7.0", "GREEN 8.0 APPLE GREEN",
+    "GREEN 9.0 BOTTLE GREEN", "GREEN 10.0", "PEACOCK GREEN",
+    "GREEN 11.0 DARK GREEN", "GREEN 12.0 OLIVE GREEN", "GREEN 13.0 ARMY GREEN",
+    "GREEN",
 
-	# 21. LIGHT GREY
-	"LIGHT GREY", "SILVER 1.0", "SILVER 2.0", "GREY 1.0",
+    # 21. LIGHT GREY
+    "LIGHT GREY", "SILVER 1.0", "SILVER 2.0", "GREY 1.0",
 
-	# 22. DARK GREY
-	"DARK GREY", "GREY",
+    # 22. DARK GREY
+    "DARK GREY", "GREY",
 
-	# 23. BROWN
-	"CHOCOLATE BROWN", "CHOCOLATE BROWN 2.0", "BROWN 1.0", "BROWN 2.0 DARK", "BROWN 3.0 DARK COFFEE",
-	"CHIKOO 1.0", "CHIKOO 2.0", "CHOCOLATE BLACK", "BROWN",
+    # 23. BROWN
+    "CHOCOLATE BROWN", "CHOCOLATE BROWN 2.0", "BROWN 1.0", "BROWN 2.0 DARK", "BROWN 3.0 DARK COFFEE",
+    "CHIKOO 1.0", "CHIKOO 2.0", "CHOCOLATE BLACK", "BROWN",
 
-	# 24. BLACK
-	"BLACK MIX", "COLOR MIX", "BLACK",
+    # 24. BLACK
+    "BLACK MIX", "COLOR MIX", "BLACK",
 
-	# 25. DARK BEIGE
-	"DARK BEIGE", "BEIGE MIX",
+    # 25. DARK BEIGE
+    "DARK BEIGE", "BEIGE MIX",
 
-	# 26. LIGHT BEIGE
-	"BEIGE 1.0", "BEIGE 2.0", "BEIGE 3.0", "BEIGE 4.0", "BEIGE 5.0", "LIGHT BEIGE", "BEIGE",
+    # 26. LIGHT BEIGE
+    "BEIGE 1.0", "BEIGE 2.0", "BEIGE 3.0", "BEIGE 4.0", "BEIGE 5.0", "LIGHT BEIGE", "BEIGE",
 ]
 COLOR_PRIORITY = {c: i for i, c in enumerate(COLOR_ORDER_LIST)}
 
 # ΓöÇΓöÇ Quality run order per unit ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 UNIT_QUALITY_ORDER = {
-	"Unit 1": ["PREMIUM","PLATINUM","SUPER PLATINUM","GOLD","SILVER"],
-	"Unit 2": ["GOLD","SILVER","BRONZE","CLASSIC","SUPER CLASSIC","LIFE STYLE",
-	           "ECO SPECIAL","ECO GREEN","SUPER ECO","ULTRA","DELUXE"],
-	"Unit 3": ["PREMIUM","PLATINUM","SUPER PLATINUM","GOLD","SILVER","BRONZE"],
-	"Unit 4": ["PREMIUM","GOLD","SILVER","BRONZE","CLASSIC","CRT"],
+    "Unit 1": ["PREMIUM","PLATINUM","SUPER PLATINUM","GOLD","SILVER"],
+    "Unit 2": ["GOLD","SILVER","BRONZE","CLASSIC","SUPER CLASSIC","LIFE STYLE",
+               "ECO SPECIAL","ECO GREEN","SUPER ECO","ULTRA","DELUXE"],
+    "Unit 3": ["PREMIUM","PLATINUM","SUPER PLATINUM","GOLD","SILVER","BRONZE"],
+    "Unit 4": ["PREMIUM","GOLD","SILVER","BRONZE","CLASSIC","CRT"],
 }
 
 @frappe.whitelist()
 def get_board_seeds(target_date, plan_name=None, exclude_items=None):
-	"""API to fetch seeds for all 4 units for the frontend."""
-	seeds = {}
-	for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
-		s = get_last_unit_order(u, target_date, plan_name, exclude_items)
-		if s: seeds[u] = s
-	return seeds
+    """API to fetch seeds for all 4 units for the frontend."""
+    seeds = {}
+    for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
+        s = get_last_unit_order(u, target_date, plan_name, exclude_items)
+        if s: seeds[u] = s
+    return seeds
 
 @frappe.whitelist()
 def get_last_unit_order(unit, date=None, plan_name=None, exclude_items=None):
-	"""
-	Returns the last pushed order on the Production Board for a given unit.
-	Visual board sequence (idx DESC) is the absolute priority.
-	exclude_items: list of names (Planning Sheet Item) to ignore.
-	"""
-	from frappe.utils import getdate
-	target_date = getdate(date) if date else getdate(frappe.utils.today())
-	clean_unit = unit.strip().replace(" ", "").upper()
-	
-	exclude_sql = ""
-	if exclude_items:
-		if isinstance(exclude_items, str):
-			import json
-			exclude_items = json.loads(exclude_items)
-		if exclude_items:
-			# Format for SQL IN clause. Psuedo-safe because these are system DocIDs (PSI-XXXXX)
-			# But we'll use a safer approach.
-			names = ", ".join([f"'{n}'" for n in exclude_items if n])
-			if names:
-				exclude_sql = f"AND i.name NOT IN ({names})"
+    """
+    Returns the last pushed order on the Production Board for a given unit.
+    Visual board sequence (idx DESC) is the absolute priority.
+    exclude_items: list of names (Planning Sheet Item) to ignore.
+    """
+    from frappe.utils import getdate
+    target_date = getdate(date) if date else getdate(frappe.utils.today())
+    clean_unit = unit.strip().replace(" ", "").upper()
+    
+    exclude_sql = ""
+    if exclude_items:
+        if isinstance(exclude_items, str):
+            import json
+            exclude_items = json.loads(exclude_items)
+        if exclude_items:
+            # Format for SQL IN clause. Psuedo-safe because these are system DocIDs (PSI-XXXXX)
+            # But we'll use a safer approach.
+            names = ", ".join([f"'{n}'" for n in exclude_items if n])
+            if names:
+                exclude_sql = f"AND i.name NOT IN ({names})"
 
-	clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
-	
-	# --- Combined Search Part 1: Items on Target Date (Color or White) ---
-	rows = frappe.db.sql(f"""
-		SELECT 
-			i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx, 
-			p.name as sheet, p.modified, p.docstatus
-		FROM `tabPlanning Sheet Item` i
-		JOIN `tabPlanning sheet` p ON i.parent = p.name
-		WHERE REPLACE(UPPER(i.unit), ' ', '') = %s
-		  AND p.docstatus < 2
-		  AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
-		  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
-		  {exclude_sql}
-		ORDER BY 
-		  -- Prioritize color items over white if they share the same date
-		  (CASE WHEN REPLACE(UPPER(i.color), ' ', '') NOT IN ({clean_white_sql}) THEN 0 ELSE 1 END) ASC,
-		  p.docstatus DESC,
-		  i.idx DESC,
-		  p.modified DESC
-		LIMIT 1
-	""", (clean_unit, target_date), as_dict=True)
+    clean_white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
+    
+    # --- Combined Search Part 1: Items on Target Date (Color or White) ---
+    rows = frappe.db.sql(f"""
+        SELECT 
+            i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx, 
+            p.name as sheet, p.modified, p.docstatus
+        FROM `tabPlanning Sheet Item` i
+        JOIN `tabPlanning sheet` p ON i.parent = p.name
+        WHERE REPLACE(UPPER(i.unit), ' ', '') = %s
+          AND p.docstatus < 2
+          AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
+          AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
+          {exclude_sql}
+        ORDER BY 
+          -- Prioritize color items over white if they share the same date
+          (CASE WHEN REPLACE(UPPER(i.color), ' ', '') NOT IN ({clean_white_sql}) THEN 0 ELSE 1 END) ASC,
+          p.docstatus DESC,
+          i.idx DESC,
+          p.modified DESC
+        LIMIT 1
+    """, (clean_unit, target_date), as_dict=True)
 
-	if not rows:
-		return None
+    if not rows:
+        return None
 
-	r = rows[0]
-	return {
-		"color": (r.color or "").upper().strip(),
-		"quality": (r.quality or "").upper().strip(),
-		"gsm": r.gsm,
-		"is_white": (r.color or "").upper().strip() in WHITE_COLORS,
-		"date": target_date
-	}
+    r = rows[0]
+    return {
+        "color": (r.color or "").upper().strip(),
+        "quality": (r.quality or "").upper().strip(),
+        "gsm": r.gsm,
+        "is_white": (r.color or "").upper().strip() in WHITE_COLORS,
+        "date": target_date
+    }
 
 @frappe.whitelist()
 def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, seed_color=None, plan_name=None):
-	"""
-	Returns items in smart push order:
-	1. Perfect Match: Same color AND same quality as board seed
-	2. Color Match: Same color as board seed
-	3. Hierarchy Continuation: Next colors in the user light-dark sequence (Wrap-around)
-	4. Quality Priority: Unit-specific quality order
-	5. GSM: High to Low
-	"""
-	import json
-	if isinstance(item_names, str):
-		item_names = json.loads(item_names)
-	
-	items = frappe.get_all("Planning Sheet Item", 
-		filters={"name": ["in", item_names]},
-		fields=["name", "item_code", "item_name", "qty", "unit", "color", "custom_quality", "gsm", "parent", "custom_item_planned_date"]
-	)
-	
-	if not items:
-		return {"sequence": [], "seeds": {}}
+    """
+    Returns items in smart push order:
+    1. Perfect Match: Same color AND same quality as board seed
+    2. Color Match: Same color as board seed
+    3. Hierarchy Continuation: Next colors in the user light-dark sequence (Wrap-around)
+    4. Quality Priority: Unit-specific quality order
+    5. GSM: High to Low
+    """
+    import json
+    if isinstance(item_names, str):
+        item_names = json.loads(item_names)
+    
+    items = frappe.get_all("Planning Sheet Item", 
+        filters={"name": ["in", item_names]},
+        fields=["name", "item_code", "item_name", "qty", "unit", "color", "custom_quality", "gsm", "parent", "custom_item_planned_date"]
+    )
+    
+    if not items:
+        return {"sequence": [], "seeds": {}}
 
-	target_date = getdate(target_date) if target_date else getdate(frappe.utils.today())
-	
-	# Always fetch seeds for all 4 units for UI visibility (Board End display)
-	unit_seeds = get_board_seeds(target_date, plan_name, item_names)
+    target_date = getdate(target_date) if target_date else getdate(frappe.utils.today())
+    
+    # Always fetch seeds for all 4 units for UI visibility (Board End display)
+    unit_seeds = get_board_seeds(target_date, plan_name, item_names)
 
-	# Enrichment bucket for UI
-	parent_cache = {}
-	
-	# Group by unit for specialized sorting
-	result_sequence = []
-	for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"]:
-		unit_items = [it for it in items if _normalize_unit(it.get("unit")) == u]
-		if not unit_items: continue
-		
-		seed = unit_seeds.get(u)
-		s_col = (seed.get("color") if seed else seed_color or "").upper().strip()
-		s_qual = (seed.get("quality") if seed else seed_quality or "").upper().strip()
+    # Enrichment bucket for UI
+    parent_cache = {}
+    
+    # Group by unit for specialized sorting
+    result_sequence = []
+    for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"]:
+        unit_items = [it for it in items if _normalize_unit(it.get("unit")) == u]
+        if not unit_items: continue
+        
+        seed = unit_seeds.get(u)
+        s_col = (seed.get("color") if seed else seed_color or "").upper().strip()
+        s_qual = (seed.get("quality") if seed else seed_quality or "").upper().strip()
 
-		# Separate into Perfect Match, Color Match, and Others
-		perfect = []
-		same_col = []
-		remaining = []
-		
-		for it in unit_items:
-			c = (it.get("color") or "").upper().strip()
-			q = (it.get("custom_quality") or "").upper().strip()
-			if c == s_col and q == s_qual: perfect.append(it)
-			elif c == s_col: same_col.append(it)
-			else: remaining.append(it)
+        # Separate into Perfect Match, Color Match, and Others
+        perfect = []
+        same_col = []
+        remaining = []
+        
+        for it in unit_items:
+            c = (it.get("color") or "").upper().strip()
+            q = (it.get("custom_quality") or "").upper().strip()
+            if c == s_col and q == s_qual: perfect.append(it)
+            elif c == s_col: same_col.append(it)
+            else: remaining.append(it)
 
-		def color_sort_key_fn(it):
-			col = (it.get("color") or "").upper().strip()
-			qual = (it.get("custom_quality") or "").upper().strip()
-			
-			# Priority 1: COLOR lightΓåÆdark order with WRAP-AROUND
-			c_idx = COLOR_PRIORITY.get(col, 999)
-			s_idx = COLOR_PRIORITY.get(s_col, -1)
-			
-			if s_idx != -1 and c_idx != 999:
-				# Continuous Flow: index relative to the seed
-				total_colors = len(COLOR_ORDER_LIST)
-				color_score = (c_idx - s_idx + total_colors) % total_colors
-			else:
-				# Fallback to absolute rank if seed or color not found in hierarchy
-				color_score = c_idx
-			
-			# Priority 2: Quality order
-			q_order = UNIT_QUALITY_ORDER.get(u, [])
-			q_idx = q_order.index(qual) if qual in q_order else 999
-			
-			# Priority 3: GSM (High to Low -> negative)
-			gsm_val = -float(it.get("gsm") or 0)
-			
-			return (color_score, q_idx, gsm_val)
+        def color_sort_key_fn(it):
+            col = (it.get("color") or "").upper().strip()
+            qual = (it.get("custom_quality") or "").upper().strip()
+            
+            # Priority 1: COLOR lightΓåÆdark order with WRAP-AROUND
+            c_idx = COLOR_PRIORITY.get(col, 999)
+            s_idx = COLOR_PRIORITY.get(s_col, -1)
+            
+            if s_idx != -1 and c_idx != 999:
+                # Continuous Flow: index relative to the seed
+                total_colors = len(COLOR_ORDER_LIST)
+                color_score = (c_idx - s_idx + total_colors) % total_colors
+            else:
+                # Fallback to absolute rank if seed or color not found in hierarchy
+                color_score = c_idx
+            
+            # Priority 2: Quality order
+            q_order = UNIT_QUALITY_ORDER.get(u, [])
+            q_idx = q_order.index(qual) if qual in q_order else 999
+            
+            # Priority 3: GSM (High to Low -> negative)
+            gsm_val = -float(it.get("gsm") or 0)
+            
+            return (color_score, q_idx, gsm_val)
 
-		# Final Sort within buckets
-		perfect.sort(key=color_sort_key_fn)
-		same_col.sort(key=color_sort_key_fn)
-		remaining.sort(key=color_sort_key_fn)
-		
-		# Merge buckets for this unit
-		unit_sorted = perfect + same_col + remaining
-		
-		# Enrich items for the frontend as we add them
-		for it in unit_sorted:
-			if it.parent not in parent_cache:
-				parent_cache[it.parent] = frappe.db.get_value("Planning sheet", it.parent, ["customer","party_code"], as_dict=1) or {}
-			p = parent_cache[it.parent]
-			
-			it["customer"] = p.get("customer","")
-			it["partyCode"] = p.get("party_code","")
-			it["pbPlanName"] = ""
-			it["quality"] = (it.get("custom_quality") or "").upper().strip()
-			it["colorKey"] = (it.get("color") or "").upper().strip()
-			it["unit"] = _normalize_unit(it.get("unit"))
-			it["unitKey"] = it["unit"]
-			it["gsmVal"] = float(it.get("gsm") or 0)
-			it["plannedDate"] = str(it.get("custom_item_planned_date") or "")
-			it["description"] = it.get("item_name") or ""
-			
-			result_sequence.append(it)
+        # Final Sort within buckets
+        perfect.sort(key=color_sort_key_fn)
+        same_col.sort(key=color_sort_key_fn)
+        remaining.sort(key=color_sort_key_fn)
+        
+        # Merge buckets for this unit
+        unit_sorted = perfect + same_col + remaining
+        
+        # Enrich items for the frontend as we add them
+        for it in unit_sorted:
+            if it.parent not in parent_cache:
+                parent_cache[it.parent] = frappe.db.get_value("Planning sheet", it.parent, ["customer","party_code"], as_dict=1) or {}
+            p = parent_cache[it.parent]
+            
+            it["customer"] = p.get("customer","")
+            it["partyCode"] = p.get("party_code","")
+            it["pbPlanName"] = ""
+            it["quality"] = (it.get("custom_quality") or "").upper().strip()
+            it["colorKey"] = (it.get("color") or "").upper().strip()
+            it["unit"] = _normalize_unit(it.get("unit"))
+            it["unitKey"] = it["unit"]
+            it["gsmVal"] = float(it.get("gsm") or 0)
+            it["plannedDate"] = str(it.get("custom_item_planned_date") or "")
+            it["description"] = it.get("item_name") or ""
+            
+            result_sequence.append(it)
 
-	# Safety: add sequence_no
-	for i, it in enumerate(result_sequence):
-		it["sequence_no"] = i + 1
-		it["phase"] = "color" if it["colorKey"] not in WHITE_COLORS else "white"
-		it["is_seed_bridge"] = False # Default
+    # Safety: add sequence_no
+    for i, it in enumerate(result_sequence):
+        it["sequence_no"] = i + 1
+        it["phase"] = "color" if it["colorKey"] not in WHITE_COLORS else "white"
+        it["is_seed_bridge"] = False # Default
 
-	return {
-		"sequence": result_sequence,
-		"seeds": unit_seeds
-	}
+    return {
+        "sequence": result_sequence,
+        "seeds": unit_seeds
+    }
 
 @frappe.whitelist()
 def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_date=None, days_in_view=1, force_move=0):
-	"""
-	Copies specific Planning Sheet Items to a target Color Chart plan.
-	- days_in_view: scale capacity limit (e.g. 28 for monthly February, 7 for weekly).
-	- force_move=1: skip capacity check entirely (used in monthly/weekly views).
-	- Items linked to cancelled Sales Orders are silently skipped with a warning.
-	"""
-	import json
-	if isinstance(item_names, str):
-		item_names = json.loads(item_names)
-	days_in_view = int(days_in_view) if days_in_view else 1
-	force_move = int(force_move) if force_move else 0
+    """
+    Copies specific Planning Sheet Items to a target Color Chart plan.
+    - days_in_view: scale capacity limit (e.g. 28 for monthly February, 7 for weekly).
+    - force_move=1: skip capacity check entirely (used in monthly/weekly views).
+    - Items linked to cancelled Sales Orders are silently skipped with a warning.
+    """
+    import json
+    if isinstance(item_names, str):
+        item_names = json.loads(item_names)
+    days_in_view = int(days_in_view) if days_in_view else 1
+    force_move = int(force_move) if force_move else 0
 
-	if not item_names or not target_plan:
-		return {"status": "error", "message": "Missing item names or target plan"}
+    if not item_names or not target_plan:
+        return {"status": "error", "message": "Missing item names or target plan"}
 
-	moved = 0
-	skipped = []
-	errors = []
-	new_sheet_cache = {}  # (party_code, effective_date) -> sheet_name
+    moved = 0
+    skipped = []
+    errors = []
+    new_sheet_cache = {}  # (party_code, effective_date) -> sheet_name
 
-	UNIT_LIMITS = {"Unit 1": 4.4, "Unit 2": 12.0, "Unit 3": 9.0, "Unit 4": 5.5}
+    UNIT_LIMITS = {"Unit 1": 4.4, "Unit 2": 12.0, "Unit 3": 9.0, "Unit 4": 5.5}
 
-	# Clear doctype meta cache so custom fields (custom_plan_name) are recognized
-	frappe.clear_cache(doctype="Planning sheet")
+    # Clear doctype meta cache so custom fields (custom_plan_name) are recognized
+    frappe.clear_cache(doctype="Planning sheet")
 
-	for name in item_names:
-		try:
-			item_doc = frappe.get_doc("Planning Sheet Item", name)
-			parent_sheet = frappe.get_doc("Planning sheet", item_doc.parent)
+    for name in item_names:
+        try:
+            item_doc = frappe.get_doc("Planning Sheet Item", name)
+            parent_sheet = frappe.get_doc("Planning sheet", item_doc.parent)
 
-			target_unit = item_doc.unit or "Mixed"
-			effective_date = parent_sheet.get("custom_planned_date") or parent_sheet.ordered_date
-			party_code = parent_sheet.party_code or ""
+            target_unit = item_doc.unit or "Mixed"
+            effective_date = parent_sheet.get("custom_planned_date") or parent_sheet.ordered_date
+            party_code = parent_sheet.party_code or ""
 
-			# --- Guard: skip items on cancelled Sales Orders ---
-			if parent_sheet.sales_order:
-				so_status = frappe.db.get_value("Sales Order", parent_sheet.sales_order, "docstatus")
-				if so_status == 2:  # Cancelled
-					skipped.append(f"{name}: linked Sales Order {parent_sheet.sales_order} is cancelled ΓÇö skipped")
-					continue
+            # --- Guard: skip items on cancelled Sales Orders ---
+            if parent_sheet.sales_order:
+                so_status = frappe.db.get_value("Sales Order", parent_sheet.sales_order, "docstatus")
+                if so_status == 2:  # Cancelled
+                    skipped.append(f"{name}: linked Sales Order {parent_sheet.sales_order} is cancelled ΓÇö skipped")
+                    continue
 
-			# --- Find or create a Planning Sheet in the target plan ---
-			cache_key = (party_code, str(effective_date))
-			if cache_key in new_sheet_cache:
-				target_sheet_name = new_sheet_cache[cache_key]
-			else:
-				filters = {
-					"custom_plan_name": target_plan,
-					"docstatus": ["<", 1]
-				}
-				# Prefer matching by Sales Order to keep items together
-				if parent_sheet.sales_order:
-					filters["sales_order"] = parent_sheet.sales_order
-				elif party_code:
-					filters["party_code"] = party_code
+            # --- Find or create a Planning Sheet in the target plan ---
+            cache_key = (party_code, str(effective_date))
+            if cache_key in new_sheet_cache:
+                target_sheet_name = new_sheet_cache[cache_key]
+            else:
+                filters = {
+                    "custom_plan_name": target_plan,
+                    "docstatus": ["<", 1]
+                }
+                # Prefer matching by Sales Order to keep items together
+                if parent_sheet.sales_order:
+                    filters["sales_order"] = parent_sheet.sales_order
+                elif party_code:
+                    filters["party_code"] = party_code
 
-				existing = frappe.get_all("Planning sheet", filters=filters, fields=["name"], limit=1)
+                existing = frappe.get_all("Planning sheet", filters=filters, fields=["name"], limit=1)
 
-				if existing:
-					target_sheet_name = existing[0].name
-				else:
-					new_sheet = frappe.new_doc("Planning sheet")
-					new_sheet.custom_plan_name = target_plan
-					new_sheet.ordered_date = effective_date
-					new_sheet.party_code = party_code
-					new_sheet.customer = _resolve_customer_link(parent_sheet.customer, parent_sheet.party_code)
-					new_sheet.insert(ignore_permissions=True)
-					target_sheet_name = new_sheet.name
-					# Force custom_plan_name via raw SQL to ensure persistence
-					if frappe.db.has_column("Planning sheet", "custom_plan_name"):
-						frappe.db.sql(
-							"UPDATE `tabPlanning sheet` SET custom_plan_name = %s WHERE name = %s",
-							(target_plan, target_sheet_name)
-						)
-						frappe.logger().info(f"[MoveItems] Set custom_plan_name='{target_plan}' on sheet {target_sheet_name}")
-					else:
-						frappe.logger().error("[MoveItems] custom_plan_name column DOES NOT EXIST!")
+                if existing:
+                    target_sheet_name = existing[0].name
+                else:
+                    new_sheet = frappe.new_doc("Planning sheet")
+                    new_sheet.custom_plan_name = target_plan
+                    new_sheet.ordered_date = effective_date
+                    new_sheet.party_code = party_code
+                    new_sheet.customer = _resolve_customer_link(parent_sheet.customer, parent_sheet.party_code)
+                    new_sheet.insert(ignore_permissions=True)
+                    target_sheet_name = new_sheet.name
+                    # Force custom_plan_name via raw SQL to ensure persistence
+                    if frappe.db.has_column("Planning sheet", "custom_plan_name"):
+                        frappe.db.sql(
+                            "UPDATE `tabPlanning sheet` SET custom_plan_name = %s WHERE name = %s",
+                            (target_plan, target_sheet_name)
+                        )
+                        frappe.logger().info(f"[MoveItems] Set custom_plan_name='{target_plan}' on sheet {target_sheet_name}")
+                    else:
+                        frappe.logger().error("[MoveItems] custom_plan_name column DOES NOT EXIST!")
 
-				new_sheet_cache[cache_key] = target_sheet_name
+                new_sheet_cache[cache_key] = target_sheet_name
 
-			# --- Capacity check (scaled by days_in_view, skipped if force_move) ---
-			if not force_move:
-				daily_limit = UNIT_LIMITS.get(target_unit, 9999)
-				scaled_limit = daily_limit * days_in_view
-				target_items = frappe.get_all(
-					"Planning Sheet Item",
-					filters={"parent": target_sheet_name, "unit": target_unit},
-					fields=["qty"]
-				)
-				current_kg = sum(float(i.qty or 0) for i in target_items)
-				item_kg = float(item_doc.qty or 0)
-				if (current_kg + item_kg) / 1000 > scaled_limit:
-					errors.append(
-						f"{item_doc.item_name}: Would exceed {target_unit} capacity "
-						f"({(current_kg/1000):.2f}+{(item_kg/1000):.2f} > {scaled_limit:.1f}T)"
-					)
-					continue
+            # --- Capacity check (scaled by days_in_view, skipped if force_move) ---
+            if not force_move:
+                daily_limit = UNIT_LIMITS.get(target_unit, 9999)
+                scaled_limit = daily_limit * days_in_view
+                target_items = frappe.get_all(
+                    "Planning Sheet Item",
+                    filters={"parent": target_sheet_name, "unit": target_unit},
+                    fields=["qty"]
+                )
+                current_kg = sum(float(i.qty or 0) for i in target_items)
+                item_kg = float(item_doc.qty or 0)
+                if (current_kg + item_kg) / 1000 > scaled_limit:
+                    errors.append(
+                        f"{item_doc.item_name}: Would exceed {target_unit} capacity "
+                        f"({(current_kg/1000):.2f}+{(item_kg/1000):.2f} > {scaled_limit:.1f}T)"
+                    )
+                    continue
 
-			# --- RE-PARENT the item to target sheet via raw SQL ---
-			# (frappe.db.set_value fails on children of submitted docs)
-			frappe.db.sql("""
-				UPDATE `tabPlanning Sheet Item`
-				SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items'
-				WHERE name = %s
-			""", (target_sheet_name, name))
-			moved += 1
+            # --- RE-PARENT the item to target sheet via raw SQL ---
+            # (frappe.db.set_value fails on children of submitted docs)
+            frappe.db.sql("""
+                UPDATE `tabPlanning Sheet Item`
+                SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items'
+                WHERE name = %s
+            """, (target_sheet_name, name))
+            moved += 1
 
-		except Exception as e:
-			errors.append(f"{name}: {str(e)}")
+        except Exception as e:
+            errors.append(f"{name}: {str(e)}")
 
-	frappe.db.commit()
-	result = {"status": "success", "moved": moved}
-	if skipped:
-		result["skipped"] = skipped
-	if errors:
-		result["errors"] = errors
-	return result
+    frappe.db.commit()
+    result = {"status": "success", "moved": moved}
+    if skipped:
+        result["skipped"] = skipped
+    if errors:
+        result["errors"] = errors
+    return result
 
 
 def get_orders_for_date(date):
@@ -3703,76 +3703,76 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
 
 @frappe.whitelist()
 def rescue_orphaned_items(target_date=None, colour=None, party_code=None):
-	"""Find Planning Sheet Items whose parent sheets are deleted/missing,
-	   and re-home them to a valid sheet on target_date (default: today)."""
-	target_date = getdate(target_date or frappe.utils.today())
-	
-	# 1. Find orphaned items: parent sheet does not exist
-	conds = []
-	params = {"target": target_date}
-	if colour:
-		conds.append("AND item.colour LIKE %(colour)s")
-		params["colour"] = f"%{colour}%"
-	if party_code:
-		conds.append("AND item.party_code LIKE %(party_code)s")
-		params["party_code"] = f"%{party_code}%"
-	
-	extra = " ".join(conds)
-	orphans = frappe.db.sql(f"""
-		SELECT item.name, item.parent, item.unit, item.colour, item.qty,
-		       item.party_code, item.customer, item.custom_quality, item.item_name,
-		       item.sales_order
-		FROM `tabPlanning Sheet Item` item
-		LEFT JOIN `tabPlanning sheet` sheet ON item.parent = sheet.name
-		WHERE sheet.name IS NULL
-		{extra}
-	""", params, as_dict=True)
-	
-	if not orphans:
-		return {"status": "success", "count": 0, "message": "No orphaned items found"}
-	
-	# 2. Group by party_code and re-home
-	by_party = {}
-	for o in orphans:
-		key = o.party_code or "UNKNOWN"
-		if key not in by_party:
-			by_party[key] = []
-		by_party[key].append(o)
-	
-	rescued = 0
-	for party, items in by_party.items():
-		# Find or create a draft sheet for this party on target_date
-		existing = frappe.db.get_value("Planning sheet", {
-			"party_code": party,
-			"ordered_date": target_date,
-			"docstatus": ["<", 2]
-		}, "name")
-		
-		if existing:
-			sheet_name = existing
-		else:
-			first = items[0]
-			new_sheet = frappe.new_doc("Planning sheet")
-			new_sheet.ordered_date = target_date
-			if frappe.db.has_column("Planning sheet", "custom_planned_date"):
-				new_sheet.custom_planned_date = target_date
-			new_sheet.party_code = party
-			new_sheet.customer = _resolve_customer_link(first.get("customer"), first.get("party_code") or party)
-			new_sheet.sales_order = first.get("sales_order") or ""
-			new_sheet.save(ignore_permissions=True)
-			sheet_name = new_sheet.name
-		
-		# Reparent all orphaned items to this sheet
-		for item in items:
-			frappe.db.sql("""
-				UPDATE `tabPlanning Sheet Item`
-				SET parent = %s, parenttype='Planning sheet', parentfield='items'
-				WHERE name = %s
-			""", (sheet_name, item.name))
-			rescued += 1
-	
-	frappe.db.commit()
-	return {"status": "success", "count": rescued, "message": f"Rescued {rescued} orphaned items to {target_date}"}
+    """Find Planning Sheet Items whose parent sheets are deleted/missing,
+       and re-home them to a valid sheet on target_date (default: today)."""
+    target_date = getdate(target_date or frappe.utils.today())
+    
+    # 1. Find orphaned items: parent sheet does not exist
+    conds = []
+    params = {"target": target_date}
+    if colour:
+        conds.append("AND item.colour LIKE %(colour)s")
+        params["colour"] = f"%{colour}%"
+    if party_code:
+        conds.append("AND item.party_code LIKE %(party_code)s")
+        params["party_code"] = f"%{party_code}%"
+    
+    extra = " ".join(conds)
+    orphans = frappe.db.sql(f"""
+        SELECT item.name, item.parent, item.unit, item.colour, item.qty,
+               item.party_code, item.customer, item.custom_quality, item.item_name,
+               item.sales_order
+        FROM `tabPlanning Sheet Item` item
+        LEFT JOIN `tabPlanning sheet` sheet ON item.parent = sheet.name
+        WHERE sheet.name IS NULL
+        {extra}
+    """, params, as_dict=True)
+    
+    if not orphans:
+        return {"status": "success", "count": 0, "message": "No orphaned items found"}
+    
+    # 2. Group by party_code and re-home
+    by_party = {}
+    for o in orphans:
+        key = o.party_code or "UNKNOWN"
+        if key not in by_party:
+            by_party[key] = []
+        by_party[key].append(o)
+    
+    rescued = 0
+    for party, items in by_party.items():
+        # Find or create a draft sheet for this party on target_date
+        existing = frappe.db.get_value("Planning sheet", {
+            "party_code": party,
+            "ordered_date": target_date,
+            "docstatus": ["<", 2]
+        }, "name")
+        
+        if existing:
+            sheet_name = existing
+        else:
+            first = items[0]
+            new_sheet = frappe.new_doc("Planning sheet")
+            new_sheet.ordered_date = target_date
+            if frappe.db.has_column("Planning sheet", "custom_planned_date"):
+                new_sheet.custom_planned_date = target_date
+            new_sheet.party_code = party
+            new_sheet.customer = _resolve_customer_link(first.get("customer"), first.get("party_code") or party)
+            new_sheet.sales_order = first.get("sales_order") or ""
+            new_sheet.save(ignore_permissions=True)
+            sheet_name = new_sheet.name
+        
+        # Reparent all orphaned items to this sheet
+        for item in items:
+            frappe.db.sql("""
+                UPDATE `tabPlanning Sheet Item`
+                SET parent = %s, parenttype='Planning sheet', parentfield='items'
+                WHERE name = %s
+            """, (sheet_name, item.name))
+            rescued += 1
+    
+    frappe.db.commit()
+    return {"status": "success", "count": rescued, "message": f"Rescued {rescued} orphaned items to {target_date}"}
 
 
 @frappe.whitelist()
@@ -4162,822 +4162,822 @@ def update_sequence(items):
 
 @frappe.whitelist()
 def get_pb_plans(date=None, start_date=None, end_date=None):
-	"""Get unique Production Board plan names for a date or range."""
-	eff = _effective_date_expr("p")
-	
-	if start_date and end_date:
-		query_start = frappe.utils.getdate(start_date)
-		query_end = frappe.utils.getdate(end_date)
-		date_condition = f"{eff} BETWEEN %s AND %s"
-		params = [query_start, query_end]
-	elif date:
-		if "," in str(date):
-			target_dates = [frappe.utils.getdate(d.strip()) for d in str(date).split(",") if d.strip()]
-			fmt = ','.join(['%s'] * len(target_dates))
-			date_condition = f"{eff} IN ({fmt})"
-			params = target_dates
-		else:
-			target_date = frappe.utils.getdate(date)
-			date_condition = f"{eff} = %s"
-			params = [target_date]
-	else:
-		return []
-	
-	plans = frappe.db.sql(f"""
-		SELECT DISTINCT IFNULL(p.custom_pb_plan_name, '') as pb_plan_name
-		FROM `tabPlanning sheet` p
-		WHERE {date_condition} AND p.docstatus < 2
-			AND p.custom_pb_plan_name IS NOT NULL 
-			AND p.custom_pb_plan_name != ''
-	""", tuple(params), as_dict=True)
-	
-	db_plans = set([p.pb_plan_name for p in plans if p.pb_plan_name])
-	persisted = {p["name"]: p.get("locked", 0) for p in get_persisted_plans("production_board")}
-	
-	all_names = db_plans.union(set(persisted.keys()))
-	sorted_plans = sorted(list(all_names))
-	
-	return [{"name": n, "locked": persisted.get(n, 0)} for n in sorted_plans]
+    """Get unique Production Board plan names for a date or range."""
+    eff = _effective_date_expr("p")
+    
+    if start_date and end_date:
+        query_start = frappe.utils.getdate(start_date)
+        query_end = frappe.utils.getdate(end_date)
+        date_condition = f"{eff} BETWEEN %s AND %s"
+        params = [query_start, query_end]
+    elif date:
+        if "," in str(date):
+            target_dates = [frappe.utils.getdate(d.strip()) for d in str(date).split(",") if d.strip()]
+            fmt = ','.join(['%s'] * len(target_dates))
+            date_condition = f"{eff} IN ({fmt})"
+            params = target_dates
+        else:
+            target_date = frappe.utils.getdate(date)
+            date_condition = f"{eff} = %s"
+            params = [target_date]
+    else:
+        return []
+    
+    plans = frappe.db.sql(f"""
+        SELECT DISTINCT IFNULL(p.custom_pb_plan_name, '') as pb_plan_name
+        FROM `tabPlanning sheet` p
+        WHERE {date_condition} AND p.docstatus < 2
+            AND p.custom_pb_plan_name IS NOT NULL 
+            AND p.custom_pb_plan_name != ''
+    """, tuple(params), as_dict=True)
+    
+    db_plans = set([p.pb_plan_name for p in plans if p.pb_plan_name])
+    persisted = {p["name"]: p.get("locked", 0) for p in get_persisted_plans("production_board")}
+    
+    all_names = db_plans.union(set(persisted.keys()))
+    sorted_plans = sorted(list(all_names))
+    
+    return [{"name": n, "locked": persisted.get(n, 0)} for n in sorted_plans]
 
 @frappe.whitelist()
 def get_multiple_dates_capacity(dates, plan_name=None, pb_only=0):
-	"""
-	Calculates the total aggregate capacity and load for multiple dates.
-	Returns: {
-		"Unit 1": {"total_limit": X, "total_load": Y},
-		...
-	}
-	"""
-	import json
-	pb_only = cint(pb_only)
-	if isinstance(dates, str):
-		dates = [d.strip() for d in dates.split(",") if d.strip()]
-		
-	result = {}
-	for unit in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
-		total_limit = HARD_LIMITS.get(unit, 999.0) * len(dates)
-		total_load = sum(get_unit_load(d, unit, plan_name, pb_only=pb_only) for d in dates)
-		result[unit] = {
-			"total_limit": total_limit,
-			"total_load": total_load
-		}
-	return result
+    """
+    Calculates the total aggregate capacity and load for multiple dates.
+    Returns: {
+        "Unit 1": {"total_limit": X, "total_load": Y},
+        ...
+    }
+    """
+    import json
+    pb_only = cint(pb_only)
+    if isinstance(dates, str):
+        dates = [d.strip() for d in dates.split(",") if d.strip()]
+        
+    result = {}
+    for unit in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
+        total_limit = HARD_LIMITS.get(unit, 999.0) * len(dates)
+        total_load = sum(get_unit_load(d, unit, plan_name, pb_only=pb_only) for d in dates)
+        result[unit] = {
+            "total_limit": total_limit,
+            "total_load": total_load
+        }
+    return result
 
 @frappe.whitelist()
 def find_next_available_date(unit, start_date, required_tons=0, pb_only=1, days_ahead=30):
-	"""Find next date where unit has enough available capacity."""
-	if not unit or not start_date:
-		return {"date": None}
+    """Find next date where unit has enough available capacity."""
+    if not unit or not start_date:
+        return {"date": None}
 
-	start_dt = getdate(start_date)
-	required = flt(required_tons)
-	pb_only = cint(pb_only)
-	days_ahead = cint(days_ahead) or 30
-	limit = HARD_LIMITS.get(unit, 999.0)
+    start_dt = getdate(start_date)
+    required = flt(required_tons)
+    pb_only = cint(pb_only)
+    days_ahead = cint(days_ahead) or 30
+    limit = HARD_LIMITS.get(unit, 999.0)
 
-	for i in range(1, days_ahead + 1):
-		candidate = frappe.utils.add_days(start_dt, i)
-		load = get_unit_load(candidate, unit, "__all__", pb_only=pb_only)
-		if load + required <= (limit * 1.05):
-			return {"date": str(candidate), "current_load": load, "limit": limit}
+    for i in range(1, days_ahead + 1):
+        candidate = frappe.utils.add_days(start_dt, i)
+        load = get_unit_load(candidate, unit, "__all__", pb_only=pb_only)
+        if load + required <= (limit * 1.05):
+            return {"date": str(candidate), "current_load": load, "limit": limit}
 
-	# Fallback suggestion if no clean slot found in lookahead window
-	fallback = frappe.utils.add_days(start_dt, 1)
-	return {"date": str(fallback), "current_load": get_unit_load(fallback, unit, "__all__", pb_only=pb_only), "limit": limit}
+    # Fallback suggestion if no clean slot found in lookahead window
+    fallback = frappe.utils.add_days(start_dt, 1)
+    return {"date": str(fallback), "current_load": get_unit_load(fallback, unit, "__all__", pb_only=pb_only), "limit": limit}
 
 @frappe.whitelist()
 def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fetch_dates=None):
-	"""
-	Pushes ONLY the selected Planning Sheet items to a Production Board plan.
-	target_dates can be a comma-separated list of dates (legacy).
-	target_date is the explicit single start date (preferred).
-	Items will be sequentially load-balanced into the dates honoring their HARD_LIMITS daily limits.
-	"""
-	import json
-	if isinstance(item_names, str):
-		item_names = json.loads(item_names)
+    """
+    Pushes ONLY the selected Planning Sheet items to a Production Board plan.
+    target_dates can be a comma-separated list of dates (legacy).
+    target_date is the explicit single start date (preferred).
+    Items will be sequentially load-balanced into the dates honoring their HARD_LIMITS daily limits.
+    """
+    import json
+    if isinstance(item_names, str):
+        item_names = json.loads(item_names)
 
-	if not item_names or not pb_plan_name:
-		return {"status": "error", "message": "Missing item names or plan name"}
-		
-	dates = []
-	if target_date:
-		dates = [str(target_date).strip()]
-	elif target_dates:
-		dates = [d.strip() for d in str(target_dates).split(",") if d.strip()]
+    if not item_names or not pb_plan_name:
+        return {"status": "error", "message": "Missing item names or plan name"}
+        
+    dates = []
+    if target_date:
+        dates = [str(target_date).strip()]
+    elif target_dates:
+        dates = [d.strip() for d in str(target_dates).split(",") if d.strip()]
 
-	updated_count = 0
-	skipped_already_pushed = []
-	pb_sheet_cache = {}  # (party_code, effective_date) -> pb sheet name
-	local_loads = {} # (date, unit) -> current load
+    updated_count = 0
+    skipped_already_pushed = []
+    pb_sheet_cache = {}  # (party_code, effective_date) -> pb sheet name
+    local_loads = {} # (date, unit) -> current load
 
-	for name in item_names:
-		try:
-			item = frappe.get_doc("Planning Sheet Item", name)
-			parent = frappe.get_doc("Planning sheet", item.parent)
-			# Prevent re-pushing the same order again until it is reverted
-			already_pushed = False
-			if parent.get("custom_pb_plan_name"):
-				already_pushed = True
-			if not already_pushed and frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-				if item.get("custom_item_planned_date"):
-					already_pushed = True
-			if already_pushed:
-				skipped_already_pushed.append(name)
-				continue
-			item_wt = float(item.qty or 0) / 1000.0
+    for name in item_names:
+        try:
+            item = frappe.get_doc("Planning Sheet Item", name)
+            parent = frappe.get_doc("Planning sheet", item.parent)
+            # Prevent re-pushing the same order again until it is reverted
+            already_pushed = False
+            if parent.get("custom_pb_plan_name"):
+                already_pushed = True
+            if not already_pushed and frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+                if item.get("custom_item_planned_date"):
+                    already_pushed = True
+            if already_pushed:
+                skipped_already_pushed.append(name)
+                continue
+            item_wt = float(item.qty or 0) / 1000.0
 
-			# Default to the single original date if no dates provided
-			effective_date = dates[0] if dates else str(parent.get("custom_planned_date") or parent.ordered_date)
+            # Default to the single original date if no dates provided
+            effective_date = dates[0] if dates else str(parent.get("custom_planned_date") or parent.ordered_date)
 
-			# --- FIND CAPACITY SLOT ACROSS MULTIPLE DATES ---
-			if len(dates) > 0:
-				unit = item.unit or get_preferred_unit(item.custom_quality)
-				limit = HARD_LIMITS.get(unit, 999.0)
-				for check_date in dates:
-					load_key = (check_date, unit)
-					if load_key not in local_loads:
-						local_loads[load_key] = get_unit_load(check_date, unit, "__all__", pb_only=1)
-					
-					load = local_loads[load_key]
-					# Allow the item to slot here if we are under the limit, OR if it's the very last date fallback 
-					if (load + item_wt <= limit * 1.05) or (check_date == dates[-1]):
-						effective_date = check_date
-						local_loads[load_key] = load + item_wt
-						break
-			# ------------------------------------------------
+            # --- FIND CAPACITY SLOT ACROSS MULTIPLE DATES ---
+            if len(dates) > 0:
+                unit = item.unit or get_preferred_unit(item.custom_quality)
+                limit = HARD_LIMITS.get(unit, 999.0)
+                for check_date in dates:
+                    load_key = (check_date, unit)
+                    if load_key not in local_loads:
+                        local_loads[load_key] = get_unit_load(check_date, unit, "__all__", pb_only=1)
+                    
+                    load = local_loads[load_key]
+                    # Allow the item to slot here if we are under the limit, OR if it's the very last date fallback 
+                    if (load + item_wt <= limit * 1.05) or (check_date == dates[-1]):
+                        effective_date = check_date
+                        local_loads[load_key] = load + item_wt
+                        break
+            # ------------------------------------------------
 
-			party_code = parent.party_code or ""
-			# IMPORTANT: Keep original ordered_date, only change planned_date
-			original_ordered_date = str(parent.ordered_date)
+            party_code = parent.party_code or ""
+            # IMPORTANT: Keep original ordered_date, only change planned_date
+            original_ordered_date = str(parent.ordered_date)
 
-			# Find or create a dedicated PB Planning Sheet for this date+party
-			cache_key = (party_code, effective_date, pb_plan_name)
-			if cache_key in pb_sheet_cache:
-				pb_sheet_name = pb_sheet_cache[cache_key]
-			else:
-				existing = frappe.get_all("Planning sheet", filters={
-					"custom_pb_plan_name": pb_plan_name,
-					"custom_planned_date": effective_date,
-					"party_code": party_code,
-					"docstatus": ["<", 2]
-				}, fields=["name"], limit=1)
+            # Find or create a dedicated PB Planning Sheet for this date+party
+            cache_key = (party_code, effective_date, pb_plan_name)
+            if cache_key in pb_sheet_cache:
+                pb_sheet_name = pb_sheet_cache[cache_key]
+            else:
+                existing = frappe.get_all("Planning sheet", filters={
+                    "custom_pb_plan_name": pb_plan_name,
+                    "custom_planned_date": effective_date,
+                    "party_code": party_code,
+                    "docstatus": ["<", 2]
+                }, fields=["name"], limit=1)
 
-				if existing:
-					pb_sheet_name = existing[0].name
-				else:
-					pb_sheet = frappe.new_doc("Planning sheet")
-					pb_sheet.custom_plan_name = parent.get("custom_plan_name") or "Default"
-					pb_sheet.custom_pb_plan_name = pb_plan_name
-					# CRITICAL: ordered_date stays as the ORIGINAL order date
-					pb_sheet.ordered_date = original_ordered_date
-					# planned_date is the actual production date (may be overflow)
-					pb_sheet.custom_planned_date = effective_date
-					pb_sheet.party_code = party_code
-					pb_sheet.customer = _resolve_customer_link(parent.customer, parent.party_code)
-					pb_sheet.sales_order = parent.sales_order or ""
-					pb_sheet.insert(ignore_permissions=True)
-					pb_sheet_name = pb_sheet.name
-					# Force custom fields via SQL
-					if frappe.db.has_column("Planning sheet", "custom_pb_plan_name"):
-						frappe.db.sql("""
-							UPDATE `tabPlanning sheet`
-							SET custom_pb_plan_name = %s, custom_plan_name = %s,
-							    custom_planned_date = %s
-							WHERE name = %s
-						""", (pb_plan_name, parent.get("custom_plan_name") or "Default",
-						      effective_date, pb_sheet_name))
+                if existing:
+                    pb_sheet_name = existing[0].name
+                else:
+                    pb_sheet = frappe.new_doc("Planning sheet")
+                    pb_sheet.custom_plan_name = parent.get("custom_plan_name") or "Default"
+                    pb_sheet.custom_pb_plan_name = pb_plan_name
+                    # CRITICAL: ordered_date stays as the ORIGINAL order date
+                    pb_sheet.ordered_date = original_ordered_date
+                    # planned_date is the actual production date (may be overflow)
+                    pb_sheet.custom_planned_date = effective_date
+                    pb_sheet.party_code = party_code
+                    pb_sheet.customer = _resolve_customer_link(parent.customer, parent.party_code)
+                    pb_sheet.sales_order = parent.sales_order or ""
+                    pb_sheet.insert(ignore_permissions=True)
+                    pb_sheet_name = pb_sheet.name
+                    # Force custom fields via SQL
+                    if frappe.db.has_column("Planning sheet", "custom_pb_plan_name"):
+                        frappe.db.sql("""
+                            UPDATE `tabPlanning sheet`
+                            SET custom_pb_plan_name = %s, custom_plan_name = %s,
+                                custom_planned_date = %s
+                            WHERE name = %s
+                        """, (pb_plan_name, parent.get("custom_plan_name") or "Default",
+                              effective_date, pb_sheet_name))
 
-				pb_sheet_cache[cache_key] = pb_sheet_name
+                pb_sheet_cache[cache_key] = pb_sheet_name
 
-			# Find the current max idx on this PB sheet to append correctly
-			max_idx = frappe.db.sql("""
-				SELECT COALESCE(MAX(idx), 0) FROM `tabPlanning Sheet Item` WHERE parent = %s
-			""", (pb_sheet_name,))[0][0]
+            # Find the current max idx on this PB sheet to append correctly
+            max_idx = frappe.db.sql("""
+                SELECT COALESCE(MAX(idx), 0) FROM `tabPlanning Sheet Item` WHERE parent = %s
+            """, (pb_sheet_name,))[0][0]
 
-			# Move item to the PB sheet via raw SQL (works on submitted docs)
-			frappe.db.sql("""
-				UPDATE `tabPlanning Sheet Item`
-				SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items', idx = %s
-				WHERE name = %s
-			""", (pb_sheet_name, max_idx + 1, name))
+            # Move item to the PB sheet via raw SQL (works on submitted docs)
+            frappe.db.sql("""
+                UPDATE `tabPlanning Sheet Item`
+                SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items', idx = %s
+                WHERE name = %s
+            """, (pb_sheet_name, max_idx + 1, name))
 
-			# Also set item-level planned date for consistency
-			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-				frappe.db.sql("""
-					UPDATE `tabPlanning Sheet Item`
-					SET custom_item_planned_date = %s
-					WHERE name = %s
-				""", (effective_date, name))
+            # Also set item-level planned date for consistency
+            if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+                frappe.db.sql("""
+                    UPDATE `tabPlanning Sheet Item`
+                    SET custom_item_planned_date = %s
+                    WHERE name = %s
+                """, (effective_date, name))
 
-			updated_count += 1
+            updated_count += 1
 
-		except Exception as e:
-			frappe.log_error(f"push_to_pb error for item {name}: {e}", "Push to PB")
+        except Exception as e:
+            frappe.log_error(f"push_to_pb error for item {name}: {e}", "Push to PB")
 
-	# Persist this PB plan name so it appears in the plan dropdown
-	persisted = get_persisted_plans("production_board")
-	if not any(p["name"] == pb_plan_name for p in persisted):
-		persisted.append({"name": pb_plan_name, "locked": 0})
-		import json as _json
-		frappe.defaults.set_global_default(
-			"production_scheduler_production_board_plans",
-			_json.dumps(persisted)
-		)
+    # Persist this PB plan name so it appears in the plan dropdown
+    persisted = get_persisted_plans("production_board")
+    if not any(p["name"] == pb_plan_name for p in persisted):
+        persisted.append({"name": pb_plan_name, "locked": 0})
+        import json as _json
+        frappe.defaults.set_global_default(
+            "production_scheduler_production_board_plans",
+            _json.dumps(persisted)
+        )
 
-	frappe.db.commit()
-	if updated_count == 0 and skipped_already_pushed:
-		return {
-			"status": "success",
-			"message": "All selected orders are already pushed to the Production Board.",
-			"skipped_already_pushed": len(skipped_already_pushed),
-			"plan_name": pb_plan_name,
-		}
-	return {
-		"status": "success",
-		"updated_count": updated_count,
-		"skipped_already_pushed": len(skipped_already_pushed),
-		"plan_name": pb_plan_name,
-	}
+    frappe.db.commit()
+    if updated_count == 0 and skipped_already_pushed:
+        return {
+            "status": "success",
+            "message": "All selected orders are already pushed to the Production Board.",
+            "skipped_already_pushed": len(skipped_already_pushed),
+            "plan_name": pb_plan_name,
+        }
+    return {
+        "status": "success",
+        "updated_count": updated_count,
+        "skipped_already_pushed": len(skipped_already_pushed),
+        "plan_name": pb_plan_name,
+    }
 
 
 @frappe.whitelist()
 def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_date=None, strict_target_date=0):
-	"""
-	Pushes Planning Sheet Items to a Production Board plan.
-	Re-parents each item to a PB Planning Sheet (with custom_planned_date set)
-	so the Production Board can find them via the sheet-level filter.
-	items_data: list of dicts [{"name": "...", "target_date": "...", "target_unit": "...", "strict_target_date": 1}]
-	strict_target_date: when true, keep item exactly on selected target date (no auto-cascade).
-	Note: automatic pre-shifting of queued white orders is intentionally disabled.
-	"""
-	import json
-	from frappe.utils import getdate, add_days
-	if isinstance(items_data, str):
-		items_data = json.loads(items_data)
+    """
+    Pushes Planning Sheet Items to a Production Board plan.
+    Re-parents each item to a PB Planning Sheet (with custom_planned_date set)
+    so the Production Board can find them via the sheet-level filter.
+    items_data: list of dicts [{"name": "...", "target_date": "...", "target_unit": "...", "strict_target_date": 1}]
+    strict_target_date: when true, keep item exactly on selected target date (no auto-cascade).
+    Note: automatic pre-shifting of queued white orders is intentionally disabled.
+    """
+    import json
+    from frappe.utils import getdate, add_days
+    if isinstance(items_data, str):
+        items_data = json.loads(items_data)
 
-	if not items_data:
-		return {"status": "error", "message": "Missing item data"}
+    if not items_data:
+        return {"status": "error", "message": "Missing item data"}
 
-	def _cascade_white_queue_for_unit(target_date_val, unit_val, active_pb_plan=None, shared_loads=None):
-		"""
-		Shift queued white items forward day-by-day for a given unit/date slot.
-		This frees the target slot for incoming color push while preserving white order.
-		Updates only item-level custom_item_planned_date (and plan code when available).
-		"""
-		from frappe.utils import getdate, add_days
+    def _cascade_white_queue_for_unit(target_date_val, unit_val, active_pb_plan=None, shared_loads=None):
+        """
+        Shift queued white items forward day-by-day for a given unit/date slot.
+        This frees the target slot for incoming color push while preserving white order.
+        Updates only item-level custom_item_planned_date (and plan code when available).
+        """
+        from frappe.utils import getdate, add_days
 
-		target_dt = getdate(target_date_val)
-		unit_limit = HARD_LIMITS.get(unit_val, 999.0)
-		shared_loads = shared_loads if isinstance(shared_loads, dict) else {}
+        target_dt = getdate(target_date_val)
+        unit_limit = HARD_LIMITS.get(unit_val, 999.0)
+        shared_loads = shared_loads if isinstance(shared_loads, dict) else {}
 
-		white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
-		plan_cond = ""
-		params = [target_dt, unit_val]
-		if active_pb_plan:
-			plan_cond = "AND COALESCE(p.custom_pb_plan_name, '') = %s"
-			params.append(active_pb_plan)
+        white_sql = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
+        plan_cond = ""
+        params = [target_dt, unit_val]
+        if active_pb_plan:
+            plan_cond = "AND COALESCE(p.custom_pb_plan_name, '') = %s"
+            params.append(active_pb_plan)
 
-		rows = frappe.db.sql(f"""
-			SELECT
-				i.name,
-				i.qty,
-				i.unit,
-				COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) AS effective_date
-			FROM `tabPlanning Sheet Item` i
-			JOIN `tabPlanning sheet` p ON i.parent = p.name
-			WHERE p.docstatus < 2
-			  AND i.docstatus < 2
-			  AND i.unit = %s
-			  AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) >= DATE(%s)
-			  AND REPLACE(UPPER(COALESCE(i.color, '')), ' ', '') IN ({white_sql})
-			  {plan_cond}
-			ORDER BY DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) ASC, i.idx ASC
-		""", tuple([params[1], params[0]] + params[2:]), as_dict=True)
+        rows = frappe.db.sql(f"""
+            SELECT
+                i.name,
+                i.qty,
+                i.unit,
+                COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) AS effective_date
+            FROM `tabPlanning Sheet Item` i
+            JOIN `tabPlanning sheet` p ON i.parent = p.name
+            WHERE p.docstatus < 2
+              AND i.docstatus < 2
+              AND i.unit = %s
+              AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) >= DATE(%s)
+              AND REPLACE(UPPER(COALESCE(i.color, '')), ' ', '') IN ({white_sql})
+              {plan_cond}
+            ORDER BY DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) ASC, i.idx ASC
+        """, tuple([params[1], params[0]] + params[2:]), as_dict=True)
 
-		if not rows:
-			return {"moved": 0, "dates": set()}
+        if not rows:
+            return {"moved": 0, "dates": set()}
 
-		has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
-		has_plan_code_col = frappe.db.has_column("Planning Sheet Item", "custom_plan_code")
+        has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+        has_plan_code_col = frappe.db.has_column("Planning Sheet Item", "custom_plan_code")
 
-		moved_count = 0
-		moved_dates = set()
+        moved_count = 0
+        moved_dates = set()
 
-		for r in rows:
-			item_name = r.get("name")
-			qty_tons = flt(r.get("qty")) / 1000.0
-			source_date = str(getdate(r.get("effective_date")))
+        for r in rows:
+            item_name = r.get("name")
+            qty_tons = flt(r.get("qty")) / 1000.0
+            source_date = str(getdate(r.get("effective_date")))
 
-			# Remove this item's load from its current source day in the shared cache.
-			src_key = (source_date, unit_val)
-			if src_key not in shared_loads:
-				shared_loads[src_key] = get_unit_load(source_date, unit_val, "__all__", pb_only=1)
-			shared_loads[src_key] = max(0.0, shared_loads[src_key] - qty_tons)
+            # Remove this item's load from its current source day in the shared cache.
+            src_key = (source_date, unit_val)
+            if src_key not in shared_loads:
+                shared_loads[src_key] = get_unit_load(source_date, unit_val, "__all__", pb_only=1)
+            shared_loads[src_key] = max(0.0, shared_loads[src_key] - qty_tons)
 
-			# Queue shift rule: each white item moves to at least the next day, skipping maintenance dates.
-			candidate = add_days(getdate(source_date), 1)
-			maintenance_encountered = None
-			
-			while True:
-				candidate_str = candidate if isinstance(candidate, str) else candidate.strftime("%Y-%m-%d")
-				
-				# CHECK MAINTENANCE: Skip if date is under maintenance
-				if is_date_under_maintenance(unit_val, candidate_str):
-					maint_info = get_maintenance_info_on_date(unit_val, candidate_str)
-					if not maintenance_encountered:
-						maintenance_encountered = maint_info
-					candidate = add_days(candidate, 1)
-					continue  # Skip this date, try next day
-				
-				load_key = (candidate_str, unit_val)
-				if load_key not in shared_loads:
-					shared_loads[load_key] = get_unit_load(candidate_str, unit_val, "__all__", pb_only=1)
+            # Queue shift rule: each white item moves to at least the next day, skipping maintenance dates.
+            candidate = add_days(getdate(source_date), 1)
+            maintenance_encountered = None
+            
+            while True:
+                candidate_str = candidate if isinstance(candidate, str) else candidate.strftime("%Y-%m-%d")
+                
+                # CHECK MAINTENANCE: Skip if date is under maintenance
+                if is_date_under_maintenance(unit_val, candidate_str):
+                    maint_info = get_maintenance_info_on_date(unit_val, candidate_str)
+                    if not maintenance_encountered:
+                        maintenance_encountered = maint_info
+                    candidate = add_days(candidate, 1)
+                    continue  # Skip this date, try next day
+                
+                load_key = (candidate_str, unit_val)
+                if load_key not in shared_loads:
+                    shared_loads[load_key] = get_unit_load(candidate_str, unit_val, "__all__", pb_only=1)
 
-				current_load = shared_loads[load_key]
-				if (current_load + qty_tons <= unit_limit * 1.05) or (current_load == 0 and qty_tons >= unit_limit):
-					shared_loads[load_key] = current_load + qty_tons
-					break
+                current_load = shared_loads[load_key]
+                if (current_load + qty_tons <= unit_limit * 1.05) or (current_load == 0 and qty_tons >= unit_limit):
+                    shared_loads[load_key] = current_load + qty_tons
+                    break
 
-				candidate = add_days(candidate, 1)
+                candidate = add_days(candidate, 1)
 
-			if not has_item_planned_col:
-				continue
+            if not has_item_planned_col:
+                continue
 
-			if has_plan_code_col:
-				new_code = generate_plan_code(candidate_str, unit_val, active_pb_plan)
-				frappe.db.sql("""
-					UPDATE `tabPlanning Sheet Item`
-					SET custom_item_planned_date = %s,
-					    custom_plan_code = %s
-					WHERE name = %s
-				""", (candidate_str, new_code, item_name))
-			else:
-				frappe.db.sql("""
-					UPDATE `tabPlanning Sheet Item`
-					SET custom_item_planned_date = %s
-					WHERE name = %s
-				""", (candidate_str, item_name))
+            if has_plan_code_col:
+                new_code = generate_plan_code(candidate_str, unit_val, active_pb_plan)
+                frappe.db.sql("""
+                    UPDATE `tabPlanning Sheet Item`
+                    SET custom_item_planned_date = %s,
+                        custom_plan_code = %s
+                    WHERE name = %s
+                """, (candidate_str, new_code, item_name))
+            else:
+                frappe.db.sql("""
+                    UPDATE `tabPlanning Sheet Item`
+                    SET custom_item_planned_date = %s
+                    WHERE name = %s
+                """, (candidate_str, item_name))
 
-			moved_count += 1
-			moved_dates.add(candidate_str)
+            moved_count += 1
+            moved_dates.add(candidate_str)
 
-		return {"moved": moved_count, "dates": moved_dates, "maintenance_skipped": maintenance_encountered is not None, "maintenance_info": maintenance_encountered}
+        return {"moved": moved_count, "dates": moved_dates, "maintenance_skipped": maintenance_encountered is not None, "maintenance_info": maintenance_encountered}
 
-	count = 0
-	skipped_already_pushed = []
-	updated_sheets = set()
-	pb_sheet_cache = {}  # (party_code, target_date) -> pb sheet name
-	local_loads = {} # (date, unit) -> current load
-	unit_date_idx_offsets = {} # (unit, date) -> max_idx
-	effective_dates_used = set()
-	white_shifted_count = 0
-	white_shifted_dates = set()
+    count = 0
+    skipped_already_pushed = []
+    updated_sheets = set()
+    pb_sheet_cache = {}  # (party_code, target_date) -> pb sheet name
+    local_loads = {} # (date, unit) -> current load
+    unit_date_idx_offsets = {} # (unit, date) -> max_idx
+    effective_dates_used = set()
+    white_shifted_count = 0
+    white_shifted_dates = set()
 
-	# Disabled by request: do not pre-shift queued white orders when pushing colors.
-	# Keep counters for response compatibility.
+    # Disabled by request: do not pre-shift queued white orders when pushing colors.
+    # Keep counters for response compatibility.
 
-	for item in items_data:
-		name = item.get("name") if isinstance(item, dict) else item
-		target_date_raw = item.get("target_dates") or item.get("target_date") if isinstance(item, dict) else None
-		target_unit = item.get("target_unit") if isinstance(item, dict) else None
-		sequence_no = item.get("sequence_no") if isinstance(item, dict) else None
-		item_strict_target = cint(item.get("strict_target_date")) if isinstance(item, dict) else 0
+    for item in items_data:
+        name = item.get("name") if isinstance(item, dict) else item
+        target_date_raw = item.get("target_dates") or item.get("target_date") if isinstance(item, dict) else None
+        target_unit = item.get("target_unit") if isinstance(item, dict) else None
+        sequence_no = item.get("sequence_no") if isinstance(item, dict) else None
+        item_strict_target = cint(item.get("strict_target_date")) if isinstance(item, dict) else 0
 
-		try:
-			# Get item + parent sheet info
-			item_doc = frappe.get_doc("Planning Sheet Item", name)
-			parent_doc = frappe.get_doc("Planning sheet", item_doc.parent)
-			# Prevent re-pushing ΓÇö check ITEM-LEVEL only (not parent-level!)
-			# Parent-level check was blocking ALL items from a sheet once one was pushed
-			already_pushed = False
-			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-				if item_doc.get("custom_item_planned_date"):
-					already_pushed = True
-			if already_pushed:
-				skipped_already_pushed.append(name)
-				continue
-			item_wt = float(item_doc.qty or 0) / 1000.0
+        try:
+            # Get item + parent sheet info
+            item_doc = frappe.get_doc("Planning Sheet Item", name)
+            parent_doc = frappe.get_doc("Planning sheet", item_doc.parent)
+            # Prevent re-pushing ΓÇö check ITEM-LEVEL only (not parent-level!)
+            # Parent-level check was blocking ALL items from a sheet once one was pushed
+            already_pushed = False
+            if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+                if item_doc.get("custom_item_planned_date"):
+                    already_pushed = True
+            if already_pushed:
+                skipped_already_pushed.append(name)
+                continue
+            item_wt = float(item_doc.qty or 0) / 1000.0
 
-			target_dates = [d.strip() for d in str(target_date_raw).split(",")] if target_date_raw else []
+            target_dates = [d.strip() for d in str(target_date_raw).split(",")] if target_date_raw else []
 
-			effective_date = target_dates[0] if target_dates else str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
+            effective_date = target_dates[0] if target_dates else str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
 
-			# --- FIND CAPACITY SLOT ACROSS MULTIPLE DATES (INFINITE CASCADE) ---
-			unit = target_unit or item_doc.unit or get_preferred_unit(item_doc.custom_quality)
-			limit = HARD_LIMITS.get(unit, 999.0)
-			
-			current_check_date = target_dates[0] if target_dates else str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
+            # --- FIND CAPACITY SLOT ACROSS MULTIPLE DATES (INFINITE CASCADE) ---
+            unit = target_unit or item_doc.unit or get_preferred_unit(item_doc.custom_quality)
+            limit = HARD_LIMITS.get(unit, 999.0)
+            
+            current_check_date = target_dates[0] if target_dates else str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
 
-			# Individual push can force exact selected date, skipping auto-next-day cascade.
-			strict_keep_date = cint(strict_target_date) or cint(item_strict_target)
-			if strict_keep_date:
-				# Even in strict mode, NEVER place on maintenance day - cascade forward instead
-				if is_date_under_maintenance(unit, current_check_date):
-					# Maintenance on target date - cascade forward
-					maint_info = get_maintenance_info_on_date(unit, current_check_date)
-					frappe.msgprint(
-						f"Target date {current_check_date} has maintenance ({maint_info['type']} until {maint_info['end_date']}). "
-						f"Item will be cascaded to next available date.",
-						indicator='yellow'
-					)
-					# Fall through to normal cascade logic
-					maintenance_block = None
-					while True:
-						if is_date_under_maintenance(unit, current_check_date):
-							maint_info = get_maintenance_info_on_date(unit, current_check_date)
-							if not maintenance_block:
-								maintenance_block = maint_info
-							next_d = add_days(current_check_date, 1)
-							current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
-							continue
-						
-						load_key = (current_check_date, unit)
-						if load_key not in local_loads:
-							local_loads[load_key] = get_unit_load(current_check_date, unit, "__all__", pb_only=1)
-						
-						load = local_loads[load_key]
-						if (load + item_wt <= limit * 1.05) or (load == 0 and item_wt >= limit):
-							effective_date = current_check_date
-							local_loads[load_key] = load + item_wt
-							break
-						
-						next_d = add_days(current_check_date, 1)
-						current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
-				else:
-					# No maintenance - use strict date as-is
-					effective_date = current_check_date
-					load_key = (effective_date, unit)
-					if load_key not in local_loads:
-						local_loads[load_key] = get_unit_load(effective_date, unit, "__all__", pb_only=1)
-					local_loads[load_key] = local_loads[load_key] + item_wt
-			else:
-				maintenance_block = None
-				while True:
-					# CHECK MAINTENANCE: Skip if under maintenance
-					if is_date_under_maintenance(unit, current_check_date):
-						maint_info = get_maintenance_info_on_date(unit, current_check_date)
-						if not maintenance_block:
-							maintenance_block = {
-								"date": current_check_date,
-								"type": maint_info["type"],
-								"start": maint_info["start_date"],
-								"end": maint_info["end_date"]
-							}
-						next_d = add_days(current_check_date, 1)
-						current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
-						continue
-					
-					load_key = (current_check_date, unit)
-					if load_key not in local_loads:
-						local_loads[load_key] = get_unit_load(current_check_date, unit, "__all__", pb_only=1)
-					
-					load = local_loads[load_key]
-					
-					# Allow placement if it fits within the limit (with 5% buffer)
-					# OR if the day is completely empty but the item itself is larger than the limit (prevents infinite loop)
-					if (load + item_wt <= limit * 1.05) or (load == 0 and item_wt >= limit):
-						effective_date = current_check_date
-						local_loads[load_key] = load + item_wt
-						# Track if maintenance was encountered
-						if maintenance_block and "maintenance_conflicts" not in locals():
-							maintenance_conflicts = []
-						if maintenance_block:
-							if "maintenance_conflicts" not in locals():
-								maintenance_conflicts = []
-							maintenance_conflicts.append(maintenance_block)
-						break
-					
-					# Otherwise, capacity is full for this date -> Cascade to the next day
-					next_d = add_days(current_check_date, 1)
-					current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
-			# ------------------------------------------------
+            # Individual push can force exact selected date, skipping auto-next-day cascade.
+            strict_keep_date = cint(strict_target_date) or cint(item_strict_target)
+            if strict_keep_date:
+                # Even in strict mode, NEVER place on maintenance day - cascade forward instead
+                if is_date_under_maintenance(unit, current_check_date):
+                    # Maintenance on target date - cascade forward
+                    maint_info = get_maintenance_info_on_date(unit, current_check_date)
+                    frappe.msgprint(
+                        f"Target date {current_check_date} has maintenance ({maint_info['type']} until {maint_info['end_date']}). "
+                        f"Item will be cascaded to next available date.",
+                        indicator='yellow'
+                    )
+                    # Fall through to normal cascade logic
+                    maintenance_block = None
+                    while True:
+                        if is_date_under_maintenance(unit, current_check_date):
+                            maint_info = get_maintenance_info_on_date(unit, current_check_date)
+                            if not maintenance_block:
+                                maintenance_block = maint_info
+                            next_d = add_days(current_check_date, 1)
+                            current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+                            continue
+                        
+                        load_key = (current_check_date, unit)
+                        if load_key not in local_loads:
+                            local_loads[load_key] = get_unit_load(current_check_date, unit, "__all__", pb_only=1)
+                        
+                        load = local_loads[load_key]
+                        if (load + item_wt <= limit * 1.05) or (load == 0 and item_wt >= limit):
+                            effective_date = current_check_date
+                            local_loads[load_key] = load + item_wt
+                            break
+                        
+                        next_d = add_days(current_check_date, 1)
+                        current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+                else:
+                    # No maintenance - use strict date as-is
+                    effective_date = current_check_date
+                    load_key = (effective_date, unit)
+                    if load_key not in local_loads:
+                        local_loads[load_key] = get_unit_load(effective_date, unit, "__all__", pb_only=1)
+                    local_loads[load_key] = local_loads[load_key] + item_wt
+            else:
+                maintenance_block = None
+                while True:
+                    # CHECK MAINTENANCE: Skip if under maintenance
+                    if is_date_under_maintenance(unit, current_check_date):
+                        maint_info = get_maintenance_info_on_date(unit, current_check_date)
+                        if not maintenance_block:
+                            maintenance_block = {
+                                "date": current_check_date,
+                                "type": maint_info["type"],
+                                "start": maint_info["start_date"],
+                                "end": maint_info["end_date"]
+                            }
+                        next_d = add_days(current_check_date, 1)
+                        current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+                        continue
+                    
+                    load_key = (current_check_date, unit)
+                    if load_key not in local_loads:
+                        local_loads[load_key] = get_unit_load(current_check_date, unit, "__all__", pb_only=1)
+                    
+                    load = local_loads[load_key]
+                    
+                    # Allow placement if it fits within the limit (with 5% buffer)
+                    # OR if the day is completely empty but the item itself is larger than the limit (prevents infinite loop)
+                    if (load + item_wt <= limit * 1.05) or (load == 0 and item_wt >= limit):
+                        effective_date = current_check_date
+                        local_loads[load_key] = load + item_wt
+                        # Track if maintenance was encountered
+                        if maintenance_block and "maintenance_conflicts" not in locals():
+                            maintenance_conflicts = []
+                        if maintenance_block:
+                            if "maintenance_conflicts" not in locals():
+                                maintenance_conflicts = []
+                            maintenance_conflicts.append(maintenance_block)
+                        break
+                    
+                    # Otherwise, capacity is full for this date -> Cascade to the next day
+                    next_d = add_days(current_check_date, 1)
+                    current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+            # ------------------------------------------------
 
-			party_code = parent_doc.party_code or ""
-			# IMPORTANT: Keep original ordered_date, only change planned_date
-			original_ordered_date = str(parent_doc.ordered_date)
+            party_code = parent_doc.party_code or ""
+            # IMPORTANT: Keep original ordered_date, only change planned_date
+            original_ordered_date = str(parent_doc.ordered_date)
 
-			# ΓöÇΓöÇ Set item-level unit if user picked a different unit ΓöÇΓöÇ
-			if target_unit:
-				frappe.db.sql("""
-					UPDATE `tabPlanning Sheet Item` SET unit = %s WHERE name = %s
-				""", (target_unit, name))
+            # ΓöÇΓöÇ Set item-level unit if user picked a different unit ΓöÇΓöÇ
+            if target_unit:
+                frappe.db.sql("""
+                    UPDATE `tabPlanning Sheet Item` SET unit = %s WHERE name = %s
+                """, (target_unit, name))
 
-			# ΓöÇΓöÇ Find or create a dedicated PB Planning Sheet ΓöÇΓöÇ
-			# BUG FIX: Prefer keeping items in original sheet if possible to prevent "Multiple Sheets per SO" issue.
-			# If the original sheet already matches the target date, we don't need to re-parent.
-			
-			can_reuse_original = False
-			original_effective_date = str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
-			if original_effective_date == effective_date:
-				can_reuse_original = True
-				pb_sheet_name = parent_doc.name
-			
-			if not can_reuse_original:
-				cache_key = (party_code, effective_date)
-				if cache_key in pb_sheet_cache:
-					pb_sheet_name = pb_sheet_cache[cache_key]
-				else:
-					# ALWAYS Reuse ANY unlocked sheet for the same SO if it exists (regardless of its header date)
-					existing = frappe.get_all("Planning sheet", filters={
-						"sales_order": parent_doc.sales_order or "",
-						"docstatus": 0
-					}, fields=["name"], limit=1)
+            # ΓöÇΓöÇ Find or create a dedicated PB Planning Sheet ΓöÇΓöÇ
+            # BUG FIX: Prefer keeping items in original sheet if possible to prevent "Multiple Sheets per SO" issue.
+            # If the original sheet already matches the target date, we don't need to re-parent.
+            
+            can_reuse_original = False
+            original_effective_date = str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
+            if original_effective_date == effective_date:
+                can_reuse_original = True
+                pb_sheet_name = parent_doc.name
+            
+            if not can_reuse_original:
+                cache_key = (party_code, effective_date)
+                if cache_key in pb_sheet_cache:
+                    pb_sheet_name = pb_sheet_cache[cache_key]
+                else:
+                    # ALWAYS Reuse ANY unlocked sheet for the same SO if it exists (regardless of its header date)
+                    existing = frappe.get_all("Planning sheet", filters={
+                        "sales_order": parent_doc.sales_order or "",
+                        "docstatus": 0
+                    }, fields=["name"], limit=1)
 
-					if existing:
-						pb_sheet_name = existing[0].name
-					else:
-						pb_sheet = frappe.new_doc("Planning sheet")
-						# CRITICAL: ordered_date stays as ORIGINAL
-						pb_sheet.ordered_date = original_ordered_date
-						pb_sheet.custom_planned_date = effective_date
-						pb_sheet.party_code = party_code
-						pb_sheet.customer = _resolve_customer_link(parent_doc.customer, parent_doc.party_code)
-						pb_sheet.sales_order = parent_doc.sales_order or ""
-						pb_sheet.insert(ignore_permissions=True)
-						pb_sheet_name = pb_sheet.name
+                    if existing:
+                        pb_sheet_name = existing[0].name
+                    else:
+                        pb_sheet = frappe.new_doc("Planning sheet")
+                        # CRITICAL: ordered_date stays as ORIGINAL
+                        pb_sheet.ordered_date = original_ordered_date
+                        pb_sheet.custom_planned_date = effective_date
+                        pb_sheet.party_code = party_code
+                        pb_sheet.customer = _resolve_customer_link(parent_doc.customer, parent_doc.party_code)
+                        pb_sheet.sales_order = parent_doc.sales_order or ""
+                        pb_sheet.insert(ignore_permissions=True)
+                        pb_sheet_name = pb_sheet.name
 
-					# Force custom fields via SQL to ensure consistency (New OR Existing)
-					frappe.db.sql("""
-						UPDATE `tabPlanning sheet`
-						SET custom_plan_name = %s, custom_planned_date = %s
-						WHERE name = %s
-					""", (pb_plan_name or parent_doc.get("custom_plan_name") or "Default", effective_date, pb_sheet_name))
+                    # Force custom fields via SQL to ensure consistency (New OR Existing)
+                    frappe.db.sql("""
+                        UPDATE `tabPlanning sheet`
+                        SET custom_plan_name = %s, custom_planned_date = %s
+                        WHERE name = %s
+                    """, (pb_plan_name or parent_doc.get("custom_plan_name") or "Default", effective_date, pb_sheet_name))
 
-					pb_sheet_cache[cache_key] = pb_sheet_name
+                    pb_sheet_cache[cache_key] = pb_sheet_name
 
-			# ΓöÇΓöÇ Find the current max idx on this PB sheet ΓöÇΓöÇ
-			max_idx = frappe.db.sql("""
-				SELECT COALESCE(MAX(idx), 0) FROM `tabPlanning Sheet Item` WHERE parent = %s
-			""", (pb_sheet_name,))[0][0]
+            # ΓöÇΓöÇ Find the current max idx on this PB sheet ΓöÇΓöÇ
+            max_idx = frappe.db.sql("""
+                SELECT COALESCE(MAX(idx), 0) FROM `tabPlanning Sheet Item` WHERE parent = %s
+            """, (pb_sheet_name,))[0][0]
 
-			# ΓöÇΓöÇ Move item to the PB sheet via raw SQL ΓöÇΓöÇ
-			# 1. Update parent link AND explicitly save the target unit to the DB
-			frappe.db.sql("""
-				UPDATE `tabPlanning Sheet Item`
-				SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items', unit = %s
-				WHERE name = %s
-			""", (pb_sheet_name, unit, name))
+            # ΓöÇΓöÇ Move item to the PB sheet via raw SQL ΓöÇΓöÇ
+            # 1. Update parent link AND explicitly save the target unit to the DB
+            frappe.db.sql("""
+                UPDATE `tabPlanning Sheet Item`
+                SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items', unit = %s
+                WHERE name = %s
+            """, (pb_sheet_name, unit, name))
 
-			# 2. Set item-level planned date + plan code for consistency
-			# This ensures ONLY the pushed item moves, staying granular.
-			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-				new_plan_code = generate_plan_code(effective_date, unit, pb_plan_name)
-				
-				frappe.db.sql("""
-					UPDATE `tabPlanning Sheet Item`
-					SET custom_item_planned_date = %s, custom_plan_code = %s
-					WHERE name = %s
-				""", (effective_date, new_plan_code, name))
-			effective_dates_used.add(effective_date)
+            # 2. Set item-level planned date + plan code for consistency
+            # This ensures ONLY the pushed item moves, staying granular.
+            if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+                new_plan_code = generate_plan_code(effective_date, unit, pb_plan_name)
+                
+                frappe.db.sql("""
+                    UPDATE `tabPlanning Sheet Item`
+                    SET custom_item_planned_date = %s, custom_plan_code = %s
+                    WHERE name = %s
+                """, (effective_date, new_plan_code, name))
+            effective_dates_used.add(effective_date)
 
-			# ΓöÇΓöÇ Update idx for sequence ordering on board ΓöÇΓöÇ
-			# Use a global offset for the unit/date to ensure monotonic sequence
-			# AND prevent triangular growth bug (max_idx + sequence_no inside loop)
-			idx_key = (unit, effective_date)
-			if idx_key not in unit_date_idx_offsets:
-				# Find current max idx for this unit/date across ALL sheets
-				# (Not just the new pb_sheet_name, to avoid collisions with items already on board)
-				res = frappe.db.sql("""
-					SELECT COALESCE(MAX(i.idx), 0)
-					FROM `tabPlanning Sheet Item` i
-					JOIN `tabPlanning sheet` p ON i.parent = p.name
-					WHERE i.unit = %s AND p.custom_planned_date = %s
-					  AND p.docstatus < 2
-				""", (unit, effective_date))
-				unit_date_idx_offsets[idx_key] = res[0][0] if res else 0
+            # ΓöÇΓöÇ Update idx for sequence ordering on board ΓöÇΓöÇ
+            # Use a global offset for the unit/date to ensure monotonic sequence
+            # AND prevent triangular growth bug (max_idx + sequence_no inside loop)
+            idx_key = (unit, effective_date)
+            if idx_key not in unit_date_idx_offsets:
+                # Find current max idx for this unit/date across ALL sheets
+                # (Not just the new pb_sheet_name, to avoid collisions with items already on board)
+                res = frappe.db.sql("""
+                    SELECT COALESCE(MAX(i.idx), 0)
+                    FROM `tabPlanning Sheet Item` i
+                    JOIN `tabPlanning sheet` p ON i.parent = p.name
+                    WHERE i.unit = %s AND p.custom_planned_date = %s
+                      AND p.docstatus < 2
+                """, (unit, effective_date))
+                unit_date_idx_offsets[idx_key] = res[0][0] if res else 0
 
-			if sequence_no is not None:
-				new_idx = unit_date_idx_offsets[idx_key] + int(sequence_no)
-			else:
-				unit_date_idx_offsets[idx_key] += 1
-				new_idx = unit_date_idx_offsets[idx_key]
-			
-			frappe.db.set_value("Planning Sheet Item", name, "idx", new_idx)
+            if sequence_no is not None:
+                new_idx = unit_date_idx_offsets[idx_key] + int(sequence_no)
+            else:
+                unit_date_idx_offsets[idx_key] += 1
+                new_idx = unit_date_idx_offsets[idx_key]
+            
+            frappe.db.set_value("Planning Sheet Item", name, "idx", new_idx)
 
-			# ΓöÇΓöÇ Track which original sheets were touched ΓöÇΓöÇ
-			updated_sheets.add(item_doc.parent)  # original parent
+            # ΓöÇΓöÇ Track which original sheets were touched ΓöÇΓöÇ
+            updated_sheets.add(item_doc.parent)  # original parent
 
-			# ΓöÇΓöÇ Clean up original sheet if now empty ΓöÇΓöÇ
-			if item_doc.parent != pb_sheet_name:
-				remaining = frappe.db.count("Planning Sheet Item", {"parent": item_doc.parent})
-				if remaining == 0:
-					try:
-						frappe.delete_doc("Planning sheet", item_doc.parent, ignore_permissions=True, force=True)
-					except Exception:
-						pass
+            # ΓöÇΓöÇ Clean up original sheet if now empty ΓöÇΓöÇ
+            if item_doc.parent != pb_sheet_name:
+                remaining = frappe.db.count("Planning Sheet Item", {"parent": item_doc.parent})
+                if remaining == 0:
+                    try:
+                        frappe.delete_doc("Planning sheet", item_doc.parent, ignore_permissions=True, force=True)
+                    except Exception:
+                        pass
 
-			count += 1
+            count += 1
 
-		except Exception as e:
-			frappe.log_error(f"Push to PB failed: {str(e)}", "Push to Board Error")
+        except Exception as e:
+            frappe.log_error(f"Push to PB failed: {str(e)}", "Push to Board Error")
 
-	# Persist this PB plan name
-	persisted = get_persisted_plans("production_board")
-	if not any(p["name"] == pb_plan_name for p in persisted):
-		persisted.append({"name": pb_plan_name, "locked": 0})
-		import json as _json
-		frappe.defaults.set_global_default(
-			"production_scheduler_production_board_plans",
-			_json.dumps(persisted)
-		)
+    # Persist this PB plan name
+    persisted = get_persisted_plans("production_board")
+    if not any(p["name"] == pb_plan_name for p in persisted):
+        persisted.append({"name": pb_plan_name, "locked": 0})
+        import json as _json
+        frappe.defaults.set_global_default(
+            "production_scheduler_production_board_plans",
+            _json.dumps(persisted)
+        )
 
-	frappe.db.commit()
-	
-	# Return detailed results to the frontend
-	response = {
-		"status": "success",
-		"count": count, # moved items
-		"moved_items": count, # legacy alias
-		"dates": sorted(list(effective_dates_used)),
-		"white_shifted_count": white_shifted_count,
-		"white_shifted_dates": sorted(list(white_shifted_dates)),
-		"skipped_already_pushed": len(skipped_already_pushed),
-		"updated_sheets": len(updated_sheets),
-		"plan_name": pb_plan_name,
-	}
-	
-	# Add maintenance conflicts if any were encountered
-	if "maintenance_conflicts" in locals() and maintenance_conflicts:
-		response["maintenance_conflicts"] = maintenance_conflicts
-	
-	return response
+    frappe.db.commit()
+    
+    # Return detailed results to the frontend
+    response = {
+        "status": "success",
+        "count": count, # moved items
+        "moved_items": count, # legacy alias
+        "dates": sorted(list(effective_dates_used)),
+        "white_shifted_count": white_shifted_count,
+        "white_shifted_dates": sorted(list(white_shifted_dates)),
+        "skipped_already_pushed": len(skipped_already_pushed),
+        "updated_sheets": len(updated_sheets),
+        "plan_name": pb_plan_name,
+    }
+    
+    # Add maintenance conflicts if any were encountered
+    if "maintenance_conflicts" in locals() and maintenance_conflicts:
+        response["maintenance_conflicts"] = maintenance_conflicts
+    
+    return response
 
 
 @frappe.whitelist()
 def revert_items_from_pb(item_names):
-	"""
-	Reverts Planning Sheet Items from the Production Board.
-	Moves items back from PB sheets to original Color Chart sheets,
-	and cleans up empty PB sheets afterward.
-	"""
-	import json
-	if isinstance(item_names, str):
-		item_names = json.loads(item_names)
-	
-	if not item_names:
-		return {"status": "error", "message": "No items provided"}
+    """
+    Reverts Planning Sheet Items from the Production Board.
+    Moves items back from PB sheets to original Color Chart sheets,
+    and cleans up empty PB sheets afterward.
+    """
+    import json
+    if isinstance(item_names, str):
+        item_names = json.loads(item_names)
+    
+    if not item_names:
+        return {"status": "error", "message": "No items provided"}
 
-	count = 0
+    count = 0
 
-	for name in item_names:
-		try:
-			parent = frappe.db.get_value("Planning Sheet Item", name, "parent")
-			if not parent:
-				continue
-			
-			parent_doc = frappe.get_doc("Planning sheet", parent)
-			
-			# Clear Item-level Planned Date
-			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-				frappe.db.set_value("Planning Sheet Item", name, "custom_item_planned_date", None)
-			
-			# If the parent has custom_pb_plan_name (it's a PB sheet), move item back
-			# to an original CC sheet (one without custom_pb_plan_name)
-			if parent_doc.get("custom_pb_plan_name"):
-				eff_date = str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
-				party = parent_doc.party_code or ""
-				
-				# Find the original CC sheet for this party+date (no pb_plan_name)
-				orig_sheets = frappe.get_all("Planning sheet", filters={
-					"ordered_date": eff_date,
-					"party_code": party,
-					"custom_pb_plan_name": ["in", ["", None]],
-					"docstatus": ["<", 2]
-				}, fields=["name"], limit=1)
-				
-				if orig_sheets:
-					orig_name = orig_sheets[0].name
-				else:
-					# Create new CC sheet if none exists
-					orig = frappe.new_doc("Planning sheet")
-					orig.custom_plan_name = parent_doc.get("custom_plan_name") or "Default"
-					orig.ordered_date = eff_date
-					orig.party_code = party
-					orig.customer = _resolve_customer_link(parent_doc.customer, parent_doc.party_code)
-					orig.sales_order = parent_doc.sales_order or ""
-					orig.insert(ignore_permissions=True)
-					orig_name = orig.name
-				
-				# Move item back to original sheet
-				frappe.db.set_value("Planning Sheet Item", name, "parent", orig_name)
-				frappe.db.set_value("Planning Sheet Item", name, "parenttype", "Planning sheet")
-				frappe.db.set_value("Planning Sheet Item", name, "parentfield", "items")
-				
-				# Delete PB sheet if now empty
-				remaining = frappe.db.count("Planning Sheet Item", {"parent": parent})
-				if remaining == 0:
-					try:
-						frappe.delete_doc("Planning sheet", parent, ignore_permissions=True, force=True)
-					except Exception:
-						pass
-			else:
-				# Not on a PB sheet - just clear the planned fields
-				frappe.db.set_value("Planning sheet", parent, "custom_pb_plan_name", "")
-				if _has_planned_date_column():
-					frappe.db.set_value("Planning sheet", parent, "custom_planned_date", None)
-			
-			count += 1
-		except Exception as e:
-			frappe.log_error(f"revert_items_from_pb error for {name}: {e}", "Revert from PB")
+    for name in item_names:
+        try:
+            parent = frappe.db.get_value("Planning Sheet Item", name, "parent")
+            if not parent:
+                continue
+            
+            parent_doc = frappe.get_doc("Planning sheet", parent)
+            
+            # Clear Item-level Planned Date
+            if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+                frappe.db.set_value("Planning Sheet Item", name, "custom_item_planned_date", None)
+            
+            # If the parent has custom_pb_plan_name (it's a PB sheet), move item back
+            # to an original CC sheet (one without custom_pb_plan_name)
+            if parent_doc.get("custom_pb_plan_name"):
+                eff_date = str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
+                party = parent_doc.party_code or ""
+                
+                # Find the original CC sheet for this party+date (no pb_plan_name)
+                orig_sheets = frappe.get_all("Planning sheet", filters={
+                    "ordered_date": eff_date,
+                    "party_code": party,
+                    "custom_pb_plan_name": ["in", ["", None]],
+                    "docstatus": ["<", 2]
+                }, fields=["name"], limit=1)
+                
+                if orig_sheets:
+                    orig_name = orig_sheets[0].name
+                else:
+                    # Create new CC sheet if none exists
+                    orig = frappe.new_doc("Planning sheet")
+                    orig.custom_plan_name = parent_doc.get("custom_plan_name") or "Default"
+                    orig.ordered_date = eff_date
+                    orig.party_code = party
+                    orig.customer = _resolve_customer_link(parent_doc.customer, parent_doc.party_code)
+                    orig.sales_order = parent_doc.sales_order or ""
+                    orig.insert(ignore_permissions=True)
+                    orig_name = orig.name
+                
+                # Move item back to original sheet
+                frappe.db.set_value("Planning Sheet Item", name, "parent", orig_name)
+                frappe.db.set_value("Planning Sheet Item", name, "parenttype", "Planning sheet")
+                frappe.db.set_value("Planning Sheet Item", name, "parentfield", "items")
+                
+                # Delete PB sheet if now empty
+                remaining = frappe.db.count("Planning Sheet Item", {"parent": parent})
+                if remaining == 0:
+                    try:
+                        frappe.delete_doc("Planning sheet", parent, ignore_permissions=True, force=True)
+                    except Exception:
+                        pass
+            else:
+                # Not on a PB sheet - just clear the planned fields
+                frappe.db.set_value("Planning sheet", parent, "custom_pb_plan_name", "")
+                if _has_planned_date_column():
+                    frappe.db.set_value("Planning sheet", parent, "custom_planned_date", None)
+            
+            count += 1
+        except Exception as e:
+            frappe.log_error(f"revert_items_from_pb error for {name}: {e}", "Revert from PB")
 
-	frappe.db.commit()
-	return {"status": "success", "reverted_items": count}
+    frappe.db.commit()
+    return {"status": "success", "reverted_items": count}
 
 
 @frappe.whitelist()
 def sync_custom_fields():
-	"""
-	Creates the custom_item_planned_date field on Planning Sheet Item and other key fields.
-	Run this once from the browser console.
-	"""
-	create_plan_name_field()
+    """
+    Creates the custom_item_planned_date field on Planning Sheet Item and other key fields.
+    Run this once from the browser console.
+    """
+    create_plan_name_field()
 
-	# Check if custom field exists
-	if not frappe.db.exists("Custom Field", {"dt": "Planning Sheet Item", "fieldname": "custom_item_planned_date"}):
-		doc = frappe.get_doc({
-			"doctype": "Custom Field",
-			"dt": "Planning Sheet Item",
-			"fieldname": "custom_item_planned_date",
-			"label": "Planned Date",
-			"fieldtype": "Date",
-			"insert_after": "unit"
-		})
-		doc.insert(ignore_permissions=True)
-		frappe.db.commit()
-		return "Custom fields synced successfully."
-	return "Custom fields already synced."
+    # Check if custom field exists
+    if not frappe.db.exists("Custom Field", {"dt": "Planning Sheet Item", "fieldname": "custom_item_planned_date"}):
+        doc = frappe.get_doc({
+            "doctype": "Custom Field",
+            "dt": "Planning Sheet Item",
+            "fieldname": "custom_item_planned_date",
+            "label": "Planned Date",
+            "fieldtype": "Date",
+            "insert_after": "unit"
+        })
+        doc.insert(ignore_permissions=True)
+        frappe.db.commit()
+        return "Custom fields synced successfully."
+    return "Custom fields already synced."
 
 
 @frappe.whitelist()
 def delete_pb_plan(pb_plan_name, date=None, start_date=None, end_date=None):
-	"""
-	Removes Production Board plan assignment from Planning Sheets.
-	Does NOT delete the sheets ΓÇö just clears custom_pb_plan_name.
-	"""
-	if not pb_plan_name:
-		return {"status": "error", "message": "Plan name required"}
-	
-	eff = _effective_date_expr("p")
-	
-	if start_date and end_date:
-		query_start = frappe.utils.getdate(start_date)
-		query_end = frappe.utils.getdate(end_date)
-		date_condition = f"{eff} BETWEEN %s AND %s"
-		params = [query_start, query_end]
-	elif date:
-		target_date = frappe.utils.getdate(date)
-		date_condition = f"{eff} = %s"
-		params = [target_date]
-	else:
-		return {"status": "error", "message": "Date filter required"}
-	
-	params.append(pb_plan_name)
-	
-	result = frappe.db.sql(f"""
-		UPDATE `tabPlanning sheet` p
-		SET p.custom_pb_plan_name = ''
-		WHERE {date_condition} AND p.docstatus < 2 AND p.custom_pb_plan_name = %s
-	""", tuple(params))
-	
-	affected = frappe.db.sql("SELECT ROW_COUNT() as cnt")[0][0]
+    """
+    Removes Production Board plan assignment from Planning Sheets.
+    Does NOT delete the sheets ΓÇö just clears custom_pb_plan_name.
+    """
+    if not pb_plan_name:
+        return {"status": "error", "message": "Plan name required"}
+    
+    eff = _effective_date_expr("p")
+    
+    if start_date and end_date:
+        query_start = frappe.utils.getdate(start_date)
+        query_end = frappe.utils.getdate(end_date)
+        date_condition = f"{eff} BETWEEN %s AND %s"
+        params = [query_start, query_end]
+    elif date:
+        target_date = frappe.utils.getdate(date)
+        date_condition = f"{eff} = %s"
+        params = [target_date]
+    else:
+        return {"status": "error", "message": "Date filter required"}
+    
+    params.append(pb_plan_name)
+    
+    result = frappe.db.sql(f"""
+        UPDATE `tabPlanning sheet` p
+        SET p.custom_pb_plan_name = ''
+        WHERE {date_condition} AND p.docstatus < 2 AND p.custom_pb_plan_name = %s
+    """, tuple(params))
+    
+    affected = frappe.db.sql("SELECT ROW_COUNT() as cnt")[0][0]
 
-	# Remove from persistent plans
-	persisted = get_persisted_plans("production_board")
-	persisted = [p for p in persisted if p["name"] != pb_plan_name]
-	import json
-	frappe.defaults.set_global_default("production_scheduler_production_board_plans", json.dumps(persisted))
+    # Remove from persistent plans
+    persisted = get_persisted_plans("production_board")
+    persisted = [p for p in persisted if p["name"] != pb_plan_name]
+    import json
+    frappe.defaults.set_global_default("production_scheduler_production_board_plans", json.dumps(persisted))
 
-	frappe.db.commit()
-	return {"status": "success", "cleared_count": affected}
+    frappe.db.commit()
+    return {"status": "success", "cleared_count": affected}
 
 
 @frappe.whitelist()
 def emergency_cleanup_all_pushed_status():
-	"""
-	ONE-CLICK CLEANUP: 
-	Finds every Planning Sheet and Item that is marked as 'Pushed' 
-	and strips the flags so they appear back in the Color Chart.
-	"""
-	# 1. Clear Sheet-level flags
-	frappe.db.sql("""
-		UPDATE `tabPlanning sheet` 
-		SET custom_pb_plan_name = NULL, custom_planned_date = NULL 
-		WHERE custom_pb_plan_name IS NOT NULL AND custom_pb_plan_name != ''
-	""")
-	
-	# 2. Clear Item-level flags
-	# We exclude items with WHITE colors to avoid erasing auto-planned white orders
-	clean_white_sql = ", ".join([f"'{c.upper()}'" for c in WHITE_COLORS])
-	frappe.db.sql(f"""
-		UPDATE `tabPlanning Sheet Item` 
-		SET custom_item_planned_date = NULL, custom_plan_code = NULL
-		WHERE (custom_item_planned_date IS NOT NULL OR custom_plan_code IS NOT NULL)
-		  AND UPPER(color) NOT IN ({clean_white_sql})
-	""")
-	
-	frappe.db.commit()
-	return {"status": "success", "message": "All color orders unlocked and returned to Color Chart. White orders preserved."}
+    """
+    ONE-CLICK CLEANUP: 
+    Finds every Planning Sheet and Item that is marked as 'Pushed' 
+    and strips the flags so they appear back in the Color Chart.
+    """
+    # 1. Clear Sheet-level flags
+    frappe.db.sql("""
+        UPDATE `tabPlanning sheet` 
+        SET custom_pb_plan_name = NULL, custom_planned_date = NULL 
+        WHERE custom_pb_plan_name IS NOT NULL AND custom_pb_plan_name != ''
+    """)
+    
+    # 2. Clear Item-level flags
+    # We exclude items with WHITE colors to avoid erasing auto-planned white orders
+    clean_white_sql = ", ".join([f"'{c.upper()}'" for c in WHITE_COLORS])
+    frappe.db.sql(f"""
+        UPDATE `tabPlanning Sheet Item` 
+        SET custom_item_planned_date = NULL, custom_plan_code = NULL
+        WHERE (custom_item_planned_date IS NOT NULL OR custom_plan_code IS NOT NULL)
+          AND UPPER(color) NOT IN ({clean_white_sql})
+    """)
+    
+    frappe.db.commit()
+    return {"status": "success", "message": "All color orders unlocked and returned to Color Chart. White orders preserved."}
 
 @frappe.whitelist()
 def fix_recently_cleared_whites():
@@ -5040,115 +5040,115 @@ def fix_recently_cleared_whites():
 
 @frappe.whitelist()
 def revert_items_to_color_chart(item_names):
-	"""
-	Reverts items back to the Color Chart by clearing their Planning Sheet's custom_planned_date.
-	Note: This affects the entire Planning Sheet containing the item.
-	White orders generally re-evaluate to have a planned date implicitly, 
-	but this clears the explicit field.
-	"""
-	import json
-	if isinstance(item_names, str):
-		item_names = json.loads(item_names)
+    """
+    Reverts items back to the Color Chart by clearing their Planning Sheet's custom_planned_date.
+    Note: This affects the entire Planning Sheet containing the item.
+    White orders generally re-evaluate to have a planned date implicitly, 
+    but this clears the explicit field.
+    """
+    import json
+    if isinstance(item_names, str):
+        item_names = json.loads(item_names)
 
-	if not item_names:
-		return {"status": "error", "message": "No items provided"}
+    if not item_names:
+        return {"status": "error", "message": "No items provided"}
 
-	updated_sheets = set()
-	for name in item_names:
-		try:
-			# 1. Clean item-level tracking explicitly
-			if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-				frappe.db.sql("""
-					UPDATE `tabPlanning Sheet Item`
-					SET custom_item_planned_date = NULL, custom_plan_code = NULL
-					WHERE name = %s
-				""", (name,))
+    updated_sheets = set()
+    for name in item_names:
+        try:
+            # 1. Clean item-level tracking explicitly
+            if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+                frappe.db.sql("""
+                    UPDATE `tabPlanning Sheet Item`
+                    SET custom_item_planned_date = NULL, custom_plan_code = NULL
+                    WHERE name = %s
+                """, (name,))
 
-			# 2. Check if parent sheet should be unlinked from PB
-			parent = frappe.db.get_value("Planning Sheet Item", name, "parent")
-			if parent and parent not in updated_sheets:
-				# Only clear parent-level tracking if NO OTHER items in this sheet are still pushed
-				still_pushed = frappe.db.sql("""
-					SELECT COUNT(*) FROM `tabPlanning Sheet Item`
-					WHERE parent = %s AND custom_item_planned_date IS NOT NULL
-				""", (parent,))[0][0]
-				
-				if still_pushed == 0:
-					frappe.db.sql("""
-						UPDATE `tabPlanning sheet`
-						SET custom_planned_date = NULL, custom_pb_plan_name = NULL
-						WHERE name = %s
-					""", (parent,))
-				
-				updated_sheets.add(parent)
-		except Exception as e:
-			frappe.log_error(f"revert error for {name}: {e}", "Revert to Color Chart")
+            # 2. Check if parent sheet should be unlinked from PB
+            parent = frappe.db.get_value("Planning Sheet Item", name, "parent")
+            if parent and parent not in updated_sheets:
+                # Only clear parent-level tracking if NO OTHER items in this sheet are still pushed
+                still_pushed = frappe.db.sql("""
+                    SELECT COUNT(*) FROM `tabPlanning Sheet Item`
+                    WHERE parent = %s AND custom_item_planned_date IS NOT NULL
+                """, (parent,))[0][0]
+                
+                if still_pushed == 0:
+                    frappe.db.sql("""
+                        UPDATE `tabPlanning sheet`
+                        SET custom_planned_date = NULL, custom_pb_plan_name = NULL
+                        WHERE name = %s
+                    """, (parent,))
+                
+                updated_sheets.add(parent)
+        except Exception as e:
+            frappe.log_error(f"revert error for {name}: {e}", "Revert to Color Chart")
 
-	frappe.db.commit()
-	return {"status": "success", "reverted_items": len(item_names), "sheets_checked": len(updated_sheets)}
+    frappe.db.commit()
+    return {"status": "success", "reverted_items": len(item_names), "sheets_checked": len(updated_sheets)}
 
 
 @frappe.whitelist()
 def revert_pb_push(pb_plan_name, date=None):
-	"""
-	Reverts a Production Board push for a specific date.
-	Moves all items from PB Planning Sheets back to their original Color Chart sheets,
-	then deletes the (now empty) PB sheets.
-	"""
-	if not pb_plan_name:
-		return {"status": "error", "message": "Plan name required"}
+    """
+    Reverts a Production Board push for a specific date.
+    Moves all items from PB Planning Sheets back to their original Color Chart sheets,
+    then deletes the (now empty) PB sheets.
+    """
+    if not pb_plan_name:
+        return {"status": "error", "message": "Plan name required"}
 
-	target_date = frappe.utils.getdate(date) if date else None
+    target_date = frappe.utils.getdate(date) if date else None
 
-	filters = {
-		"custom_pb_plan_name": pb_plan_name,
-		"docstatus": ["<", 2]
-	}
-	if target_date:
-		# Search by the date it was PUSHED to, not the original SO date
-		filters["custom_planned_date"] = target_date
+    filters = {
+        "custom_pb_plan_name": pb_plan_name,
+        "docstatus": ["<", 2]
+    }
+    if target_date:
+        # Search by the date it was PUSHED to, not the original SO date
+        filters["custom_planned_date"] = target_date
 
-	pb_sheets = frappe.get_all("Planning sheet", filters=filters, fields=["name", "ordered_date", "party_code", "custom_plan_name"])
+    pb_sheets = frappe.get_all("Planning sheet", filters=filters, fields=["name", "ordered_date", "party_code", "custom_plan_name"])
 
-	reverted = 0
-	for pb_sheet in pb_sheets:
-		# Find the original Color Chart sheet for same date + party_code (no pb_plan_name)
-		original_filters = {
-			"ordered_date": pb_sheet.ordered_date,
-			"custom_pb_plan_name": ["in", ["", None]],
-			"docstatus": ["<", 2]
-		}
-		if pb_sheet.party_code:
-			original_filters["party_code"] = pb_sheet.party_code
-		if pb_sheet.custom_plan_name:
-			original_filters["custom_plan_name"] = pb_sheet.custom_plan_name
+    reverted = 0
+    for pb_sheet in pb_sheets:
+        # Find the original Color Chart sheet for same date + party_code (no pb_plan_name)
+        original_filters = {
+            "ordered_date": pb_sheet.ordered_date,
+            "custom_pb_plan_name": ["in", ["", None]],
+            "docstatus": ["<", 2]
+        }
+        if pb_sheet.party_code:
+            original_filters["party_code"] = pb_sheet.party_code
+        if pb_sheet.custom_plan_name:
+            original_filters["custom_plan_name"] = pb_sheet.custom_plan_name
 
-		originals = frappe.get_all("Planning sheet", filters=original_filters, fields=["name"], limit=1)
+        originals = frappe.get_all("Planning sheet", filters=original_filters, fields=["name"], limit=1)
 
-		if originals:
-			original_sheet_name = originals[0].name
-		else:
-			# Create a blank original sheet if none found
-			orig_sheet = frappe.new_doc("Planning sheet")
-			orig_sheet.custom_plan_name = pb_sheet.custom_plan_name or "Default"
-			orig_sheet.ordered_date = pb_sheet.ordered_date
-			orig_sheet.party_code = pb_sheet.party_code or ""
-			orig_sheet.insert(ignore_permissions=True)
-			original_sheet_name = orig_sheet.name
+        if originals:
+            original_sheet_name = originals[0].name
+        else:
+            # Create a blank original sheet if none found
+            orig_sheet = frappe.new_doc("Planning sheet")
+            orig_sheet.custom_plan_name = pb_sheet.custom_plan_name or "Default"
+            orig_sheet.ordered_date = pb_sheet.ordered_date
+            orig_sheet.party_code = pb_sheet.party_code or ""
+            orig_sheet.insert(ignore_permissions=True)
+            original_sheet_name = orig_sheet.name
 
-		# Move all items from PB sheet back to original sheet
-		items = frappe.get_all("Planning Sheet Item", filters={"parent": pb_sheet.name}, fields=["name"])
-		for item in items:
-			frappe.db.set_value("Planning Sheet Item", item.name, "parent", original_sheet_name)
-			frappe.db.set_value("Planning Sheet Item", item.name, "parenttype", "Planning sheet")
-			frappe.db.set_value("Planning Sheet Item", item.name, "parentfield", "items")
-			reverted += 1
+        # Move all items from PB sheet back to original sheet
+        items = frappe.get_all("Planning Sheet Item", filters={"parent": pb_sheet.name}, fields=["name"])
+        for item in items:
+            frappe.db.set_value("Planning Sheet Item", item.name, "parent", original_sheet_name)
+            frappe.db.set_value("Planning Sheet Item", item.name, "parenttype", "Planning sheet")
+            frappe.db.set_value("Planning Sheet Item", item.name, "parentfield", "items")
+            reverted += 1
 
-		# Delete the now-empty PB sheet
-		frappe.delete_doc("Planning sheet", pb_sheet.name, ignore_permissions=True, force=True)
+        # Delete the now-empty PB sheet
+        frappe.delete_doc("Planning sheet", pb_sheet.name, ignore_permissions=True, force=True)
 
-	frappe.db.commit()
-	return {"status": "success", "reverted": reverted, "sheets_removed": len(pb_sheets)}
+    frappe.db.commit()
+    return {"status": "success", "reverted": reverted, "sheets_removed": len(pb_sheets)}
 
 # ------------------------------------------------------------
 # AUTO-CREATE PLANNING SHEET (BACKGROUND EXECUTION)
@@ -5387,78 +5387,78 @@ def run_global_cleanup():
 
 @frappe.whitelist()
 def normalize_planning_sheet_customer_link(doc, method=None):
-	"""Normalize customer link on Planning sheet docs to valid Customer name."""
-	if not doc:
-		return
+    """Normalize customer link on Planning sheet docs to valid Customer name."""
+    if not doc:
+        return
 
-	current_customer = (doc.get("customer") or "").strip()
-	party_code = (doc.get("party_code") or "").strip()
-	resolved = _resolve_customer_link(current_customer, party_code)
+    current_customer = (doc.get("customer") or "").strip()
+    party_code = (doc.get("party_code") or "").strip()
+    resolved = _resolve_customer_link(current_customer, party_code)
 
-	if resolved != current_customer:
-		doc.customer = resolved
+    if resolved != current_customer:
+        doc.customer = resolved
 
 
 @frappe.whitelist()
 def repair_planning_sheet_customer_links(limit_page_length=0, dry_run=0):
-	"""One-time repair: convert invalid Planning sheet.customer values to valid Customer IDs."""
-	limit_page_length = cint(limit_page_length or 0)
-	dry_run = cint(dry_run or 0)
+    """One-time repair: convert invalid Planning sheet.customer values to valid Customer IDs."""
+    limit_page_length = cint(limit_page_length or 0)
+    dry_run = cint(dry_run or 0)
 
-	rows = frappe.get_all(
-		"Planning sheet",
-		filters={"docstatus": ["<", 2]},
-		fields=["name", "customer", "party_code"],
-		limit_page_length=limit_page_length,
-	)
+    rows = frappe.get_all(
+        "Planning sheet",
+        filters={"docstatus": ["<", 2]},
+        fields=["name", "customer", "party_code"],
+        limit_page_length=limit_page_length,
+    )
 
-	scanned = 0
-	updated = 0
-	cleared = 0
-	skipped = 0
-	samples = []
+    scanned = 0
+    updated = 0
+    cleared = 0
+    skipped = 0
+    samples = []
 
-	for r in rows:
-		scanned += 1
-		current_customer = (r.get("customer") or "").strip()
-		party_code = (r.get("party_code") or "").strip()
+    for r in rows:
+        scanned += 1
+        current_customer = (r.get("customer") or "").strip()
+        party_code = (r.get("party_code") or "").strip()
 
-		if not current_customer:
-			skipped += 1
-			continue
+        if not current_customer:
+            skipped += 1
+            continue
 
-		resolved = _resolve_customer_link(current_customer, party_code)
+        resolved = _resolve_customer_link(current_customer, party_code)
 
-		if resolved == current_customer:
-			skipped += 1
-			continue
+        if resolved == current_customer:
+            skipped += 1
+            continue
 
-		if dry_run:
-			samples.append({"name": r.get("name"), "from": current_customer, "to": resolved})
-			if resolved:
-				updated += 1
-			else:
-				cleared += 1
-			continue
+        if dry_run:
+            samples.append({"name": r.get("name"), "from": current_customer, "to": resolved})
+            if resolved:
+                updated += 1
+            else:
+                cleared += 1
+            continue
 
-		frappe.db.set_value("Planning sheet", r.get("name"), "customer", resolved or "")
-		if resolved:
-			updated += 1
-		else:
-			cleared += 1
+        frappe.db.set_value("Planning sheet", r.get("name"), "customer", resolved or "")
+        if resolved:
+            updated += 1
+        else:
+            cleared += 1
 
-	if not dry_run:
-		frappe.db.commit()
+    if not dry_run:
+        frappe.db.commit()
 
-	return {
-		"status": "success",
-		"scanned": scanned,
-		"updated": updated,
-		"cleared": cleared,
-		"skipped": skipped,
-		"dry_run": bool(dry_run),
-		"samples": samples[:50],
-	}
+    return {
+        "status": "success",
+        "scanned": scanned,
+        "updated": updated,
+        "cleared": cleared,
+        "skipped": skipped,
+        "dry_run": bool(dry_run),
+        "samples": samples[:50],
+    }
 
 
 @frappe.whitelist()
@@ -5781,46 +5781,46 @@ def debug_plan_check():
 
 @frappe.whitelist()
 def recalculate_all_plan_codes():
-	"""
-	Bulk-recalculates and writes custom_plan_code for EVERY Planning Sheet and its items.
-	Call this once from Frappe console or a Script button to fix historical blank plan codes.
-	Returns count of sheets updated.
-	"""
-	sheets = frappe.db.sql("""
-		SELECT name FROM `tabPlanning sheet`
-		WHERE docstatus < 2
-		ORDER BY creation DESC
-	""", as_dict=True)
-	
-	updated = 0
-	failed = 0
-	
-	for row in sheets:
-		try:
-			doc = frappe.get_doc("Planning sheet", row.name)
-			update_sheet_plan_codes(doc)
-			
-			# Write the plan code to the sheet header
-			frappe.db.sql(
-				"UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s",
-				(doc.custom_plan_code, doc.name)
-			)
-			
-			# Write each item's plan code
-			for item in doc.items:
-				if item.custom_plan_code:
-					frappe.db.sql(
-						"UPDATE `tabPlanning Sheet Item` SET custom_plan_code = %s WHERE name = %s",
-						(item.custom_plan_code, item.name)
-					)
-			
-			updated += 1
-		except Exception as e:
-			frappe.log_error(f"Failed to recalculate plan code for {row.name}: {e}")
-			failed += 1
-	
-	frappe.db.commit()
-	return {"updated": updated, "failed": failed, "total": len(sheets)}
+    """
+    Bulk-recalculates and writes custom_plan_code for EVERY Planning Sheet and its items.
+    Call this once from Frappe console or a Script button to fix historical blank plan codes.
+    Returns count of sheets updated.
+    """
+    sheets = frappe.db.sql("""
+        SELECT name FROM `tabPlanning sheet`
+        WHERE docstatus < 2
+        ORDER BY creation DESC
+    """, as_dict=True)
+    
+    updated = 0
+    failed = 0
+    
+    for row in sheets:
+        try:
+            doc = frappe.get_doc("Planning sheet", row.name)
+            update_sheet_plan_codes(doc)
+            
+            # Write the plan code to the sheet header
+            frappe.db.sql(
+                "UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s",
+                (doc.custom_plan_code, doc.name)
+            )
+            
+            # Write each item's plan code
+            for item in doc.items:
+                if item.custom_plan_code:
+                    frappe.db.sql(
+                        "UPDATE `tabPlanning Sheet Item` SET custom_plan_code = %s WHERE name = %s",
+                        (item.custom_plan_code, item.name)
+                    )
+            
+            updated += 1
+        except Exception as e:
+            frappe.log_error(f"Failed to recalculate plan code for {row.name}: {e}")
+            failed += 1
+    
+    frappe.db.commit()
+    return {"updated": updated, "failed": failed, "total": len(sheets)}
 
 @frappe.whitelist()
 def get_master_code(doctype, name, possible_fields):
@@ -6192,19 +6192,19 @@ def create_mix_wo_old(unit, mix_name, quality, gsm, shaft, kg, date_key):
 
 @frappe.whitelist()
 def send_to_approval(planning_sheet_name):
-	if not _has_approval_status_column():
-		frappe.throw(_("Approval status column is missing. Please run 'bench migrate' to update the database schema."))
-	frappe.db.set_value("Planning sheet", planning_sheet_name, "custom_approval_status", "Pending Approval")
-	frappe.db.commit()
-	return {"status": "success", "message": f"Planning Sheet {planning_sheet_name} sent for approval."}
+    if not _has_approval_status_column():
+        frappe.throw(_("Approval status column is missing. Please run 'bench migrate' to update the database schema."))
+    frappe.db.set_value("Planning sheet", planning_sheet_name, "custom_approval_status", "Pending Approval")
+    frappe.db.commit()
+    return {"status": "success", "message": f"Planning Sheet {planning_sheet_name} sent for approval."}
 
 @frappe.whitelist()
 def approve_planning_sheet(planning_sheet_name):
-	if not _has_approval_status_column():
-		frappe.throw(_("Approval status column is missing. Please run 'bench migrate' to update the database schema."))
-	frappe.db.set_value("Planning sheet", planning_sheet_name, "custom_approval_status", "Approved")
-	frappe.db.commit()
-	return {"status": "success", "message": f"Planning Sheet {planning_sheet_name} approved."}
+    if not _has_approval_status_column():
+        frappe.throw(_("Approval status column is missing. Please run 'bench migrate' to update the database schema."))
+    frappe.db.set_value("Planning sheet", planning_sheet_name, "custom_approval_status", "Approved")
+    frappe.db.commit()
+    return {"status": "success", "message": f"Planning Sheet {planning_sheet_name} approved."}
 
 
 @frappe.whitelist()
@@ -6268,97 +6268,97 @@ def run_orphan_cleanup():
 
 @frappe.whitelist()
 def get_planning_sheet_pp_id(planning_sheet_name):
-	"""
-	Fetch the Production Plan ID linked to a Planning Sheet.
-	Returns the PP ID so it can be viewed in a new tab.
-	"""
-	no_pp_message = "No Production Plan created for this order"
+    """
+    Fetch the Production Plan ID linked to a Planning Sheet.
+    Returns the PP ID so it can be viewed in a new tab.
+    """
+    no_pp_message = "No Production Plan created for this order"
 
-	if not planning_sheet_name:
-		return {"status": "not_found", "message": no_pp_message}
+    if not planning_sheet_name:
+        return {"status": "not_found", "message": no_pp_message}
 
-	try:
-		if not frappe.db.exists("Planning sheet", planning_sheet_name):
-			return {"status": "not_found", "message": no_pp_message}
+    try:
+        if not frappe.db.exists("Planning sheet", planning_sheet_name):
+            return {"status": "not_found", "message": no_pp_message}
 
-		sheet = frappe.get_doc("Planning sheet", planning_sheet_name)
-		pp_id = None
+        sheet = frappe.get_doc("Planning sheet", planning_sheet_name)
+        pp_id = None
 
-		# Strategy 1: direct link fields on Planning sheet
-		if frappe.db.has_column("Planning sheet", "custom_production_plan"):
-			pp_id = frappe.db.get_value("Planning sheet", planning_sheet_name, "custom_production_plan")
+        # Strategy 1: direct link fields on Planning sheet
+        if frappe.db.has_column("Planning sheet", "custom_production_plan"):
+            pp_id = frappe.db.get_value("Planning sheet", planning_sheet_name, "custom_production_plan")
 
-		if not pp_id and frappe.db.has_column("Planning sheet", "production_plan"):
-			pp_id = frappe.db.get_value("Planning sheet", planning_sheet_name, "production_plan")
+        if not pp_id and frappe.db.has_column("Planning sheet", "production_plan"):
+            pp_id = frappe.db.get_value("Planning sheet", planning_sheet_name, "production_plan")
 
-		if not pp_id:
-			for field_name in ["custom_production_plan", "production_plan", "production_plan_id", "pp_id"]:
-				if hasattr(sheet, field_name):
-					pp_id = getattr(sheet, field_name, None)
-					if pp_id:
-						break
+        if not pp_id:
+            for field_name in ["custom_production_plan", "production_plan", "production_plan_id", "pp_id"]:
+                if hasattr(sheet, field_name):
+                    pp_id = getattr(sheet, field_name, None)
+                    if pp_id:
+                        break
 
-		# Strategy 2: fallback by Sales Order
-		if not pp_id and sheet.sales_order:
-			if frappe.db.has_column("Production Plan", "sales_order"):
-				pps = frappe.db.sql("""
-					SELECT name FROM `tabProduction Plan`
-					WHERE sales_order = %s AND docstatus = 1
-					ORDER BY creation DESC
-					LIMIT 1
-				""", (sheet.sales_order,), as_dict=True)
-				if pps:
-					pp_id = pps[0]["name"]
-			else:
-				try:
-					pps = frappe.db.sql("""
-						SELECT DISTINCT pp.name
-						FROM `tabProduction Plan` pp
-						LEFT JOIN `tabProduction Plan Item` ppi ON pp.name = ppi.parent
-						WHERE (ppi.sales_order = %s OR pp.name LIKE CONCAT('%%', %s, '%%'))
-						AND pp.docstatus = 1
-						ORDER BY pp.creation DESC
-						LIMIT 1
-					""", (sheet.sales_order, sheet.sales_order), as_dict=True)
-					if pps:
-						pp_id = pps[0]["name"]
-				except Exception as e:
-					frappe.log_error(f"Error searching PP by items: {str(e)}", "get_planning_sheet_pp_id")
+        # Strategy 2: fallback by Sales Order
+        if not pp_id and sheet.sales_order:
+            if frappe.db.has_column("Production Plan", "sales_order"):
+                pps = frappe.db.sql("""
+                    SELECT name FROM `tabProduction Plan`
+                    WHERE sales_order = %s AND docstatus = 1
+                    ORDER BY creation DESC
+                    LIMIT 1
+                """, (sheet.sales_order,), as_dict=True)
+                if pps:
+                    pp_id = pps[0]["name"]
+            else:
+                try:
+                    pps = frappe.db.sql("""
+                        SELECT DISTINCT pp.name
+                        FROM `tabProduction Plan` pp
+                        LEFT JOIN `tabProduction Plan Item` ppi ON pp.name = ppi.parent
+                        WHERE (ppi.sales_order = %s OR pp.name LIKE CONCAT('%%', %s, '%%'))
+                        AND pp.docstatus = 1
+                        ORDER BY pp.creation DESC
+                        LIMIT 1
+                    """, (sheet.sales_order, sheet.sales_order), as_dict=True)
+                    if pps:
+                        pp_id = pps[0]["name"]
+                except Exception as e:
+                    frappe.log_error(f"Error searching PP by items: {str(e)}", "get_planning_sheet_pp_id")
 
-		# Strategy 3: fallback by planning sheet link fields on PP
-		if not pp_id:
-			conditions = []
-			params = []
+        # Strategy 3: fallback by planning sheet link fields on PP
+        if not pp_id:
+            conditions = []
+            params = []
 
-			if frappe.db.has_column("Production Plan", "custom_planning_sheet"):
-				conditions.append("custom_planning_sheet = %s")
-				params.append(planning_sheet_name)
-			if frappe.db.has_column("Production Plan", "planning_sheet"):
-				conditions.append("planning_sheet = %s")
-				params.append(planning_sheet_name)
+            if frappe.db.has_column("Production Plan", "custom_planning_sheet"):
+                conditions.append("custom_planning_sheet = %s")
+                params.append(planning_sheet_name)
+            if frappe.db.has_column("Production Plan", "planning_sheet"):
+                conditions.append("planning_sheet = %s")
+                params.append(planning_sheet_name)
 
-			if conditions:
-				where_clause = " OR ".join(conditions)
-				pps = frappe.db.sql(f"""
-					SELECT name FROM `tabProduction Plan`
-					WHERE ({where_clause})
-					AND docstatus = 1
-					ORDER BY creation DESC
-					LIMIT 1
-				""", tuple(params), as_dict=True)
-				if pps:
-					pp_id = pps[0]["name"]
+            if conditions:
+                where_clause = " OR ".join(conditions)
+                pps = frappe.db.sql(f"""
+                    SELECT name FROM `tabProduction Plan`
+                    WHERE ({where_clause})
+                    AND docstatus = 1
+                    ORDER BY creation DESC
+                    LIMIT 1
+                """, tuple(params), as_dict=True)
+                if pps:
+                    pp_id = pps[0]["name"]
 
-		if not pp_id:
-			return {"status": "not_found", "message": no_pp_message}
+        if not pp_id:
+            return {"status": "not_found", "message": no_pp_message}
 
-		if not frappe.db.exists("Production Plan", pp_id):
-			return {"status": "error", "message": "Linked Production Plan not found in system"}
+        if not frappe.db.exists("Production Plan", pp_id):
+            return {"status": "error", "message": "Linked Production Plan not found in system"}
 
-		return {"status": "ok", "pp_id": pp_id}
+        return {"status": "ok", "pp_id": pp_id}
 
-	except Exception:
-		frappe.log_error(frappe.get_traceback(), "get_planning_sheet_pp_id")
-		return {"status": "error", "message": "Unable to fetch Production Plan"}
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "get_planning_sheet_pp_id")
+        return {"status": "error", "message": "Unable to fetch Production Plan"}
 
 
