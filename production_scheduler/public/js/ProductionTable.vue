@@ -211,13 +211,24 @@
                             <td class="cell-center font-bold">{{ row.partyCode }}</td>
                             <td>
                               <button class="pt-merge-expand-btn" @click="toggleMergeExpanded(row.mergeId)">
-                                {{ isMergeExpanded(row.mergeId) ? '▼' : '▶' }} {{ row.mergeLabel }} ({{ row.items.length }} items)
+                                {{ isMergeExpanded(row.mergeId) ? '▼' : '▶' }} {{ row.displayLabel }}
                               </button>
+                              <div v-if="isMergeExpanded(row.mergeId)" class="pt-merge-inline-details">
+                                <div v-for="mItem in row.items" :key="mItem.itemName" class="pt-merge-inline-item">
+                                  <span><b>{{ mItem.partyCode }}</b></span>
+                                  <span>{{ mItem.customer_name || mItem.customer || '-' }}</span>
+                                  <span>{{ mItem.quality }}</span>
+                                  <span>{{ mItem.color }}</span>
+                                  <span>{{ mItem.gsm }} GSM</span>
+                                  <span>Target: {{ formatKg(mItem.qty) }} Kg</span>
+                                  <span>Actual: {{ formatKg(mItem.actual_production_weight_kgs) }} Kg</span>
+                                </div>
+                              </div>
                             </td>
                             <td class="cell-center font-mono font-bold" style="font-size:11px; color:#4f46e5;">MERGED</td>
                             <td class="cell-center">{{ row.quality }}</td>
                             <td class="cell-center font-bold">{{ row.color }}</td>
-                            <td class="cell-center">-</td>
+                            <td class="cell-center">{{ row.gsm }}</td>
                             <td class="cell-right font-bold">{{ formatKg(row.totalTargetWeight) }}</td>
                             <td class="cell-right font-bold">{{ formatKg(row.totalActualWeight) }}</td>
                             <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-right font-bold bg-yellow-50">
@@ -227,18 +238,6 @@
                               <button class="cc-clear-btn" style="padding: 4px 8px; font-size: 11px;" @click="deleteMerge(row.mergeId)">Unmerge</button>
                             </td>
                             <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">-</td>
-                          </tr>
-                          <tr v-if="row.type === 'merge' && isMergeExpanded(row.mergeId)" class="pt-merge-expanded-row">
-                            <td colspan="14" style="background: #faf5ff; padding: 8px 12px;">
-                              <div v-for="mItem in row.items" :key="mItem.itemName" style="display:flex; gap:16px; font-size:12px; padding:2px 0;">
-                                <span><b>{{ mItem.partyCode }}</b></span>
-                                <span>{{ mItem.customer_name || mItem.customer || '-' }}</span>
-                                <span>{{ mItem.quality }}</span>
-                                <span>{{ mItem.color }}</span>
-                                <span>Target: {{ formatKg(mItem.qty) }} Kg</span>
-                                <span>Actual: {{ formatKg(mItem.actual_production_weight_kgs) }} Kg</span>
-                              </div>
-                            </td>
                           </tr>
                         </template>
                       </template>
@@ -1041,15 +1040,21 @@ const tableData = computed(() => {
               const totalTargetWeight = mergeItems.reduce((s, it) => s + (parseFloat(it.qty) || 0), 0);
               const totalActualWeight = mergeItems.reduce((s, it) => s + (parseFloat(it.actual_production_weight_kgs) || 0), 0);
               const first = mergeItems[0] || item;
+              const customer = first.customer_name || first.customer || "-";
+              const gsm = first.gsm || "-";
+              const displayLabel = `${first.partyCode || ''}, ${customer}, ${first.quality || ''}, ${first.color || ''}, ${gsm} GSM (${mergeItems.length} items)`;
               rows.push({
                 type: "merge",
                 rowKey: `merge-${mergeId}`,
                 mergeId,
                 mergeLabel: (merge && merge.merge_label) || `Merge ${mergeItems.length}`,
+                displayLabel,
                 items: mergeItems,
                 partyCode: first.partyCode,
+                customer,
                 quality: first.quality,
                 color: first.color,
+                gsm,
                 totalTargetWeight,
                 totalActualWeight,
               });
@@ -1185,7 +1190,10 @@ async function createMergeFromDialog() {
     return;
   }
 
-  const label = window.prompt("Merge label", `${first.partyCode} ${first.quality} ${first.color} ${first.gsm}GSM`) || "";
+  const label = window.prompt(
+    "Merge label",
+    `${first.partyCode || ''}, ${first.customer_name || first.customer || '-'}, ${first.quality || ''}, ${first.color || ''}, ${first.gsm || '-'} GSM`
+  ) || "";
   if (!label.trim()) return;
 
   try {
@@ -1786,5 +1794,22 @@ onBeforeUnmount(() => {
 
 .pt-merge-expanded-row {
   background: #fdf4ff;
+}
+
+.pt-merge-inline-details {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: #faf5ff;
+  border: 1px solid #e9d5ff;
+  border-radius: 6px;
+}
+
+.pt-merge-inline-item {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  padding: 2px 0;
+  color: #334155;
 }
 </style>
