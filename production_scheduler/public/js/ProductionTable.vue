@@ -98,6 +98,11 @@
             </button>
           </div>
         </div>
+        <div class="pt-merge-summary">
+          <span><b>Selected:</b> {{ selectedMergeSummary.count }} items</span>
+          <span><b>Total Target:</b> {{ formatKg(selectedMergeSummary.targetWeight) }} Kg</span>
+          <span><b>Total Actual:</b> {{ formatKg(selectedMergeSummary.actualWeight) }} Kg</span>
+        </div>
         <div class="pt-merge-list">
           <label v-for="item in mergeDialogItems" :key="item.itemName" class="pt-merge-item">
             <input type="checkbox" :checked="selectedMergeItems.has(item.itemName)" @change="toggleMergeSelection(item.itemName)" />
@@ -963,6 +968,17 @@ const autoMergeSuggestions = computed(() => {
   return Object.values(grouped).filter((g) => g.items.length >= 2).sort((a, b) => b.items.length - a.items.length);
 });
 
+const selectedMergeSummary = computed(() => {
+  const selectedItems = (mergeDialogItems.value || []).filter((it) => selectedMergeItems.value.has(it.itemName));
+  const targetWeight = selectedItems.reduce((sum, it) => sum + (parseFloat(it.qty) || 0), 0);
+  const actualWeight = selectedItems.reduce((sum, it) => sum + (parseFloat(it.actual_production_weight_kgs) || 0), 0);
+  return {
+    count: selectedItems.length,
+    targetWeight,
+    actualWeight,
+  };
+});
+
 function getMergeById(mergeId) {
   return (merges.value || []).find((m) => m.name === mergeId);
 }
@@ -1691,6 +1707,16 @@ onBeforeUnmount(() => {
 .pt-merge-suggest {
   padding: 8px 16px;
   border-bottom: 1px solid #e5e7eb;
+}
+
+.pt-merge-summary {
+  display: flex;
+  gap: 20px;
+  padding: 8px 16px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f8fafc;
+  font-size: 12px;
+  color: #334155;
 }
 
 .pt-merge-suggest-list {
