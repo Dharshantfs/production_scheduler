@@ -2820,11 +2820,75 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     data = []
     spr_link_cache = {}
     spr_meta_cache = {}
+    spr_pp_gsm_weights_cache = {}
+    spr_pp_gsm_index_cache = {}
     spr_has_unit_col = False
     try:
         spr_has_unit_col = frappe.db.has_column("Shaft Production Run", "unit")
     except Exception:
         spr_has_unit_col = False
+
+    def _normalize_gsm_key(value):
+        txt = str(value or "").strip()
+        if not txt:
+            return ""
+        try:
+            num = float(txt)
+            if num.is_integer():
+                return str(int(num))
+            return str(num)
+        except Exception:
+            return txt
+
+    def _load_spr_gsm_weights_for_pp(pp_id, preferred_spr=None):
+        if not pp_id:
+            return {}
+        cache_key = f"{pp_id}::{preferred_spr or ''}"
+        if cache_key in spr_pp_gsm_weights_cache:
+            return spr_pp_gsm_weights_cache[cache_key]
+
+        spr_id = str(preferred_spr or "").strip()
+        if not spr_id:
+            spr_id = str(spr_pp_name_map.get(pp_id) or "").strip()
+        if not spr_id:
+            spr_id = str(frappe.db.get_value("Production Plan", pp_id, "custom_shaft_production_run_id") or "").strip()
+
+        weights_by_gsm = {}
+        if spr_id and frappe.db.exists("Shaft Production Run", spr_id):
+            try:
+                spr_doc = frappe.get_doc("Shaft Production Run", spr_id)
+                for r in (spr_doc.get("shaft_jobs") or []):
+                    gsm_key = _normalize_gsm_key(r.get("gsm"))
+                    total_weight = flt(r.get("total_weight") or r.get("total_weight_kgs") or 0)
+                    if total_weight <= 0:
+                        continue
+                    if gsm_key not in weights_by_gsm:
+                        weights_by_gsm[gsm_key] = []
+                    weights_by_gsm[gsm_key].append(total_weight)
+            except Exception:
+                pass
+
+        spr_pp_gsm_weights_cache[cache_key] = weights_by_gsm
+        return weights_by_gsm
+
+    def _take_next_spr_weight(pp_id, gsm_value, preferred_spr=None):
+        gsm_key = _normalize_gsm_key(gsm_value)
+        if not pp_id or not gsm_key:
+            return None
+
+        weights_by_gsm = _load_spr_gsm_weights_for_pp(pp_id, preferred_spr=preferred_spr)
+        bucket = weights_by_gsm.get(gsm_key) or []
+        if not bucket:
+            return None
+
+        idx_key = f"{pp_id}::{gsm_key}"
+        idx = spr_pp_gsm_index_cache.get(idx_key, 0)
+        if idx >= len(bucket):
+            # If items exceed available rows for this gsm, keep last known value.
+            return bucket[-1]
+
+        spr_pp_gsm_index_cache[idx_key] = idx + 1
+        return bucket[idx]
     for sheet in planning_sheets:
         items = frappe.get_all(
             "Planning Sheet Item",
@@ -2942,6 +3006,12 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                     item_level_wo_count = max(item_level_wo_count, spr_so_item_count_map.get(so_item_key, 0))
 
             # Last fallback to explicit PP link only when this item has its own PP key.
+            if item_level_produced is None and item_pp:
+                # Prefer SPR child-table total_weight per GSM to avoid applying full PP total to each row.
+                spr_row_weight = _take_next_spr_weight(item_pp, item.get("gsm"))
+                if spr_row_weight is not None:
+                    item_level_produced = flt(spr_row_weight)
+
             if item_level_produced is None and item_pp:
                 item_level_produced = pp_produced_map.get(item_pp)
                 item_level_wo_count = max(item_level_wo_count, pp_wo_count_map.get(item_pp, 0))
