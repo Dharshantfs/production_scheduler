@@ -1515,7 +1515,26 @@ async function createItemStockEntry(item) {
     partyCode: item.partyCode,
     color: item.color
   });
-  
+  // Resolve pp_id if missing but planningSheet exists
+  if (!item.pp_id && item.planningSheet) {
+    try {
+      const ppRes = await frappe.call({
+        method: "production_scheduler.api.get_planning_sheet_pp_id",
+        args: {
+          planning_sheet_name: item.planningSheet,
+          sales_order_item: item.salesOrderItem || null,
+          planning_sheet_item: item.itemName || null,
+        }
+      });
+      if (ppRes.message && ppRes.message.status === "ok" && ppRes.message.pp_id) {
+        item.pp_id = ppRes.message.pp_id;
+        console.log(`Resolved PP for ${item.itemName}: ${item.pp_id}`);
+      }
+    } catch (e) {
+      console.warn("Could not resolve PP for item", item.itemName, e);
+    }
+  }
+
   if (!item.pp_id) {
     frappe.msgprint("❌ No Production Plan linked to this item.<br/>Item Details:<br/>Code: " + item.partyCode + "<br/>Color: " + item.color);
     return;
@@ -1638,6 +1657,28 @@ async function createMergedStockEntry(mergedRow) {
   if (!mergedRow || !mergedRow.items || mergedRow.items.length === 0) {
     frappe.msgprint("No items in merged row");
     return;
+  }
+  
+  // Resolve missing pp_id for items that have a planningSheet but no pp_id
+  for (const item of mergedRow.items) {
+    if (!item.pp_id && item.planningSheet) {
+      try {
+        const res = await frappe.call({
+          method: "production_scheduler.api.get_planning_sheet_pp_id",
+          args: {
+            planning_sheet_name: item.planningSheet,
+            sales_order_item: item.salesOrderItem || null,
+            planning_sheet_item: item.itemName || null,
+          }
+        });
+        if (res.message && res.message.status === "ok" && res.message.pp_id) {
+          item.pp_id = res.message.pp_id;
+          console.log(`Resolved PP for ${item.itemName}: ${item.pp_id}`);
+        }
+      } catch (e) {
+        console.warn("Could not resolve PP for item", item.itemName, e);
+      }
+    }
   }
   
   // Group by PP ID
