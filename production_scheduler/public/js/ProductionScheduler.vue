@@ -317,6 +317,16 @@ const units = ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"];
 const UNIT_TONNAGE_LIMITS = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5, "Mixed": 999 };
 const headerColors = { "Unit 1": "#3b82f6", "Unit 2": "#10b981", "Unit 3": "#f59e0b", "Unit 4": "#8b5cf6", "Mixed": "#64748b" };
 
+function normalizeUnitName(rawUnit) {
+  const txt = String(rawUnit || "").trim().toLowerCase();
+  if (!txt || txt === "unassigned" || txt === "mixed") return "Mixed";
+  if (txt === "unit1" || txt === "unit 1") return "Unit 1";
+  if (txt === "unit2" || txt === "unit 2") return "Unit 2";
+  if (txt === "unit3" || txt === "unit 3") return "Unit 3";
+  if (txt === "unit4" || txt === "unit 4") return "Unit 4";
+  return String(rawUnit || "Mixed").trim() || "Mixed";
+}
+
 const filterOrderDate = ref(frappe.datetime.get_today());
 const filterWeek = ref("");
 const filterMonth = ref("");
@@ -556,7 +566,7 @@ const filteredData = computed(() => {
   // Normalize Unit
   data = data.map(d => ({
       ...d,
-      unit: d.unit || "Mixed"
+      unit: normalizeUnitName(d.unit)
   }));
 
   // For Production Board ONLY: Show pushed items.
@@ -1220,7 +1230,8 @@ function openPullOrdersDialog() {
                 fieldtype: 'Select',
                 options: [
                     { label: 'Keep Original Unit', value: '' },
-                    ...units.map(u => ({ label: `Move to ${u}`, value: u }))
+                  ...units.filter(u => u !== 'Mixed').map(u => ({ label: `Move to ${u}`, value: u })),
+                  { label: 'Move to Unassigned', value: 'Mixed' }
                 ],
                 default: '',
                 description: 'If selected, all pulled orders will be assigned to this unit.'
@@ -1270,7 +1281,7 @@ async function loadOrders(d) {
         }
 
         // --- FE FILTERS ---
-        const uniqueUnits = [...new Set(items.map(i => i.unit || 'UNASSIGNED'))].sort();
+        const pullFilterUnits = [...units.filter(u => u !== 'Mixed'), 'Mixed'];
         const uniqueQualities = [...new Set(items.map(i => i.quality || 'STD'))].sort();
         const uniqueParties = [...new Set(items.map(i => i.partyCode || i.customer || ''))].filter(Boolean).sort();
         
@@ -1284,7 +1295,7 @@ async function loadOrders(d) {
                     
               <select id="pull-filter-unit" style="font-size:11px; height:28px; padding:2px 8px; border-radius:6px; border:1px solid #cbd5e1; background:#fff; min-width:106px;">
                         <option value="">All Units</option>
-                        ${uniqueUnits.map(u => `<option value="${u}">${u}</option>`).join('')}
+                        ${pullFilterUnits.map(u => `<option value="${u}">${u === 'Mixed' ? 'Unassigned' : u}</option>`).join('')}
                     </select>
                     
               <select id="pull-filter-quality" style="font-size:11px; height:28px; padding:2px 8px; border-radius:6px; border:1px solid #cbd5e1; background:#fff; min-width:120px;">
@@ -1307,7 +1318,7 @@ async function loadOrders(d) {
         function applyFilters() {
             return items.filter(i => {
                 if (activeFilters.unit) {
-                    let u = i.unit || 'UNASSIGNED';
+                  let u = normalizeUnitName(i.unit);
                     if (u !== activeFilters.unit) return false;
                 }
                 if (activeFilters.quality) {
@@ -1352,7 +1363,8 @@ async function loadOrders(d) {
                     const isChecked = d.calc_selected_items && d.calc_selected_items.find(s => s.itemName === item.itemName) ? "checked" : "";
                     const prevQtyObj = d.calc_selected_items && d.calc_selected_items.find(s => s.itemName === item.itemName);
                   const totalQty = Number(item.qty || 0);
-                  const producedQty = Number(item.produced_qty || 0);
+                  const achievedQty = Number(item.actual_production_weight_kgs || item.total_achieved_weight_kgs || 0);
+                  const producedQty = Number(achievedQty || item.produced_qty || 0);
                   const availableQty = Math.max(totalQty - producedQty, 0);
                   const prevQtyRaw = prevQtyObj ? Number(prevQtyObj.qty || 0) : availableQty;
                   const prevQty = Math.min(Math.max(prevQtyRaw, 0), availableQty);
@@ -1363,7 +1375,7 @@ async function loadOrders(d) {
                         <div style="display:flex; align-items:center; justify-content:center;">
                       <input type="checkbox" class="pull-item-cb" data-name="${item.itemName}" style="cursor:pointer; transform: scale(1.1);" ${isChecked} ${rowDisabled ? 'disabled' : ''} />
                         </div>
-                        <div><span style="font-size: 11px; font-weight: 700; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; white-space:nowrap;">${item.unit || 'UNASSIGNED'}</span></div>
+                        <div><span style="font-size: 11px; font-weight: 700; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; white-space:nowrap;">${normalizeUnitName(item.unit) === 'Mixed' ? 'Unassigned' : normalizeUnitName(item.unit)}</span></div>
                         <div style="display: flex; flex-direction: column; gap: 2px;">
                             <span style="font-size: 13px; font-weight: 600; color: #1e293b;">${item.color || 'No Color'} <span style="font-weight: 400; color: #94a3b8; font-size: 12px;">&bull; ${item.partyCode || item.customer || '-'}</span></span>
                             <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
@@ -1919,6 +1931,9 @@ async function fetchData() {
           partyCode:   d.partyCode   || d.party_code  || "",
           itemName:    d.itemName    || d.item_name   || d.name || "",
           orderDate:   d.orderDate   || d.ordered_date || "",
+          unit: normalizeUnitName(d.unit),
+          actual_production_weight_kgs: Number(d.actual_production_weight_kgs ?? d.total_achieved_weight_kgs ?? 0) || 0,
+          produced_qty: Number(d.actual_production_weight_kgs ?? d.total_achieved_weight_kgs ?? d.produced_qty ?? 0) || 0,
         }));
         
         // Load Custom Color Order

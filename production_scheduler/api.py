@@ -2705,7 +2705,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     try:
         if valid_pps and frappe.db.exists("DocType", "Shaft Production Run"):
             fmt_pps = ",".join(["%s"] * len(valid_pps))
-            # Pick latest submitted SPR for each PP by creation DESC.
+                        # Pick latest submitted SPR with non-zero achieved weight per PP.
             spr_achieved_rows = frappe.db.sql(f"""
                 SELECT 
                     spr.name,
@@ -2714,6 +2714,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 FROM `tabShaft Production Run` spr
                 WHERE spr.production_plan IN ({fmt_pps})
                   AND spr.docstatus = 1
+                                    AND COALESCE(spr.custom_total_achieved_weight, 0) > 0
                 ORDER BY spr.creation DESC
             """, tuple(valid_pps), as_dict=True)
             
