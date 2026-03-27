@@ -8002,6 +8002,133 @@ def debug_item_pp_id(item_name):
         return {"status": "error", "message": str(e)}
 
 
+
+@frappe.whitelist()
+def backfill_pp_id_to_sheet_items(planning_sheet_name=None, dry_run=1):
+    """
+    Backfill Production Plan ID to Planning Sheet Items.
+    Loops all items (or items of a specific sheet), resolves the PP via
+    Production Plan Item -> sales_order_item matching, and writes it to
+    the custom_production_plan field on each Planning Sheet Item.
+
+    Args:
+        planning_sheet_name: Optional. If given, only process that sheet.
+        dry_run: 1 = report what would be written, 0 = actually write.
+    """
+    dry_run = cint(dry_run)
+
+    # Determine which field to write on Planning Sheet Item
+    write_field = None
+    for candidate in ["custom_production_plan", "production_plan", "custom_pp_id", "pp_id"]:
+        if frappe.db.has_column("Planning Sheet Item", candidate):
+            write_field = candidate
+            break
+
+    if not write_field:
+        return {
+            "status": "error",
+            "message": "No suitable field found on Planning Sheet Item to store PP ID. "
+                       "Please create a custom field 'custom_production_plan' (Link to Production Plan)."
+        }
+
+    # Fetch all Planning Sheet Items
+    filters = {}
+    if planning_sheet_name:
+        filters["parent"] = planning_sheet_name
+
+    items = frappe.db.get_all(
+        "Planning Sheet Item",
+        filters=filters,
+        fields=["name", "parent", "sales_order_item", write_field, "item_code", "item_name"],
+        order_by="parent asc, idx asc"
+    )
+
+    results = {"updated": [], "already_set": [], "not_found": [], "errors": []}
+
+    for psi in items:
+        try:
+            existing_pp = psi.get(write_field)
+            if existing_pp and frappe.db.exists("Production Plan", existing_pp):
+                results["already_set"].append({
+                    "item": psi.name,
+                    "sheet": psi.parent,
+                    "pp_id": existing_pp
+                })
+                continue
+
+            # Resolve PP via sales_order_item
+            pp_id = None
+            so_item = psi.get("sales_order_item")
+
+            if so_item:
+                # Find PP that has this sales_order_item
+                pp_row = frappe.db.sql("""
+                    SELECT pp.name
+                    FROM `tabProduction Plan` pp
+                    JOIN `tabProduction Plan Item` ppi ON ppi.parent = pp.name
+                    WHERE ppi.sales_order_item = %s
+                      AND pp.docstatus < 2
+                    ORDER BY pp.creation DESC
+                    LIMIT 1
+                """, so_item, as_dict=True)
+                if pp_row:
+                    pp_id = pp_row[0]["name"]
+
+            # Fallback: try matching by item_code on PP Items linked to same planning sheet
+            if not pp_id and psi.get("item_code"):
+                pp_row = frappe.db.sql("""
+                    SELECT pp.name
+                    FROM `tabProduction Plan` pp
+                    JOIN `tabProduction Plan Item` ppi ON ppi.parent = pp.name
+                    LEFT JOIN `tabPlanning sheet` ps ON (
+                        ps.custom_production_plan = pp.name OR
+                        pp.custom_planning_sheet = %s OR
+                        pp.planning_sheet = %s
+                    )
+                    WHERE ppi.item_code = %s
+                      AND pp.docstatus < 2
+                    ORDER BY pp.creation DESC
+                    LIMIT 1
+                """, (psi.parent, psi.parent, psi.get("item_code")), as_dict=True)
+                if pp_row:
+                    pp_id = pp_row[0]["name"]
+
+            if pp_id:
+                if not dry_run:
+                    frappe.db.set_value("Planning Sheet Item", psi.name, write_field, pp_id, update_modified=False)
+                results["updated"].append({
+                    "item": psi.name,
+                    "sheet": psi.parent,
+                    "pp_id": pp_id,
+                    "dry_run": bool(dry_run)
+                })
+            else:
+                results["not_found"].append({
+                    "item": psi.name,
+                    "sheet": psi.parent,
+                    "so_item": so_item or ""
+                })
+
+        except Exception as e:
+            results["errors"].append({"item": psi.name, "error": str(e)})
+
+    if not dry_run:
+        frappe.db.commit()
+
+    return {
+        "status": "ok",
+        "write_field": write_field,
+        "dry_run": bool(dry_run),
+        "summary": {
+            "updated": len(results["updated"]),
+            "already_set": len(results["already_set"]),
+            "not_found": len(results["not_found"]),
+            "errors": len(results["errors"]),
+        },
+        "details": results
+    }
+
+
 @frappe.whitelist()
 def create_item_spr(pp_id, planning_sheet_item_names):
 
