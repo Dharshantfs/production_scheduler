@@ -1566,8 +1566,10 @@ async function createItemStockEntry(item) {
     console.warn("Could not validate PP, proceeding anyway", e);
   }
   
+  const itemDisplay = getItemDisplayName(item);
+
   frappe.confirm(
-    `Create Stock Entry for <b>${item.partyCode}</b> (${item.color})?<br/>PP: ${item.pp_id}<br/>Item: ${item.itemName}`,
+    `Create Stock Entry for <b>${item.partyCode}</b> (${item.color})?<br/>PP: ${item.pp_id}<br/>Item: ${itemDisplay}`,
     async () => {
       try {
         console.log("Calling create_item_spr with:", {
@@ -1602,6 +1604,7 @@ async function createItemStockEntry(item) {
           // Redirect to SPR form with PP ID
           await new Promise(resolve => {
             setTimeout(() => {
+              frappe.route_options = { show_wo_popup: 1 };
               frappe.set_route('Form', 'Shaft Production Run', sprId);
               resolve();
             }, 1000);
@@ -1616,6 +1619,18 @@ async function createItemStockEntry(item) {
         frappe.msgprint(`❌ Error creating Stock Entry: ${e.message || e}`);
       }
     }
+  );
+}
+
+function getItemDisplayName(item) {
+  if (!item) return "-";
+  return (
+    item.description ||
+    item.item_name ||
+    item.itemCode ||
+    item.item_code ||
+    item.itemName ||
+    "-"
   );
 }
 

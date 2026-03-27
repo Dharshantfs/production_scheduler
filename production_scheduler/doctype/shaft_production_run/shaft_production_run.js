@@ -1,6 +1,8 @@
 // Custom Script for Shaft Production Run form
 frappe.ui.form.on('Shaft Production Run', {
     refresh: function(frm) {
+        const forcedPopup = !!(frappe.route_options && cint(frappe.route_options.show_wo_popup));
+
         // Auto-fill production_plan if it's new and not already set
         if (frm.is_new() && !frm.doc.production_plan) {
             // Try to get from URL parameters or session
@@ -20,6 +22,14 @@ frappe.ui.form.on('Shaft Production Run', {
         // Show WO popup when production_plan is set
         if (frm.doc.production_plan) {
             show_linked_work_orders(frm.doc.production_plan);
+
+            // Explicitly support redirected flow from Production Table -> Stock Entry -> SPR open.
+            if (forcedPopup) {
+                setTimeout(() => {
+                    show_linked_work_orders(frm.doc.production_plan);
+                }, 250);
+                frappe.route_options = null;
+            }
         }
     },
     
