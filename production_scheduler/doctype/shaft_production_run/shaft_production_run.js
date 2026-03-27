@@ -1,14 +1,21 @@
 // Custom Script for Shaft Production Run form
 frappe.ui.form.on('Shaft Production Run', {
-    refresh: function(frm) {
-        const forcedPopup = !!(frappe.route_options && cint(frappe.route_options.show_wo_popup));
+    onload: function(frm) {
+        // Check if we navigated here from Production Table (flag set before routing)
+        if (frappe.flags.spr_show_wo_popup && frm.doc.production_plan) {
+            const ppId = frappe.flags.spr_show_wo_popup;
+            frappe.flags.spr_show_wo_popup = null; // clear immediately
+            setTimeout(() => {
+                show_linked_work_orders(ppId);
+            }, 1200);
+        }
+    },
 
+    refresh: function(frm) {
         // Auto-fill production_plan if it's new and not already set
         if (frm.is_new() && !frm.doc.production_plan) {
-            // Try to get from URL parameters or session
             const urlParams = new URLSearchParams(window.location.search);
             const pp_id = urlParams.get('pp_id') || frappe.session_context?.production_plan;
-            
             if (pp_id) {
                 frm.set_value('production_plan', pp_id);
             }
@@ -19,20 +26,17 @@ frappe.ui.form.on('Shaft Production Run', {
             const hasPlaceholderRows = has_only_placeholder_rows(frm);
             load_available_jobs_from_pp(frm, { force: frm.is_new() || hasPlaceholderRows });
         }
-        
-        // Show WO popup after form is fully loaded
-        // Note: popup is triggered from load_available_jobs_from_pp callback for reliability
+
+        // For saved (non-new) reopened forms, show WO popup with delay
         if (frm.doc.production_plan && !frm.is_new()) {
-            // For saved forms, show WO popup with delay
             setTimeout(() => {
                 show_linked_work_orders(frm.doc.production_plan);
             }, 1500);
         }
         frappe.route_options = null;
     },
-    
+
     production_plan: function(frm) {
-        // When PP is changed/set, pull shaft details and show WO popup.
         if (frm.doc.production_plan) {
             load_available_jobs_from_pp(frm, { force: true });
             show_linked_work_orders(frm.doc.production_plan);

@@ -8334,6 +8334,61 @@ def get_spr_shaft_jobs_from_pp(pp_id):
         }
 
 
+@frappe.whitelist()
+def debug_pp_columns(pp_id):
+    """Dump ALL non-empty columns of a PP doc via SQL - to discover actual field names."""
+    if not frappe.db.exists("Production Plan", pp_id):
+        return {"error": f"PP {pp_id} not found"}
+
+    # Get all column names from tabProduction Plan
+    cols = frappe.db.sql("SHOW COLUMNS FROM `tabProduction Plan`", as_dict=True)
+    col_names = [c["Field"] for c in cols]
+
+    # Fetch the PP row
+    pp_row = frappe.db.sql(
+        "SELECT * FROM `tabProduction Plan` WHERE name = %s", pp_id, as_dict=True
+    )
+    if not pp_row:
+        return {"error": "Not found"}
+
+    pp_data = pp_row[0]
+    # Return only non-empty values, filter weight/shaft/net/total/width related
+    relevant = {}
+    all_non_empty = {}
+    for k, v in pp_data.items():
+        if v not in (None, "", 0, 0.0):
+            all_non_empty[k] = str(v)[:100]
+            if any(kw in k.lower() for kw in ["weight", "shaft", "net", "total", "width", "combined"]):
+                relevant[k] = str(v)[:100]
+
+    # Also check child table
+    child_table_info = {}
+    try:
+        child_cols = frappe.db.sql("SHOW COLUMNS FROM `tabProduction Plan Item`", as_dict=True)
+        child_col_names = [c["Field"] for c in child_cols if any(kw in c["Field"].lower() for kw in ["weight", "shaft", "net", "total", "width", "combined", "qty"])]
+        child_table_info["columns"] = child_col_names
+    except Exception:
+        pass
+
+    # PP custom_shaft_details child table
+    shaft_child = frappe.db.sql(
+        """SELECT * FROM `tabProduction Plan Item`
+           WHERE parent = %s ORDER BY idx LIMIT 1""",
+        pp_id, as_dict=True
+    )
+    shaft_row_data = {}
+    if shaft_child:
+        for k, v in shaft_child[0].items():
+            if v not in (None, "", 0, 0.0) and k not in ("name", "owner", "creation", "modified", "modified_by", "parent", "parentfield", "parenttype", "docstatus"):
+                shaft_row_data[k] = str(v)[:100]
+
+    return {
+        "pp_relevant_fields": relevant,
+        "po_item_first_row_non_empty": shaft_row_data,
+        "child_table_weight_cols": child_table_info,
+    }
+
+
 # ============================================================================
 # PRODUCTION MERGE APIs
 # ============================================================================

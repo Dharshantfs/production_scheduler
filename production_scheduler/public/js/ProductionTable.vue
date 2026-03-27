@@ -1618,13 +1618,14 @@ async function createItemStockEntry(item) {
             indicator: 'green'
           }, 3);
           
-          // Redirect to SPR form with PP ID
+          // Set flag for WO popup on SPR form
+          frappe.flags.spr_show_wo_popup = item.pp_id;
+
           await new Promise(resolve => {
             setTimeout(() => {
-              frappe.route_options = { show_wo_popup: 1 };
               frappe.set_route('Form', 'Shaft Production Run', sprId);
               resolve();
-            }, 1000);
+            }, 800);
           });
         } else {
           const msg = res.message?.message || JSON.stringify(res.message) || "Failed to create SPR";
