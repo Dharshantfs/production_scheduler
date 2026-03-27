@@ -2700,30 +2700,27 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         pass
 
     # Fetch SPR achieved weights by Production Plan (primary method)
+    # Achieved weight = SUM of shaft_jobs total_weight
     spr_pp_achieved_weight_map = {}  # Map PP to SPR achieved weight
     try:
         if valid_pps and frappe.db.exists("DocType", "Shaft Production Run"):
             fmt_pps = ",".join(["%s"] * len(valid_pps))
-            # Query all columns to debug which fields exist and have data
+            # Sum total_weight from shaft_jobs child table (or total_weight_kgs, total_weight depending on field names)
             spr_achieved_rows = frappe.db.sql(f"""
                 SELECT 
-                    name,
-                    production_plan,
-                    custom_total_achieved_weight,
-                    total_produced_weight,
-                    custom_total_produced_weight
-                FROM `tabShaft Production Run`
-                WHERE production_plan IN ({fmt_pps})
-                  AND docstatus = 1
-                ORDER BY creation DESC
+                    spr.production_plan,
+                    SUM(COALESCE(sj.total_weight_kgs, sj.total_weight, 0)) as achieved_weight
+                FROM `tabShaft Production Run` spr
+                LEFT JOIN `tabShaft Production Run Detail` sj ON spr.name = sj.parent
+                WHERE spr.production_plan IN ({fmt_pps})
+                  AND spr.docstatus = 1
+                GROUP BY spr.production_plan
             """, tuple(valid_pps), as_dict=True)
             
             for row in spr_achieved_rows:
                 pp_id = row.get('production_plan')
-                # Priority: custom_total_achieved_weight > total_produced_weight > custom_total_produced_weight
-                achieved = flt(row.get('custom_total_achieved_weight') or row.get('total_produced_weight') or row.get('custom_total_produced_weight') or 0)
-                # Take the latest (first) SPR for each PP
-                if pp_id and achieved > 0 and pp_id not in spr_pp_achieved_weight_map:
+                achieved = flt(row.get('achieved_weight', 0))
+                if pp_id and achieved > 0:
                     spr_pp_achieved_weight_map[pp_id] = achieved
     except Exception as e:
         frappe.log_error(f"Error fetching SPR achieved weights: {str(e)}")
