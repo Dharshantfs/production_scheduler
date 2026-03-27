@@ -4227,6 +4227,43 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
     weights_to_add = {} # unit -> tons
     docs_to_move = [] 
 
+    def _get_item_wo_produced_qty(item_doc):
+        """Return produced qty for an item based on its resolved PP and item_code."""
+        try:
+            pp_id = _get_item_level_production_plan(item_doc.name)
+            if not pp_id:
+                return 0.0
+
+            conditions = ["wo.production_plan = %(pp)s", "wo.docstatus < 2"]
+            params = {"pp": pp_id}
+
+            item_code = str(item_doc.get("item_code") or "").strip()
+            if item_code:
+                conditions.append("IFNULL(wo.production_item, '') = %(item_code)s")
+                params["item_code"] = item_code
+
+            row = frappe.db.sql(
+                f"""
+                SELECT SUM(GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0))) as produced_qty
+                FROM `tabWork Order` wo
+                LEFT JOIN (
+                    SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
+                    FROM `tabStock Entry` se
+                    INNER JOIN `tabStock Entry Detail` sed ON sed.parent = se.name
+                    WHERE se.docstatus = 1
+                      AND IFNULL(se.work_order, '') != ''
+                      AND IFNULL(sed.is_finished_item, 0) = 1
+                    GROUP BY se.work_order
+                ) se_map ON se_map.work_order = wo.name
+                WHERE {' AND '.join(conditions)}
+                """,
+                params,
+                as_dict=True,
+            )
+            return flt((row[0] or {}).get("produced_qty") if row else 0)
+        except Exception:
+            return 0.0
+
     for entry in item_names:
         # Support both simple list of names and list of {itemName, qty}
         name = entry.get("itemName") if isinstance(entry, dict) else entry
@@ -4234,6 +4271,24 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         
         try:
             doc = frappe.get_doc("Planning Sheet Item", name)
+
+            produced_qty = _get_item_wo_produced_qty(doc)
+            available_qty = max(flt(doc.qty) - produced_qty, 0)
+
+            # If pull qty not explicitly given, move only available (remaining) qty.
+            if req_qty is None:
+                req_qty = available_qty
+
+            if req_qty <= 0:
+                continue
+
+            if req_qty > available_qty:
+                frappe.throw(
+                    _(
+                        "Item {0}: Requested move qty {1} exceeds available qty {2}. "
+                        "Produced/WO qty {3} is already consumed."
+                    ).format(doc.item_name or doc.name, flt(req_qty), flt(available_qty), flt(produced_qty))
+                )
             
             # If partial quantity requested, perform split
             if req_qty and 0 < req_qty < flt(doc.qty):
@@ -4248,8 +4303,23 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                 split_part.insert(ignore_permissions=True)
                 
                 # Reduce original item quantity (stays on original date/parent)
-                doc.qty = flt(doc.qty) - req_qty
-                doc.save(ignore_permissions=True)
+                new_qty = flt(doc.qty) - req_qty
+                if cint(doc.docstatus) == 1:
+                    # Submitted parent rows cannot be changed via doc.save; use direct SQL update.
+                    frappe.db.sql(
+                        "UPDATE `tabPlanning Sheet Item` SET qty = %s WHERE name = %s",
+                        (new_qty, doc.name),
+                    )
+                    if frappe.db.has_column("Planning Sheet Item", "custom_is_split"):
+                        frappe.db.sql(
+                            "UPDATE `tabPlanning Sheet Item` SET custom_is_split = 1 WHERE name = %s",
+                            (doc.name,),
+                        )
+                else:
+                    doc.qty = new_qty
+                    if hasattr(doc, "custom_is_split"):
+                        doc.custom_is_split = 1
+                    doc.save(ignore_permissions=True)
                 
                 move_doc = split_part
             else:
