@@ -3038,12 +3038,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                     item_level_produced = spr_so_item_produced_map.get(so_item_key, 0)
                     item_level_wo_count = max(item_level_wo_count, spr_so_item_count_map.get(so_item_key, 0))
 
-            # Last fallback to explicit PP link only when this item has its own PP key.
-            if item_level_produced is None and item_pp:
-                # Prefer SPR child-table total_weight per GSM to avoid applying full PP total to each row.
-                spr_row_weight = _take_next_spr_weight(item_pp, item.get("gsm"))
-                if spr_row_weight is not None:
-                    item_level_produced = flt(spr_row_weight)
+            # Do not use SPR shaft_jobs target weight as produced fallback.
+            # Produced quantity must come from produced sources only (WO/SE/SPR produced fields).
 
             if item_level_produced is None and item_pp:
                 item_level_produced = pp_produced_map.get(item_pp)
@@ -3177,6 +3173,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "salesOrderItem": so_item_key,
                 "actual_produced_qty": flt(item_level_produced),
                 "actual_production_weight_kgs": flt(total_achieved_weight_kgs),
+                # Legacy key kept for compatibility with cached/older frontend bundles.
+                "total_achieved_weight_kgs": flt(total_achieved_weight_kgs),
                 "pending_qty": flt(pending_qty),
                 "item_pending_qty": flt(item_pending_qty),
                 "pp_target_qty": flt(pp_target_qty),
