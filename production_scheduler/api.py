@@ -8060,8 +8060,19 @@ def create_item_spr(pp_id, planning_sheet_item_names):
 
         # Fetch shaft details from Production Plan (not from Planning Sheet Items)
         # Copy shaft details from PP to SPR
-        if hasattr(pp, 'shaft_details') and pp.shaft_details:
-            for pp_shaft in pp.shaft_details:
+        pp_shafts = pp.get("custom_shaft_details") or pp.get("shaft_details") or []
+
+        # Fetch linked Work Orders for this PP
+        pp_work_orders = frappe.get_all("Work Order",
+            filters={"production_plan": pp_id, "docstatus": ["<", 2]},
+            fields=["name", "production_item", "qty", "produced_qty", "status"],
+            order_by="creation asc"
+        )
+        wo_names_str = ", ".join([wo.name for wo in pp_work_orders]) if pp_work_orders else ""
+        wo_total_qty = sum(flt(wo.qty) for wo in pp_work_orders)
+
+        if pp_shafts:
+            for pp_shaft in pp_shafts:
                 row = spr.append("shaft_jobs", {})
                 row.job_id = pick_value(pp_shaft, ["job_id", "job", "job_no"], str(len(spr.shaft_jobs)))
                 row.gsm = pick_value(pp_shaft, ["gsm"], "")
@@ -8072,11 +8083,14 @@ def create_item_spr(pp_id, planning_sheet_item_names):
                 row.net_weight_shaft_kgs = pick_value(pp_shaft, ["net_weight_shaft_kgs", "net_weight_shaft", "net_weight"], "")
                 row.total_weight_kgs = flt(pick_value(pp_shaft, ["total_weight_kgs", "total_weight", "weight"], 0) or 0)
                 row.order_code = pick_value(pp_shaft, ["order_code", "party_code", "custom_order_code"], parent_sheet.party_code or "")
-                row.work_orders = pick_value(pp_shaft, ["work_orders", "work_order", "wo", "wo_no"], "")
+                row.work_orders = pick_value(pp_shaft, ["work_orders", "work_order", "wo", "wo_no"], "") or wo_names_str
+                # Compute total_weight from WO qty if still zero
+                if not flt(row.total_weight_kgs) and wo_total_qty:
+                    row.total_weight_kgs = flt(wo_total_qty)
                 row.quality = first_psi.custom_quality or first_psi.get("quality") or ""
                 row.color = first_psi.color or ""
                 row.party_code = parent_sheet.party_code or ""
-        else:
+        elif not pp_shafts:
             # Fallback: create one shaft job from PSI data if PP has no shaft_details
             for i, psi in enumerate(psi_list):
                 row = spr.append("shaft_jobs", {})
@@ -8161,7 +8175,16 @@ def get_spr_shaft_jobs_from_pp(pp_id):
     try:
         pp = frappe.get_doc("Production Plan", pp_id)
         jobs = []
-        shafts = pp.get("shaft_details") or []
+        shafts = pp.get("custom_shaft_details") or pp.get("shaft_details") or []
+
+        # Fetch linked Work Orders for WO name enrichment
+        pp_work_orders = frappe.get_all("Work Order",
+            filters={"production_plan": pp_id, "docstatus": ["<", 2]},
+            fields=["name", "qty"],
+            order_by="creation asc"
+        )
+        wo_names_str = ", ".join([wo.name for wo in pp_work_orders]) if pp_work_orders else ""
+        wo_total_qty = sum(flt(wo.qty) for wo in pp_work_orders)
 
         def pick_value(source, keys, default=None):
             for k in keys:
@@ -8182,9 +8205,13 @@ def get_spr_shaft_jobs_from_pp(pp_id):
                     "net_weight_shaft_kgs": pick_value(pp_shaft, ["net_weight_shaft_kgs", "net_weight_shaft", "net_weight"], ""),
                     "total_weight_kgs": flt(pick_value(pp_shaft, ["total_weight_kgs", "total_weight", "weight"], 0) or 0),
                     "order_code": pick_value(pp_shaft, ["order_code", "party_code", "custom_order_code"], pp.get("order_code") or pp.get("custom_order_code") or ""),
-                    "work_orders": pick_value(pp_shaft, ["work_orders", "work_order", "wo", "wo_no"], ""),
+                    "work_orders": pick_value(pp_shaft, ["work_orders", "work_order", "wo", "wo_no"], "") or wo_names_str,
                 }
             )
+
+            # Enrich total_weight from WO qty if shaft row has zero weight
+            if not flt(jobs[-1]["total_weight_kgs"]) and wo_total_qty:
+                jobs[-1]["total_weight_kgs"] = flt(wo_total_qty)
 
         return {
             "status": "ok",
