@@ -1482,48 +1482,50 @@ async function openProductionPlanView(planningSheetName, salesOrderItem = null, 
   }
   
   try {
-    // Strict priority: use item-level PP ID if explicitly provided
+    // STRICT PRIORITY: Item-level PP ID overrides everything. NO fallback allowed.
     let ppId = String(directPpId || "").trim();
     
-    console.log("openProductionPlanView called:", {
+    console.log("openProductionPlanView - STRICT mode:", {
       planningSheetName,
       planningSheetItem,
       directPpId,
-      ppIdAfterTrim: ppId,
-      ppIdExists: !!ppId
+      ppIdTrimmed: ppId,
+      usingItemLevelPP: !!ppId
     });
     
-    // If PP ID not provided directly or is empty, resolve it via API (fallback only)
-    if (!ppId) {
-      console.warn("No direct PP ID provided. Falling back to API resolution for sheet:", planningSheetName);
-      const res = await frappe.call({
-        method: "production_scheduler.api.get_planning_sheet_pp_id",
-        args: {
-          planning_sheet_name: planningSheetName,
-          sales_order_item: salesOrderItem,
-          planning_sheet_item: planningSheetItem,
-        }
-      });
-      
-      if (res.message && res.message.status === "ok") {
-        ppId = String(res.message.pp_id || "").trim();
-        console.log("API resolved PP ID:", ppId);
-      } else {
-        const errorMsg = res.message?.message || "Error fetching Production Plan";
-        frappe.msgprint(errorMsg);
-        return;
-      }
-    } else {
-      console.log("Using item-level PP ID directly:", ppId);
+    // If item-level PP is provided, use it directly and open immediately
+    // WITHOUT calling API fallback, which might return different PP from Planning Sheet level
+    if (ppId) {
+      console.log("✅ Using ITEM-LEVEL PP ID directly (NO API fallback):", ppId);
+      const printUrl = `/printview?doctype=${encodeURIComponent("Production Plan")}&name=${encodeURIComponent(ppId)}&format=${encodeURIComponent("Assembly Item - Raw Material")}&trigger_print=0`;
+      window.open(printUrl, '_blank');
+      return;
     }
     
-    // Open the Production Plan view
-    if (ppId) {
-      const printUrl = `/printview?doctype=${encodeURIComponent("Production Plan")}&name=${encodeURIComponent(ppId)}&format=${encodeURIComponent("Assembly Item - Raw Material")}&trigger_print=0`;
-      console.log(`Opening PP: ${ppId}`);
-      window.open(printUrl, '_blank');
+    // Only if NO item-level PP provided, fallback to API resolution (sheet-level or SO-level)
+    console.warn("No item-level PP provided. Using API fallback for sheet:", planningSheetName);
+    const res = await frappe.call({
+      method: "production_scheduler.api.get_planning_sheet_pp_id",
+      args: {
+        planning_sheet_name: planningSheetName,
+        sales_order_item: salesOrderItem,
+        planning_sheet_item: planningSheetItem,
+      }
+    });
+    
+    if (res.message && res.message.status === "ok") {
+      ppId = String(res.message.pp_id || "").trim();
+      console.log("📌 API resolved PP (fallback):", ppId);
+      
+      if (ppId) {
+        const printUrl = `/printview?doctype=${encodeURIComponent("Production Plan")}&name=${encodeURIComponent(ppId)}&format=${encodeURIComponent("Assembly Item - Raw Material")}&trigger_print=0`;
+        window.open(printUrl, '_blank');
+      } else {
+        frappe.msgprint("No Production Plan found for this item");
+      }
     } else {
-      frappe.msgprint("No Production Plan found for this item");
+      const errorMsg = res.message?.message || "Error fetching Production Plan";
+      frappe.msgprint(errorMsg);
     }
   } catch (e) {
     frappe.msgprint("Error opening Production Plan");
