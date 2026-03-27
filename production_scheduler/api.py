@@ -8051,17 +8051,28 @@ def create_item_spr(pp_id, planning_sheet_item_names):
         spr.custom_order_code = parent_sheet.party_code or ""
         spr.customer = pp.customer or parent_sheet.customer or ""
         
+        def pick_value(source, keys, default=None):
+            for k in keys:
+                v = source.get(k)
+                if v not in (None, ""):
+                    return v
+            return default
+
         # Fetch shaft details from Production Plan (not from Planning Sheet Items)
         # Copy shaft details from PP to SPR
         if hasattr(pp, 'shaft_details') and pp.shaft_details:
             for pp_shaft in pp.shaft_details:
                 row = spr.append("shaft_jobs", {})
-                row.job_id = pp_shaft.get("job_id") or str(len(spr.shaft_jobs))
-                row.gsm = pp_shaft.get("gsm") or ""
-                row.combination = pp_shaft.get("combination") or ""
-                row.total_width = flt(pp_shaft.get("total_width") or 0)
-                row.meter_roll_mtrs = flt(pp_shaft.get("meter_roll_mtrs") or 500)
-                row.no_of_shafts = cint(pp_shaft.get("no_of_shafts") or 1)
+                row.job_id = pick_value(pp_shaft, ["job_id", "job", "job_no"], str(len(spr.shaft_jobs)))
+                row.gsm = pick_value(pp_shaft, ["gsm"], "")
+                row.combination = pick_value(pp_shaft, ["combination", "shaft", "shaft_details"], "")
+                row.total_width = flt(pick_value(pp_shaft, ["total_width", "width", "total_width_inches"], 0) or 0)
+                row.meter_roll_mtrs = flt(pick_value(pp_shaft, ["meter_roll_mtrs", "roll_mtrs", "meter_roll", "roll"], 500) or 500)
+                row.no_of_shafts = cint(pick_value(pp_shaft, ["no_of_shafts", "no_of_sh", "no_of_sf"], 1) or 1)
+                row.net_weight_shaft_kgs = pick_value(pp_shaft, ["net_weight_shaft_kgs", "net_weight_shaft", "net_weight"], "")
+                row.total_weight_kgs = flt(pick_value(pp_shaft, ["total_weight_kgs", "total_weight", "weight"], 0) or 0)
+                row.order_code = pick_value(pp_shaft, ["order_code", "party_code", "custom_order_code"], parent_sheet.party_code or "")
+                row.work_orders = pick_value(pp_shaft, ["work_orders", "work_order", "wo", "wo_no"], "")
                 row.quality = first_psi.custom_quality or first_psi.get("quality") or ""
                 row.color = first_psi.color or ""
                 row.party_code = parent_sheet.party_code or ""
@@ -8152,17 +8163,26 @@ def get_spr_shaft_jobs_from_pp(pp_id):
         jobs = []
         shafts = pp.get("shaft_details") or []
 
+        def pick_value(source, keys, default=None):
+            for k in keys:
+                v = source.get(k)
+                if v not in (None, ""):
+                    return v
+            return default
+
         for idx, pp_shaft in enumerate(shafts, start=1):
             jobs.append(
                 {
-                    "job_id": pp_shaft.get("job_id") or str(idx),
-                    "gsm": pp_shaft.get("gsm") or "",
-                    "combination": pp_shaft.get("combination") or "",
-                    "total_width": flt(pp_shaft.get("total_width") or 0),
-                    "meter_roll_mtrs": flt(pp_shaft.get("meter_roll_mtrs") or 500),
-                    "no_of_shafts": cint(pp_shaft.get("no_of_shafts") or 1),
-                    "net_weight_shaft_kgs": flt(pp_shaft.get("net_weight_shaft_kgs") or 0),
-                    "total_weight_kgs": flt(pp_shaft.get("total_weight_kgs") or 0),
+                    "job_id": pick_value(pp_shaft, ["job_id", "job", "job_no"], str(idx)),
+                    "gsm": pick_value(pp_shaft, ["gsm"], ""),
+                    "combination": pick_value(pp_shaft, ["combination", "shaft", "shaft_details"], ""),
+                    "total_width": flt(pick_value(pp_shaft, ["total_width", "width", "total_width_inches"], 0) or 0),
+                    "meter_roll_mtrs": flt(pick_value(pp_shaft, ["meter_roll_mtrs", "roll_mtrs", "meter_roll", "roll"], 500) or 500),
+                    "no_of_shafts": cint(pick_value(pp_shaft, ["no_of_shafts", "no_of_sh", "no_of_sf"], 1) or 1),
+                    "net_weight_shaft_kgs": pick_value(pp_shaft, ["net_weight_shaft_kgs", "net_weight_shaft", "net_weight"], ""),
+                    "total_weight_kgs": flt(pick_value(pp_shaft, ["total_weight_kgs", "total_weight", "weight"], 0) or 0),
+                    "order_code": pick_value(pp_shaft, ["order_code", "party_code", "custom_order_code"], pp.get("order_code") or pp.get("custom_order_code") or ""),
+                    "work_orders": pick_value(pp_shaft, ["work_orders", "work_order", "wo", "wo_no"], ""),
                 }
             )
 

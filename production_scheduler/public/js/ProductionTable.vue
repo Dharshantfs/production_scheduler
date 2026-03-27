@@ -1624,11 +1624,13 @@ async function createItemStockEntry(item) {
 
 function getItemDisplayName(item) {
   if (!item) return "-";
+  const semanticName = [item.quality, item.color, item.gsm].filter(Boolean).join(" ").trim();
   return (
     item.description ||
     item.item_name ||
     item.itemCode ||
     item.item_code ||
+    semanticName ||
     item.itemName ||
     "-"
   );

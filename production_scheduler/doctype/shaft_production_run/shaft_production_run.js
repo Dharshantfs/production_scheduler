@@ -16,7 +16,8 @@ frappe.ui.form.on('Shaft Production Run', {
 
         // If PP already exists on a new form, ensure Available Jobs are pulled from PP shaft details.
         if (frm.doc.production_plan) {
-            load_available_jobs_from_pp(frm, { force: false });
+            const hasPlaceholderRows = has_only_placeholder_rows(frm);
+            load_available_jobs_from_pp(frm, { force: frm.is_new() || hasPlaceholderRows });
         }
         
         // Show WO popup when production_plan is set
@@ -62,6 +63,35 @@ function should_skip_auto_fill(frm, force) {
     return false;
 }
 
+function has_only_placeholder_rows(frm) {
+    const rows = frm.doc.shaft_jobs || [];
+    if (!rows.length) {
+        return true;
+    }
+
+    return rows.every((row) => {
+        const netWeight = row.net_weight_shaft_kgs || row.net_weight_shaft || row.net_weight || '';
+        const totalWeight = flt(row.total_weight_kgs || row.total_weight || 0);
+        const workOrders = row.work_orders || row.work_order || '';
+        const combination = row.combination || row.shaft || '';
+        return !netWeight && totalWeight === 0 && !workOrders && !combination;
+    });
+}
+
+function set_row_value(row, candidates, value) {
+    for (const key of candidates) {
+        if (Object.prototype.hasOwnProperty.call(row, key)) {
+            row[key] = value;
+            return;
+        }
+    }
+
+    // Fallback: assign first candidate even if key is not pre-seeded on row object.
+    if (candidates.length) {
+        row[candidates[0]] = value;
+    }
+}
+
 function load_available_jobs_from_pp(frm, opts = {}) {
     const force = !!opts.force;
     if (should_skip_auto_fill(frm, force)) {
@@ -99,18 +129,25 @@ function load_available_jobs_from_pp(frm, opts = {}) {
 
             jobs.forEach((job, idx) => {
                 const row = frm.add_child('shaft_jobs');
-                row.job_id = job.job_id || String(idx + 1);
-                row.gsm = job.gsm || '';
-                row.combination = job.combination || '';
-                row.total_width = flt(job.total_width || 0);
-                row.meter_roll_mtrs = flt(job.meter_roll_mtrs || 0);
-                row.no_of_shafts = cint(job.no_of_shafts || 0);
-                row.net_weight_shaft_kgs = flt(job.net_weight_shaft_kgs || 0);
-                row.total_weight_kgs = flt(job.total_weight_kgs || 0);
+                set_row_value(row, ['job_id', 'job', 'job_no'], job.job_id || String(idx + 1));
+                set_row_value(row, ['gsm'], job.gsm || '');
+                set_row_value(row, ['combination', 'shaft', 'shaft_details'], job.combination || '');
+                set_row_value(row, ['total_width', 'width', 'total_width_inches'], flt(job.total_width || 0));
+                set_row_value(row, ['meter_roll_mtrs', 'roll_mtrs', 'meter_roll', 'roll'], flt(job.meter_roll_mtrs || 0));
+                set_row_value(row, ['no_of_shafts', 'no_of_sh', 'no_of_sf'], cint(job.no_of_shafts || 0));
+                set_row_value(row, ['net_weight_shaft_kgs', 'net_weight_shaft', 'net_weight'], job.net_weight_shaft_kgs || '');
+                set_row_value(row, ['total_weight_kgs', 'total_weight', 'weight'], flt(job.total_weight_kgs || 0));
+                set_row_value(row, ['order_code', 'party_code', 'custom_order_code'], job.order_code || '');
+                set_row_value(row, ['work_orders', 'work_order', 'wo_no'], job.work_orders || '');
             });
 
             frm.refresh_field('shaft_jobs');
             frm.__spr_jobs_loaded_pp = frm.doc.production_plan;
+
+            frappe.show_alert({
+                indicator: 'green',
+                message: `Fetched ${jobs.length} jobs from Production Plan.`
+            }, 4);
 
             if (!frm.doc.customer && payload.customer) {
                 frm.set_value('customer', payload.customer);
