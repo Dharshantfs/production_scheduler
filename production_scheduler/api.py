@@ -2335,6 +2335,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     item_pp_map = {}
     pp_produced_map = {}
     pp_wo_count_map = {}
+    pp_has_open_wo_map = {}
+    pp_has_wo_map = {}
     spr_pp_produced_map = {}
     spr_pp_count_map = {}
     spr_psi_produced_map = {}
@@ -2555,7 +2557,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             SELECT wo.production_plan,
                    wo.name,
                    GREATEST(IFNULL(wo.produced_qty, 0), IFNULL(se_map.se_produced_qty, 0)) as produced_qty,
-                   wo.qty
+                 wo.qty,
+                 IFNULL(wo.status, '') as status
             FROM `tabWork Order` wo
             LEFT JOIN (
                 SELECT se.work_order, SUM(IFNULL(sed.qty, 0)) as se_produced_qty
@@ -2571,10 +2574,18 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         for row in wo_data_pp:
             if row.production_plan not in pp_wo_map:
                 pp_wo_map[row.production_plan] = []
+            pp_has_wo_map[row.production_plan] = True
+
+            wo_status = str(row.get("status") or "").strip().lower()
+            terminal_statuses = {"completed", "stopped", "cancelled", "closed"}
+            if wo_status and wo_status not in terminal_statuses:
+                pp_has_open_wo_map[row.production_plan] = True
+
             pp_wo_map[row.production_plan].append({
                 "name": row.name,
                 "produced_qty": flt(row.produced_qty),
-                "qty": flt(row.qty)
+                "qty": flt(row.qty),
+                "status": row.get("status")
             })
 
     # Shaft Production Run aggregation (submitted docs) for production flows
@@ -2988,6 +2999,10 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                         spr_name = ""
                     spr_link_cache[item_pp] = spr_name
 
+            pending_qty = max(flt(item.get("qty", 0)) - flt(item_level_produced), 0)
+            wo_open = bool(item_pp and pp_has_open_wo_map.get(item_pp))
+            wo_terminal = bool(item_pp and pp_has_wo_map.get(item_pp) and not wo_open)
+
             data.append({
                 "name": "{}-{}".format(sheet.name, item.get("idx", 0)),
                 "itemName": item.name,
@@ -3019,6 +3034,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "produced_qty": flt(item_level_produced),
                 "salesOrderItem": so_item_key,
                 "actual_produced_qty": flt(item_level_produced),
+                "pending_qty": flt(pending_qty),
+                "wo_open": wo_open,
+                "wo_terminal": wo_terminal,
                 "isSplit": item.get("custom_is_split"),
                 "pp_id": item_pp or "",  # Item-level production plan ID for direct PP view routing
                 "spr_name": spr_name  # SPR linked to PP (validated)
@@ -8165,6 +8183,37 @@ def create_item_spr(pp_id, planning_sheet_item_names):
     
     try:
         pp = frappe.get_doc("Production Plan", pp_id)
+
+        # One SPR per PP policy: reuse existing active SPR if available.
+        linked_spr = str(frappe.db.get_value("Production Plan", pp_id, "custom_shaft_production_run_id") or "").strip()
+        if linked_spr and frappe.db.exists("Shaft Production Run", linked_spr):
+            existing_docstatus = cint(frappe.db.get_value("Shaft Production Run", linked_spr, "docstatus") or 0)
+            if existing_docstatus < 2:
+                return {
+                    "status": "ok",
+                    "spr_id": linked_spr,
+                    "message": f"SPR Reused: {linked_spr}",
+                    "reused": 1,
+                }
+
+        existing_active = frappe.get_all(
+            "Shaft Production Run",
+            filters={"production_plan": pp_id, "docstatus": ["<", 2]},
+            fields=["name"],
+            order_by="modified desc",
+            limit=1,
+        )
+        if existing_active:
+            existing_spr = existing_active[0].get("name")
+            frappe.db.set_value("Production Plan", pp_id, "custom_shaft_production_run_id", existing_spr)
+            frappe.db.commit()
+            return {
+                "status": "ok",
+                "spr_id": existing_spr,
+                "message": f"SPR Reused: {existing_spr}",
+                "reused": 1,
+            }
+
         psi_list = []
         
         for psi_name in planning_sheet_item_names:
@@ -8252,15 +8301,22 @@ def create_item_spr(pp_id, planning_sheet_item_names):
                 _nw = pick_value(pp_shaft, ["net_weight_shaft_kgs", "net_weight_shaft", "net_weight"], "") or pp_net_weight
                 row.net_weight = _nw
                 row.net_weight_shaft_kgs = _nw # keep legacy for safety
+                row.net_weight_shaft = _nw
+                row.custom_net_weight_shaft_kgs = _nw
                 
                 _tw = flt(pick_value(pp_shaft, ["total_weight_kgs", "total_weight", "weight"], 0) or 0) or pp_total_weight
                 row.total_weight_kgs = _tw
                 row.total_weight = _tw # try without _kgs variant too
+                row.custom_total_weight_kgs = _tw
                 row.order_code = pick_value(pp_shaft, ["order_code", "party_code", "custom_order_code"], parent_sheet.party_code or "")
+                row.custom_order_code = row.order_code
                 row.work_orders = pick_value(pp_shaft, ["work_orders", "work_order", "wo", "wo_no"], "") or wo_names_str
+                row.work_order = row.work_orders
                 # Compute total_weight from WO qty if still zero
                 if not flt(row.total_weight_kgs) and wo_total_qty:
                     row.total_weight_kgs = flt(wo_total_qty)
+                    row.total_weight = row.total_weight_kgs
+                    row.custom_total_weight_kgs = row.total_weight_kgs
                 row.quality = first_psi.custom_quality or first_psi.get("quality") or ""
                 row.color = first_psi.color or ""
                 row.party_code = parent_sheet.party_code or ""

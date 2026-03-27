@@ -203,11 +203,11 @@
                             </td>
                             <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">
                               <button 
-                                v-if="row.item.pp_id && !row.item.spr_name" 
-                                @click="createItemStockEntry(row.item)" 
+                                v-if="canShowStockEntry(row.item)" 
+                                @click="handleStockEntryAction(row.item)" 
                                 class="cc-pp-btn" 
-                                title="Create Stock Entry for this item">
-                                📝 Stock Entry
+                                :title="row.item.spr_name ? 'Continue Stock Entry for this PP' : 'Create Stock Entry for this item'">
+                                {{ row.item.spr_name ? '📝 Continue Entry' : '📝 Stock Entry' }}
                               </button>
                               <button 
                                 v-else-if="row.item.spr_name" 
@@ -1533,7 +1533,42 @@ async function openProductionPlanView(planningSheetName, salesOrderItem = null, 
   }
 }
 
+function canShowStockEntry(item) {
+  if (!item || !item.pp_id) return false;
+
+  const woTerminal = !!item.wo_terminal;
+  if (woTerminal) return false;
+
+  // Continue allowing stock entry until WO is completed/stopped.
+  return true;
+}
+
+function handleStockEntryAction(item) {
+  if (!item) return;
+  if (item.spr_name) {
+    openItemSPR(item.spr_name, item);
+    return;
+  }
+  createItemStockEntry(item);
+}
+
+function syncSprNameForSamePP(ppId, sprId) {
+  const pid = String(ppId || "").trim();
+  const sid = String(sprId || "").trim();
+  if (!pid || !sid) return;
+
+  (rawData.value || []).forEach((row) => {
+    if (String(row.pp_id || "").trim() === pid) {
+      row.spr_name = sid;
+    }
+  });
+}
+
 async function createItemStockEntry(item) {
+  if (item.__creating_spr) {
+    return;
+  }
+
   // Detailed debug logging
   console.log("createItemStockEntry called with item:", {
     itemName: item.itemName,
@@ -1616,6 +1651,7 @@ async function createItemStockEntry(item) {
   frappe.confirm(
     `Create Stock Entry for <b>${item.partyCode}</b> (${item.color})?<br/>PP: ${item.pp_id}<br/>Item: ${itemDisplay}`,
     async () => {
+      item.__creating_spr = true;
       try {
         console.log("Calling create_item_spr with:", {
           pp_id: item.pp_id,
@@ -1638,9 +1674,11 @@ async function createItemStockEntry(item) {
         if (res.message && res.message.status === "ok") {
           const sprId = res.message.spr_id;
           item.spr_name = sprId;
+          syncSprNameForSamePP(item.pp_id, sprId);
+          const reused = !!res.message.reused;
           
           frappe.show_alert({
-            message: `✅ SPR Created: ${sprId}. Opening form...`,
+            message: reused ? `✅ Using existing SPR: ${sprId}. Opening form...` : `✅ SPR Created: ${sprId}. Opening form...`,
             indicator: 'green'
           }, 3);
           
@@ -1661,6 +1699,8 @@ async function createItemStockEntry(item) {
       } catch (e) {
         console.error("Exception in createItemStockEntry:", e);
         frappe.msgprint(`❌ Error creating Stock Entry: ${e.message || e}`);
+      } finally {
+        item.__creating_spr = false;
       }
     }
   );
@@ -1786,11 +1826,13 @@ async function createSingleMergedSPR(ppId, mergedItems, mergedRow) {
               if (res.message && res.message.status === "ok") {
                 const sprId = res.message.spr_id;
                 mergedRow.spr_name = sprId;
+                syncSprNameForSamePP(ppId, sprId);
+                const reused = !!res.message.reused;
 
                 showLinkedWorkOrdersPopup(ppId);
                 
                 frappe.show_alert({
-                  message: `✅ Merged SPR Created: ${sprId}. Opening form...`,
+                  message: reused ? `✅ Using existing merged SPR: ${sprId}. Opening form...` : `✅ Merged SPR Created: ${sprId}. Opening form...`,
                   indicator: 'green'
                 }, 3);
                 
