@@ -12,6 +12,8 @@ frappe.ui.form.on('Shaft Production Run', {
     },
 
     refresh: function(frm) {
+        enforce_total_weight_precision(frm);
+
         // Auto-fill production_plan if it's new and not already set
         if (frm.is_new() && !frm.doc.production_plan) {
             const urlParams = new URLSearchParams(window.location.search);
@@ -93,6 +95,21 @@ function set_row_value(row, candidates, value) {
     }
 }
 
+function enforce_total_weight_precision(frm) {
+    if (!frm || !frm.fields_dict || !frm.fields_dict.shaft_jobs || !frm.fields_dict.shaft_jobs.grid) {
+        return;
+    }
+
+    const grid = frm.fields_dict.shaft_jobs.grid;
+    ["total_weight", "total_weight_kgs", "custom_total_weight_kgs"].forEach((fieldname) => {
+        try {
+            grid.update_docfield_property(fieldname, "precision", 2);
+        } catch (e) {
+            // Ignore if this field does not exist in current site schema.
+        }
+    });
+}
+
 function load_available_jobs_from_pp(frm, opts = {}) {
     const force = !!opts.force;
     if (should_skip_auto_fill(frm, force)) {
@@ -137,9 +154,15 @@ function load_available_jobs_from_pp(frm, opts = {}) {
                 set_row_value(row, ['meter_roll_mtrs', 'roll_mtrs', 'meter_roll', 'roll'], flt(job.meter_roll_mtrs || 0));
                 set_row_value(row, ['no_of_shafts', 'no_of_sh', 'no_of_sf'], cint(job.no_of_shafts || 0));
                 set_row_value(row, ['net_weight_shaft_kgs', 'net_weight_shaft', 'net_weight'], job.net_weight_shaft_kgs || '');
-                set_row_value(row, ['total_weight_kgs', 'total_weight', 'weight'], flt(job.total_weight_kgs || 0));
+                set_row_value(row, ['total_weight_kgs', 'total_weight', 'weight'], flt(job.total_weight_kgs || 0, 2));
                 set_row_value(row, ['order_code', 'party_code', 'custom_order_code'], job.order_code || '');
                 set_row_value(row, ['work_orders', 'work_order', 'wo_no'], job.work_orders || '');
+            });
+
+            (frm.doc.shaft_jobs || []).forEach((row) => {
+                if (row.total_weight !== undefined) row.total_weight = flt(row.total_weight || 0, 2);
+                if (row.total_weight_kgs !== undefined) row.total_weight_kgs = flt(row.total_weight_kgs || 0, 2);
+                if (row.custom_total_weight_kgs !== undefined) row.custom_total_weight_kgs = flt(row.custom_total_weight_kgs || 0, 2);
             });
 
             frm.refresh_field('shaft_jobs');

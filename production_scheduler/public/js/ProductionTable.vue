@@ -188,9 +188,9 @@
                             <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-right font-bold bg-blue-50">
                               {{ formatKg(dateGroup.dailyTotal) }}
                             </td>
-                            <td class="cell-right font-bold">{{ formatKg(row.item.actual_production_weight_kgs) }}</td>
+                            <td class="cell-right font-bold">{{ formatKg2(row.item.actual_production_weight_kgs) }}</td>
                             <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-right font-bold bg-yellow-50">
-                              {{ formatKg(dateGroup.dailyActualTotal) }}
+                              {{ formatKg2(dateGroup.dailyActualTotal) }}
                             </td>
                             <td class="cell-center">-</td>
                                     
@@ -249,7 +249,7 @@
                                   <span>{{ mItem.gsm }} GSM</span>
                                   <span>Width: {{ formatWidth(mItem.width_inch || mItem.width || mItem.custom_width) }}</span>
                                   <span>Target: {{ formatKg(mItem.qty) }} Kg</span>
-                                  <span>Actual: {{ formatKg(mItem.actual_production_weight_kgs) }} Kg</span>
+                                  <span>Actual: {{ formatKg2(mItem.actual_production_weight_kgs) }} Kg</span>
                                 </div>
                               </div>
                             </td>
@@ -261,9 +261,9 @@
                             <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-right font-bold bg-blue-50">
                               {{ formatKg(dateGroup.dailyTotal) }}
                             </td>
-                            <td class="cell-right font-bold">{{ formatKg(row.totalActualWeight) }}</td>
+                            <td class="cell-right font-bold">{{ formatKg2(row.totalActualWeight) }}</td>
                             <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-right font-bold bg-yellow-50">
-                              {{ formatKg(dateGroup.dailyActualTotal) }}
+                              {{ formatKg2(dateGroup.dailyActualTotal) }}
                             </td>
                             <td class="cell-center">
                               <button
@@ -1199,6 +1199,12 @@ function formatKg(value) {
   const num = parseFloat(value || 0);
   if (!Number.isFinite(num)) return "0";
   return num.toFixed(0);
+}
+
+function formatKg2(value) {
+  const num = parseFloat(value || 0);
+  if (!Number.isFinite(num)) return "0.00";
+  return num.toFixed(2);
 }
 
 function formatWidth(value) {
