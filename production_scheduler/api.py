@@ -2820,6 +2820,11 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     data = []
     spr_link_cache = {}
     spr_meta_cache = {}
+    spr_has_unit_col = False
+    try:
+        spr_has_unit_col = frappe.db.has_column("Shaft Production Run", "unit")
+    except Exception:
+        spr_has_unit_col = False
     for sheet in planning_sheets:
         items = frappe.get_all(
             "Planning Sheet Item",
@@ -3012,7 +3017,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                     spr_docstatus = spr_meta_cache[spr_name].get("docstatus")
                     spr_unit = spr_meta_cache[spr_name].get("unit") or ""
                 else:
-                    spr_meta = frappe.db.get_value("Shaft Production Run", spr_name, ["docstatus", "unit"], as_dict=True) or {}
+                    spr_fields = ["docstatus"] + (["unit"] if spr_has_unit_col else [])
+                    spr_meta = frappe.db.get_value("Shaft Production Run", spr_name, spr_fields, as_dict=True) or {}
                     spr_docstatus = spr_meta.get("docstatus")
                     spr_unit = spr_meta.get("unit") or ""
                     spr_meta_cache[spr_name] = {"docstatus": spr_docstatus, "unit": spr_unit}
@@ -8283,6 +8289,65 @@ def create_item_spr(pp_id, planning_sheet_item_names):
         return {"status": "error", "message": f"Production Plan {pp_id} not found"}
     
     try:
+        def _hydrate_existing_spr(existing_spr_name, current_pp_id):
+            """Fill missing shaft job fields on reused draft SPR from PP shaft mapping."""
+            if not existing_spr_name or not frappe.db.exists("Shaft Production Run", existing_spr_name):
+                return
+
+            payload = get_spr_shaft_jobs_from_pp(current_pp_id)
+            if not payload or payload.get("status") != "ok":
+                return
+
+            jobs = payload.get("jobs") or []
+            if not jobs:
+                return
+
+            spr_doc = frappe.get_doc("Shaft Production Run", existing_spr_name)
+            rows = list(spr_doc.get("shaft_jobs") or [])
+            changed = False
+
+            def _set_if_blank(row, keys, value):
+                nonlocal changed
+                if value in (None, ""):
+                    return
+                for k in keys:
+                    if hasattr(row, k):
+                        cur = row.get(k)
+                        if cur in (None, "", 0, 0.0):
+                            row.set(k, value)
+                            changed = True
+
+            # If no rows exist yet, create rows directly from jobs.
+            if not rows:
+                for i, job in enumerate(jobs, start=1):
+                    row = spr_doc.append("shaft_jobs", {})
+                    row.job_id = job.get("job_id") or str(i)
+                    row.gsm = job.get("gsm") or ""
+                    row.combination = job.get("combination") or ""
+                    row.total_width = flt(job.get("total_width") or 0)
+                    row.meter_roll_mtrs = flt(job.get("meter_roll_mtrs") or 0)
+                    row.no_of_shafts = cint(job.get("no_of_shafts") or 0)
+                    row.net_weight = job.get("net_weight") or job.get("net_weight_shaft_kgs") or ""
+                    row.net_weight_shaft_kgs = row.net_weight
+                    row.total_weight = flt(job.get("total_weight") or job.get("total_weight_kgs") or 0)
+                    row.total_weight_kgs = row.total_weight
+                    row.order_code = job.get("order_code") or ""
+                    row.work_orders = job.get("work_orders") or ""
+                changed = True
+            else:
+                for idx, row in enumerate(rows):
+                    job = jobs[idx] if idx < len(jobs) else jobs[-1]
+                    _set_if_blank(row, ["net_weight", "net_weight_shaft_kgs", "net_weight_shaft", "custom_net_weight_shaft_kgs"], job.get("net_weight") or job.get("net_weight_shaft_kgs"))
+                    _set_if_blank(row, ["total_weight", "total_weight_kgs", "custom_total_weight_kgs"], flt(job.get("total_weight") or job.get("total_weight_kgs") or 0))
+                    _set_if_blank(row, ["order_code", "custom_order_code"], job.get("order_code") or "")
+                    _set_if_blank(row, ["work_orders", "work_order", "wo_no"], job.get("work_orders") or "")
+                    _set_if_blank(row, ["combination", "shaft", "shaft_details"], job.get("combination") or "")
+                    _set_if_blank(row, ["meter_roll_mtrs", "roll_mtrs", "meter_roll", "roll"], flt(job.get("meter_roll_mtrs") or 0))
+                    _set_if_blank(row, ["no_of_shafts", "no_of_shaft", "no_of_sh", "no_of_sf"], cint(job.get("no_of_shafts") or 0))
+
+            if changed:
+                spr_doc.save(ignore_permissions=True)
+
         pp = frappe.get_doc("Production Plan", pp_id)
 
         # One SPR per PP policy: reuse only DRAFT SPR; submitted SPR should not block a new continuation SPR.
@@ -8290,6 +8355,7 @@ def create_item_spr(pp_id, planning_sheet_item_names):
         if linked_spr and frappe.db.exists("Shaft Production Run", linked_spr):
             existing_docstatus = cint(frappe.db.get_value("Shaft Production Run", linked_spr, "docstatus") or 0)
             if existing_docstatus == 0:
+                _hydrate_existing_spr(linked_spr, pp_id)
                 return {
                     "status": "ok",
                     "spr_id": linked_spr,
@@ -8307,6 +8373,7 @@ def create_item_spr(pp_id, planning_sheet_item_names):
         if existing_active:
             existing_spr = existing_active[0].get("name")
             frappe.db.set_value("Production Plan", pp_id, "custom_shaft_production_run_id", existing_spr)
+            _hydrate_existing_spr(existing_spr, pp_id)
             frappe.db.commit()
             return {
                 "status": "ok",
