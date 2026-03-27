@@ -2699,6 +2699,30 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     except Exception:
         pass
 
+    # Fetch SPR achieved weights by Production Plan (primary method)
+    spr_pp_achieved_weight_map = {}  # Map PP to SPR achieved weight
+    try:
+        if valid_pps and frappe.db.exists("DocType", "Shaft Production Run"):
+            fmt_pps = ",".join(["%s"] * len(valid_pps))
+            spr_achieved_rows = frappe.db.sql(f"""
+                SELECT 
+                    production_plan,
+                    custom_total_achieved_weight
+                FROM `tabShaft Production Run`
+                WHERE production_plan IN ({fmt_pps})
+                  AND docstatus < 2
+                ORDER BY creation DESC
+            """, tuple(valid_pps), as_dict=True)
+            
+            for row in spr_achieved_rows:
+                pp_id = row.get('production_plan')
+                achieved = flt(row.get('custom_total_achieved_weight', 0))
+                # Take the latest (first) SPR for each PP
+                if pp_id and pp_id not in spr_pp_achieved_weight_map:
+                    spr_pp_achieved_weight_map[pp_id] = achieved
+    except Exception:
+        pass
+
     # Fetch SPR production via custom_spr_name field on Planning Sheet Items
     spr_psi_achieved_weight_map = {}  # Map PSI to SPR achieved weight
     try:
@@ -3111,9 +3135,11 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             wo_open = bool(item_pp and pp_has_open_wo_map.get(item_pp))
             wo_terminal = bool(item_pp and pp_has_wo_map.get(item_pp) and not wo_open)
 
-            # Get total achieved weight from SPR if available
+            # Get total achieved weight from SPR if available (prefer PP link over PSI link)
             total_achieved_weight_kgs = 0
-            if psi_name and psi_name in spr_psi_achieved_weight_map:
+            if item_pp and item_pp in spr_pp_achieved_weight_map:
+                total_achieved_weight_kgs = spr_pp_achieved_weight_map[item_pp]
+            elif psi_name and psi_name in spr_psi_achieved_weight_map:
                 total_achieved_weight_kgs = spr_psi_achieved_weight_map[psi_name]
             
             data.append({
