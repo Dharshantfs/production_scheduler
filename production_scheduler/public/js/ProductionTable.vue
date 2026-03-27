@@ -2099,7 +2099,10 @@ async function fetchData() {
       itemName: d.itemName || d.item_name || "",
       orderDate: d.orderDate || d.ordered_date || "",
       planCode: d.custom_plan_code || "",
-      actual_production_weight_kgs: parseFloat(d.total_achieved_weight_kgs || d.actual_produced_qty || d.actual_production_weight_kgs || d.produced_qty || 0) || 0,
+      // Actual production weight must come only from SPR achieved fields.
+      actual_production_weight_kgs: parseFloat(
+        d.actual_production_weight_kgs ?? d.total_achieved_weight_kgs ?? 0
+      ) || 0,
     }));
 
     // After loading raw data, fetch the exact sequence for the range 

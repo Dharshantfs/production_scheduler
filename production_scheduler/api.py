@@ -2700,25 +2700,27 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         pass
 
     # Fetch SPR achieved weights by Production Plan (primary method)
-    # Use custom_total_achieved_weight field directly from SPR
+    # Use latest submitted SPR.custom_total_achieved_weight per PP.
     spr_pp_achieved_weight_map = {}  # Map PP to SPR achieved weight
     try:
         if valid_pps and frappe.db.exists("DocType", "Shaft Production Run"):
             fmt_pps = ",".join(["%s"] * len(valid_pps))
-            # Get custom_total_achieved_weight directly from SPR header
+            # Pick latest submitted SPR for each PP by creation DESC.
             spr_achieved_rows = frappe.db.sql(f"""
                 SELECT 
+                    spr.name,
                     spr.production_plan,
                     COALESCE(spr.custom_total_achieved_weight, 0) as achieved_weight
                 FROM `tabShaft Production Run` spr
                 WHERE spr.production_plan IN ({fmt_pps})
                   AND spr.docstatus = 1
+                ORDER BY spr.creation DESC
             """, tuple(valid_pps), as_dict=True)
             
             for row in spr_achieved_rows:
                 pp_id = row.get('production_plan')
                 achieved = flt(row.get('achieved_weight', 0))
-                if pp_id and achieved > 0:
+                if pp_id and pp_id not in spr_pp_achieved_weight_map:
                     spr_pp_achieved_weight_map[pp_id] = achieved
     except Exception as e:
         frappe.log_error(f"Error fetching SPR achieved weights: {str(e)}")
@@ -3135,12 +3137,13 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             wo_open = bool(item_pp and pp_has_open_wo_map.get(item_pp))
             wo_terminal = bool(item_pp and pp_has_wo_map.get(item_pp) and not wo_open)
 
-            # Get total achieved weight from SPR if available (prefer PP link over PSI link)
+            # Get total achieved weight from SPR if available.
+            # Rule: PSI-linked SPR takes precedence, else latest submitted SPR for PP.
             total_achieved_weight_kgs = 0
-            if item_pp and item_pp in spr_pp_achieved_weight_map:
-                total_achieved_weight_kgs = spr_pp_achieved_weight_map[item_pp]
-            elif psi_name and psi_name in spr_psi_achieved_weight_map:
+            if psi_name and psi_name in spr_psi_achieved_weight_map:
                 total_achieved_weight_kgs = spr_psi_achieved_weight_map[psi_name]
+            elif item_pp and item_pp in spr_pp_achieved_weight_map:
+                total_achieved_weight_kgs = spr_pp_achieved_weight_map[item_pp]
             
             data.append({
                 "name": "{}-{}".format(sheet.name, item.get("idx", 0)),
