@@ -209,8 +209,8 @@
                                 v-if="canShowStockEntry(row.item)" 
                                 @click="handleStockEntryAction(row.item)" 
                                 class="cc-pp-btn" 
-                                :title="row.item.spr_name ? 'Continue Stock Entry for this PP' : 'Create Stock Entry for this item'">
-                                {{ row.item.spr_name ? '📝 Continue Entry' : '📝 Stock Entry' }}
+                                :title="getStockEntryTitle(row.item)">
+                                {{ getStockEntryLabel(row.item) }}
                               </button>
                               <button 
                                 v-else-if="row.item.spr_name" 
@@ -218,7 +218,7 @@
                                 class="cc-pp-btn" 
                                 style="background:#10b981; color:white;" 
                                 title="View SPR">
-                                ✅ Open SPR
+                                {{ row.item.spr_docstatus === 1 ? '✅ Completed Entry' : '✅ Open SPR' }}
                               </button>
                               <span v-else style="color:#999; font-size:10px; white-space: nowrap;">No PP</span>
                             </td>
@@ -1552,9 +1552,29 @@ function canShowStockEntry(item) {
   return true;
 }
 
+function getStockEntryLabel(item) {
+  if (!item) return '📝 Stock Entry';
+  const isDraftSpr = !!item.spr_name && Number(item.spr_docstatus) === 0;
+  if (isDraftSpr) {
+    return `📝 Continue Entry${item.spr_unit ? ' (' + item.spr_unit + ')' : ''}`;
+  }
+  return '📝 Stock Entry';
+}
+
+function getStockEntryTitle(item) {
+  if (!item) return 'Create Stock Entry';
+  const isDraftSpr = !!item.spr_name && Number(item.spr_docstatus) === 0;
+  const pendingQty = Number(item.pending_qty || 0);
+  if (isDraftSpr) {
+    return `Continue entry in draft SPR${item.spr_unit ? ' (' + item.spr_unit + ')' : ''}. Pending: ${pendingQty.toFixed(0)} Kg`;
+  }
+  return `Create new entry for pending qty ${pendingQty.toFixed(0)} Kg`;
+}
+
 function handleStockEntryAction(item) {
   if (!item) return;
-  if (item.spr_name) {
+  const isDraftSpr = !!item.spr_name && Number(item.spr_docstatus) === 0;
+  if (isDraftSpr) {
     openItemSPR(item.spr_name, item);
     return;
   }

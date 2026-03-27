@@ -2819,6 +2819,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
     data = []
     spr_link_cache = {}
+    spr_meta_cache = {}
     for sheet in planning_sheets:
         items = frappe.get_all(
             "Planning Sheet Item",
@@ -3004,6 +3005,18 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                         spr_name = ""
                     spr_link_cache[item_pp] = spr_name
 
+            spr_docstatus = None
+            spr_unit = ""
+            if spr_name:
+                if spr_name in spr_meta_cache:
+                    spr_docstatus = spr_meta_cache[spr_name].get("docstatus")
+                    spr_unit = spr_meta_cache[spr_name].get("unit") or ""
+                else:
+                    spr_meta = frappe.db.get_value("Shaft Production Run", spr_name, ["docstatus", "unit"], as_dict=True) or {}
+                    spr_docstatus = spr_meta.get("docstatus")
+                    spr_unit = spr_meta.get("unit") or ""
+                    spr_meta_cache[spr_name] = {"docstatus": spr_docstatus, "unit": spr_unit}
+
             item_pending_qty = max(flt(item.get("qty", 0)) - flt(item_level_produced), 0)
 
             pp_target_qty = flt(pp_wo_target_qty_map.get(item_pp, 0)) if item_pp else 0
@@ -3055,7 +3068,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "wo_terminal": wo_terminal,
                 "isSplit": item.get("custom_is_split"),
                 "pp_id": item_pp or "",  # Item-level production plan ID for direct PP view routing
-                "spr_name": spr_name  # SPR linked to PP (validated)
+                "spr_name": spr_name,  # SPR linked to PP (validated)
+                "spr_docstatus": spr_docstatus,
+                "spr_unit": spr_unit,
             })
 
     if cint(planned_only) and plan_name == "__all__":
@@ -8270,11 +8285,11 @@ def create_item_spr(pp_id, planning_sheet_item_names):
     try:
         pp = frappe.get_doc("Production Plan", pp_id)
 
-        # One SPR per PP policy: reuse existing active SPR if available.
+        # One SPR per PP policy: reuse only DRAFT SPR; submitted SPR should not block a new continuation SPR.
         linked_spr = str(frappe.db.get_value("Production Plan", pp_id, "custom_shaft_production_run_id") or "").strip()
         if linked_spr and frappe.db.exists("Shaft Production Run", linked_spr):
             existing_docstatus = cint(frappe.db.get_value("Shaft Production Run", linked_spr, "docstatus") or 0)
-            if existing_docstatus < 2:
+            if existing_docstatus == 0:
                 return {
                     "status": "ok",
                     "spr_id": linked_spr,
@@ -8284,7 +8299,7 @@ def create_item_spr(pp_id, planning_sheet_item_names):
 
         existing_active = frappe.get_all(
             "Shaft Production Run",
-            filters={"production_plan": pp_id, "docstatus": ["<", 2]},
+            filters={"production_plan": pp_id, "docstatus": 0},
             fields=["name"],
             order_by="modified desc",
             limit=1,
