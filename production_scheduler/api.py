@@ -2113,8 +2113,6 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             so_item_col = f"i.{so_item_real_col} as salesOrderItem,"
         split_col = "i.custom_is_split as isSplit," if frappe.db.has_column("Planning Sheet Item", "custom_is_split") else "0 as isSplit,"
 
-        clean_white_sql_pb = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
-
         items = frappe.db.sql(f"""
             SELECT
                 i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
@@ -2132,10 +2130,6 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             LEFT JOIN `tabCustomer` c ON p.customer = c.name
             WHERE {item_date_expr}
               AND i.color IS NOT NULL AND i.color != ''
-              AND (
-                  (i.custom_quality IS NOT NULL AND i.custom_quality != '')
-                  OR REPLACE(UPPER(i.color), ' ', '') IN ({clean_white_sql_pb})
-              )
               {sheet_pushed}
               AND p.docstatus < 2
             ORDER BY i.unit, i.idx
