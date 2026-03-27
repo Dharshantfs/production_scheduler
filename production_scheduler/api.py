@@ -8057,11 +8057,10 @@ def backfill_pp_id_to_sheet_items(planning_sheet_name=None, dry_run=1):
                 continue
 
             # Resolve PP via sales_order_item
-            pp_id = None
+            resolved_pp = None
             so_item = psi.get("sales_order_item")
 
             if so_item:
-                # Find PP that has this sales_order_item
                 pp_row = frappe.db.sql("""
                     SELECT pp.name
                     FROM `tabProduction Plan` pp
@@ -8072,34 +8071,29 @@ def backfill_pp_id_to_sheet_items(planning_sheet_name=None, dry_run=1):
                     LIMIT 1
                 """, so_item, as_dict=True)
                 if pp_row:
-                    pp_id = pp_row[0]["name"]
+                    resolved_pp = pp_row[0]["name"]
 
-            # Fallback: try matching by item_code on PP Items linked to same planning sheet
-            if not pp_id and psi.get("item_code"):
+            # Fallback: try matching by item_code linked to same planning sheet
+            if not resolved_pp and psi.get("item_code"):
                 pp_row = frappe.db.sql("""
                     SELECT pp.name
                     FROM `tabProduction Plan` pp
                     JOIN `tabProduction Plan Item` ppi ON ppi.parent = pp.name
-                    LEFT JOIN `tabPlanning sheet` ps ON (
-                        ps.custom_production_plan = pp.name OR
-                        pp.custom_planning_sheet = %s OR
-                        pp.planning_sheet = %s
-                    )
                     WHERE ppi.item_code = %s
                       AND pp.docstatus < 2
                     ORDER BY pp.creation DESC
                     LIMIT 1
-                """, (psi.parent, psi.parent, psi.get("item_code")), as_dict=True)
+                """, psi.get("item_code"), as_dict=True)
                 if pp_row:
-                    pp_id = pp_row[0]["name"]
+                    resolved_pp = pp_row[0]["name"]
 
-            if pp_id:
+            if resolved_pp:
                 if not dry_run:
-                    frappe.db.set_value("Planning Sheet Item", psi.name, write_field, pp_id, update_modified=False)
+                    frappe.db.set_value("Planning Sheet Item", psi.name, write_field, resolved_pp, update_modified=False)
                 results["updated"].append({
                     "item": psi.name,
                     "sheet": psi.parent,
-                    "pp_id": pp_id,
+                    "pp_id": resolved_pp,
                     "dry_run": bool(dry_run)
                 })
             else:
