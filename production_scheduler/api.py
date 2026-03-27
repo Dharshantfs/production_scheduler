@@ -2700,16 +2700,28 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         pass
 
     # Fetch SPR production via custom_spr_name field on Planning Sheet Items
+    spr_psi_achieved_weight_map = {}  # Map PSI to SPR achieved weight
     try:
         if frappe.db.has_column("Planning Sheet Item", "custom_spr_name"):
-            psi_spr_data = frappe.db.sql("""
+            # Check which achieved weight column exists on SPR
+            spr_achieved_col = None
+            spr_cols_check = frappe.db.get_table_columns("Shaft Production Run") or []
+            for c in ["custom_total_achieved_weight_kgs", "total_achieved_weight_kgs", "custom_total_achieved_weight", "total_achieved_weight"]:
+                if c in spr_cols_check:
+                    spr_achieved_col = c
+                    break
+            
+            achieved_col_select = f"COALESCE(spr.{spr_achieved_col}, 0) as total_achieved" if spr_achieved_col else "0 as total_achieved"
+            
+            psi_spr_data = frappe.db.sql(f"""
                 SELECT 
                     psi.name as psi_name,
                     psi.custom_spr_name as spr_name,
-                    COALESCE(spr.custom_total_produced_weight, 0) as total_produced
+                    COALESCE(spr.custom_total_produced_weight, 0) as total_produced,
+                    {achieved_col_select}
                 FROM `tabPlanning Sheet Item` psi
                 LEFT JOIN `tabShaft Production Run` spr ON psi.custom_spr_name = spr.name
-                WHERE psi.parent IN ({})
+                WHERE psi.parent IN ({{}})
                   AND psi.custom_spr_name IS NOT NULL 
                   AND psi.custom_spr_name != ''
                   AND spr.docstatus < 2
@@ -2719,9 +2731,12 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 psi_name = row.get('psi_name')
                 spr_name = row.get('spr_name')
                 produced = flt(row.get('total_produced', 0))
+                achieved = flt(row.get('total_achieved', 0))
                 if psi_name and spr_name:
                     if psi_name not in spr_psi_name_map:
                         spr_psi_name_map[psi_name] = spr_name
+                    if achieved > 0:
+                        spr_psi_achieved_weight_map[psi_name] = achieved
                     if row.get('docstatus') == 1 and produced > 0:
                         spr_psi_produced_map[psi_name] = produced
                         spr_psi_count_map[psi_name] = 1
@@ -3103,6 +3118,11 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             wo_open = bool(item_pp and pp_has_open_wo_map.get(item_pp))
             wo_terminal = bool(item_pp and pp_has_wo_map.get(item_pp) and not wo_open)
 
+            # Get total achieved weight from SPR if available
+            total_achieved_weight_kgs = 0
+            if psi_name and psi_name in spr_psi_achieved_weight_map:
+                total_achieved_weight_kgs = spr_psi_achieved_weight_map[psi_name]
+            
             data.append({
                 "name": "{}-{}".format(sheet.name, item.get("idx", 0)),
                 "itemName": item.name,
@@ -3134,6 +3154,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "produced_qty": flt(item_level_produced),
                 "salesOrderItem": so_item_key,
                 "actual_produced_qty": flt(item_level_produced),
+                "total_achieved_weight_kgs": flt(total_achieved_weight_kgs),
                 "pending_qty": flt(pending_qty),
                 "item_pending_qty": flt(item_pending_qty),
                 "pp_target_qty": flt(pp_target_qty),
