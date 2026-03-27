@@ -2345,6 +2345,14 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     spr_so_count_map = {}
     spr_order_code_produced_map = {}
     spr_order_code_count_map = {}
+    
+    # Name mapping for SPR links
+    spr_pp_name_map = {}
+    spr_psi_name_map = {}
+    spr_so_item_name_map = {}
+    spr_so_name_map = {}
+    spr_order_code_name_map = {}
+    
     so_item_pp_cache = {}
     psi_pp_field = _psi_production_plan_field()
     so_item_code_produced_map = {}
@@ -2618,44 +2626,61 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
                     spr_rows = frappe.db.sql(
                         f"""
-                        SELECT {', '.join(select_cols)}
+                        SELECT {', '.join(select_cols)}, docstatus
                         FROM `tabShaft Production Run`
-                        WHERE docstatus = 1
+                        WHERE docstatus < 2
                           AND ({' OR '.join(where_clauses)})
+                        ORDER BY creation DESC
                         """,
                         tuple(params),
                         as_dict=True,
                     )
 
                     for r in spr_rows:
+                        spr_name = r.get("name")
                         qty = flt(r.get("produced_qty"))
-                        if qty <= 0:
-                            continue
+                        is_submitted = (r.get("docstatus") == 1)
 
                         pp_key = (r.get("pp_key") or "").strip()
                         if pp_key:
-                            spr_pp_produced_map[pp_key] = spr_pp_produced_map.get(pp_key, 0) + qty
-                            spr_pp_count_map[pp_key] = spr_pp_count_map.get(pp_key, 0) + 1
+                            # Always take newest name (since ordered DESC)
+                            if pp_key not in spr_pp_name_map:
+                                spr_pp_name_map[pp_key] = spr_name
+                            if is_submitted:
+                                spr_pp_produced_map[pp_key] = spr_pp_produced_map.get(pp_key, 0) + qty
+                                spr_pp_count_map[pp_key] = spr_pp_count_map.get(pp_key, 0) + 1
 
                         so_item_key = (r.get("so_item_key") or "").strip()
                         if so_item_key:
-                            spr_so_item_produced_map[so_item_key] = spr_so_item_produced_map.get(so_item_key, 0) + qty
-                            spr_so_item_count_map[so_item_key] = spr_so_item_count_map.get(so_item_key, 0) + 1
+                            if so_item_key not in spr_so_item_name_map:
+                                spr_so_item_name_map[so_item_key] = spr_name
+                            if is_submitted:
+                                spr_so_item_produced_map[so_item_key] = spr_so_item_produced_map.get(so_item_key, 0) + qty
+                                spr_so_item_count_map[so_item_key] = spr_so_item_count_map.get(so_item_key, 0) + 1
 
                         psi_key = (r.get("psi_key") or "").strip()
                         if psi_key:
-                            spr_psi_produced_map[psi_key] = spr_psi_produced_map.get(psi_key, 0) + qty
-                            spr_psi_count_map[psi_key] = spr_psi_count_map.get(psi_key, 0) + 1
+                            if psi_key not in spr_psi_name_map:
+                                spr_psi_name_map[psi_key] = spr_name
+                            if is_submitted:
+                                spr_psi_produced_map[psi_key] = spr_psi_produced_map.get(psi_key, 0) + qty
+                                spr_psi_count_map[psi_key] = spr_psi_count_map.get(psi_key, 0) + 1
 
                         so_key = (r.get("so_key") or "").strip()
                         if so_key:
-                            spr_so_produced_map[so_key] = spr_so_produced_map.get(so_key, 0) + qty
-                            spr_so_count_map[so_key] = spr_so_count_map.get(so_key, 0) + 1
+                            if so_key not in spr_so_name_map:
+                                spr_so_name_map[so_key] = spr_name
+                            if is_submitted:
+                                spr_so_produced_map[so_key] = spr_so_produced_map.get(so_key, 0) + qty
+                                spr_so_count_map[so_key] = spr_so_count_map.get(so_key, 0) + 1
 
                         order_code_key = (r.get("order_code_key") or "").strip()
                         if order_code_key:
-                            spr_order_code_produced_map[order_code_key] = spr_order_code_produced_map.get(order_code_key, 0) + qty
-                            spr_order_code_count_map[order_code_key] = spr_order_code_count_map.get(order_code_key, 0) + 1
+                            if order_code_key not in spr_order_code_name_map:
+                                spr_order_code_name_map[order_code_key] = spr_name
+                            if is_submitted:
+                                spr_order_code_produced_map[order_code_key] = spr_order_code_produced_map.get(order_code_key, 0) + qty
+                                spr_order_code_count_map[order_code_key] = spr_order_code_count_map.get(order_code_key, 0) + 1
     except Exception:
         pass
 
@@ -2672,15 +2697,19 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 WHERE psi.parent IN ({})
                   AND psi.custom_spr_name IS NOT NULL 
                   AND psi.custom_spr_name != ''
-                  AND spr.docstatus = 1
+                  AND spr.docstatus < 2
             """.format(','.join(['%s'] * len(sheet_names))), tuple(sheet_names), as_dict=True)
             
             for row in psi_spr_data:
                 psi_name = row.get('psi_name')
+                spr_name = row.get('spr_name')
                 produced = flt(row.get('total_produced', 0))
-                if psi_name and produced > 0:
-                    spr_psi_produced_map[psi_name] = produced
-                    spr_psi_count_map[psi_name] = 1
+                if psi_name and spr_name:
+                    if psi_name not in spr_psi_name_map:
+                        spr_psi_name_map[psi_name] = spr_name
+                    if row.get('docstatus') == 1 and produced > 0:
+                        spr_psi_produced_map[psi_name] = produced
+                        spr_psi_count_map[psi_name] = 1
     except Exception:
         pass
 
@@ -2939,7 +2968,15 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 item_level_produced = 0
 
             spr_name = ""
-            if item_pp:
+            if psi_name and psi_name in spr_psi_name_map:
+                spr_name = spr_psi_name_map[psi_name]
+            elif item_pp and item_pp in spr_pp_name_map:
+                spr_name = spr_pp_name_map[item_pp]
+            elif so_item_key and so_item_key in spr_so_item_name_map:
+                spr_name = spr_so_item_name_map[so_item_key]
+            
+            # Fallback to direct field on Production Plan if still not found
+            if not spr_name and item_pp:
                 if item_pp in spr_link_cache:
                     spr_name = spr_link_cache[item_pp]
                 else:
@@ -2949,11 +2986,6 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                         spr_name = linked_spr
                     else:
                         spr_name = ""
-                        if linked_spr:
-                            try:
-                                frappe.db.set_value("Production Plan", item_pp, "custom_shaft_production_run_id", "")
-                            except Exception:
-                                pass
                     spr_link_cache[item_pp] = spr_name
 
             data.append({
