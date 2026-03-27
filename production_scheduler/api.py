@@ -8071,11 +8071,33 @@ def create_item_spr(pp_id, planning_sheet_item_names):
         wo_names_str = ", ".join([wo.name for wo in pp_work_orders]) if pp_work_orders else ""
         wo_total_qty = sum(flt(wo.qty) for wo in pp_work_orders)
 
-        # PP-level fallback values for fields that may live on the PP doc itself
-        pp_net_weight = pp.get("net_weight") or pp.get("custom_net_weight") or ""
-        pp_total_weight = flt(pp.get("total_weight_kgs") or pp.get("custom_total_weight_kgs") or 0)
-        pp_no_of_shaft = cint(pp.get("no_of_shaft") or pp.get("custom_no_of_shaft") or 0)
-        pp_combined_width = pp.get("combined_width") or pp.get("custom_combined_width") or ""
+        # PP-level fallback values - try all possible field name variations
+        # Standard PP fields + custom_ prefix variants
+        pp_net_weight = (
+            pp.get("custom_net_weight") or pp.get("net_weight") or
+            pp.get("custom_net_weight_kgs") or pp.get("net_weight_kgs") or
+            pp.get("custom_weight_per_roll") or pp.get("weight_per_roll") or ""
+        )
+        pp_total_weight = flt(
+            pp.get("custom_total_weight_kgs") or pp.get("total_weight_kgs") or
+            pp.get("custom_total_weight") or pp.get("total_weight") or
+            pp.get("total_planned_qty") or pp.get("custom_total_planned_qty") or 0
+        )
+        pp_no_of_shaft = cint(
+            pp.get("custom_no_of_shaft") or pp.get("no_of_shaft") or
+            pp.get("custom_no_of_shafts") or pp.get("no_of_shafts") or 0
+        )
+        pp_combined_width = (
+            pp.get("custom_combined_width") or pp.get("combined_width") or
+            pp.get("custom_total_width") or pp.get("total_width") or ""
+        )
+
+        # Log PP-level values for debugging
+        frappe.log_error(
+            f"PP {pp_id} level values: net_weight={pp_net_weight}, total_weight={pp_total_weight}, "
+            f"no_of_shaft={pp_no_of_shaft}, combined_width={pp_combined_width}",
+            "SPR_DEBUG_PP_LEVEL"
+        )
 
         if pp_shafts:
             for pp_shaft in pp_shafts:
@@ -8200,10 +8222,24 @@ def get_spr_shaft_jobs_from_pp(pp_id):
             return default
 
         # PP-level fallback values
-        pp_net_weight = pp.get("net_weight") or pp.get("custom_net_weight") or ""
-        pp_total_weight = flt(pp.get("total_weight_kgs") or pp.get("custom_total_weight_kgs") or 0)
-        pp_no_of_shaft = cint(pp.get("no_of_shaft") or pp.get("custom_no_of_shaft") or 0)
-        pp_combined_width = pp.get("combined_width") or pp.get("custom_combined_width") or ""
+        pp_net_weight = (
+            pp.get("custom_net_weight") or pp.get("net_weight") or
+            pp.get("custom_net_weight_kgs") or pp.get("net_weight_kgs") or
+            pp.get("custom_weight_per_roll") or pp.get("weight_per_roll") or ""
+        )
+        pp_total_weight = flt(
+            pp.get("custom_total_weight_kgs") or pp.get("total_weight_kgs") or
+            pp.get("custom_total_weight") or pp.get("total_weight") or
+            pp.get("total_planned_qty") or pp.get("custom_total_planned_qty") or 0
+        )
+        pp_no_of_shaft = cint(
+            pp.get("custom_no_of_shaft") or pp.get("no_of_shaft") or
+            pp.get("custom_no_of_shafts") or pp.get("no_of_shafts") or 0
+        )
+        pp_combined_width = (
+            pp.get("custom_combined_width") or pp.get("combined_width") or
+            pp.get("custom_total_width") or pp.get("total_width") or ""
+        )
 
         # Log actual fields for debugging
         if shafts:
