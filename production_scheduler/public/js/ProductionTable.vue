@@ -1536,10 +1536,13 @@ async function openProductionPlanView(planningSheetName, salesOrderItem = null, 
 function canShowStockEntry(item) {
   if (!item || !item.pp_id) return false;
 
+  const pendingQty = Number(item.pending_qty || item.pp_pending_qty || 0);
+  if (!(pendingQty > 0)) return false;
+
   const woTerminal = !!item.wo_terminal;
   if (woTerminal) return false;
 
-  // Continue allowing stock entry until WO is completed/stopped.
+  // Strict remaining rule: continue entry only while pending qty exists and WO is non-terminal.
   return true;
 }
 

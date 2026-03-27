@@ -2337,6 +2337,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     pp_wo_count_map = {}
     pp_has_open_wo_map = {}
     pp_has_wo_map = {}
+    pp_wo_target_qty_map = {}
+    pp_wo_produced_qty_map = {}
     spr_pp_produced_map = {}
     spr_pp_count_map = {}
     spr_psi_produced_map = {}
@@ -2587,6 +2589,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "qty": flt(row.qty),
                 "status": row.get("status")
             })
+
+            pp_wo_target_qty_map[row.production_plan] = pp_wo_target_qty_map.get(row.production_plan, 0) + flt(row.qty)
+            pp_wo_produced_qty_map[row.production_plan] = pp_wo_produced_qty_map.get(row.production_plan, 0) + flt(row.produced_qty)
 
     # Shaft Production Run aggregation (submitted docs) for production flows
     try:
@@ -2999,7 +3004,14 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                         spr_name = ""
                     spr_link_cache[item_pp] = spr_name
 
-            pending_qty = max(flt(item.get("qty", 0)) - flt(item_level_produced), 0)
+            item_pending_qty = max(flt(item.get("qty", 0)) - flt(item_level_produced), 0)
+
+            pp_target_qty = flt(pp_wo_target_qty_map.get(item_pp, 0)) if item_pp else 0
+            pp_produced_qty = flt(pp_wo_produced_qty_map.get(item_pp, 0)) if item_pp else 0
+            pp_pending_qty = max(pp_target_qty - pp_produced_qty, 0) if item_pp else 0
+
+            # Strict remaining rule for stock-entry actions should follow WO pending for the PP.
+            pending_qty = pp_pending_qty if item_pp else item_pending_qty
             wo_open = bool(item_pp and pp_has_open_wo_map.get(item_pp))
             wo_terminal = bool(item_pp and pp_has_wo_map.get(item_pp) and not wo_open)
 
@@ -3035,6 +3047,10 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "salesOrderItem": so_item_key,
                 "actual_produced_qty": flt(item_level_produced),
                 "pending_qty": flt(pending_qty),
+                "item_pending_qty": flt(item_pending_qty),
+                "pp_target_qty": flt(pp_target_qty),
+                "pp_produced_qty": flt(pp_produced_qty),
+                "pp_pending_qty": flt(pp_pending_qty),
                 "wo_open": wo_open,
                 "wo_terminal": wo_terminal,
                 "isSplit": item.get("custom_is_split"),
