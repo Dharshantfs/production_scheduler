@@ -197,7 +197,7 @@
                               </span>
                             </td>
                             <td class="cell-center" style="position: sticky; right: 100px; background: white; z-index: 9;">
-                              <button @click="openProductionPlanView(row.item.planningSheet, row.item.salesOrderItem, row.item.itemName, row.item.pp_id)" class="cc-pp-btn" title="View Production Plan">
+                              <button @click="openProductionPlanView(row.item.planningSheet, row.item.salesOrderItem, row.item.itemName, row.item.pp_id || '')" class="cc-pp-btn" :title="`View PP: ${row.item.pp_id || 'resolve from sheet'}`">
                                 📋 View
                               </button>
                             </td>
@@ -276,7 +276,7 @@
                               </span>
                             </td>
                             <td class="cell-center" style="position: sticky; right: 100px; background: white; z-index: 9;">
-                              <button @click="openMergedProductionPlan(row)" class="cc-pp-btn" title="View Production Plan">
+                              <button @click="openMergedProductionPlan(row)" class="cc-pp-btn" :title="`View PP for merged row`">
                                 📋 View
                               </button>
                             </td>
@@ -1482,10 +1482,20 @@ async function openProductionPlanView(planningSheetName, salesOrderItem = null, 
   }
   
   try {
-    let ppId = directPpId; // Use PP ID directly if provided from data
+    // Strict priority: use item-level PP ID if explicitly provided
+    let ppId = String(directPpId || "").trim();
     
-    // If PP ID not provided directly, resolve it via API
+    console.log("openProductionPlanView called:", {
+      planningSheetName,
+      planningSheetItem,
+      directPpId,
+      ppIdAfterTrim: ppId,
+      ppIdExists: !!ppId
+    });
+    
+    // If PP ID not provided directly or is empty, resolve it via API (fallback only)
     if (!ppId) {
+      console.warn("No direct PP ID provided. Falling back to API resolution for sheet:", planningSheetName);
       const res = await frappe.call({
         method: "production_scheduler.api.get_planning_sheet_pp_id",
         args: {
@@ -1496,17 +1506,21 @@ async function openProductionPlanView(planningSheetName, salesOrderItem = null, 
       });
       
       if (res.message && res.message.status === "ok") {
-        ppId = res.message.pp_id;
+        ppId = String(res.message.pp_id || "").trim();
+        console.log("API resolved PP ID:", ppId);
       } else {
         const errorMsg = res.message?.message || "Error fetching Production Plan";
         frappe.msgprint(errorMsg);
         return;
       }
+    } else {
+      console.log("Using item-level PP ID directly:", ppId);
     }
     
     // Open the Production Plan view
     if (ppId) {
       const printUrl = `/printview?doctype=${encodeURIComponent("Production Plan")}&name=${encodeURIComponent(ppId)}&format=${encodeURIComponent("Assembly Item - Raw Material")}&trigger_print=0`;
+      console.log(`Opening PP: ${ppId}`);
       window.open(printUrl, '_blank');
     } else {
       frappe.msgprint("No Production Plan found for this item");
