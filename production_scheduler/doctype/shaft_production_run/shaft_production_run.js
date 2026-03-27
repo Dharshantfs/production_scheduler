@@ -20,20 +20,15 @@ frappe.ui.form.on('Shaft Production Run', {
             load_available_jobs_from_pp(frm, { force: frm.is_new() || hasPlaceholderRows });
         }
         
-        // Show WO popup after form is fully loaded (with delay for navigation)
-        if (frm.doc.production_plan) {
+        // Show WO popup after form is fully loaded
+        // Note: popup is triggered from load_available_jobs_from_pp callback for reliability
+        if (frm.doc.production_plan && !frm.is_new()) {
+            // For saved forms, show WO popup with delay
             setTimeout(() => {
                 show_linked_work_orders(frm.doc.production_plan);
-            }, 800);
-
-            // Explicitly support redirected flow from Production Table -> Stock Entry -> SPR open.
-            if (forcedPopup) {
-                setTimeout(() => {
-                    show_linked_work_orders(frm.doc.production_plan);
-                }, 250);
-                frappe.route_options = null;
-            }
+            }, 1500);
         }
+        frappe.route_options = null;
     },
     
     production_plan: function(frm) {
@@ -154,6 +149,13 @@ function load_available_jobs_from_pp(frm, opts = {}) {
             // Log debug data to browser console to discover actual PP field names
             if (payload._debug) {
                 console.log('=== PP SHAFT DEBUG DATA ===', JSON.stringify(payload._debug, null, 2));
+            }
+
+            // Show WO popup after jobs are loaded (reliable timing)
+            if (frm.doc.production_plan) {
+                setTimeout(() => {
+                    show_linked_work_orders(frm.doc.production_plan);
+                }, 500);
             }
 
             if (!frm.doc.customer && payload.customer) {

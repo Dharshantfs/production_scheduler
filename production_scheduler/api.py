@@ -8205,17 +8205,53 @@ def get_spr_shaft_jobs_from_pp(pp_id):
         pp_no_of_shaft = cint(pp.get("no_of_shaft") or pp.get("custom_no_of_shaft") or 0)
         pp_combined_width = pp.get("combined_width") or pp.get("custom_combined_width") or ""
 
+        # Log actual fields for debugging
+        if shafts:
+            first = shafts[0]
+            raw_data = {}
+            if hasattr(first, 'as_dict'):
+                for k, v in first.as_dict().items():
+                    if v not in (None, "", 0, 0.0) and k not in ("name", "owner", "creation", "modified", "modified_by", "doctype", "parent", "parentfield", "parenttype", "docstatus", "idx"):
+                        raw_data[k] = str(v)[:200]
+            frappe.log_error(f"PP {pp_id} shaft row fields: {json.dumps(raw_data, indent=2)}", "SPR_DEBUG_SHAFT_FIELDS")
+
+        # Also try standard PP FINISHED GOODS table (po_items) for enrichment
+        pp_po_items = pp.get("po_items") or []
+        po_item_data = {}
+        for poi in pp_po_items:
+            # Build a lookup by index for width/weight enrichment
+            idx = cint(poi.get("idx") or 0)
+            po_item_data[idx] = poi
+
         for idx, pp_shaft in enumerate(shafts, start=1):
+            # Get matching po_item for additional data
+            matching_poi = po_item_data.get(idx, {})
+            
+            # For net_weight: try shaft row first, then po_item weight_per_unit/planned_qty
+            raw_net_weight = pick_value(pp_shaft, ["net_weight_shaft_kgs", "net_weight_shaft", "net_weight", "weight_per_roll", "weight_roll", "weight"], "") or pp_net_weight
+            if not raw_net_weight and matching_poi:
+                raw_net_weight = pick_value(matching_poi, ["net_weight", "weight_per_roll", "weight_roll", "stock_qty"], "")
+
+            # For total_weight: try shaft row, then matching po_item planned_qty
+            raw_total_weight = flt(pick_value(pp_shaft, ["total_weight_kgs", "total_weight", "weight", "planned_qty"], 0) or 0) or pp_total_weight
+            if not flt(raw_total_weight) and matching_poi:
+                raw_total_weight = flt(pick_value(matching_poi, ["total_weight_kgs", "planned_qty", "qty", "stock_qty"], 0) or 0)
+
+            # For total_width
+            raw_width = flt(pick_value(pp_shaft, ["total_width", "combined_width", "width", "total_width_inches"], 0) or 0)
+            if not flt(raw_width) and matching_poi:
+                raw_width = flt(pick_value(matching_poi, ["total_width", "width", "width_inches"], 0) or 0)
+
             jobs.append(
                 {
                     "job_id": pick_value(pp_shaft, ["job_id", "job", "job_no"], str(idx)),
                     "gsm": pick_value(pp_shaft, ["gsm"], ""),
                     "combination": pick_value(pp_shaft, ["combination", "combined_width", "shaft", "shaft_details"], "") or pp_combined_width,
-                    "total_width": flt(pick_value(pp_shaft, ["total_width", "combined_width", "width", "total_width_inches"], 0) or 0),
-                    "meter_roll_mtrs": flt(pick_value(pp_shaft, ["meter_roll_mtrs", "roll_mtrs", "meter_roll", "roll"], 500) or 500),
+                    "total_width": raw_width,
+                    "meter_roll_mtrs": flt(pick_value(pp_shaft, ["meter_roll_mtrs", "roll_mtrs", "meter_roll", "roll", "meter_per_roll"], 500) or 500),
                     "no_of_shafts": cint(pick_value(pp_shaft, ["no_of_shafts", "no_of_shaft", "no_of_sh", "no_of_sf"], 0) or 0) or pp_no_of_shaft or 1,
-                    "net_weight_shaft_kgs": pick_value(pp_shaft, ["net_weight_shaft_kgs", "net_weight_shaft", "net_weight"], "") or pp_net_weight,
-                    "total_weight_kgs": flt(pick_value(pp_shaft, ["total_weight_kgs", "total_weight", "weight"], 0) or 0) or pp_total_weight,
+                    "net_weight_shaft_kgs": raw_net_weight,
+                    "total_weight_kgs": raw_total_weight,
                     "order_code": pick_value(pp_shaft, ["order_code", "party_code", "custom_order_code"], pp.get("order_code") or pp.get("custom_order_code") or ""),
                     "work_orders": pick_value(pp_shaft, ["work_orders", "work_order", "wo", "wo_no"], "") or wo_names_str,
                 }
