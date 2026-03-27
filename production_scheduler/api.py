@@ -2700,18 +2700,18 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         pass
 
     # Fetch SPR achieved weights by Production Plan (primary method)
-    # Achieved weight = SUM of shaft_jobs total_weight
+    # Achieved weight = SUM of Net Weight from Roll Production Results table
     spr_pp_achieved_weight_map = {}  # Map PP to SPR achieved weight
     try:
         if valid_pps and frappe.db.exists("DocType", "Shaft Production Run"):
             fmt_pps = ",".join(["%s"] * len(valid_pps))
-            # Sum total_weight from shaft_jobs child table (or total_weight_kgs, total_weight depending on field names)
+            # Sum net_weight from Roll Production Results child table
             spr_achieved_rows = frappe.db.sql(f"""
                 SELECT 
                     spr.production_plan,
-                    SUM(COALESCE(sj.total_weight_kgs, sj.total_weight, 0)) as achieved_weight
+                    SUM(COALESCE(rpr.net_weight, 0)) as achieved_weight
                 FROM `tabShaft Production Run` spr
-                LEFT JOIN `tabShaft Production Run Detail` sj ON spr.name = sj.parent
+                LEFT JOIN `tabRoll Production Result` rpr ON spr.name = rpr.parent
                 WHERE spr.production_plan IN ({fmt_pps})
                   AND spr.docstatus = 1
                 GROUP BY spr.production_plan
