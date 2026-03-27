@@ -1010,6 +1010,16 @@ const filteredData = computed(() => {
 
 const mergeDialogItems = computed(() => {
   let items = filteredData.value || [];
+
+  // Merge dialog must follow active table scope, not full dataset.
+  if (filterUnit.value) {
+    items = items.filter((d) => (d.unit || "") === filterUnit.value);
+  }
+
+  if (viewScope.value === "daily" && filterOrderDate.value) {
+    items = items.filter((d) => String(d.plannedDate || "") === String(filterOrderDate.value));
+  }
+
   const orderSearch = mergeFilterOrderCode.value.trim().toLowerCase();
   const customerSearch = mergeFilterCustomer.value.trim().toLowerCase();
   const qualitySearch = mergeFilterQuality.value.trim().toLowerCase();
