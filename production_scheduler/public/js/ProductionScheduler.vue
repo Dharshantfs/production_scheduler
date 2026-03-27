@@ -1243,6 +1243,8 @@ function openPullOrdersDialog() {
     });
     
     d.show();
+    d.$wrapper.find('.modal-dialog').css('max-width', '1120px');
+    d.$wrapper.find('.modal-content').css('border-radius', '10px');
     loadOrders(d);
 }
 
@@ -1276,28 +1278,28 @@ async function loadOrders(d) {
         
         function buildFilterBar() {
             return `
-            <div id="pull-filter-bar" style="background:#f8fafc; border:1px solid #e5e7eb; border-radius:6px; padding:10px 12px; margin-bottom:10px;">
-                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                    <span style="font-size:11px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:.5px;">Filter</span>
+          <div id="pull-filter-bar" style="background:#f8fafc; border:1px solid #e5e7eb; border-radius:8px; padding:10px 12px; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span style="font-size:11px; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:.5px; min-width:46px;">Filter</span>
                     
-                    <select id="pull-filter-unit" style="font-size:11px; padding:2px 6px; border-radius:4px; border:1px solid #cbd5e1; background:#fff;">
+              <select id="pull-filter-unit" style="font-size:11px; height:28px; padding:2px 8px; border-radius:6px; border:1px solid #cbd5e1; background:#fff; min-width:106px;">
                         <option value="">All Units</option>
                         ${uniqueUnits.map(u => `<option value="${u}">${u}</option>`).join('')}
                     </select>
                     
-                    <select id="pull-filter-quality" style="font-size:11px; padding:2px 6px; border-radius:4px; border:1px solid #cbd5e1; background:#fff;">
+              <select id="pull-filter-quality" style="font-size:11px; height:28px; padding:2px 8px; border-radius:6px; border:1px solid #cbd5e1; background:#fff; min-width:120px;">
                         <option value="">All Qualities</option>
                         ${uniqueQualities.map(q => `<option value="${q}">${q}</option>`).join('')}
                     </select>
 
-                    <select id="pull-filter-party" style="font-size:11px; padding:2px 6px; border-radius:4px; border:1px solid #cbd5e1; background:#fff;">
+              <select id="pull-filter-party" style="font-size:11px; height:28px; padding:2px 8px; border-radius:6px; border:1px solid #cbd5e1; background:#fff; min-width:120px; max-width:180px;">
                         <option value="">All Parties</option>
                         ${uniqueParties.map(p => `<option value="${p}">${p}</option>`).join('')}
                     </select>
                     
-                    <input id="pull-filter-color" type="text" placeholder="Color..." style="font-size:11px; padding:2px 8px; border-radius:4px; border:1px solid #cbd5e1; width:110px;">
+              <input id="pull-filter-color" type="text" placeholder="Color..." style="font-size:11px; height:28px; padding:2px 8px; border-radius:6px; border:1px solid #cbd5e1; width:130px;">
                     
-                    <button id="pull-filter-reset" style="font-size:11px; padding:2px 8px; border-radius:4px; border:1px solid #cbd5e1; background:#fff; color:#dc2626; cursor:pointer;">✕ Reset</button>
+              <button id="pull-filter-reset" style="font-size:11px; height:28px; padding:2px 10px; border-radius:6px; border:1px solid #cbd5e1; background:#fff; color:#dc2626; cursor:pointer;">✕ Reset</button>
                 </div>
             </div>`;
         }
@@ -1333,8 +1335,8 @@ async function loadOrders(d) {
                 html += '<div style="padding: 20px; text-align: center; color: #94a3b8; font-style: italic;">No orders match the current filters.</div>';
             } else {
                 html += `
-                <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;">
-                  <div style="position: sticky; top: 0; background: #f8fafc; z-index: 10; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; display: grid; grid-template-columns: 40px 80px 1fr 90px 90px 90px 100px; gap: 8px; font-weight: 600; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">
+                <div style="max-height: 430px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;">
+                  <div style="position: sticky; top: 0; background: #f8fafc; z-index: 10; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; display: grid; grid-template-columns: 44px 92px minmax(260px, 1fr) 110px 110px 110px 118px; gap: 10px; font-weight: 700; font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; align-items:center;">
                         <div style="display:flex; align-items:center; justify-content:center;"><input type="checkbox" id="select-all-pull" style="cursor:pointer;" /></div>
                         <div>Unit</div>
                         <div>Order Details</div>
@@ -1357,11 +1359,11 @@ async function loadOrders(d) {
                   const rowDisabled = availableQty <= 0;
                     
                     html += `
-                  <div class="pull-item-row" style="display: grid; grid-template-columns: 40px 80px 1fr 90px 90px 90px 100px; gap: 8px; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; align-items: center;">
+                  <div class="pull-item-row" style="display: grid; grid-template-columns: 44px 92px minmax(260px, 1fr) 110px 110px 110px 118px; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #f1f5f9; align-items: center;">
                         <div style="display:flex; align-items:center; justify-content:center;">
                       <input type="checkbox" class="pull-item-cb" data-name="${item.itemName}" style="cursor:pointer; transform: scale(1.1);" ${isChecked} ${rowDisabled ? 'disabled' : ''} />
                         </div>
-                        <div><span style="font-size: 11px; font-weight: 700; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px;">${item.unit || 'UNASSIGNED'}</span></div>
+                        <div><span style="font-size: 11px; font-weight: 700; color: #64748b; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; white-space:nowrap;">${item.unit || 'UNASSIGNED'}</span></div>
                         <div style="display: flex; flex-direction: column; gap: 2px;">
                             <span style="font-size: 13px; font-weight: 600; color: #1e293b;">${item.color || 'No Color'} <span style="font-weight: 400; color: #94a3b8; font-size: 12px;">&bull; ${item.partyCode || item.customer || '-'}</span></span>
                             <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
@@ -1375,7 +1377,7 @@ async function loadOrders(d) {
                           <div style="text-align: right;"><span style="display: block; font-size: 13px; font-weight: 700; color: #0f172a;">${totalQty < 1000 ? totalQty + ' KG' : (totalQty/1000).toFixed(2) + ' T'}</span></div>
                           <div style="text-align: right;"><span style="display: block; font-size: 12px; font-weight: 700; color: #b45309;">${producedQty.toFixed(0)}</span></div>
                           <div style="text-align: right;"><span style="display: block; font-size: 12px; font-weight: 700; color: #2563eb;">${availableQty.toFixed(0)}</span></div>
-                          <div style="text-align: right;"><input type="number" class="pull-qty-input" data-name="${item.itemName}" data-max="${availableQty}" value="${prevQty}" style="width: 80px; text-align: right; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 4px; color: #2563eb; font-weight: 700;" ${rowDisabled ? 'disabled' : ''} /></div>
+                            <div style="text-align: right;"><input type="number" class="pull-qty-input" data-name="${item.itemName}" data-max="${availableQty}" value="${prevQty}" style="width: 92px; text-align: right; border: 1px solid #cbd5e1; border-radius: 6px; padding: 3px 6px; color: #2563eb; font-weight: 700;" ${rowDisabled ? 'disabled' : ''} /></div>
                     </div>
                     `;
                 });

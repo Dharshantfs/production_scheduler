@@ -2124,6 +2124,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 p.name as planningSheet, p.party_code as partyCode, p.customer,
                 COALESCE(c.customer_name, p.customer) as customer_name,
                 p.ordered_date, p.dod, p.sales_order as salesOrder,
+                COALESCE(p.custom_planned_date, '') as sheet_planned_date,
                 COALESCE(p.custom_pb_plan_name, '') as pbPlanName,
                 COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as planned_date
             FROM `tabPlanning Sheet Item` i
@@ -2142,10 +2143,14 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
         # Visibility check:
         # - White items: always visible if they match the date
-        # - Color items: MUST have custom_item_planned_date set (signifies 'pushed')
+        # - Color items: visible if item OR sheet is planned on board
+        #   (item-level planned date, sheet-level planned date, or PB plan marker)
         items = [
             it for it in (items or [])
-            if _is_white_color(it.get("color")) or it.get("custom_item_planned_date")
+            if _is_white_color(it.get("color"))
+            or it.get("custom_item_planned_date")
+            or it.get("sheet_planned_date")
+            or it.get("pbPlanName")
         ]
 
         if items:
