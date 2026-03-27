@@ -1591,6 +1591,8 @@ async function createItemStockEntry(item) {
         if (res.message && res.message.status === "ok") {
           const sprId = res.message.spr_id;
           item.spr_name = sprId;
+
+          showLinkedWorkOrdersPopup(item.pp_id);
           
           frappe.show_alert({
             message: `✅ SPR Created: ${sprId}. Opening form...`,
@@ -1701,6 +1703,8 @@ async function createSingleMergedSPR(ppId, mergedItems, mergedRow) {
               if (res.message && res.message.status === "ok") {
                 const sprId = res.message.spr_id;
                 mergedRow.spr_name = sprId;
+
+                showLinkedWorkOrdersPopup(ppId);
                 
                 frappe.show_alert({
                   message: `✅ Merged SPR Created: ${sprId}. Opening form...`,
@@ -1745,6 +1749,7 @@ function openItemSPR(sprName, item = null) {
       } else {
         // SPR was deleted, allow creating new one
         if (item) {
+          item.spr_name = "";
           frappe.show_alert({
             message: '⚠️ SPR was deleted. You can create a new one.',
             indicator: 'orange'
@@ -1775,6 +1780,7 @@ function openMergedSPR(sprName, mergedRow) {
       } else {
         // SPR was deleted, allow creating new one
         if (mergedRow) {
+          mergedRow.spr_name = "";
           frappe.show_alert({
             message: '⚠️ SPR was deleted. You can create a new one.',
             indicator: 'orange'
@@ -1784,6 +1790,72 @@ function openMergedSPR(sprName, mergedRow) {
           frappe.msgprint("SPR not found. It may have been deleted.");
         }
       }
+    }
+  });
+}
+
+function showLinkedWorkOrdersPopup(ppId) {
+  if (!ppId) return;
+
+  frappe.call({
+    method: "frappe.client.get_list",
+    args: {
+      doctype: "Work Order",
+      filters: {
+        production_plan: ppId,
+        docstatus: ["<", 2]
+      },
+      fields: ["name", "production_item", "status", "qty", "produced_qty"],
+      order_by: "creation asc",
+      limit_page_length: 20
+    },
+    callback: (r) => {
+      const rows = Array.isArray(r.message) ? r.message : [];
+      if (!rows.length) return;
+
+      const body = rows.map((wo) => {
+        const target = Number(wo.qty || 0);
+        const produced = Number(wo.produced_qty || 0);
+        const pending = target - produced;
+        return `
+          <tr>
+            <td><b>${wo.name}</b></td>
+            <td>${wo.production_item || "-"}</td>
+            <td>${wo.status || "-"}</td>
+            <td style="text-align:right;">${target.toFixed(2)}</td>
+            <td style="text-align:right;">${produced.toFixed(2)}</td>
+            <td style="text-align:right;">${pending.toFixed(2)}</td>
+          </tr>
+        `;
+      }).join("");
+
+      const html = `
+        <div style="max-height:420px; overflow:auto;">
+          <table class="table table-sm table-bordered">
+            <thead>
+              <tr>
+                <th>WO</th>
+                <th>Item</th>
+                <th>Status</th>
+                <th style="text-align:right;">Target</th>
+                <th style="text-align:right;">Produced</th>
+                <th style="text-align:right;">Pending</th>
+              </tr>
+            </thead>
+            <tbody>${body}</tbody>
+          </table>
+        </div>
+      `;
+
+      const d = new frappe.ui.Dialog({
+        title: `Work Orders for ${ppId}`,
+        fields: [{ fieldtype: "HTML", fieldname: "wo_html", options: html }],
+        primary_action_label: "Close",
+        primary_action() {
+          d.hide();
+        }
+      });
+      d.show();
     }
   });
 }

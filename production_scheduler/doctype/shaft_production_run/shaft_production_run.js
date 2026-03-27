@@ -11,6 +11,11 @@ frappe.ui.form.on('Shaft Production Run', {
                 frm.set_value('production_plan', pp_id);
             }
         }
+
+        // If PP already exists on a new form, ensure Available Jobs are pulled from PP shaft details.
+        if (frm.doc.production_plan) {
+            load_available_jobs_from_pp(frm, { force: false });
+        }
         
         // Show WO popup when production_plan is set
         if (frm.doc.production_plan) {
@@ -19,12 +24,97 @@ frappe.ui.form.on('Shaft Production Run', {
     },
     
     production_plan: function(frm) {
-        // When PP is changed/set, show WO popup
+        // When PP is changed/set, pull shaft details and show WO popup.
         if (frm.doc.production_plan) {
+            load_available_jobs_from_pp(frm, { force: true });
             show_linked_work_orders(frm.doc.production_plan);
+        } else if (frm.doc.shaft_jobs && frm.doc.shaft_jobs.length) {
+            frm.clear_table('shaft_jobs');
+            frm.refresh_field('shaft_jobs');
         }
     }
 });
+
+function should_skip_auto_fill(frm, force) {
+    if (!frm.doc.production_plan) {
+        return true;
+    }
+
+    if (frm.__spr_jobs_loading) {
+        return true;
+    }
+
+    // Do not overwrite existing rows unless explicitly forced.
+    if (!force && frm.doc.shaft_jobs && frm.doc.shaft_jobs.length > 0) {
+        return true;
+    }
+
+    return false;
+}
+
+function load_available_jobs_from_pp(frm, opts = {}) {
+    const force = !!opts.force;
+    if (should_skip_auto_fill(frm, force)) {
+        return;
+    }
+
+    frm.__spr_jobs_loading = true;
+
+    frappe.call({
+        method: 'production_scheduler.api.get_spr_shaft_jobs_from_pp',
+        args: {
+            pp_id: frm.doc.production_plan
+        },
+        freeze: false,
+        callback: function(r) {
+            frm.__spr_jobs_loading = false;
+            const payload = r.message || {};
+
+            if (payload.status !== 'ok') {
+                if (payload.message) {
+                    frappe.show_alert({
+                        indicator: 'orange',
+                        message: payload.message
+                    }, 5);
+                }
+                return;
+            }
+
+            const jobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+            if (!jobs.length) {
+                return;
+            }
+
+            frm.clear_table('shaft_jobs');
+
+            jobs.forEach((job, idx) => {
+                const row = frm.add_child('shaft_jobs');
+                row.job_id = job.job_id || String(idx + 1);
+                row.gsm = job.gsm || '';
+                row.combination = job.combination || '';
+                row.total_width = flt(job.total_width || 0);
+                row.meter_roll_mtrs = flt(job.meter_roll_mtrs || 0);
+                row.no_of_shafts = cint(job.no_of_shafts || 0);
+                row.net_weight_shaft_kgs = flt(job.net_weight_shaft_kgs || 0);
+                row.total_weight_kgs = flt(job.total_weight_kgs || 0);
+            });
+
+            frm.refresh_field('shaft_jobs');
+            frm.__spr_jobs_loaded_pp = frm.doc.production_plan;
+
+            if (!frm.doc.customer && payload.customer) {
+                frm.set_value('customer', payload.customer);
+            }
+
+            if (!frm.doc.custom_order_code && payload.order_code) {
+                frm.set_value('custom_order_code', payload.order_code);
+            }
+        },
+        error: function() {
+            frm.__spr_jobs_loading = false;
+        }
+    });
+}
 
 function show_linked_work_orders(pp_id) {
     frappe.call({

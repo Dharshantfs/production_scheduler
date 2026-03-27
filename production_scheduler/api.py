@@ -2773,6 +2773,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                         so_item_wo_count_map[row.so_item] = cint(row.wo_count)
 
     data = []
+    spr_link_cache = {}
     for sheet in planning_sheets:
         items = frappe.get_all(
             "Planning Sheet Item",
@@ -2937,6 +2938,24 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             if item_level_produced is None:
                 item_level_produced = 0
 
+            spr_name = ""
+            if item_pp:
+                if item_pp in spr_link_cache:
+                    spr_name = spr_link_cache[item_pp]
+                else:
+                    linked_spr = frappe.db.get_value("Production Plan", item_pp, "custom_shaft_production_run_id") or ""
+                    linked_spr = str(linked_spr).strip()
+                    if linked_spr and frappe.db.exists("Shaft Production Run", linked_spr):
+                        spr_name = linked_spr
+                    else:
+                        spr_name = ""
+                        if linked_spr:
+                            try:
+                                frappe.db.set_value("Production Plan", item_pp, "custom_shaft_production_run_id", "")
+                            except Exception:
+                                pass
+                    spr_link_cache[item_pp] = spr_name
+
             data.append({
                 "name": "{}-{}".format(sheet.name, item.get("idx", 0)),
                 "itemName": item.name,
@@ -2970,7 +2989,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "actual_produced_qty": flt(item_level_produced),
                 "isSplit": item.get("custom_is_split"),
                 "pp_id": item_pp or "",  # Item-level production plan ID for direct PP view routing
-                "spr_name": frappe.db.get_value("Production Plan", item_pp, "custom_shaft_production_run_id") if item_pp else ""  # SPR linked to PP
+                "spr_name": spr_name  # SPR linked to PP (validated)
             })
 
     if cint(planned_only) and plan_name == "__all__":
@@ -8112,6 +8131,55 @@ def create_item_spr(pp_id, planning_sheet_item_names):
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "create_item_spr")
         return {"status": "error", "message": f"Unexpected error: {str(e)}"}
+
+
+@frappe.whitelist()
+def get_spr_shaft_jobs_from_pp(pp_id):
+    """Return normalized shaft jobs from a Production Plan for SPR form auto-fill."""
+    pp_id = str(pp_id or "").strip()
+    if not pp_id:
+        return {"status": "error", "message": "Production Plan is required", "jobs": []}
+
+    if not frappe.db.exists("Production Plan", pp_id):
+        return {
+            "status": "error",
+            "message": f"Production Plan {pp_id} not found",
+            "jobs": [],
+        }
+
+    try:
+        pp = frappe.get_doc("Production Plan", pp_id)
+        jobs = []
+        shafts = pp.get("shaft_details") or []
+
+        for idx, pp_shaft in enumerate(shafts, start=1):
+            jobs.append(
+                {
+                    "job_id": pp_shaft.get("job_id") or str(idx),
+                    "gsm": pp_shaft.get("gsm") or "",
+                    "combination": pp_shaft.get("combination") or "",
+                    "total_width": flt(pp_shaft.get("total_width") or 0),
+                    "meter_roll_mtrs": flt(pp_shaft.get("meter_roll_mtrs") or 500),
+                    "no_of_shafts": cint(pp_shaft.get("no_of_shafts") or 1),
+                    "net_weight_shaft_kgs": flt(pp_shaft.get("net_weight_shaft_kgs") or 0),
+                    "total_weight_kgs": flt(pp_shaft.get("total_weight_kgs") or 0),
+                }
+            )
+
+        return {
+            "status": "ok",
+            "pp_id": pp_id,
+            "jobs": jobs,
+            "customer": pp.get("customer") or "",
+            "order_code": pp.get("order_code") or pp.get("custom_order_code") or "",
+        }
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "get_spr_shaft_jobs_from_pp")
+        return {
+            "status": "error",
+            "message": "Unable to fetch shaft details from Production Plan",
+            "jobs": [],
+        }
 
 
 # ============================================================================
