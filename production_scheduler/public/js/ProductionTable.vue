@@ -139,9 +139,9 @@
                         <th style="width: 100px;">COLOUR</th>
                         <th style="width: 80px;">GSM</th>
                         <th style="width: 120px;">TARGET WEIGHT (Kgs)</th>
-                        <th style="width: 150px;">ACTUAL PRODUCTION WEIGHT (Kgs)</th>
                         <th style="width: 100px;">TOTAL TARGET (Kgs)</th>
                         <th style="width: 100px;">TOTAL ACTUAL (Kgs)</th>
+                        <th style="width: 150px;">ACTUAL PRODUCTION WEIGHT (Kgs)</th>
                         <th style="width: 110px;">MERGE ACTION</th>
                         <th style="width: 100px;">DESPATCH STATUS</th>
                         <th style="width: 90px; position: sticky; right: 100px; background: #fafafa; z-index: 10;">PRODUCTION PLAN</th>
@@ -185,14 +185,13 @@
                             <td class="cell-center font-bold">{{ row.item.color }}</td>
                             <td class="cell-center">{{ row.item.gsm }}</td>
                             <td class="cell-right font-bold">{{ formatKg(row.item.qty) }}</td>
-                            <td class="cell-right font-bold">{{ formatKg(row.item.actual_production_weight_kgs) }}</td>
-                                    
                             <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-right font-bold bg-blue-50">
                               {{ formatKg(dateGroup.dailyTotal) }}
                             </td>
                             <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-right font-bold bg-yellow-50">
                               {{ formatKg(dateGroup.dailyActualTotal) }}
                             </td>
+                            <td class="cell-right font-bold">{{ formatKg(row.item.actual_production_weight_kgs) }}</td>
                             <td class="cell-center">-</td>
                                     
                             <td class="cell-center">
@@ -259,13 +258,13 @@
                             <td class="cell-center font-bold">{{ row.color }}</td>
                             <td class="cell-center">{{ row.gsm }}</td>
                             <td class="cell-right font-bold">{{ formatKg(row.totalTargetWeight) }}</td>
-                            <td class="cell-right font-bold">{{ formatKg(row.totalActualWeight) }}</td>
                             <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-right font-bold bg-blue-50">
                               {{ formatKg(dateGroup.dailyTotal) }}
                             </td>
                             <td v-if="idx === 0" :rowspan="dateGroup.rows.length" class="cell-right font-bold bg-yellow-50">
                               {{ formatKg(dateGroup.dailyActualTotal) }}
                             </td>
+                            <td class="cell-right font-bold">{{ formatKg(row.totalActualWeight) }}</td>
                             <td class="cell-center">
                               <button
                                 class="cc-clear-btn"
