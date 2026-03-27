@@ -2703,15 +2703,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     spr_psi_achieved_weight_map = {}  # Map PSI to SPR achieved weight
     try:
         if frappe.db.has_column("Planning Sheet Item", "custom_spr_name"):
-            # Check which achieved weight column exists on SPR
-            spr_achieved_col = None
-            spr_cols_check = frappe.db.get_table_columns("Shaft Production Run") or []
-            for c in ["custom_total_achieved_weight_kgs", "total_achieved_weight_kgs", "custom_total_achieved_weight", "total_achieved_weight"]:
-                if c in spr_cols_check:
-                    spr_achieved_col = c
-                    break
-            
-            achieved_col_select = f"COALESCE(spr.{spr_achieved_col}, 0) as total_achieved" if spr_achieved_col else "0 as total_achieved"
+            # Use the correct field name: custom_total_achieved_weight
+            achieved_col_select = "COALESCE(spr.custom_total_achieved_weight, 0) as total_achieved"
             
             psi_spr_data = frappe.db.sql(f"""
                 SELECT 
