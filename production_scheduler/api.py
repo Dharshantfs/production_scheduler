@@ -8006,115 +8006,87 @@ def debug_item_pp_id(item_name):
 @frappe.whitelist()
 def backfill_pp_id_to_sheet_items(planning_sheet_name=None, dry_run=1):
     """
-    Backfill Production Plan ID to Planning Sheet Items.
-    Loops all items (or items of a specific sheet), resolves the PP via
-    Production Plan Item -> sales_order_item matching, and writes it to
-    the custom_production_plan field on each Planning Sheet Item.
+    Backfill order_sheet (PP ID) to each Planning Sheet Item row.
+
+    Matching: each item has item_code. The parent Planning Sheet has order_sheet
+    (comma-separated PP IDs). We find which PP contains that item_code.
 
     Args:
-        planning_sheet_name: Optional. If given, only process that sheet.
-        dry_run: 1 = report what would be written, 0 = actually write.
+        planning_sheet_name: Optional. Limit to one sheet. If blank, all sheets.
+        dry_run: 1 = preview only, 0 = actually write.
     """
     dry_run = cint(dry_run)
 
-    # Confirmed write field
-    write_field = "order_sheet"
-
-    # Step 1: Discover actual columns on Planning Sheet Item via raw SQL
-    raw_cols = frappe.db.sql("SHOW COLUMNS FROM `tabPlanning Sheet Item`", as_dict=True)
-    col_names = {c["Field"] for c in raw_cols}
-
-    # Build safe SELECT fields
-    safe_fields = ["name", "parent", write_field]
-    for candidate in ["item_code", "item_name", "plan_code", "custom_plan_code",
-                      "sales_order_item", "custom_sales_order_item"]:
-        if candidate in col_names:
-            safe_fields.append(candidate)
-
-    # Step 2: Fetch items via raw SQL
-    parent_filter = ""
+    # Fetch items - only confirmed fields: name, parent, item_code, order_sheet
+    parent_filter = "WHERE 1=1"
     params = []
     if planning_sheet_name:
         parent_filter = "WHERE parent = %s"
         params.append(planning_sheet_name)
 
-    fields_sql = ", ".join(f"`{f}`" for f in safe_fields)
     items = frappe.db.sql(
-        f"SELECT {fields_sql} FROM `tabPlanning Sheet Item` {parent_filter} ORDER BY parent ASC, idx ASC",
+        f"SELECT `name`, `parent`, `item_code`, `order_sheet` "
+        f"FROM `tabPlanning Sheet Item` {parent_filter} ORDER BY parent ASC, idx ASC",
         params, as_dict=True
     )
 
     results = {"updated": [], "already_set": [], "not_found": [], "errors": []}
 
+    # Cache parent sheet PP lists to avoid repeated DB calls
+    sheet_pp_cache = {}
+
     for psi in items:
         try:
-            existing_pp = psi.get(write_field)
-            if existing_pp and frappe.db.exists("Production Plan", existing_pp):
+            # Skip if already filled
+            existing_pp = psi.get("order_sheet") or ""
+            if existing_pp.strip() and frappe.db.exists("Production Plan", existing_pp.strip()):
                 results["already_set"].append({
-                    "item": psi.name, "sheet": psi.parent, "pp_id": existing_pp
+                    "item": psi.name, "sheet": psi.parent, "pp_id": existing_pp.strip()
                 })
                 continue
 
-            resolved_pp = None
+            item_code = psi.get("item_code") or ""
+            if not item_code:
+                results["not_found"].append({"item": psi.name, "sheet": psi.parent, "reason": "no item_code"})
+                continue
 
-            # Strategy 1: match via sales_order_item
-            so_item = psi.get("sales_order_item") or psi.get("custom_sales_order_item")
-            if so_item:
-                row = frappe.db.sql("""
-                    SELECT pp.name FROM `tabProduction Plan` pp
-                    JOIN `tabProduction Plan Item` ppi ON ppi.parent = pp.name
-                    WHERE ppi.sales_order_item = %s AND pp.docstatus < 2
-                    ORDER BY pp.creation DESC LIMIT 1
-                """, so_item, as_dict=True)
-                if row:
-                    resolved_pp = row[0]["name"]
+            # Get PP list from parent sheet (cached)
+            if psi.parent not in sheet_pp_cache:
+                sheet_order = frappe.db.get_value("Planning sheet", psi.parent, "order_sheet") or ""
+                sheet_pp_cache[psi.parent] = [p.strip() for p in sheet_order.split(",") if p.strip()]
 
-            # Strategy 2: match via plan_code in PP name
-            if not resolved_pp:
-                plan_code = psi.get("plan_code") or psi.get("custom_plan_code")
-                if plan_code:
-                    row = frappe.db.sql("""
-                        SELECT name FROM `tabProduction Plan`
-                        WHERE (name LIKE %s OR custom_plan_code = %s)
-                          AND docstatus < 2
-                        ORDER BY creation DESC LIMIT 1
-                    """, (f"%{plan_code}%", plan_code), as_dict=True)
-                    if row:
-                        resolved_pp = row[0]["name"]
+            pp_list = sheet_pp_cache[psi.parent]
 
-            # Strategy 3: match via item_code within PPs listed on the parent sheet
-            if not resolved_pp:
-                item_code = psi.get("item_code")
-                if item_code:
-                    sheet_order = frappe.db.get_value("Planning sheet", psi.parent, "order_sheet") or ""
-                    pp_names_from_sheet = [p.strip() for p in sheet_order.split(",") if p.strip()]
-                    if pp_names_from_sheet:
-                        placeholders = ", ".join(["%s"] * len(pp_names_from_sheet))
-                        row = frappe.db.sql(f"""
-                            SELECT pp.name FROM `tabProduction Plan` pp
-                            JOIN `tabProduction Plan Item` ppi ON ppi.parent = pp.name
-                            WHERE pp.name IN ({placeholders})
-                              AND ppi.item_code = %s AND pp.docstatus < 2
-                            ORDER BY pp.creation DESC LIMIT 1
-                        """, pp_names_from_sheet + [item_code], as_dict=True)
-                        if row:
-                            resolved_pp = row[0]["name"]
+            if not pp_list:
+                results["not_found"].append({"item": psi.name, "sheet": psi.parent, "reason": "parent sheet has no order_sheet PPs"})
+                continue
 
-            if resolved_pp:
+            # Find which PP in the list has this item_code
+            placeholders = ", ".join(["%s"] * len(pp_list))
+            row = frappe.db.sql(f"""
+                SELECT pp.name FROM `tabProduction Plan` pp
+                JOIN `tabProduction Plan Item` ppi ON ppi.parent = pp.name
+                WHERE pp.name IN ({placeholders})
+                  AND ppi.item_code = %s
+                  AND pp.docstatus < 2
+                ORDER BY pp.creation DESC LIMIT 1
+            """, pp_list + [item_code], as_dict=True)
+
+            if row:
+                resolved_pp = row[0]["name"]
                 if not dry_run:
                     frappe.db.sql(
-                        f"UPDATE `tabPlanning Sheet Item` SET `{write_field}` = %s WHERE name = %s",
+                        "UPDATE `tabPlanning Sheet Item` SET `order_sheet` = %s WHERE name = %s",
                         (resolved_pp, psi.name)
                     )
                 results["updated"].append({
                     "item": psi.name, "sheet": psi.parent,
-                    "pp_id": resolved_pp, "dry_run": bool(dry_run)
+                    "item_code": item_code, "pp_id": resolved_pp
                 })
             else:
                 results["not_found"].append({
                     "item": psi.name, "sheet": psi.parent,
-                    "plan_code": psi.get("plan_code") or "",
-                    "item_code": psi.get("item_code") or ""
+                    "item_code": item_code, "pp_list_checked": pp_list
                 })
 
         except Exception as e:
@@ -8125,9 +8097,7 @@ def backfill_pp_id_to_sheet_items(planning_sheet_name=None, dry_run=1):
 
     return {
         "status": "ok",
-        "write_field": write_field,
         "dry_run": bool(dry_run),
-        "columns_on_table": sorted(col_names),
         "summary": {
             "updated": len(results["updated"]),
             "already_set": len(results["already_set"]),
@@ -8136,6 +8106,7 @@ def backfill_pp_id_to_sheet_items(planning_sheet_name=None, dry_run=1):
         },
         "details": results
     }
+
 
 
 @frappe.whitelist()
