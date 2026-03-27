@@ -2700,21 +2700,19 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         pass
 
     # Fetch SPR achieved weights by Production Plan (primary method)
-    # Achieved weight = SUM of Net Weight from Roll Production Results table
+    # Use custom_total_achieved_weight field directly from SPR
     spr_pp_achieved_weight_map = {}  # Map PP to SPR achieved weight
     try:
         if valid_pps and frappe.db.exists("DocType", "Shaft Production Run"):
             fmt_pps = ",".join(["%s"] * len(valid_pps))
-            # Sum net_weight from Roll Production Results child table
+            # Get custom_total_achieved_weight directly from SPR header
             spr_achieved_rows = frappe.db.sql(f"""
                 SELECT 
                     spr.production_plan,
-                    SUM(COALESCE(rpr.net_weight, 0)) as achieved_weight
+                    COALESCE(spr.custom_total_achieved_weight, 0) as achieved_weight
                 FROM `tabShaft Production Run` spr
-                LEFT JOIN `tabRoll Production Result` rpr ON spr.name = rpr.parent
                 WHERE spr.production_plan IN ({fmt_pps})
                   AND spr.docstatus = 1
-                GROUP BY spr.production_plan
             """, tuple(valid_pps), as_dict=True)
             
             for row in spr_achieved_rows:
@@ -3175,7 +3173,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "produced_qty": flt(item_level_produced),
                 "salesOrderItem": so_item_key,
                 "actual_produced_qty": flt(item_level_produced),
-                "total_achieved_weight_kgs": flt(total_achieved_weight_kgs),
+                "actual_production_weight_kgs": flt(total_achieved_weight_kgs),
                 "pending_qty": flt(pending_qty),
                 "item_pending_qty": flt(item_pending_qty),
                 "pp_target_qty": flt(pp_target_qty),
