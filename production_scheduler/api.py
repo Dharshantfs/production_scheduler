@@ -8225,12 +8225,33 @@ def get_spr_shaft_jobs_from_pp(pp_id):
             if not flt(jobs[-1]["total_weight_kgs"]) and wo_total_qty:
                 jobs[-1]["total_weight_kgs"] = flt(wo_total_qty)
 
+        # Build debug info to discover actual field names
+        _debug = {
+            "shaft_count": len(shafts),
+            "pp_level_fields": {},
+            "first_shaft_row_all_fields": {},
+        }
+        # PP-level fields related to weight/shaft
+        for attr in dir(pp):
+            if any(kw in attr.lower() for kw in ["weight", "shaft", "width", "net", "total", "combined"]):
+                val = pp.get(attr)
+                if val not in (None, "", 0, 0.0, []):
+                    _debug["pp_level_fields"][attr] = str(val)[:100]
+        # First shaft child row: dump ALL non-empty fields
+        if shafts:
+            first = shafts[0]
+            for attr in (first.as_dict() if hasattr(first, 'as_dict') else {}):
+                val = first.get(attr)
+                if val not in (None, "", 0, 0.0) and attr not in ("name", "owner", "creation", "modified", "modified_by", "doctype", "parent", "parentfield", "parenttype", "docstatus"):
+                    _debug["first_shaft_row_all_fields"][attr] = str(val)[:100]
+
         return {
             "status": "ok",
             "pp_id": pp_id,
             "jobs": jobs,
             "customer": pp.get("customer") or "",
             "order_code": pp.get("order_code") or pp.get("custom_order_code") or "",
+            "_debug": _debug,
         }
     except Exception:
         frappe.log_error(frappe.get_traceback(), "get_spr_shaft_jobs_from_pp")
