@@ -8244,11 +8244,18 @@ def create_item_spr(pp_id, planning_sheet_item_names):
                 row.job_id = pick_value(pp_shaft, ["job_id", "job", "job_no"], str(len(spr.shaft_jobs)))
                 row.gsm = pick_value(pp_shaft, ["gsm"], "")
                 row.combination = pick_value(pp_shaft, ["combination", "combined_width", "shaft", "shaft_details"], "") or pp_combined_width
-                row.total_width = flt(pick_value(pp_shaft, ["total_width", "combined_width", "width", "total_width_inches"], 0) or 0)
+                row.total_width = flt(pick_value(pp_shaft, ["total_width", "combined_width", "width", "total_width_inches"], 0) or 0) or flt(pp_combined_width or 0)
                 row.meter_roll_mtrs = flt(pick_value(pp_shaft, ["meter_roll_mtrs", "roll_mtrs", "meter_roll", "roll"], 500) or 500)
                 row.no_of_shafts = cint(pick_value(pp_shaft, ["no_of_shafts", "no_of_shaft", "no_of_sh", "no_of_sf"], 0) or 0) or pp_no_of_shaft or 1
-                row.net_weight_shaft_kgs = pick_value(pp_shaft, ["net_weight_shaft_kgs", "net_weight_shaft", "net_weight"], "") or pp_net_weight
-                row.total_weight_kgs = flt(pick_value(pp_shaft, ["total_weight_kgs", "total_weight", "weight"], 0) or 0) or pp_total_weight
+                
+                # Field names confirmed by user: net_weight, total_width (SPR)
+                _nw = pick_value(pp_shaft, ["net_weight_shaft_kgs", "net_weight_shaft", "net_weight"], "") or pp_net_weight
+                row.net_weight = _nw
+                row.net_weight_shaft_kgs = _nw # keep legacy for safety
+                
+                _tw = flt(pick_value(pp_shaft, ["total_weight_kgs", "total_weight", "weight"], 0) or 0) or pp_total_weight
+                row.total_weight_kgs = _tw
+                row.total_weight = _tw # try without _kgs variant too
                 row.order_code = pick_value(pp_shaft, ["order_code", "party_code", "custom_order_code"], parent_sheet.party_code or "")
                 row.work_orders = pick_value(pp_shaft, ["work_orders", "work_order", "wo", "wo_no"], "") or wo_names_str
                 # Compute total_weight from WO qty if still zero
@@ -8425,8 +8432,11 @@ def get_spr_shaft_jobs_from_pp(pp_id):
                     "total_width": raw_width,
                     "meter_roll_mtrs": flt(pick_value(pp_shaft, ["meter_roll_mtrs", "roll_mtrs", "meter_roll", "roll", "meter_per_roll"], 500) or 500),
                     "no_of_shafts": cint(pick_value(pp_shaft, ["no_of_shafts", "no_of_shaft", "no_of_sh", "no_of_sf"], 0) or 0) or pp_no_of_shaft or 1,
+                    # Field names confirmed by user: net_weight, total_width
+                    "net_weight": raw_net_weight,
                     "net_weight_shaft_kgs": raw_net_weight,
                     "total_weight_kgs": raw_total_weight,
+                    "total_weight": raw_total_weight,
                     "order_code": pick_value(pp_shaft, ["order_code", "party_code", "custom_order_code"], pp.get("order_code") or pp.get("custom_order_code") or ""),
                     "work_orders": pick_value(pp_shaft, ["work_orders", "work_order", "wo", "wo_no"], "") or wo_names_str,
                 }
