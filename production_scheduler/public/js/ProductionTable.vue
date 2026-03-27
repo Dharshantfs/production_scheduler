@@ -1593,8 +1593,6 @@ async function createItemStockEntry(item) {
         if (res.message && res.message.status === "ok") {
           const sprId = res.message.spr_id;
           item.spr_name = sprId;
-
-          showLinkedWorkOrdersPopup(item.pp_id);
           
           frappe.show_alert({
             message: `✅ SPR Created: ${sprId}. Opening form...`,
