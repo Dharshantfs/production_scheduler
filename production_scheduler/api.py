@@ -8017,34 +8017,8 @@ def backfill_pp_id_to_sheet_items(planning_sheet_name=None, dry_run=1):
     """
     dry_run = cint(dry_run)
 
-    # Discover what field exists on Planning Sheet Item via SQL
-    try:
-        all_cols = frappe.db.sql(
-            "SHOW COLUMNS FROM `tabPlanning Sheet Item`", as_dict=True
-        )
-        col_names = [c["Field"].lower() for c in all_cols]
-    except Exception:
-        all_cols = []
-        col_names = []
-
-    # Priority order: order_sheet is visible in the UI screenshot
-    write_field = None
-    for candidate in ["order_sheet", "custom_order_sheet", "custom_production_plan",
-                      "production_plan", "custom_pp_id", "pp_id"]:
-        if candidate.lower() in col_names:
-            write_field = candidate
-            break
-
-    if not write_field:
-        # Return all columns so user knows what's available
-        pp_related = [c["Field"] for c in all_cols if any(
-            kw in c["Field"].lower() for kw in ["plan", "pp", "order", "sheet"]
-        )]
-        return {
-            "status": "error",
-            "message": "No suitable field found on Planning Sheet Item. "
-                       "Available plan/order related columns: " + str(pp_related)
-        }
+    # Confirmed field name on Planning Sheet Item child table
+    write_field = "order_sheet"
 
     # Fetch all Planning Sheet Items
     filters = {}
