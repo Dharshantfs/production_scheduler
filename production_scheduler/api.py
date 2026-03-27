@@ -2704,24 +2704,29 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     try:
         if valid_pps and frappe.db.exists("DocType", "Shaft Production Run"):
             fmt_pps = ",".join(["%s"] * len(valid_pps))
+            # Query all columns to debug which fields exist and have data
             spr_achieved_rows = frappe.db.sql(f"""
                 SELECT 
+                    name,
                     production_plan,
-                    custom_total_achieved_weight
+                    custom_total_achieved_weight,
+                    total_produced_weight,
+                    custom_total_produced_weight
                 FROM `tabShaft Production Run`
                 WHERE production_plan IN ({fmt_pps})
-                  AND docstatus < 2
+                  AND docstatus = 1
                 ORDER BY creation DESC
             """, tuple(valid_pps), as_dict=True)
             
             for row in spr_achieved_rows:
                 pp_id = row.get('production_plan')
-                achieved = flt(row.get('custom_total_achieved_weight', 0))
+                # Priority: custom_total_achieved_weight > total_produced_weight > custom_total_produced_weight
+                achieved = flt(row.get('custom_total_achieved_weight') or row.get('total_produced_weight') or row.get('custom_total_produced_weight') or 0)
                 # Take the latest (first) SPR for each PP
-                if pp_id and pp_id not in spr_pp_achieved_weight_map:
+                if pp_id and achieved > 0 and pp_id not in spr_pp_achieved_weight_map:
                     spr_pp_achieved_weight_map[pp_id] = achieved
-    except Exception:
-        pass
+    except Exception as e:
+        frappe.log_error(f"Error fetching SPR achieved weights: {str(e)}")
 
     # Fetch SPR production via custom_spr_name field on Planning Sheet Items
     spr_psi_achieved_weight_map = {}  # Map PSI to SPR achieved weight
