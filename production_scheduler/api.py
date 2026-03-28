@@ -2855,6 +2855,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     spr_link_cache = {}
     spr_meta_cache = {}
     spr_pp_gsm_weights_cache = {}
+    spr_pp_gsm_achieved_cache = {}
     spr_pp_gsm_index_cache = {}
     spr_has_unit_col = False
     try:
@@ -2876,10 +2877,10 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
     def _load_spr_gsm_weights_for_pp(pp_id, preferred_spr=None):
         if not pp_id:
-            return {}
+            return {}, {}
         cache_key = f"{pp_id}::{preferred_spr or ''}"
         if cache_key in spr_pp_gsm_weights_cache:
-            return spr_pp_gsm_weights_cache[cache_key]
+            return spr_pp_gsm_weights_cache[cache_key], spr_pp_gsm_achieved_cache.get(cache_key, {})
 
         spr_id = str(preferred_spr or "").strip()
         if not spr_id:
@@ -2888,29 +2889,41 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             spr_id = str(frappe.db.get_value("Production Plan", pp_id, "custom_shaft_production_run_id") or "").strip()
 
         weights_by_gsm = {}
+        achieved_by_gsm = {}
         if spr_id and frappe.db.exists("Shaft Production Run", spr_id):
             try:
                 spr_doc = frappe.get_doc("Shaft Production Run", spr_id)
                 for r in (spr_doc.get("shaft_jobs") or []):
                     gsm_key = _normalize_gsm_key(r.get("gsm"))
                     total_weight = flt(r.get("total_weight") or r.get("total_weight_kgs") or 0)
-                    if total_weight <= 0:
+                    achieved_weight = flt(
+                        r.get("custom_total_achieved_weight")
+                        or r.get("total_achieved_weight")
+                        or 0
+                    )
+                    if total_weight <= 0 and achieved_weight <= 0:
                         continue
                     if gsm_key not in weights_by_gsm:
                         weights_by_gsm[gsm_key] = []
-                    weights_by_gsm[gsm_key].append(total_weight)
+                        achieved_by_gsm[gsm_key] = []
+                    if total_weight > 0:
+                        weights_by_gsm[gsm_key].append(total_weight)
+                    else:
+                        weights_by_gsm[gsm_key].append(0)
+                    achieved_by_gsm[gsm_key].append(achieved_weight)
             except Exception:
                 pass
 
         spr_pp_gsm_weights_cache[cache_key] = weights_by_gsm
-        return weights_by_gsm
+        spr_pp_gsm_achieved_cache[cache_key] = achieved_by_gsm
+        return weights_by_gsm, achieved_by_gsm
 
     def _take_next_spr_weight(pp_id, gsm_value, preferred_spr=None):
         gsm_key = _normalize_gsm_key(gsm_value)
         if not pp_id or not gsm_key:
             return None
 
-        weights_by_gsm = _load_spr_gsm_weights_for_pp(pp_id, preferred_spr=preferred_spr)
+        weights_by_gsm, _ = _load_spr_gsm_weights_for_pp(pp_id, preferred_spr=preferred_spr)
         bucket = weights_by_gsm.get(gsm_key) or []
         if not bucket:
             return None
@@ -2919,6 +2932,25 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         idx = spr_pp_gsm_index_cache.get(idx_key, 0)
         if idx >= len(bucket):
             # If items exceed available rows for this gsm, keep last known value.
+            return bucket[-1]
+
+        spr_pp_gsm_index_cache[idx_key] = idx + 1
+        return bucket[idx]
+
+    def _take_next_spr_achieved(pp_id, gsm_value, preferred_spr=None):
+        """Return the next per-GSM achieved weight from SPR shaft_jobs."""
+        gsm_key = _normalize_gsm_key(gsm_value)
+        if not pp_id or not gsm_key:
+            return None
+
+        _, achieved_by_gsm = _load_spr_gsm_weights_for_pp(pp_id, preferred_spr=preferred_spr)
+        bucket = achieved_by_gsm.get(gsm_key) or []
+        if not bucket:
+            return None
+
+        idx_key = f"{pp_id}::achieved::{gsm_key}"
+        idx = spr_pp_gsm_index_cache.get(idx_key, 0)
+        if idx >= len(bucket):
             return bucket[-1]
 
         spr_pp_gsm_index_cache[idx_key] = idx + 1
@@ -3135,12 +3167,19 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             wo_terminal = bool(item_pp and pp_has_wo_map.get(item_pp) and not wo_open)
 
             # Get total achieved weight from SPR if available.
-            # Rule: PSI-linked SPR takes precedence, else latest submitted SPR for PP.
+            # Rule: PSI-linked SPR > per-item GSM from shaft_jobs > PP header total.
             total_achieved_weight_kgs = 0
             if psi_name and psi_name in spr_psi_achieved_weight_map:
                 total_achieved_weight_kgs = spr_psi_achieved_weight_map[psi_name]
-            elif item_pp and item_pp in spr_pp_achieved_weight_map:
-                total_achieved_weight_kgs = spr_pp_achieved_weight_map[item_pp]
+            elif item_pp:
+                gsm_val = item.get("gsm") or ""
+                spr_for_pp = spr_pp_name_map.get(item_pp) or ""
+                per_item_achieved = _take_next_spr_achieved(item_pp, gsm_val, preferred_spr=spr_for_pp)
+                if per_item_achieved is not None and per_item_achieved > 0:
+                    total_achieved_weight_kgs = per_item_achieved
+                elif item_pp in spr_pp_achieved_weight_map:
+                    # Fallback: PP-level total only if no shaft_jobs breakdown
+                    total_achieved_weight_kgs = spr_pp_achieved_weight_map[item_pp]
             
             data.append({
                 "name": "{}-{}".format(sheet.name, item.get("idx", 0)),
