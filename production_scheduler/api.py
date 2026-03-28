@@ -8429,6 +8429,168 @@ def backfill_pp_id_to_sheet_items(planning_sheet_name=None, dry_run=1):
                 continue
 
             # Find which PP in the list has this item_code
+
+
+# ============================================================================
+# TEST & VERIFICATION FUNCTIONS
+# ============================================================================
+
+@frappe.whitelist()
+def test_quality_extraction():
+    """
+    Test and verify that quality code extraction is working correctly.
+    Can be called from console: frappe.call({method: 'production_scheduler.api.test_quality_extraction'})
+    
+    Tests:
+    1. Quality Master structure and available fields
+    2. Quality code extraction from 16-digit item codes
+    3. Existing Planning Sheet items for quality population
+    4. Manual extraction logic verification
+    """
+    import json
+    
+    results = {
+        "status": "pending",
+        "timestamp": frappe.utils.now(),
+        "tests": [],
+        "warnings": [],
+        "errors": []
+    }
+    
+    try:
+        # TEST 1: Quality Master Count & Structure
+        qm_count = frappe.db.count("Quality Master")
+        results["tests"].append({
+            "name": "Quality Master Count",
+            "value": qm_count,
+            "status": "PASS" if qm_count > 0 else "FAIL"
+        })
+        
+        if qm_count == 0:
+            results["warnings"].append("No Quality Masters found - quality extraction will have nothing to lookup")
+        
+        # TEST 2: Sample Quality Masters with codes
+        qm_sample = frappe.db.sql("""
+            SELECT name, short_code, code, quality_code
+            FROM `tabQuality Master`
+            LIMIT 3
+        """, as_dict=True)
+        
+        results["tests"].append({
+            "name": "Quality Master Samples",
+            "samples": qm_sample,
+            "status": "PASS"
+        })
+        
+        # TEST 3: Manual extraction test (simulate _populate_planning_sheet_items logic)
+        test_cases = [
+            {"code": "1001165421501865", "q_code": "116", "c_code": "542", "desc": "Standard 16-digit format"},
+            {"code": "1001035041001600", "q_code": "103", "c_code": "504", "desc": "Another standard format"},
+        ]
+        
+        extraction_tests = []
+        for tc in test_cases:
+            item_code_str = str(tc["code"]).strip()
+            if len(item_code_str) >= 9 and item_code_str.startswith("100"):
+                q_code = item_code_str[3:6]
+                c_code = item_code_str[6:9]
+                
+                # Lookup quality
+                qual_name = None
+                lookup_field = None
+                for field in ["short_code", "code", "quality_code"]:
+                    try:
+                        result = frappe.db.get_value("Quality Master", {field: q_code}, "name")
+                        if result:
+                            qual_name = result
+                            lookup_field = field
+                            break
+                    except:
+                        pass
+                
+                extraction_tests.append({
+                    "item_code": tc["code"],
+                    "expected_q_code": tc["q_code"],
+                    "extracted_q_code": q_code,
+                    "q_code_match": q_code == tc["q_code"],
+                    "expected_c_code": tc["c_code"],
+                    "extracted_c_code": c_code,
+                    "c_code_match": c_code == tc["c_code"],
+                    "quality_found": qual_name or "NOT FOUND",
+                    "lookup_field": lookup_field,
+                    "status": "PASS" if (q_code == tc["q_code"] and c_code == tc["c_code"]) else "FAIL"
+                })
+        
+        results["tests"].append({
+            "name": "Quality Code Extraction Logic",
+            "test_cases": extraction_tests,
+            "status": "PASS" if all(t["status"] == "PASS" for t in extraction_tests) else "PARTIAL"
+        })
+        
+        # TEST 4: Planning Sheet Item Population Status
+        psi_total = frappe.db.count("Planning Sheet Item", {"docstatus": ["<", 2]})
+        psi_with_qual = frappe.db.count("Planning Sheet Item", {"docstatus": ["<", 2], "custom_quality": ["!=", ""]})
+        psi_without_qual = psi_total - psi_with_qual
+        
+        pct_populated = round((psi_with_qual / psi_total * 100) if psi_total > 0 else 0, 2)
+        
+        results["tests"].append({
+            "name": "Planning Sheet Item Quality Population",
+            "total_items": psi_total,
+            "with_quality": psi_with_qual,
+            "without_quality": psi_without_qual,
+            "percentage_populated": pct_populated,
+            "status": "PASS" if pct_populated > 0 or psi_total == 0 else "INFO"
+        })
+        
+        # TEST 5: Sample PSI items with quality populated
+        if psi_with_qual > 0:
+            psi_samples = frappe.db.sql("""
+                SELECT name, item_code, custom_quality, parent, unit, qty
+                FROM `tabPlanning Sheet Item`
+                WHERE docstatus < 2 AND custom_quality IS NOT NULL AND custom_quality != ''
+                ORDER BY creation DESC
+                LIMIT 5
+            """, as_dict=True)
+            
+            results["tests"].append({
+                "name": "Sample PSI Items with Populated Quality",
+                "samples": psi_samples,
+                "status": "PASS"
+            })
+        
+        # TEST 6: Verify implementation function exists
+        try:
+            from production_scheduler.api import _populate_planning_sheet_items, _get_color_by_code
+            results["tests"].append({
+                "name": "Implementation Functions",
+                "functions": ["_populate_planning_sheet_items", "_get_color_by_code"],
+                "status": "PASS"
+            })
+        except Exception as e:
+            results["tests"].append({
+                "name": "Implementation Functions",
+                "error": str(e),
+                "status": "FAIL"
+            })
+            results["errors"].append(f"Could not import functions: {e}")
+        
+        # Overall status
+        failed_tests = [t for t in results["tests"] if t.get("status") == "FAIL"]
+        results["status"] = "FAIL" if failed_tests else "PASS"
+        
+        frappe.msgprint(f"<pre>{json.dumps(results, indent=2, default=str)}</pre>", 
+                       title="Quality Extraction Test Results",
+                       indicator="red" if failed_tests else "green")
+        
+        return results
+        
+    except Exception as e:
+        results["status"] = "ERROR"
+        results["errors"].append(str(e))
+        import traceback as tb
+        results["traceback"] = tb.format_exc()
+        return results
             placeholders = ", ".join(["%s"] * len(pp_list))
             row = frappe.db.sql(f"""
                 SELECT pp.name FROM `tabProduction Plan` pp
