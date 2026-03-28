@@ -7900,9 +7900,19 @@ def create_mix_spr(date_key, mix_data):
         widths = re.findall(r'\d+', str(mix.get("shaft")))
         row.combination = " + ".join(widths)
         
-        # total width
-        row.total_width = sum(flt(w) for w in widths)
-        row.meter_roll_mtrs = 800 # Default
+		# total width
+		row.total_width = sum(flt(w) for w in widths)
+
+		# Prefer meter length coming from production table; fallback to legacy default
+		raw_meter = (
+			mix.get("meter_roll_mtrs")
+			or mix.get("meter_roll")
+			or mix.get("meter")
+			or mix.get("length_mtrs")
+			or mix.get("length")
+			or mix.get("meters_per_roll")
+		)
+		row.meter_roll_mtrs = flt(raw_meter) if raw_meter else 800
         row.no_of_shafts = len(widths)
         
         # is_manual = 1 to allow weight syncing later if needed, 
