@@ -2859,6 +2859,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     spr_pp_gsm_achieved_cache = {}
     spr_pp_gsm_achieved_index_cache = {}
     pp_header_achieved_index_cache = {}
+    pp_header_achieved_remaining_cache = {}
     split_so_item_produced_alloc_map = {}
     spr_has_unit_col = False
     try:
@@ -2983,13 +2984,25 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         spr_pp_gsm_achieved_index_cache[idx_key] = idx + 1
         return flt(bucket[idx])
 
-    def _take_next_pp_header_achieved(pp_id):
+    def _take_next_pp_header_achieved(pp_id, row_qty=0):
         if not pp_id:
             return 0
-        if pp_header_achieved_index_cache.get(pp_id):
+        if pp_id not in pp_header_achieved_remaining_cache:
+            pp_header_achieved_remaining_cache[pp_id] = flt(spr_pp_achieved_weight_map.get(pp_id) or 0)
+            pp_header_achieved_index_cache[pp_id] = 0
+
+        remaining = flt(pp_header_achieved_remaining_cache.get(pp_id) or 0)
+        if remaining <= 0:
             return 0
-        pp_header_achieved_index_cache[pp_id] = 1
-        return flt(spr_pp_achieved_weight_map.get(pp_id) or 0)
+
+        qty_cap = flt(row_qty or 0)
+        alloc = min(remaining, qty_cap) if qty_cap > 0 else remaining
+        if alloc <= 0:
+            return 0
+
+        pp_header_achieved_remaining_cache[pp_id] = max(remaining - alloc, 0)
+        pp_header_achieved_index_cache[pp_id] = cint(pp_header_achieved_index_cache.get(pp_id) or 0) + 1
+        return flt(alloc)
     for sheet in planning_sheets:
         items = frappe.get_all(
             "Planning Sheet Item",
@@ -3169,7 +3182,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             spr_name = ""
             if psi_name and psi_name in spr_psi_name_map:
                 spr_name = spr_psi_name_map[psi_name]
-            elif so_item_key and so_item_key in spr_so_item_name_map:
+            elif so_item_key and not cint(item.get("custom_is_split")) and so_item_key in spr_so_item_name_map:
                 spr_name = spr_so_item_name_map[so_item_key]
             elif item_pp and not so_item_key and not cint(item.get("custom_is_split")) and item_pp in spr_pp_name_map:
                 spr_name = spr_pp_name_map[item_pp]
@@ -3221,7 +3234,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 if spr_row_achieved > 0:
                     total_achieved_weight_kgs = spr_row_achieved
                 else:
-                    total_achieved_weight_kgs = _take_next_pp_header_achieved(item_pp)
+                    total_achieved_weight_kgs = _take_next_pp_header_achieved(item_pp, item.get("qty"))
             
             data.append({
                 "name": "{}-{}".format(sheet.name, item.get("idx", 0)),
@@ -8481,6 +8494,19 @@ def create_item_spr(pp_id, planning_sheet_item_names):
         return {"status": "error", "message": f"Production Plan {pp_id} not found"}
     
     try:
+        def _link_items_to_spr(spr_name_to_link):
+            """Persist per-item SPR link so split rows remain independent across dates/units."""
+            try:
+                if not spr_name_to_link or not planning_sheet_item_names:
+                    return
+                if not frappe.db.has_column("Planning Sheet Item", "custom_spr_name"):
+                    return
+                for psi_name in planning_sheet_item_names:
+                    if frappe.db.exists("Planning Sheet Item", psi_name):
+                        frappe.db.set_value("Planning Sheet Item", psi_name, "custom_spr_name", spr_name_to_link)
+            except Exception:
+                pass
+
         def _hydrate_existing_spr(existing_spr_name, current_pp_id):
             """Fill missing shaft job fields on reused draft SPR from PP shaft mapping."""
             if not existing_spr_name or not frappe.db.exists("Shaft Production Run", existing_spr_name):
@@ -8548,6 +8574,7 @@ def create_item_spr(pp_id, planning_sheet_item_names):
             existing_docstatus = cint(frappe.db.get_value("Shaft Production Run", linked_spr, "docstatus") or 0)
             if existing_docstatus == 0:
                 _hydrate_existing_spr(linked_spr, pp_id)
+                _link_items_to_spr(linked_spr)
                 return {
                     "status": "ok",
                     "spr_id": linked_spr,
@@ -8566,6 +8593,7 @@ def create_item_spr(pp_id, planning_sheet_item_names):
             existing_spr = existing_active[0].get("name")
             frappe.db.set_value("Production Plan", pp_id, "custom_shaft_production_run_id", existing_spr)
             _hydrate_existing_spr(existing_spr, pp_id)
+            _link_items_to_spr(existing_spr)
             frappe.db.commit()
             return {
                 "status": "ok",
@@ -8734,6 +8762,7 @@ def create_item_spr(pp_id, planning_sheet_item_names):
         
         # Link SPR back to Production Plan using correct field name
         frappe.db.set_value("Production Plan", pp_id, "custom_shaft_production_run_id", spr.name)
+        _link_items_to_spr(spr.name)
         
         frappe.db.commit()
         
