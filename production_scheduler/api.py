@@ -8675,11 +8675,12 @@ def create_item_spr(pp_id, planning_sheet_item_names):
                 row.gsm = pick_value(pp_shaft, ["gsm"], "")
                 row.combination = pick_value(pp_shaft, ["combination", "combined_width", "shaft", "shaft_details"], "") or pp_combined_width
                 row.total_width = flt(pick_value(pp_shaft, ["total_width", "combined_width", "width", "total_width_inches"], 0) or 0) or flt(pp_combined_width or 0)
-                # Prefer PP shaft meters/roll; fall back to PP-level fields before defaulting
+                # Prefer PP shaft meter__roll; fall back to PP-level fields before defaulting
                 row.meter_roll_mtrs = flt(
                     pick_value(
                         pp_shaft,
                         [
+                            "meter__roll",
                             "meter_roll_mtrs",
                             "meter_per_roll",
                             "meter_roll",
@@ -8693,7 +8694,8 @@ def create_item_spr(pp_id, planning_sheet_item_names):
                         0,
                     )
                     or flt(
-                        pp.get("custom_meter_roll_mtrs")
+                        pp.get("meter__roll")
+                        or pp.get("custom_meter_roll_mtrs")
                         or pp.get("meter_roll_mtrs")
                         or pp.get("custom_meter_per_roll")
                         or pp.get("meter_per_roll")
@@ -8748,7 +8750,8 @@ def create_item_spr(pp_id, planning_sheet_item_names):
                 
                 row.no_of_shafts = 1
                 row.meter_roll_mtrs = flt(
-                    pp.get("custom_meter_roll_mtrs")
+                    pp.get("meter__roll")
+                    or pp.get("custom_meter_roll_mtrs")
                     or pp.get("meter_roll_mtrs")
                     or pp.get("custom_meter_per_roll")
                     or pp.get("meter_per_roll")
@@ -8902,7 +8905,7 @@ def get_spr_shaft_jobs_from_pp(pp_id):
                     "gsm": pick_value(pp_shaft, ["gsm"], ""),
                     "combination": pick_value(pp_shaft, ["combination", "combined_width", "shaft", "shaft_details"], "") or pp_combined_width,
                     "total_width": raw_width,
-                    "meter_roll_mtrs": flt(pick_value(pp_shaft, ["meter_roll_mtrs", "meter_per_roll", "meter_roll", "roll_mtrs", "custom_meter_roll_mtrs", "custom_meter_per_roll", "meter_per_roll_mtrs", "roll", "meter"], 0) or flt(pp.get("custom_meter_roll_mtrs") or pp.get("meter_roll_mtrs") or pp.get("custom_meter_per_roll") or pp.get("meter_per_roll") or pp.get("custom_meter") or pp.get("meter") or 500)),
+                    "meter_roll_mtrs": flt(pick_value(pp_shaft, ["meter__roll", "meter_roll_mtrs", "meter_per_roll", "meter_roll", "roll_mtrs", "custom_meter_roll_mtrs", "custom_meter_per_roll", "meter_per_roll_mtrs", "roll", "meter"], 0) or flt(pp.get("meter__roll") or pp.get("custom_meter_roll_mtrs") or pp.get("meter_roll_mtrs") or pp.get("custom_meter_per_roll") or pp.get("meter_per_roll") or pp.get("custom_meter") or pp.get("meter") or 500)),
                     "no_of_shafts": cint(pick_value(pp_shaft, ["no_of_shafts", "no_of_shaft", "no_of_sh", "no_of_sf"], 0) or 0) or pp_no_of_shaft or 1,
                     # Field names confirmed by user: net_weight, total_width
                     "net_weight": raw_net_weight,
