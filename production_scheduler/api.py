@@ -8556,6 +8556,7 @@ def create_item_spr(pp_id, planning_sheet_item_names):
                     row.total_weight_kgs = row.total_weight
                     row.order_code = job.get("order_code") or ""
                     row.work_orders = job.get("work_orders") or ""
+                    row.custom_label = job.get("custom_label") or ""
                 changed = True
             else:
                 for idx, row in enumerate(rows):
@@ -8567,6 +8568,8 @@ def create_item_spr(pp_id, planning_sheet_item_names):
                     _set_if_blank(row, ["combination", "shaft", "shaft_details"], job.get("combination") or "")
                     _set_if_blank(row, ["meter_roll_mtrs", "roll_mtrs", "meter_roll", "roll"], flt(job.get("meter_roll_mtrs") or 0))
                     _set_if_blank(row, ["no_of_shafts", "no_of_shaft", "no_of_sh", "no_of_sf"], cint(job.get("no_of_shafts") or 0))
+                    _set_if_blank(row, ["custom_label", "label"], job.get("custom_label") or "")
+                    _set_if_blank(row, ["custom_label", "label"], job.get("custom_label") or "")
 
             if changed:
                 spr_doc.save(ignore_permissions=True)
@@ -8729,6 +8732,8 @@ def create_item_spr(pp_id, planning_sheet_item_names):
                 row.quality = first_psi.custom_quality or first_psi.get("quality") or ""
                 row.color = first_psi.color or ""
                 row.party_code = parent_sheet.party_code or ""
+                row.custom_label = pick_value(pp_shaft, ["custom_label", "label"], "")
+                row.custom_label = pick_value(pp_shaft, ["custom_label", "label"], "")
         elif not pp_shafts:
             # Fallback: create one shaft job from PSI data if PP has no shaft_details
             for i, psi in enumerate(psi_list):
@@ -8738,6 +8743,8 @@ def create_item_spr(pp_id, planning_sheet_item_names):
                 row.color = psi.color or ""
                 row.party_code = parent_sheet.party_code or ""
                 row.gsm = psi.gsm or ""
+                row.custom_label = pp.get("custom_label") or ""
+                row.custom_label = pp.get("custom_label") or ""
                 
                 # Get width info from PSI
                 width = flt(psi.get("width") or psi.get("custom_width") or psi.get("width_inch") or 0)
@@ -8907,13 +8914,13 @@ def get_spr_shaft_jobs_from_pp(pp_id):
                     "total_width": raw_width,
                     "meter_roll_mtrs": flt(pick_value(pp_shaft, ["meter__roll", "meter_roll_mtrs", "meter_per_roll", "meter_roll", "roll_mtrs", "custom_meter_roll_mtrs", "custom_meter_per_roll", "meter_per_roll_mtrs", "roll", "meter"], 0) or flt(pp.get("meter__roll") or pp.get("custom_meter_roll_mtrs") or pp.get("meter_roll_mtrs") or pp.get("custom_meter_per_roll") or pp.get("meter_per_roll") or pp.get("custom_meter") or pp.get("meter") or 500)),
                     "no_of_shafts": cint(pick_value(pp_shaft, ["no_of_shafts", "no_of_shaft", "no_of_sh", "no_of_sf"], 0) or 0) or pp_no_of_shaft or 1,
-                    # Field names confirmed by user: net_weight, total_width
                     "net_weight": raw_net_weight,
                     "net_weight_shaft_kgs": raw_net_weight,
                     "total_weight_kgs": raw_total_weight,
                     "total_weight": raw_total_weight,
                     "order_code": pick_value(pp_shaft, ["order_code", "party_code", "custom_order_code"], pp.get("order_code") or pp.get("custom_order_code") or ""),
                     "work_orders": pick_value(pp_shaft, ["work_orders", "work_order", "wo", "wo_no"], "") or wo_names_str,
+                    "custom_label": pick_value(pp_shaft, ["custom_label", "label"], ""),
                 }
             )
 
