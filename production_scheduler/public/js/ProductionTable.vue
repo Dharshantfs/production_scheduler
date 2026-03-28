@@ -1587,13 +1587,16 @@ function handleStockEntryAction(item) {
   createItemStockEntry(item);
 }
 
-function syncSprNameForSamePP(ppId, sprId) {
+function syncSprNameForSamePP(ppId, sprId, sourceItemName = "") {
   const pid = String(ppId || "").trim();
   const sid = String(sprId || "").trim();
   if (!pid || !sid) return;
 
   (rawData.value || []).forEach((row) => {
-    if (String(row.pp_id || "").trim() === pid) {
+    if (
+      String(row.pp_id || "").trim() === pid &&
+      (!sourceItemName || String(row.itemName || "") === String(sourceItemName || ""))
+    ) {
       row.spr_name = sid;
     }
   });
@@ -1709,7 +1712,7 @@ async function createItemStockEntry(item) {
         if (res.message && res.message.status === "ok") {
           const sprId = res.message.spr_id;
           item.spr_name = sprId;
-          syncSprNameForSamePP(item.pp_id, sprId);
+          syncSprNameForSamePP(item.pp_id, sprId, item.itemName);
           const reused = !!res.message.reused;
           
           frappe.show_alert({
@@ -1861,7 +1864,6 @@ async function createSingleMergedSPR(ppId, mergedItems, mergedRow) {
               if (res.message && res.message.status === "ok") {
                 const sprId = res.message.spr_id;
                 mergedRow.spr_name = sprId;
-                syncSprNameForSamePP(ppId, sprId);
                 const reused = !!res.message.reused;
 
                 showLinkedWorkOrdersPopup(ppId);
