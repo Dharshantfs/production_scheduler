@@ -142,8 +142,8 @@
         >
             <div class="cc-col-header" :style="{ borderTopColor: headerColors[unit] }">
             <div class="cc-header-top">
-                <span class="cc-col-title">{{ unit === 'Mixed' ? 'Unassigned' : unit }}</span>
-                <span v-if="unit !== 'Mixed' && sequenceStatuses[unit]" :class="['cc-status-badge', sequenceStatuses[unit].toLowerCase().replace(' ', '-')]">
+                <span class="cc-col-title">{{ unit === 'UNASSIGNED' ? 'Unassigned' : unit }}</span>
+                <span v-if="unit !== 'UNASSIGNED' && sequenceStatuses[unit]" :class="['cc-status-badge', sequenceStatuses[unit].toLowerCase().replace(' ', '-')]">
                   {{ sequenceStatuses[unit] }}
                 </span>
                 <!-- Sort Controls -->
@@ -720,9 +720,9 @@ const COLOR_GROUPS = [
 
 const GAP_THRESHOLD = 0; // any color priority difference triggers mix roll
 
-const units = ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"];
-const UNIT_TONNAGE_LIMITS = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5, "Mixed": 999 };
-const headerColors = { "Unit 1": "#3b82f6", "Unit 2": "#10b981", "Unit 3": "#f59e0b", "Unit 4": "#8b5cf6", "Mixed": "#64748b" };
+const units = ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "UNASSIGNED"];
+const UNIT_TONNAGE_LIMITS = { "Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5, "UNASSIGNED": 999 };
+const headerColors = { "Unit 1": "#3b82f6", "Unit 2": "#10b981", "Unit 3": "#f59e0b", "Unit 4": "#8b5cf6", "UNASSIGNED": "#64748b" };
 
 const filterOrderDate = ref(frappe.datetime.get_today());
 const viewScope = ref('weekly');
@@ -1030,7 +1030,7 @@ const matrixData = computed(() => {
         if (!isPlanSelected(d.planName)) return false;
 
         // UNIT FILTER
-        if (filterUnit.value && (d.unit || "Mixed").toUpperCase() !== filterUnit.value.toUpperCase()) return false;
+        if (filterUnit.value && (d.unit || "UNASSIGNED").toUpperCase() !== filterUnit.value.toUpperCase()) return false;
         
         // STATUS FILTER
         if (filterStatus.value && d.planningStatus !== filterStatus.value) return false;
@@ -1292,7 +1292,7 @@ const filteredData = computed(() => {
   
   // Step 1: Normalize unit, exclude specific whites
   data = data.filter(d => {
-      if (!d.unit) d.unit = "Mixed";
+      if (!d.unit) d.unit = "UNASSIGNED";
 
       const colorUpper = (d.color || "").toUpperCase();
       
@@ -1370,7 +1370,7 @@ function _buildRawMixRolls() {
     }
 
     unitsList.forEach(unit => {
-        let uItems = data.filter(d => (d.unit || "Mixed") === unit);
+        let uItems = data.filter(d => (d.unit || "UNASSIGNED") === unit);
         if (uItems.length === 0) return;
         uItems = sortUnitItems(uItems);
 
@@ -1907,7 +1907,7 @@ function getSortLabel(unit) {
 function getUnitTotal(unit) {
   return rawData.value
     .filter((d) => {
-        if ((d.unit || "Mixed") !== unit) return false;
+        if ((d.unit || "UNASSIGNED") !== unit) return false;
                 const colorUpper = String(d.color || "").toUpperCase();
         if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return true;
         if (EXCLUDED_WHITES.some(ex => colorUpper.includes(ex))) return false;
@@ -1919,7 +1919,7 @@ function getUnitTotal(unit) {
 function getHiddenWhiteTotal(unit) {
   return rawData.value
     .filter((d) => {
-        if ((d.unit || "Mixed") !== unit) return false;
+        if ((d.unit || "UNASSIGNED") !== unit) return false;
                 const colorUpper = String(d.color || "").toUpperCase();
         // Check if it IS an excluded white
         if (colorUpper.includes("IVORY") || colorUpper.includes("CREAM") || colorUpper.includes("OFF WHITE")) return false;
@@ -2558,7 +2558,7 @@ function getMonthlyCellEntries(week, unit) {
     
     try {
         // Filter by Unit
-        let items = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
+        let items = filteredData.value.filter(d => (d.unit || "UNASSIGNED") === unit);
         
         // Filter by Date Range
         items = items.filter(d => d.orderDate >= week.start && d.orderDate <= week.end);
@@ -2657,7 +2657,7 @@ function getItemsForDay(dateStr, unit) {
        
        // Filter by Unit and Exact Date (with date normalization)
        let dayItems = filteredData.value.filter(d => {
-           if ((d.unit || "Mixed") !== unit) return false;
+           if ((d.unit || "UNASSIGNED") !== unit) return false;
            // Normalize item's orderDate for comparison
            const itemDate = (d.orderDate || "").trim();
            // Try exact match first
@@ -2670,7 +2670,7 @@ function getItemsForDay(dateStr, unit) {
        // Debug: log when plan is not Default and no items found
        if (selectedPlan.value && selectedPlan.value !== 'Default' && dayItems.length === 0) {
            // Only log once per unit per day to avoid spam
-           const allForUnit = filteredData.value.filter(d => (d.unit || "Mixed") === unit);
+           const allForUnit = filteredData.value.filter(d => (d.unit || "UNASSIGNED") === unit);
            if (allForUnit.length > 0 && !getItemsForDay._logged) {
                console.warn(`[ColorChart Debug] Plan="${selectedPlan.value}", Unit="${unit}", DateStr="${normalizedDateStr}"`,
                    `filteredData has ${allForUnit.length} items for this unit.`,
@@ -2744,7 +2744,7 @@ function sortItems(unit, items) {
 
 // Group data by unit, sort, and insert mix markers
 function getUnitEntries(unit) {
-  let unitItems = filteredData.value.filter((d) => (d.unit || "Mixed").toUpperCase() === (unit || "").toUpperCase());
+  let unitItems = filteredData.value.filter((d) => (d.unit || "UNASSIGNED").toUpperCase() === (unit || "").toUpperCase());
   unitItems = sortItems(unit, unitItems); 
 
   const entries = [];
@@ -2776,7 +2776,7 @@ function getUnitEntries(unit) {
 
 function getUnitProductionTotal(unit) {
   return filteredData.value
-    .filter((d) => (d.unit || "Mixed").toUpperCase() === (unit || "").toUpperCase())
+    .filter((d) => (d.unit || "UNASSIGNED").toUpperCase() === (unit || "").toUpperCase())
     .reduce((sum, d) => sum + (parseFloat(d.qty) || 0), 0) / 1000;
 }
 
@@ -5157,7 +5157,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
         if ((d.color || "").toUpperCase().trim() !== color.toUpperCase().trim()) return false;
         const colorUpper = (d.color || "").toUpperCase().trim();
         if (colorUpper === "WHITE" || colorUpper === "BRIGHT WHITE") return false;
-        if (filterUnit.value && (d.unit || "Mixed") !== filterUnit.value) return false;
+        if (filterUnit.value && (d.unit || "UNASSIGNED") !== filterUnit.value) return false;
         if (filterStatus.value && d.planningStatus !== filterStatus.value) return false;
         return true;
     });
@@ -5326,7 +5326,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
 
         orderedItems.forEach(item => {
             let unit = item.unit || "Unit 1";
-            if (unit === "Mixed" || unit === "Unassigned") unit = "Unit 1";
+            if (unit === "UNASSIGNED") unit = "Unit 1";
             const phaseBg = item._phase === 'white' ? '#f0fdf4' : item._phase === 'color' ? '#fffbeb' : '#fff';
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9; background:${phaseBg};">
