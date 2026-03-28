@@ -324,11 +324,11 @@ def _populate_planning_sheet_items(ps, doc):
         if gsm > 0 and width > 0 and m_roll > 0:
             wt = (gsm * width * m_roll * 0.0254) / 1000
 
-        # WHITE ORDERS: Leave UNASSIGNED (empty unit) on Production Board by ORDER DATE
+        # WHITE ORDERS: Assign to "Mixed" (Unassigned) on Production Board by ORDER DATE
         # Color orders get assigned to specific units; White orders stay unassigned for manual unit assignment
         unit = ""
         if _is_white_color(col):
-            unit = ""  # Empty unit = Unassigned - will appear on board by ordered_date
+            pass  # Leave unit empty - frontend converts to "Mixed" in filteredData computed property (line 1289)
         else:
             # UNIT determination: STRICT WIDTH + TONNAGE capacity checks (for color orders only)
             # Unit widths (inches): U1=63, U2=126, U3=126, U4=90
