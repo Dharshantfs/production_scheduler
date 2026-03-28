@@ -221,8 +221,10 @@ def _populate_planning_sheet_items(ps, doc):
     """
     Populates items from a Sales Order into a Planning Sheet.
     Includes strict de-duplication based on sales_order_item.
+    For existing items: UPDATE unit if changed (e.g., unassigned white order now assigned to a unit).
+    For new items: CREATE new PSI record.
     """
-    existing_items = [it.sales_order_item for it in ps.items]
+    existing_items_map = {it.sales_order_item: it for it in ps.items}
 
     # Pull exact names from Quality Master so parsed quality matches ERPNext doctype names.
     quality_lookup = list(QUAL_LIST)
@@ -237,8 +239,8 @@ def _populate_planning_sheet_items(ps, doc):
     quality_lookup.sort(key=len, reverse=True)
     
     for it in doc.items:
-        if it.name in existing_items:
-            continue
+        existing_psi = existing_items_map.get(it.name)
+        is_existing = existing_psi is not None
             
         raw_txt = (it.item_code or "") + " " + (it.item_name or "")
         clean_txt = raw_txt.upper().replace("-", " ").replace("_", " ").replace("(", " ").replace(")", " ")
@@ -376,7 +378,8 @@ def _populate_planning_sheet_items(ps, doc):
             # White orders in "Mixed" (Unassigned) don't need unit-specific maintenance checks
             # They'll be assigned to a unit later via "Pull Orders" dialog
 
-        ps.append("items", {
+        # Prepare PSI record data
+        psi_data = {
             "sales_order_item": it.name,
             "item_code": it.item_code,
             "item_name": it.item_name,
@@ -393,7 +396,17 @@ def _populate_planning_sheet_items(ps, doc):
             "unit": unit,
             "party_code": ps.party_code,
             "custom_item_planned_date": p_date
-        })
+        }
+
+        if is_existing:
+            # UPDATE existing PSI if unit changed (e.g., white order now assigned to a unit)
+            old_unit = existing_psi.unit
+            if old_unit != unit:
+                existing_psi.unit = unit
+                existing_psi.custom_item_planned_date = p_date
+        else:
+            # CREATE new PSI record
+            ps.append("items", psi_data)
     return ps
 
 
