@@ -8846,7 +8846,7 @@ def get_spr_shaft_jobs_from_pp(pp_id):
                     "gsm": pick_value(pp_shaft, ["gsm"], ""),
                     "combination": pick_value(pp_shaft, ["combination", "combined_width", "shaft", "shaft_details"], "") or pp_combined_width,
                     "total_width": raw_width,
-                    "meter_roll_mtrs": flt(pick_value(pp_shaft, ["meter_roll_mtrs", "roll_mtrs", "meter_roll", "roll", "meter_per_roll"], 500) or 500),
+                    "meter_roll_mtrs": flt(pick_value(pp_shaft, ["meter_roll_mtrs", "meter_per_roll", "meter_roll", "roll_mtrs", "custom_meter_roll_mtrs", "custom_meter_per_roll", "meter_per_roll_mtrs", "roll", "meter"], 0) or flt(pp.get("custom_meter_roll_mtrs") or pp.get("meter_roll_mtrs") or pp.get("custom_meter_per_roll") or pp.get("meter_per_roll") or pp.get("custom_meter") or pp.get("meter") or 500)),
                     "no_of_shafts": cint(pick_value(pp_shaft, ["no_of_shafts", "no_of_shaft", "no_of_sh", "no_of_sf"], 0) or 0) or pp_no_of_shaft or 1,
                     # Field names confirmed by user: net_weight, total_width
                     "net_weight": raw_net_weight,
