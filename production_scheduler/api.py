@@ -8568,49 +8568,37 @@ def create_item_spr(pp_id, planning_sheet_item_names):
 
         pp = frappe.get_doc("Production Plan", pp_id)
 
-        # One SPR per PP policy: reuse only DRAFT SPR; submitted SPR should not block a new continuation SPR.
-        linked_spr = str(frappe.db.get_value("Production Plan", pp_id, "custom_shaft_production_run_id") or "").strip()
-        if linked_spr and frappe.db.exists("Shaft Production Run", linked_spr):
-            existing_docstatus = cint(frappe.db.get_value("Shaft Production Run", linked_spr, "docstatus") or 0)
-            if existing_docstatus == 0:
-                _hydrate_existing_spr(linked_spr, pp_id)
-                _link_items_to_spr(linked_spr)
-                return {
-                    "status": "ok",
-                    "spr_id": linked_spr,
-                    "message": f"SPR Reused: {linked_spr}",
-                    "reused": 1,
-                }
-
-        existing_active = frappe.get_all(
-            "Shaft Production Run",
-            filters={"production_plan": pp_id, "docstatus": 0},
-            fields=["name"],
-            order_by="modified desc",
-            limit=1,
-        )
-        if existing_active:
-            existing_spr = existing_active[0].get("name")
-            frappe.db.set_value("Production Plan", pp_id, "custom_shaft_production_run_id", existing_spr)
-            _hydrate_existing_spr(existing_spr, pp_id)
-            _link_items_to_spr(existing_spr)
-            frappe.db.commit()
-            return {
-                "status": "ok",
-                "spr_id": existing_spr,
-                "message": f"SPR Reused: {existing_spr}",
-                "reused": 1,
-            }
-
+        # If any provided PSI already has an SPR link, reuse that specific SPR only for those PSI rows.
         psi_list = []
-        
+        existing_links = set()
         for psi_name in planning_sheet_item_names:
             if frappe.db.exists("Planning Sheet Item", psi_name):
                 psi = frappe.get_doc("Planning Sheet Item", psi_name)
                 psi_list.append(psi)
-        
+                link_name = (psi.get("custom_spr_name") or "").strip()
+                if link_name:
+                    existing_links.add(link_name)
+
         if not psi_list:
             return {"status": "error", "message": "No valid Planning Sheet Items found"}
+
+        if len(existing_links) > 1:
+            return {
+                "status": "error",
+                "message": f"Multiple SPR links found for selected rows: {', '.join(sorted(existing_links))}. Please select rows with a single SPR or create separately.",
+            }
+
+        if len(existing_links) == 1:
+            reuse_spr = existing_links.pop()
+            if frappe.db.exists("Shaft Production Run", reuse_spr):
+                _hydrate_existing_spr(reuse_spr, pp_id)
+                _link_items_to_spr(reuse_spr)
+                return {
+                    "status": "ok",
+                    "spr_id": reuse_spr,
+                    "message": f"SPR Reused for PSI: {reuse_spr}",
+                    "reused": 1,
+                }
         
         # Create SPR
         spr = frappe.new_doc("Shaft Production Run")
@@ -8682,7 +8670,33 @@ def create_item_spr(pp_id, planning_sheet_item_names):
                 row.gsm = pick_value(pp_shaft, ["gsm"], "")
                 row.combination = pick_value(pp_shaft, ["combination", "combined_width", "shaft", "shaft_details"], "") or pp_combined_width
                 row.total_width = flt(pick_value(pp_shaft, ["total_width", "combined_width", "width", "total_width_inches"], 0) or 0) or flt(pp_combined_width or 0)
-                row.meter_roll_mtrs = flt(pick_value(pp_shaft, ["meter_roll_mtrs", "roll_mtrs", "meter_roll", "roll"], 500) or 500)
+                # Prefer PP shaft meters/roll; fall back to PP-level fields before defaulting
+                row.meter_roll_mtrs = flt(
+                    pick_value(
+                        pp_shaft,
+                        [
+                            "meter_roll_mtrs",
+                            "meter_per_roll",
+                            "meter_roll",
+                            "roll_mtrs",
+                            "custom_meter_roll_mtrs",
+                            "custom_meter_per_roll",
+                            "meter_per_roll_mtrs",
+                            "roll",
+                            "meter",
+                        ],
+                        0,
+                    )
+                    or flt(
+                        pp.get("custom_meter_roll_mtrs")
+                        or pp.get("meter_roll_mtrs")
+                        or pp.get("custom_meter_per_roll")
+                        or pp.get("meter_per_roll")
+                        or pp.get("custom_meter")
+                        or pp.get("meter")
+                        or 500
+                    )
+                )
                 row.no_of_shafts = cint(pick_value(pp_shaft, ["no_of_shafts", "no_of_shaft", "no_of_sh", "no_of_sf"], 0) or 0) or pp_no_of_shaft or 1
                 
                 # Field names confirmed by user: net_weight, total_width (SPR)
@@ -8728,7 +8742,15 @@ def create_item_spr(pp_id, planning_sheet_item_names):
                     row.total_width = 0
                 
                 row.no_of_shafts = 1
-                row.meter_roll_mtrs = 500
+                row.meter_roll_mtrs = flt(
+                    pp.get("custom_meter_roll_mtrs")
+                    or pp.get("meter_roll_mtrs")
+                    or pp.get("custom_meter_per_roll")
+                    or pp.get("meter_per_roll")
+                    or pp.get("custom_meter")
+                    or pp.get("meter")
+                    or 500
+                )
         
         # Store selected Planning Sheet Item names for reference
         if psi_list:
