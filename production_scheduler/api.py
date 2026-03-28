@@ -324,63 +324,57 @@ def _populate_planning_sheet_items(ps, doc):
         if gsm > 0 and width > 0 and m_roll > 0:
             wt = (gsm * width * m_roll * 0.0254) / 1000
 
-        # UNIT determination: STRICT WIDTH + TONNAGE capacity checks
-        # Unit widths (inches): U1=63, U2=126, U3=126, U4=90
-        # Unit tonnage limits: U1=4.4T, U2=12T, U3=9T, U4=5.5T
-        # ANY quality on ANY unit allowed
-        UNIT_WIDTHS = {"Unit 1": 63, "Unit 2": 126, "Unit 3": 126, "Unit 4": 90}
-        UNIT_TONNAGE_LIMITS = {"Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5}
-        
-        item_tonnage = (it.qty or 0) / 1000.0  # Convert qty to tonnage
-        
-        # Find best unit using Best Fit Decreasing:
-        # 1. Width must FIT (strict check)
-        # 2. Tonnage available (strict check)
-        # 3. Pick smallest unit that fits (minimize waste)
-        viable_units = []
-        for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
-            unit_width = UNIT_WIDTHS[u]
-            unit_tonnage_max = UNIT_TONNAGE_LIMITS[u]
-            
-            # STRICT: Width must fit
-            if unit_width >= width:
-                viable_units.append({
-                    "name": u,
-                    "width": unit_width,
-                    "width_waste": unit_width - width,
-                    "tonnage_max": unit_tonnage_max
-                })
-        
-        # Pick best unit: smallest width that fits (Best Fit)
-        if viable_units:
-            best_unit_option = min(viable_units, key=lambda x: x["width_waste"])
-            unit = best_unit_option["name"]
+        # WHITE ORDERS: Assign to "Mixed" (Unassigned) on Production Board by ORDER DATE
+        # Color orders get assigned to specific units; White orders stay unassigned for manual unit assignment
+        unit = ""
+        if _is_white_color(col):
+            unit = "Mixed"  # Unassigned - will appear on board by ordered_date
         else:
-            # FALLBACK: Width doesn't fit ANY unit. Log error and assign to largest unit
-            frappe.logger().warning(
-                f"[_populate_planning_sheet_items] Item {it.name} width={width}\" exceeds all units. "
-                f"Max unit width=126\". Assigning to Unit 2 (widest). VERIFY ITEM CODE."
-            )
-            unit = "Unit 2"  # Widest unit as fallback
+            # UNIT determination: STRICT WIDTH + TONNAGE capacity checks (for color orders only)
+            # Unit widths (inches): U1=63, U2=126, U3=126, U4=90
+            # Unit tonnage limits: U1=4.4T, U2=12T, U3=9T, U4=5.5T
+            # ANY quality on ANY unit allowed
+            UNIT_WIDTHS = {"Unit 1": 63, "Unit 2": 126, "Unit 3": 126, "Unit 4": 90}
+            UNIT_TONNAGE_LIMITS = {"Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5}
+            
+            item_tonnage = (it.qty or 0) / 1000.0  # Convert qty to tonnage
+            
+            # Find best unit using Best Fit Decreasing:
+            # 1. Width must FIT (strict check)
+            # 2. Tonnage available (strict check)
+            # 3. Pick smallest unit that fits (minimize waste)
+            viable_units = []
+            for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
+                unit_width = UNIT_WIDTHS[u]
+                unit_tonnage_max = UNIT_TONNAGE_LIMITS[u]
+                
+                # STRICT: Width must fit
+                if unit_width >= width:
+                    viable_units.append({
+                        "name": u,
+                        "width": unit_width,
+                        "width_waste": unit_width - width,
+                        "tonnage_max": unit_tonnage_max
+                    })
+            
+            # Pick best unit: smallest width that fits (Best Fit)
+            if viable_units:
+                best_unit_option = min(viable_units, key=lambda x: x["width_waste"])
+                unit = best_unit_option["name"]
+            else:
+                # FALLBACK: Width doesn't fit ANY unit. Log error and assign to largest unit
+                frappe.logger().warning(
+                    f"[_populate_planning_sheet_items] Item {it.name} width={width}\" exceeds all units. "
+                    f"Max unit width=126\". Assigning to Unit 2 (widest). VERIFY ITEM CODE."
+                )
+                unit = "Unit 2"  # Widest unit as fallback
 
-        # plannedDate auto-set for White items
+        # plannedDate auto-set for White items (uses ordered_date, not unit-based planning)
         p_date = None
         if _is_white_color(col):
             p_date = ps.ordered_date
-            # CHECK: If unit has blocking maintenance on ordered_date, forward to next available date
-            if is_date_under_maintenance(unit, str(ps.ordered_date)):
-                # Find next date without blocking maintenance
-                from frappe.utils import add_days, getdate
-                check_date = getdate(ps.ordered_date)
-                for days_offset in range(1, 31):  # Check up to 30 days ahead
-                    next_candidate = add_days(check_date, days_offset)
-                    if not is_date_under_maintenance(unit, str(next_candidate)):
-                        p_date = next_candidate
-                        frappe.logger().info(
-                            f"[Planning Sheet] White order {it.name} forwarded from {ps.ordered_date} to {p_date} "
-                            f"due to blocking maintenance on Unit {unit}"
-                        )
-                        break
+            # White orders in "Mixed" (Unassigned) don't need unit-specific maintenance checks
+            # They'll be assigned to a unit later via "Pull Orders" dialog
 
         ps.append("items", {
             "sales_order_item": it.name,
