@@ -8429,6 +8429,39 @@ def backfill_pp_id_to_sheet_items(planning_sheet_name=None, dry_run=1):
                 continue
 
             # Find which PP in the list has this item_code
+            # (Loop through PPs to find which one has this item_code)
+            found_pp = None
+            for pp_id in pp_list:
+                pp_items = frappe.db.get_all("Production Plan Item", 
+                    filters={"parent": pp_id, "item_code": item_code},
+                    fields=["name"])
+                if pp_items:
+                    found_pp = pp_id
+                    break
+            
+            if found_pp:
+                if not dry_run:
+                    frappe.db.set_value("Planning Sheet Item", psi["name"], "order_sheet", found_pp)
+                results["updated"].append({
+                    "item": psi["name"],
+                    "sheet": psi["parent"],
+                    "pp_id": found_pp,
+                    "dry_run": bool(dry_run)
+                })
+            else:
+                results["not_found"].append({
+                    "item": psi["name"],
+                    "sheet": psi["parent"],
+                    "reason": f"item_code not found in any PP: {pp_list}"
+                })
+        
+        except Exception as e:
+            results["errors"].append({
+                "item": psi.get("name", "unknown"),
+                "error": str(e)
+            })
+    
+    return results
 
 
 # ============================================================================
@@ -8591,51 +8624,6 @@ def test_quality_extraction():
         import traceback as tb
         results["traceback"] = tb.format_exc()
         return results
-            placeholders = ", ".join(["%s"] * len(pp_list))
-            row = frappe.db.sql(f"""
-                SELECT pp.name FROM `tabProduction Plan` pp
-                JOIN `tabProduction Plan Item` ppi ON ppi.parent = pp.name
-                WHERE pp.name IN ({placeholders})
-                  AND ppi.item_code = %s
-                  AND pp.docstatus < 2
-                ORDER BY pp.creation DESC LIMIT 1
-            """, pp_list + [item_code], as_dict=True)
-
-            if row:
-                resolved_pp = row[0]["name"]
-                if not dry_run:
-                    frappe.db.sql(
-                        "UPDATE `tabPlanning Sheet Item` SET `order_sheet` = %s WHERE name = %s",
-                        (resolved_pp, psi.name)
-                    )
-                results["updated"].append({
-                    "item": psi.name, "sheet": psi.parent,
-                    "item_code": item_code, "pp_id": resolved_pp
-                })
-            else:
-                results["not_found"].append({
-                    "item": psi.name, "sheet": psi.parent,
-                    "item_code": item_code, "pp_list_checked": pp_list
-                })
-
-        except Exception as e:
-            results["errors"].append({"item": psi.name, "error": str(e)})
-
-    if not dry_run:
-        frappe.db.commit()
-
-    return {
-        "status": "ok",
-        "dry_run": bool(dry_run),
-        "summary": {
-            "updated": len(results["updated"]),
-            "already_set": len(results["already_set"]),
-            "not_found": len(results["not_found"]),
-            "errors": len(results["errors"]),
-        },
-        "details": results
-    }
-
 
 
 @frappe.whitelist()
