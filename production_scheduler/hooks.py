@@ -1,3 +1,4 @@
+# Revert: Restoring stable version of Production Scheduler
 app_name = "production_scheduler"
 app_title = "Production Scheduler"
 app_publisher = "Admin"
