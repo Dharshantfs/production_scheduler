@@ -1481,7 +1481,7 @@ def update_sheet_plan_codes(sheet_doc):
             unique_codes.add(code)
             
     # Update parent custom field
-    sheet_doc.plan_name = ", ".join(sorted(unique_codes))
+    sheet_doc.custom_plan_code = ", ".join(sorted(unique_codes))
 
 @frappe.whitelist()
 def recalculate_all_plan_codes():
@@ -7143,7 +7143,7 @@ def auto_create_planning_sheet(doc, method=None):
     # RE-FETCH TO UPDATE HEADER PLAN CODES
     final_doc = frappe.get_doc("Planning sheet", ps.name)
     update_sheet_plan_codes(final_doc)
-    frappe.db.set_value("Planning sheet", ps.name, "plan_name", final_doc.plan_name)
+    frappe.db.set_value("Planning sheet", ps.name, "custom_plan_code", final_doc.custom_plan_code)
     
     return final_doc
 
