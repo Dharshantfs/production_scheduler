@@ -336,6 +336,8 @@ def _populate_planning_sheet_items(ps, doc):
                 unit = best_unit_option["name"]
             else: unit = "Unit 2"
 
+        p_date = ps.ordered_date if _is_white_color(col) else None
+
         # Prepare PSI record data for syncing/creation
         psi_data = {
             "sales_order_item": it.name,
