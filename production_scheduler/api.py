@@ -1645,7 +1645,7 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
             new_item.unit = unit
             new_item.is_split = 1
             new_item.split_from = item.name
-            new_item.insert()
+            new_item.db_insert() # Direct DB write for child table
             
             if unit_changed:
                 # Add to legacy table too
@@ -1656,7 +1656,9 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
                     new_legacy_doc.name = None
                     new_legacy_doc.qty = split_qty
                     new_legacy_doc.unit = unit
-                    new_legacy_doc.insert()
+                    new_legacy_doc.db_insert()
+            
+            frappe.db.commit() # Ensure split persists
             
             # Find best slot for the REMAINDER (Original item)
             best_slot_rem = find_best_slot(remainder_qty / 1000.0, quality, unit, target_date)
@@ -1727,11 +1729,18 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
     # This is critical because Work Orders (Production Plans) are generated from the legacy table.
     if item_doc.unit != unit:
         legacy_table = "Planning Sheet Item"
-        if frappe.db.exists(legacy_table, {"parent": item_doc.parent, "sales_order_item": item_doc.sales_order_item, "unit": item_doc.unit}):
+        # We use raw SQL to find the original row to avoid case/whitespace issues with exists()
+        existing_legacy = frappe.db.sql(f"""
+            SELECT name FROM `tab{legacy_table}` 
+            WHERE parent = %s AND sales_order_item = %s AND unit = %s
+        """, (item_doc.parent, item_doc.sales_order_item, item_doc.unit))
+        
+        if existing_legacy:
             frappe.db.sql(
-                f"UPDATE `tab{legacy_table}` SET unit = %s WHERE parent = %s AND sales_order_item = %s AND unit = %s",
-                (unit, item_doc.parent, item_doc.sales_order_item, item_doc.unit)
+                f"UPDATE `tab{legacy_table}` SET unit = %s WHERE name = %s",
+                (unit, existing_legacy[0][0])
             )
+            frappe.db.commit() # FORCE SAVE FOR SYNC
 
     update_fields = {"unit": unit}
     if frappe.db.has_column("Planning Table", "planned_date"):
@@ -1741,6 +1750,7 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
         f"UPDATE `tabPlanning Table` SET {set_clause} WHERE name = %s",
         list(update_fields.values()) + [item_doc.name]
     )
+    frappe.db.commit() # FORCE SAVE FOR BOARD
     item_doc.unit = unit
     
     if new_idx is not None:
@@ -3962,7 +3972,7 @@ def split_order(item_name, split_qty, target_unit):
     new_doc.name = None # Ensure new name
     new_doc.split_from = item_name
     new_doc.is_split = 1
-    new_doc.insert()
+    new_doc.db_insert() # Direct DB write
     
     if unit_changed:
         # Also create a new row in the legacy table for the new unit
@@ -3973,7 +3983,9 @@ def split_order(item_name, split_qty, target_unit):
             new_legacy_doc.name = None
             new_legacy_doc.qty = split_qty_val
             new_legacy_doc.unit = target_unit
-            new_legacy_doc.insert()
+            new_legacy_doc.db_insert()
+    
+    frappe.db.commit() # FORCE SAVE MANUALLY
     
     return {
         "status": "success",
@@ -7602,6 +7614,8 @@ def revert_split_item(item_name):
         # Update target and remove current in Planning Table
         frappe.db.sql("UPDATE `tabPlanning Table` SET qty = %s WHERE name = %s", (new_qty, target.name))
         frappe.db.sql("DELETE FROM `tabPlanning Table` WHERE name = %s", (it.name,))
+        
+        frappe.db.commit() # Ensure revert persists
         
         frappe.logger().info(f"[RevertSplit] Merged {it.name} ({it.qty}) into {target.name} ({target.qty} -> {new_qty})")
         
