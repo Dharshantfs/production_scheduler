@@ -1629,7 +1629,16 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
             item.is_split = 1
             item.save()
             
-            # Create New Item -> This stays in Target Unit/Date
+            # DUAL TABLE SYNC: Check if split is across DIFFERENT units.
+            unit_changed = (item.unit != unit)
+            legacy_table = "Planning Sheet Item"
+            if unit_changed:
+                frappe.db.sql(
+                    f"UPDATE `tab{legacy_table}` SET qty = %s WHERE parent = %s AND sales_order_item = %s AND unit = %s",
+                    (remainder_qty, item.parent, item.sales_order_item, item.unit)
+                )
+
+            # Create New Item in Target Unit/Date
             new_item = frappe.copy_doc(item)
             new_item.name = None
             new_item.qty = split_qty
@@ -1637,6 +1646,17 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
             new_item.is_split = 1
             new_item.split_from = item.name
             new_item.insert()
+            
+            if unit_changed:
+                # Add to legacy table too
+                legacy_rows = frappe.get_all(legacy_table, filters={"parent": item.parent, "sales_order_item": item.sales_order_item, "unit": item.unit}, limit=1)
+                if legacy_rows:
+                    old_legacy_doc = frappe.get_doc(legacy_table, legacy_rows[0].name)
+                    new_legacy_doc = frappe.copy_doc(old_legacy_doc)
+                    new_legacy_doc.name = None
+                    new_legacy_doc.qty = split_qty
+                    new_legacy_doc.unit = unit
+                    new_legacy_doc.insert()
             
             # Find best slot for the REMAINDER (Original item)
             best_slot_rem = find_best_slot(remainder_qty / 1000.0, quality, unit, target_date)
@@ -1702,6 +1722,17 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 
     # 2. Handle IDX Shifting if inserting at specific position
     # Update Item unit and parent first ΓÇö use raw SQL to bypass docstatus immutability
+    
+    # DUAL TABLE SYNC: If unit changed, update the legacy 'Planning Sheet Item' table too
+    # This is critical because Work Orders (Production Plans) are generated from the legacy table.
+    if item_doc.unit != unit:
+        legacy_table = "Planning Sheet Item"
+        if frappe.db.exists(legacy_table, {"parent": item_doc.parent, "sales_order_item": item_doc.sales_order_item, "unit": item_doc.unit}):
+            frappe.db.sql(
+                f"UPDATE `tab{legacy_table}` SET unit = %s WHERE parent = %s AND sales_order_item = %s AND unit = %s",
+                (unit, item_doc.parent, item_doc.sales_order_item, item_doc.unit)
+            )
+
     update_fields = {"unit": unit}
     if frappe.db.has_column("Planning Table", "planned_date"):
         update_fields["planned_date"] = target_date
@@ -3915,18 +3946,34 @@ def split_order(item_name, split_qty, target_unit):
     remaining_qty = original_qty - split_qty_val
     doc.db_set("qty", remaining_qty)
     
-    # 2. Create Split Item (New Row)
+    # DUAL TABLE SYNC: If unit changed, sync reduction to the legacy table.
+    unit_changed = (doc.unit != target_unit)
+    legacy_table = "Planning Sheet Item"
+    if unit_changed:
+        frappe.db.sql(
+            f"UPDATE `tab{legacy_table}` SET qty = %s WHERE parent = %s AND sales_order_item = %s AND unit = %s",
+            (remaining_qty, doc.parent, doc.sales_order_item, doc.unit)
+        )
+
+    # 2. Create Split Item (New Row in Planning Table)
     new_doc = frappe.copy_doc(doc)
     new_doc.qty = split_qty_val
     new_doc.unit = target_unit
-    
-    # Traceability (Try to set custom fields if they exist)
-    # Assuming user will add these fields via Customize Form if not present
-        # but we try to set them on the doc object anyway
+    new_doc.name = None # Ensure new name
     new_doc.split_from = item_name
     new_doc.is_split = 1
-    
     new_doc.insert()
+    
+    if unit_changed:
+        # Also create a new row in the legacy table for the new unit
+        legacy_rows = frappe.get_all(legacy_table, filters={"parent": doc.parent, "sales_order_item": doc.sales_order_item, "unit": doc.unit}, limit=1)
+        if legacy_rows:
+            old_legacy_doc = frappe.get_doc(legacy_table, legacy_rows[0].name)
+            new_legacy_doc = frappe.copy_doc(old_legacy_doc)
+            new_legacy_doc.name = None
+            new_legacy_doc.qty = split_qty_val
+            new_legacy_doc.unit = target_unit
+            new_legacy_doc.insert()
     
     return {
         "status": "success",
@@ -7504,29 +7551,24 @@ def fix_white_orders_planned_date():
         "skipped": skipped,
         "message": f"Γ£à Updated {updated} white Planning Sheet(s). Skipped {skipped} (color or no items)."
     }
-
-
 @frappe.whitelist()
 def revert_split_item(item_name):
     """
     Merges a split planning sheet item back into its original row within the same sheet.
     Useful for undoing partial pulls.
+    Now also synchronizes the legacy 'Items' table if needed.
     """
     try:
         it = frappe.get_doc("Planning Table", item_name)
-        if not it.get("is_split"):
-            # If not marked as split, check if we can find any peer to merge with
-            pass
-            
+        
         # Find the 'original' or 'primary' item for this SO row in the same sheet
-        # Original is defined as is_split=0 or the oldest one
         candidates = frappe.get_all("Planning Table", 
             filters={
                 "parent": it.parent,
                 "sales_order_item": it.sales_order_item,
                 "name": ["!=", it.name]
             },
-            fields=["name", "qty", "is_split"],
+            fields=["name", "qty", "is_split", "unit"],
             order_by="is_split asc, creation asc"
         )
         
@@ -7536,7 +7578,28 @@ def revert_split_item(item_name):
         target = candidates[0]
         new_qty = flt(target.qty) + flt(it.qty)
         
-        # Update target and remove current
+        # DUAL TABLE SYNC: Handle legacy table cleanup if split was across units
+        legacy_table = "Planning Sheet Item"
+        if it.unit != target.unit:
+            # If the unit was different, it means we had two rows in the legacy table.
+            # We need to delete the row corresponding to 'it' and update 'target'.
+            frappe.db.sql(
+                f"DELETE FROM `tab{legacy_table}` WHERE parent = %s AND sales_order_item = %s AND unit = %s",
+                (it.parent, it.sales_order_item, it.unit)
+            )
+            # Update the original row's quantity in legacy table
+            frappe.db.sql(
+                f"UPDATE `tab{legacy_table}` SET qty = %s WHERE parent = %s AND sales_order_item = %s AND unit = %s",
+                (new_qty, target.parent, target.sales_order_item, target.unit)
+            )
+        else:
+            # Same unit: Legacy table only had one row anyway. Just update its quantity if it was split kgs.
+             frappe.db.sql(
+                f"UPDATE `tab{legacy_table}` SET qty = %s WHERE parent = %s AND sales_order_item = %s AND unit = %s",
+                (new_qty, target.parent, target.sales_order_item, target.unit)
+            )
+
+        # Update target and remove current in Planning Table
         frappe.db.sql("UPDATE `tabPlanning Table` SET qty = %s WHERE name = %s", (new_qty, target.name))
         frappe.db.sql("DELETE FROM `tabPlanning Table` WHERE name = %s", (it.name,))
         
@@ -7546,8 +7609,6 @@ def revert_split_item(item_name):
     except Exception as e:
         frappe.logger().error(f"[RevertSplit] Error: {str(e)}")
         return {"status": "failed", "message": str(e)}
-
-
 # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 # MIX ROLL DATA PERSISTENCE
 # ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
