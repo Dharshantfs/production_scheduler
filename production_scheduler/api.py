@@ -414,9 +414,14 @@ def _populate_planning_sheet_items(ps, doc):
             pt_data["planned_date"] = p_date
             pt_data["plan_name"] = ps.get("custom_plan_name")
             
+            # Plan 1: Always fill the legacy 'items' table if it exists
+            if hasattr(ps, "items") or ps.meta.has_field("items"):
+                ps.append("items", pt_data)
+                
+            # Plan 2: Also fill the new custom table field if it exists and is NOT the legacy 'items'
             target_fields = ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]
             for field in target_fields:
-                if hasattr(ps, field) or ps.meta.has_field(field):
+                if (hasattr(ps, field) or ps.meta.has_field(field)) and field != "items":
                     ps.append(field, pt_data)
                     break 
     return ps
@@ -1755,9 +1760,21 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
             # Use ignore_cache=True to ensure we see the updated item units/dates
             doc_sheet = frappe.get_doc("Planning sheet", sheet_name, ignore_cache=True)
             update_sheet_plan_codes(doc_sheet)
-            frappe.db.sql("UPDATE `tabPlanning sheet` SET plan_name = %s WHERE name = %s", (doc_sheet.plan_name, doc_sheet.name))
-            for d in doc_sheet.items:
-                frappe.db.sql("UPDATE `tabPlanning Table` SET plan_name = %s WHERE name = %s", (d.plan_name, d.name))
+            # Parent field is custom_plan_code
+            frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s", (doc_sheet.custom_plan_code, doc_sheet.name))
+            
+            # Identify which items table to update in SQL (Dynamic search)
+            for field in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table", "items"]:
+                if hasattr(doc_sheet, field) or doc_sheet.meta.has_field(field):
+                    items_data = doc_sheet.get(field)
+                    if items_data:
+                        for d in items_data:
+                            # We assume both tables use the same column name 'plan_name' now after my global replace, 
+                            # but we need to check the exact child table name mapping.
+                            child_doctype = doc_sheet.meta.get_field(field).options
+                            if child_doctype:
+                                frappe.db.sql(f"UPDATE `tab{child_doctype}` SET plan_name = %s WHERE name = %s", (d.plan_name, d.name))
+                    # We continue to others if dual table is present
 
 @frappe.whitelist()
 def get_kanban_board(start_date, end_date):
