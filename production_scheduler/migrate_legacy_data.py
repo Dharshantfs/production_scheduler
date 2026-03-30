@@ -3,6 +3,20 @@ import frappe
 def execute():
     frappe.logger().info("Starting legacy data migration to Planning Table...")
     
+    # 0. Fix corrupted status data globally first to bypass validation crashes
+    # We try both potential table names just in case
+    try:
+        frappe.db.sql("UPDATE `tabPlanning sheet` SET status = 'Locked (WO Created)' WHERE status = 'Locked (WO created)'")
+        frappe.db.commit()
+    except Exception:
+        pass
+        
+    try:
+        frappe.db.sql("UPDATE `tabPlanning sheet` SET planning_status = 'Locked (WO Created)' WHERE planning_status = 'Locked (WO created)'")
+        frappe.db.commit()
+    except Exception:
+        pass
+
     # 1. Get all Planning Sheets
     planning_sheets = frappe.get_all("Planning sheet", pluck="name")
     
