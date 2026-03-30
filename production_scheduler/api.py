@@ -7185,11 +7185,11 @@ def auto_create_planning_sheet(doc, method=None):
         return sheet
 
     # 3. CREATE PLANNING SHEET 
-    generate_party_code(doc)
+    # generate_party_code(doc) ΓÇö DISABLED PER USER REQUEST
     ps = frappe.new_doc("Planning sheet")
     ps.sales_order = doc.name
-    ps.customer = _resolve_customer_link(doc.customer, doc.party_code)
-    ps.party_code = doc.party_code
+    ps.customer = _resolve_customer_link(doc.customer, doc.get("party_code"))
+    # ps.party_code = doc.party_code ΓÇö DISABLED PER USER REQUEST
     ps.ordered_date = doc.transaction_date
     ps.dod = doc.delivery_date
     ps.planning_status = "Draft"
