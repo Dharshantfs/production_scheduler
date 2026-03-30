@@ -224,7 +224,7 @@ def _populate_planning_sheet_items(ps, doc):
     For existing items: UPDATE unit if changed (e.g., unassigned white order now assigned to a unit).
     For new items: CREATE new PSI record.
     """
-        target_field = "planned_items"
+    target_field = "planned_items"
     for field in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]:
         if hasattr(ps, field) or ps.meta.has_field(field):
             target_field = field
