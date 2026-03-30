@@ -30,11 +30,8 @@ def _resolve_customer_link(raw_customer, party_code=None):
     return ""
 
 def generate_party_code(doc):
-    """One Sales Order = One Party Code.
-    Generates a unique party_code if not present and copies it to child items.
-    """
-    if doc.get('party_code'):
-        return
+    """DISABLED PER USER REQUEST - Manual Entry Only"""
+    return
     
     # Identify Sales Order reference correctly
     so_ref = doc.name if doc.doctype == "Sales Order" else doc.get('sales_order')
@@ -7256,7 +7253,7 @@ def regenerate_planning_sheet(so_name):
         return None
 
     # 2. CREATE PLANNING SHEET
-    generate_party_code(doc)
+    # generate_party_code(doc) ΓÇö DISABLED PER USER REQUEST
     ps = frappe.new_doc("Planning sheet")
     ps.sales_order = doc.name
     ps.customer = _resolve_customer_link(doc.customer, doc.get("party_code"))
