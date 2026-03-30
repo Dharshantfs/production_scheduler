@@ -32,27 +32,35 @@ def execute():
             
         # Migrate each row
         for old_row in old_items:
+            # Create a new row in the target table
             new_row = doc.append(target_field, {})
-            new_row.sales_order_item = old_row.sales_order_item
-            new_row.item_code = old_row.item_code
-            new_row.item_name = old_row.item_name
-            new_row.qty = old_row.qty
-            new_row.uom = old_row.uom
-            new_row.color = old_row.color
-            new_row.unit = old_row.unit
-            new_row.custom_quality = old_row.custom_quality
-            new_row.gsm = old_row.gsm
-            new_row.width_inch = old_row.width_inch
-            new_row.idx = old_row.idx
-            new_row.party_code = old_row.party_code
-            new_row.spr_name = getattr(old_row, "custom_spr_name", None)
-            new_row.pp_id = getattr(old_row, "production_plan", None)
             
-            # Map the explicitly renamed fields!
-            new_row.planned_date = getattr(old_row, "custom_item_planned_date", None)
-            new_row.plan_name = getattr(old_row, "custom_plan_code", None)
-            new_row.is_split = getattr(old_row, "custom_is_split", 0)
-            new_row.split_from = getattr(old_row, "custom_split_from", None)
+            # Helper to safely copy fields if they exist
+            def copy_field(target_doc, source_doc, target_field_name, source_field_name):
+                val = source_doc.get(source_field_name)
+                if val is not None:
+                    target_doc.set(target_field_name, val)
+
+            # Copy standard fields
+            fields_to_copy = [
+                "sales_order_item", "item_code", "item_name", "qty", "uom", 
+                "color", "unit", "custom_quality", "gsm", "width_inch", 
+                "idx", "party_code"
+            ]
+            for f in fields_to_copy:
+                copy_field(new_row, old_row, f, f)
+            
+            # Map special/renamed fields
+            copy_field(new_row, old_row, "spr_name", "custom_spr_name")
+            copy_field(new_row, old_row, "pp_id", "production_plan")
+            copy_field(new_row, old_row, "planned_date", "custom_item_planned_date")
+            copy_field(new_row, old_row, "plan_name", "custom_plan_code")
+            copy_field(new_row, old_row, "is_split", "custom_is_split")
+            copy_field(new_row, old_row, "split_from", "custom_split_from")
+            
+            # Ensure is_split has a default
+            if new_row.get("is_split") is None:
+                new_row.is_split = 0
             
         doc.flags.ignore_permissions = True
         doc.flags.ignore_validate = True
