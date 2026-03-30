@@ -1763,18 +1763,19 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
             # Parent field is custom_plan_code
             frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s", (doc_sheet.custom_plan_code, doc_sheet.name))
             
-            # Identify which items table to update in SQL (Dynamic search)
-            for field in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table", "items"]:
+            # As per user requirement, all subsequent board updates only happen in the NEW table.
+            target_field = "planned_items"
+            for field in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]:
                 if hasattr(doc_sheet, field) or doc_sheet.meta.has_field(field):
-                    items_data = doc_sheet.get(field)
-                    if items_data:
-                        for d in items_data:
-                            # We assume both tables use the same column name 'plan_name' now after my global replace, 
-                            # but we need to check the exact child table name mapping.
-                            child_doctype = doc_sheet.meta.get_field(field).options
-                            if child_doctype:
-                                frappe.db.sql(f"UPDATE `tab{child_doctype}` SET plan_name = %s WHERE name = %s", (d.plan_name, d.name))
-                    # We continue to others if dual table is present
+                    target_field = field
+                    break
+            
+            items_data = doc_sheet.get(target_field)
+            if items_data:
+                child_doctype = doc_sheet.meta.get_field(target_field).options
+                if child_doctype:
+                    for d in items_data:
+                        frappe.db.sql(f"UPDATE `tab{child_doctype}` SET plan_name = %s WHERE name = %s", (d.plan_name, d.name))
 
 @frappe.whitelist()
 def get_kanban_board(start_date, end_date):
