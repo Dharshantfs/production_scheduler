@@ -62,6 +62,13 @@ def execute():
             if new_row.get("is_split") is None:
                 new_row.is_split = 0
             
+        # Fix the "Locked (WO created)" vs "Locked (WO Created)" validation error
+        if doc.get("status") == "Locked (WO created)":
+            doc.status = "Locked (WO Created)"
+        elif doc.get("status") == "Locked":
+             # Just in case there are other variations
+             pass
+
         doc.flags.ignore_permissions = True
         doc.flags.ignore_validate = True
         doc.flags.ignore_mandatory = True
