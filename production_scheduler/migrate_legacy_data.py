@@ -44,12 +44,20 @@ def execute():
         if not old_items:
             continue # No legacy items
             
+        # 5. Get the actual Child Doctype name from the field metadata
+        child_doctype = doc.meta.get_field(target_field).options
+        if not child_doctype:
+            continue
+            
         # Migrate each row
         for old_row in old_items:
-            # Create a new row in the target table
-            new_row = doc.append(target_field, {})
+            # Create a new child doc but use db_insert to bypass Submit checks
+            new_row = frappe.new_doc(child_doctype)
+            new_row.parent = doc.name
+            new_row.parentfield = target_field
+            new_row.parenttype = "Planning sheet"
             
-            # Helper to safely copy fields if they exist
+            # Helper to safely copy fields
             def copy_field(target_doc, source_doc, target_field_name, source_field_name):
                 val = source_doc.get(source_field_name)
                 if val is not None:
@@ -72,22 +80,12 @@ def execute():
             copy_field(new_row, old_row, "is_split", "custom_is_split")
             copy_field(new_row, old_row, "split_from", "custom_split_from")
             
-            # Ensure is_split has a default
             if new_row.get("is_split") is None:
                 new_row.is_split = 0
             
-        # Fix the "Locked (WO created)" vs "Locked (WO Created)" validation error
-        if doc.get("status") == "Locked (WO created)":
-            doc.status = "Locked (WO Created)"
-        elif doc.get("status") == "Locked":
-             # Just in case there are other variations
-             pass
-
-        doc.flags.ignore_permissions = True
-        doc.flags.ignore_validate = True
-        doc.flags.ignore_mandatory = True
-        doc.save(ignore_permissions=True)
-        total_migrated += len(old_items)
-        
+            # Bypass validation by using db_insert directly on the child row
+            new_row.db_insert()
+            total_migrated += 1
+            
     frappe.db.commit()
-    print(f"Migration Complete! Successfully migrated {total_migrated} legacy rows into the new Planning Table.")
+    print(f"Migration Complete! Successfully migrated {total_migrated} legacy rows into the new {child_doctype} table across all statuses.")
