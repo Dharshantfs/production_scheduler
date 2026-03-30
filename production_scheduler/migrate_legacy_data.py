@@ -4,12 +4,12 @@ def execute():
     frappe.logger().info("Starting legacy data migration to Planning Table...")
     
     # 1. Get all Planning Sheets
-    planning_sheets = frappe.get_all("Planning Sheet", pluck="name")
+    planning_sheets = frappe.get_all("Planning sheet", pluck="name")
     
     total_migrated = 0
     
     for ps_name in planning_sheets:
-        doc = frappe.get_doc("Planning Sheet", ps_name)
+        doc = frappe.get_doc("Planning sheet", ps_name)
         
         # Check if it already has planned_items populated
         # We rely on your UI name 'planned_items' but we will check all possibilities
