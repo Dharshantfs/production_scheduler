@@ -7252,6 +7252,10 @@ def auto_create_planning_sheet(doc, method=None):
     
     update_sheet_plan_codes(ps)
 
+    ps.flags.ignore_permissions = True
+    ps.insert()
+    frappe.db.commit()
+    
     # 4. LINK BOARD ROWS TO LEGACY ROWS (source_item)
     # We re-fetch to get valid names for all children.
     # Rows were appended in the same order, so idx should match 1:1.
