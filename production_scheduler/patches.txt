@@ -1,1 +1,1 @@
-production_scheduler.patches.revert_mirror_table_meta
+production_scheduler.migrate_legacy_data.run
