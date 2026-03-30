@@ -413,12 +413,12 @@ def _populate_planning_sheet_items(ps, doc):
             # Map the planned date to the correct fieldname in the new table
             pt_data["planned_date"] = p_date
             
-            if hasattr(ps, "planning_table") or ps.meta.has_field("planning_table"):
-                ps.append("planning_table", pt_data)
-            elif hasattr(ps, "custom_planning_table") or ps.meta.has_field("custom_planning_table"):
-                ps.append("custom_planning_table", pt_data)
-            elif hasattr(ps, "table") or ps.meta.has_field("table"): 
-                ps.append("table", pt_data)
+            # Check for various common fieldnames you may have given this child table in the UI
+            target_fields = ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]
+            for field in target_fields:
+                if hasattr(ps, field) or ps.meta.has_field(field):
+                    ps.append(field, pt_data)
+                    break # Stop after appending to the first matched field
     return ps
 
 
