@@ -7216,9 +7216,9 @@ def auto_create_planning_sheet(doc, method=None):
         
     frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{ps.custom_plan_name}</b>")
     
-    # RE-FETCH TO UPDATE HEADER PLAN CODES ΓÇö DISABLED TEMPORARILY PER USER REQUEST
-    # final_doc = frappe.get_doc("Planning sheet", ps.name)
-    # update_sheet_plan_codes(final_doc)
+    # RE-FETCH TO UPDATE HEADER PLAN CODES ΓÇö ONLY ITEMS ENABLED, HEADER DISABLED PER USER REQUEST
+    final_doc = frappe.get_doc("Planning sheet", ps.name)
+    update_sheet_plan_codes(final_doc)
     # frappe.db.set_value("Planning sheet", ps.name, "custom_plan_code", final_doc.custom_plan_code)
     
     return final_doc
