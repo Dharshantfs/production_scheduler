@@ -125,7 +125,7 @@ def _psi_production_plan_fields():
         "order_sheet",
         "custom_order_plan",
     ]
-    return [f for f in candidates if frappe.db.has_column("Planning Sheet Item", f)]
+    return [f for f in candidates if frappe.db.has_column("Planning Table", f)]
 
 
 def _psi_production_plan_field():
@@ -137,7 +137,7 @@ def _psi_production_plan_field():
 def _psi_order_sheet_field():
     """Return optional Planning Sheet Item field used to store row-level order-sheet/PP reference."""
     for f in ["custom_order_sheet", "order_sheet", "custom_order_plan"]:
-        if frappe.db.has_column("Planning Sheet Item", f):
+        if frappe.db.has_column("Planning Table", f):
             return f
     return None
 
@@ -148,7 +148,7 @@ def _get_item_level_production_plan(item_name):
         return None
 
     for fieldname in _psi_production_plan_fields():
-        pp = frappe.db.get_value("Planning Sheet Item", item_name, fieldname)
+        pp = frappe.db.get_value("Planning Table", item_name, fieldname)
         if pp:
             return pp
     return None
@@ -224,7 +224,12 @@ def _populate_planning_sheet_items(ps, doc):
     For existing items: UPDATE unit if changed (e.g., unassigned white order now assigned to a unit).
     For new items: CREATE new PSI record.
     """
-    existing_items_map = {it.sales_order_item: it for it in ps.items}
+        target_field = "planned_items"
+    for field in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]:
+        if hasattr(ps, field) or ps.meta.has_field(field):
+            target_field = field
+            break
+    existing_items_map = {it.sales_order_item: it for it in getattr(ps, target_field, ps.get("items", []))}
 
     # Pull exact names from Quality Master so parsed quality matches ERPNext doctype names.
     quality_lookup = list(QUAL_LIST)
@@ -395,7 +400,7 @@ def _populate_planning_sheet_items(ps, doc):
             "weight_per_roll": wt,
             "unit": unit,
             "party_code": ps.party_code,
-            "custom_item_planned_date": p_date
+            "planned_date": p_date
         }
 
         if is_existing:
@@ -403,22 +408,17 @@ def _populate_planning_sheet_items(ps, doc):
             old_unit = existing_psi.unit
             if old_unit != unit:
                 existing_psi.unit = unit
-                existing_psi.custom_item_planned_date = p_date
+                existing_psi.planned_date = p_date
         else:
-            # CREATE new PSI record
-            ps.append("items", psi_data)
-            
-            # DUPLICATE into the new 'Planning Table' child doctype
             pt_data = psi_data.copy()
-            # Map the planned date to the correct fieldname in the new table
             pt_data["planned_date"] = p_date
+            pt_data["plan_name"] = ps.get("custom_plan_name")
             
-            # Check for various common fieldnames you may have given this child table in the UI
             target_fields = ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]
             for field in target_fields:
                 if hasattr(ps, field) or ps.meta.has_field(field):
                     ps.append(field, pt_data)
-                    break # Stop after appending to the first matched field
+                    break 
     return ps
 
 
@@ -667,10 +667,10 @@ def _effective_date_expr(alias="p"):
 def get_unit_load(date, unit, plan_name=None, pb_only=0):
     """Calculates current load (in Tons) for a unit on a given date.
     Filtered per-plan so each plan has its own independent capacity.
-    Uses custom_item_planned_date if set, otherwise falls back to parent.
+    Uses planned_date if set, otherwise falls back to parent.
     """
     # Priority: Item Date -> Sheet Date -> Sheet Ordered Date
-    eff = "COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)"
+    eff = "COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date)"
     pb_only = cint(pb_only)
     # Build plan filter ΓÇö each plan is treated independently
     if plan_name and plan_name != "__all__":
@@ -697,7 +697,7 @@ def get_unit_load(date, unit, plan_name=None, pb_only=0):
     
     sql = f"""
         SELECT SUM(i.qty) as total_qty
-        FROM `tabPlanning Sheet Item` i
+        FROM `tabPlanning Table` i
         JOIN `tabPlanning sheet` p ON i.parent = p.name
         WHERE {eff} = %s
           AND i.unit = %s
@@ -917,12 +917,12 @@ def cascade_orders_after_maintenance_removal(unit, maint_start_date, maint_end_d
     
     # Find all items planned between maintenance start and end dates
     items = frappe.db.sql("""
-        SELECT i.name, i.qty, i.unit, COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as effective_planned_date
-        FROM `tabPlanning Sheet Item` i
+        SELECT i.name, i.qty, i.unit, COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date) as effective_planned_date
+        FROM `tabPlanning Table` i
         JOIN `tabPlanning sheet` p ON i.parent = p.name
         WHERE i.unit = %s
-          AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) >= %s
-          AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= %s
+          AND DATE(COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date)) >= %s
+          AND DATE(COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date)) <= %s
           AND p.docstatus < 2
           AND i.docstatus < 2
     """, (unit, start_dt, end_dt), as_dict=True)
@@ -930,7 +930,7 @@ def cascade_orders_after_maintenance_removal(unit, maint_start_date, maint_end_d
     if not items:
         return {"status": "success", "message": "No items to cascade", "cascaded_count": 0}
     
-    has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+    has_item_planned_col = frappe.db.has_column("Planning Table", "planned_date")
     cascaded_count = 0
     local_loads = {}
     movement_log = []
@@ -967,8 +967,8 @@ def cascade_orders_after_maintenance_removal(unit, maint_start_date, maint_end_d
                 local_loads[load_key] = current_load + qty_tons
                 # Update item's planned date
                 frappe.db.sql("""
-                    UPDATE `tabPlanning Sheet Item`
-                    SET custom_item_planned_date = %s
+                    UPDATE `tabPlanning Table`
+                    SET planned_date = %s
                     WHERE name = %s
                 """, (candidate_str, item_name))
                 movement_log.append({
@@ -1021,8 +1021,8 @@ def forward_orders_from_date_range(cascade_start_date, cascade_end_date, plan_na
     start_dt = getdate(cascade_start_date)
     end_dt = getdate(cascade_end_date)
     
-    if not frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-        return {"status": "error", "message": "Required column custom_item_planned_date not found"}
+    if not frappe.db.has_column("Planning Table", "planned_date"):
+        return {"status": "error", "message": "Required column planned_date not found"}
     
     # Find ALL items (any type) queued on dates in the cascade range
     items = frappe.db.sql("""
@@ -1031,13 +1031,13 @@ def forward_orders_from_date_range(cascade_start_date, cascade_end_date, plan_na
             i.qty, 
             i.unit, 
             i.color,
-            COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as effective_planned_date
-        FROM `tabPlanning Sheet Item` i
+            COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date) as effective_planned_date
+        FROM `tabPlanning Table` i
         JOIN `tabPlanning sheet` p ON i.parent = p.name
         WHERE p.docstatus < 2
           AND i.docstatus < 2
-          AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) >= %s
-          AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= %s
+          AND DATE(COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date)) >= %s
+          AND DATE(COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date)) <= %s
     """, (start_dt, end_dt), as_dict=True)
     
     if not items:
@@ -1112,8 +1112,8 @@ def forward_orders_from_date_range(cascade_start_date, cascade_end_date, plan_na
                     
                     # Update the item's planned date
                     frappe.db.sql("""
-                        UPDATE `tabPlanning Sheet Item`
-                        SET custom_item_planned_date = %s
+                        UPDATE `tabPlanning Table`
+                        SET planned_date = %s
                         WHERE name = %s
                     """, (candidate_str, item_name))
                     
@@ -1170,7 +1170,7 @@ def _restore_orders_to_original_dates(unit, movement_log):
     if not movement_log:
         return {"restored_count": 0, "skipped_count": 0}
 
-    if not frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+    if not frappe.db.has_column("Planning Table", "planned_date"):
         return {"restored_count": 0, "skipped_count": len(movement_log)}
 
     restored_count = 0
@@ -1186,8 +1186,8 @@ def _restore_orders_to_original_dates(unit, movement_log):
             continue
 
         row = frappe.db.sql("""
-            SELECT i.unit, COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) AS effective_planned_date
-            FROM `tabPlanning Sheet Item` i
+            SELECT i.unit, COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date) AS effective_planned_date
+            FROM `tabPlanning Table` i
             JOIN `tabPlanning sheet` p ON p.name = i.parent
             WHERE i.name = %s
               AND p.docstatus < 2
@@ -1214,8 +1214,8 @@ def _restore_orders_to_original_dates(unit, movement_log):
             continue
 
         frappe.db.sql("""
-            UPDATE `tabPlanning Sheet Item`
-            SET custom_item_planned_date = %s
+            UPDATE `tabPlanning Table`
+            SET planned_date = %s
             WHERE name = %s
         """, (from_date, item_name))
         restored_count += 1
@@ -1227,7 +1227,7 @@ def _fallback_restore_by_range(unit, maint_start_date, maint_end_date):
     """Fallback restore when movement log is missing/corrupted: pull next-day shifted items back into the maintenance window dates."""
     from frappe.utils import getdate, add_days
 
-    if not frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+    if not frappe.db.has_column("Planning Table", "planned_date"):
         return {"restored_count": 0, "skipped_count": 0}
 
     start_dt = getdate(maint_start_date)
@@ -1237,15 +1237,15 @@ def _fallback_restore_by_range(unit, maint_start_date, maint_end_date):
 
     rows = frappe.db.sql("""
         SELECT i.name, i.unit, i.qty,
-               DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) AS effective_planned_date
-        FROM `tabPlanning Sheet Item` i
+               DATE(COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date)) AS effective_planned_date
+        FROM `tabPlanning Table` i
         JOIN `tabPlanning sheet` p ON p.name = i.parent
         WHERE i.unit = %s
-          AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) > %s
-          AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) <= %s
+          AND DATE(COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date)) > %s
+          AND DATE(COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date)) <= %s
           AND p.docstatus < 2
           AND i.docstatus < 2
-        ORDER BY DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) ASC, i.idx ASC
+        ORDER BY DATE(COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date)) ASC, i.idx ASC
     """, (unit, end_dt, search_end), as_dict=True)
 
     if not rows:
@@ -1275,8 +1275,8 @@ def _fallback_restore_by_range(unit, maint_start_date, maint_end_date):
             current_load = local_loads[load_key]
             if (current_load + qty_tons <= unit_limit * 1.05) or (current_load == 0 and qty_tons >= unit_limit):
                 frappe.db.sql("""
-                    UPDATE `tabPlanning Sheet Item`
-                    SET custom_item_planned_date = %s
+                    UPDATE `tabPlanning Table`
+                    SET planned_date = %s
                     WHERE name = %s
                 """, (candidate_str, item_name))
                 local_loads[load_key] = current_load + qty_tons
@@ -1454,7 +1454,7 @@ def generate_plan_code(date_str, unit, plan_name):
 
 def update_sheet_plan_codes(sheet_doc):
     """
-    Calculates and sets the `custom_plan_code` for each item, and aggregates them on the header.
+    Calculates and sets the `plan_name` for each item, and aggregates them on the header.
     Must be called right before saving a sheet or after manual SQL updates.
     """
     sheet_date = sheet_doc.get("custom_planned_date") or sheet_doc.get("ordered_date")
@@ -1474,14 +1474,14 @@ def update_sheet_plan_codes(sheet_doc):
             elif "UNIT3" in iu_upper: item_unit = "Unit 3"
             elif "UNIT4" in iu_upper: item_unit = "Unit 4"
 
-        item_date = item.get("custom_item_planned_date") or sheet_date
+        item_date = item.get("planned_date") or sheet_date
         code = generate_plan_code(item_date, item_unit, active_plan)
-        item.custom_plan_code = code
+        item.plan_name = code
         if code:
             unique_codes.add(code)
             
     # Update parent custom field
-    sheet_doc.custom_plan_code = ", ".join(sorted(unique_codes))
+    sheet_doc.plan_name = ", ".join(sorted(unique_codes))
 
 @frappe.whitelist()
 def recalculate_all_plan_codes():
@@ -1497,11 +1497,11 @@ def recalculate_all_plan_codes():
             update_sheet_plan_codes(doc)
             
             # Update parent
-            frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s", (doc.custom_plan_code, doc.name))
+            frappe.db.sql("UPDATE `tabPlanning sheet` SET plan_name = %s WHERE name = %s", (doc.plan_name, doc.name))
             
             # Update children
             for i in doc.items:
-                frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET custom_plan_code = %s WHERE name = %s", (i.custom_plan_code, i.name))
+                frappe.db.sql("UPDATE `tabPlanning Table` SET plan_name = %s WHERE name = %s", (i.plan_name, i.name))
             
             count += 1
         except Exception:
@@ -1524,7 +1524,7 @@ def update_sequence(items):
         if item.get("name") and item.get("idx") is not None:
             # Use SQL to bypass DocStatus immutability for reordering
             frappe.db.sql("""
-                UPDATE `tabPlanning Sheet Item`
+                UPDATE `tabPlanning Table`
                 SET idx = %s
                 WHERE name = %s
             """, (item.get("idx"), item.get("name")))
@@ -1545,7 +1545,7 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
     strict_next_day = flt(strict_next_day)
     
     # 1. Get Item and Parent Details
-    item = frappe.get_doc("Planning Sheet Item", item_name)
+    item = frappe.get_doc("Planning Table", item_name)
     parent_sheet = frappe.get_doc("Planning sheet", item.parent)
     
     # 2. Docstatus check ΓÇö allow movement even from submitted sheets
@@ -1621,7 +1621,7 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
             
             # Update Original Item -> This will go to Best Slot
             item.qty = remainder_qty
-            item.custom_is_split = 1
+            item.is_split = 1
             item.save()
             
             # Create New Item -> This stays in Target Unit/Date
@@ -1629,8 +1629,8 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
             new_item.name = None
             new_item.qty = split_qty
             new_item.unit = unit
-            new_item.custom_is_split = 1
-            new_item.custom_split_from = item.name
+            new_item.is_split = 1
+            new_item.split_from = item.name
             new_item.insert()
             
             # Find best slot for the REMAINDER (Original item)
@@ -1693,16 +1693,16 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
     # 1. Date Reparenting (Disabled Per User Request)
     # The user explicitly requested "NEVER ALLOW NEW PLANNING SHEET" and "ALWASY USE EXISTING PLANNING SHEET".
     # Therefore, we do not reparent items to new sheets when their date changes.
-    # We rely solely on updating the `custom_item_planned_date` at the item level below.
+    # We rely solely on updating the `planned_date` at the item level below.
 
     # 2. Handle IDX Shifting if inserting at specific position
     # Update Item unit and parent first ΓÇö use raw SQL to bypass docstatus immutability
     update_fields = {"unit": unit}
-    if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-        update_fields["custom_item_planned_date"] = target_date
+    if frappe.db.has_column("Planning Table", "planned_date"):
+        update_fields["planned_date"] = target_date
     set_clause = ", ".join([f"`{k}` = %s" for k in update_fields.keys()])
     frappe.db.sql(
-        f"UPDATE `tabPlanning Sheet Item` SET {set_clause} WHERE name = %s",
+        f"UPDATE `tabPlanning Table` SET {set_clause} WHERE name = %s",
         list(update_fields.values()) + [item_doc.name]
     )
     item_doc.unit = unit
@@ -1721,7 +1721,7 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
 
             sql_fetch = f"""
                 SELECT item.name 
-                FROM `tabPlanning Sheet Item` item
+                FROM `tabPlanning Table` item
                 JOIN `tabPlanning sheet` sheet ON item.parent = sheet.name
                 WHERE {eff} = %(target_date)s AND item.unit = %(unit)s AND item.name != %(item_name)s
                 {pb_cond}
@@ -1743,7 +1743,7 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
             
             for i, name in enumerate(others):
                 frappe.db.sql(
-                    "UPDATE `tabPlanning Sheet Item` SET idx = %s WHERE name = %s",
+                    "UPDATE `tabPlanning Table` SET idx = %s WHERE name = %s",
                     (i + 1, name),
                 )
         except Exception as e:
@@ -1755,9 +1755,9 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
             # Use ignore_cache=True to ensure we see the updated item units/dates
             doc_sheet = frappe.get_doc("Planning sheet", sheet_name, ignore_cache=True)
             update_sheet_plan_codes(doc_sheet)
-            frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s", (doc_sheet.custom_plan_code, doc_sheet.name))
+            frappe.db.sql("UPDATE `tabPlanning sheet` SET plan_name = %s WHERE name = %s", (doc_sheet.plan_name, doc_sheet.name))
             for d in doc_sheet.items:
-                frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET custom_plan_code = %s WHERE name = %s", (d.custom_plan_code, d.name))
+                frappe.db.sql("UPDATE `tabPlanning Table` SET plan_name = %s WHERE name = %s", (d.plan_name, d.name))
 
 @frappe.whitelist()
 def get_kanban_board(start_date, end_date):
@@ -1777,7 +1777,7 @@ def get_kanban_board(start_date, end_date):
     data = []
     for sheet in sheets:
         items = frappe.get_all(
-            "Planning Sheet Item",
+            "Planning Table",
             filters={"parent": sheet.name},
             fields=["qty", "unit", "custom_quality", "color", "gsm"],
             order_by="idx"
@@ -1994,9 +1994,9 @@ def get_items_by_name(names):
         SELECT 
             i.name, i.color, i.custom_quality as quality, i.qty, p.party_code,
             p.customer, COALESCE(c.customer_name, p.customer) as customer_name,
-            p.sales_order, i.custom_item_planned_date, i.custom_plan_code,
+            p.sales_order, i.planned_date, i.plan_name,
             p.custom_pb_plan_name as pbPlanName
-        FROM `tabPlanning Sheet Item` i
+        FROM `tabPlanning Table` i
         JOIN `tabPlanning sheet` p ON i.parent = p.name
         LEFT JOIN `tabCustomer` c ON p.customer = c.name
         WHERE i.name IN %s
@@ -2011,47 +2011,47 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         target_date = getdate(date)
         
         # Pull Orders dialog: shows ALL items currently ON the board for source_date.
-        # This includes color items (explicitly pushed, have custom_item_planned_date = target_date)
+        # This includes color items (explicitly pushed, have planned_date = target_date)
         # AND white items (auto-planned, use ordered_date = target_date with no item-level date).
-        has_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+        has_col = frappe.db.has_column("Planning Table", "planned_date")
         clean_white_sql_pull = ", ".join([f"'{c.upper().replace(' ', '')}'" for c in WHITE_COLORS])
         
         # Dynamically detect Sales Order Item column
         so_item_real_col = "sales_order_item"
-        if not frappe.db.has_column("Planning Sheet Item", so_item_real_col):
+        if not frappe.db.has_column("Planning Table", so_item_real_col):
             so_item_real_col = "custom_sales_order_item"
         
         # Only use the column if it's found in the physical table
-        columns = frappe.db.get_table_columns("Planning Sheet Item")
+        columns = frappe.db.get_table_columns("Planning Table")
         if so_item_real_col not in columns:
             so_item_col = "'' as salesOrderItem,"
         else:
             so_item_col = f"i.{so_item_real_col} as salesOrderItem,"
 
         split_col = ""
-        if frappe.db.has_column("Planning Sheet Item", "custom_is_split"):
-            split_col = "i.custom_is_split as isSplit,"
+        if frappe.db.has_column("Planning Table", "is_split"):
+            split_col = "i.is_split as isSplit,"
         else:
             split_col = "0 as isSplit,"
 
         if has_col:
             # All items on board for target_date:
-            # 1. Items with explicit custom_item_planned_date = target_date (colors + manually-moved whites)
+            # 1. Items with explicit planned_date = target_date (colors + manually-moved whites)
             # 2. White items with ordered_date = target_date and no item-level override
             items = frappe.db.sql(f"""
                 SELECT 
                     i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
-                    i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
+                    i.color, i.custom_quality as quality, i.gsm, i.idx, i.plan_name,
                     {so_item_col} {split_col}
                     p.name as planningSheet, p.party_code as partyCode, p.customer,
                     COALESCE(c.customer_name, p.customer) as customer_name,
                     p.ordered_date, p.dod, p.sales_order as salesOrder
-                FROM `tabPlanning Sheet Item` i
+                FROM `tabPlanning Table` i
                 JOIN `tabPlanning sheet` p ON i.parent = p.name
                 LEFT JOIN `tabCustomer` c ON p.customer = c.name
                 WHERE i.color IS NOT NULL AND i.color != ''
                   AND p.docstatus < 2
-                  AND DATE(COALESCE(NULLIF(i.custom_item_planned_date, ''), NULLIF(p.custom_planned_date, ''), p.ordered_date)) = DATE(%s)
+                  AND DATE(COALESCE(NULLIF(i.planned_date, ''), NULLIF(p.custom_planned_date, ''), p.ordered_date)) = DATE(%s)
                 ORDER BY i.unit, i.idx
             """, (target_date,), as_dict=True)
         else:
@@ -2060,7 +2060,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             items = frappe.db.sql(f"""
                 SELECT 
                     i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
-                    i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
+                    i.color, i.custom_quality as quality, i.gsm, i.idx, i.plan_name,
                     {so_item_col} {split_col}
                     p.name as planningSheet, p.party_code as partyCode, p.customer,
                 COALESCE(c.customer_name, p.customer) as customer_name,
@@ -2107,14 +2107,14 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         return _deduplicate_items(items)
 
     # PULL_BOARD MODE (Production Board only): items already ON the board for this date
-    # Use item-level custom_item_planned_date when set, else sheet custom_planned_date
+    # Use item-level planned_date when set, else sheet custom_planned_date
     if mode == "pull_board" and date:
         target_date = getdate(date)
-        has_item_planned = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+        has_item_planned = frappe.db.has_column("Planning Table", "planned_date")
         has_sheet_planned = frappe.db.has_column("Planning sheet", "custom_planned_date")
         # Effective date: prefer item level, then sheet level, fallback to ordered_date (for auto-whites)
         item_date_expr = (
-            "COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) = %s"
+            "COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date) = %s"
             if (has_item_planned and has_sheet_planned)
             else "COALESCE(p.custom_planned_date, p.ordered_date) = %s" if has_sheet_planned else "p.ordered_date = %s"
         )
@@ -2122,7 +2122,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
         # Dynamically detect Sales Order Item column
         so_item_real_col = "sales_order_item"
-        columns = frappe.db.get_table_columns("Planning Sheet Item")
+        columns = frappe.db.get_table_columns("Planning Table")
         if "sales_order_item" not in columns and "custom_sales_order_item" in columns:
             so_item_real_col = "custom_sales_order_item"
         
@@ -2130,21 +2130,21 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             so_item_col = "'' as salesOrderItem,"
         else:
             so_item_col = f"i.{so_item_real_col} as salesOrderItem,"
-        split_col = "i.custom_is_split as isSplit," if frappe.db.has_column("Planning Sheet Item", "custom_is_split") else "0 as isSplit,"
+        split_col = "i.is_split as isSplit," if frappe.db.has_column("Planning Table", "is_split") else "0 as isSplit,"
 
         items = frappe.db.sql(f"""
             SELECT
                 i.name as itemName, i.item_code, i.item_name, i.qty, i.uom, i.unit,
-                i.color, i.custom_quality as quality, i.gsm, i.idx, i.custom_plan_code,
-                i.custom_item_planned_date,
+                i.color, i.custom_quality as quality, i.gsm, i.idx, i.plan_name,
+                i.planned_date,
                 {so_item_col} {split_col}
                 p.name as planningSheet, p.party_code as partyCode, p.customer,
                 COALESCE(c.customer_name, p.customer) as customer_name,
                 p.ordered_date, p.dod, p.sales_order as salesOrder,
                 COALESCE(p.custom_planned_date, '') as sheet_planned_date,
                 COALESCE(p.custom_pb_plan_name, '') as pbPlanName,
-                COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) as planned_date
-            FROM `tabPlanning Sheet Item` i
+                COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date) as planned_date
+            FROM `tabPlanning Table` i
             JOIN `tabPlanning sheet` p ON i.parent = p.name
             LEFT JOIN `tabCustomer` c ON p.customer = c.name
             WHERE {item_date_expr}
@@ -2161,7 +2161,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         items = [
             it for it in (items or [])
             if _is_white_color(it.get("color"))
-            or it.get("custom_item_planned_date")
+            or it.get("planned_date")
             or it.get("sheet_planned_date")
             or it.get("pbPlanName")
         ]
@@ -2205,13 +2205,13 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     
     plan_condition = ""
     params = []
-    has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+    has_item_planned_col = frappe.db.has_column("Planning Table", "planned_date")
     
     if start_date and end_date:
         date_condition = f"({eff_ordered} BETWEEN %s AND %s OR {eff_pushed} BETWEEN %s AND %s)"
         params.extend([query_start, query_end, query_start, query_end])
         if has_item_planned_col:
-            date_condition = f"({date_condition} OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi WHERE psi.parent = p.name AND psi.custom_item_planned_date BETWEEN %s AND %s))"
+            date_condition = f"({date_condition} OR EXISTS (SELECT 1 FROM `tabPlanning Table` psi WHERE psi.parent = p.name AND psi.planned_date BETWEEN %s AND %s))"
             params.extend([query_start, query_end])
     else:
         if len(target_dates) > 1:
@@ -2220,14 +2220,14 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             params.extend(target_dates)
             params.extend(target_dates)
             if has_item_planned_col:
-                date_condition = f"({date_condition} OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi WHERE psi.parent = p.name AND psi.custom_item_planned_date IN ({fmt})))"
+                date_condition = f"({date_condition} OR EXISTS (SELECT 1 FROM `tabPlanning Table` psi WHERE psi.parent = p.name AND psi.planned_date IN ({fmt})))"
                 params.extend(target_dates)
         else:
             date_condition = f"({eff_ordered} = %s OR {eff_pushed} = %s)"
             params.append(target_dates[0])
             params.append(target_dates[0])
             if has_item_planned_col:
-                date_condition = f"({date_condition} OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi WHERE psi.parent = p.name AND DATE(psi.custom_item_planned_date) = DATE(%s)))"
+                date_condition = f"({date_condition} OR EXISTS (SELECT 1 FROM `tabPlanning Table` psi WHERE psi.parent = p.name AND DATE(psi.planned_date) = DATE(%s)))"
                 params.append(target_dates[0])
     
     if plan_name == "__all__":
@@ -2259,15 +2259,15 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     # are allowed to appear directly on the Production Board without being pushed.
     # Non-white items are filtered per-item later unless they belong to a PB plan.
     if cint(planned_only) and _has_planned_date_column():
-        # Allow sheets where EITHER the sheet has custom_planned_date OR items have custom_item_planned_date
-        has_item_planned = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+        # Allow sheets where EITHER the sheet has custom_planned_date OR items have planned_date
+        has_item_planned = frappe.db.has_column("Planning Table", "planned_date")
         if has_item_planned:
             plan_condition += """ AND (
                 (p.custom_planned_date IS NOT NULL AND p.custom_planned_date != '')
-                OR EXISTS (SELECT 1 FROM `tabPlanning Sheet Item` psi 
+                OR EXISTS (SELECT 1 FROM `tabPlanning Table` psi 
                            WHERE psi.parent = p.name 
-                           AND psi.custom_item_planned_date IS NOT NULL 
-                           AND psi.custom_item_planned_date != '')
+                           AND psi.planned_date IS NOT NULL 
+                           AND psi.planned_date != '')
             )"""
         else:
             plan_condition += " AND p.custom_planned_date IS NOT NULL AND p.custom_planned_date != ''"
@@ -2289,11 +2289,11 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         
     fields_str = ", ".join(fields)
     
-    has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
+    has_item_planned_col = frappe.db.has_column("Planning Table", "planned_date")
     eff = _effective_date_expr("p")
 
     if cint(planned_only) and has_item_planned_col and not (start_date and end_date):
-        # For planned_only mode: also include sheets that have items with custom_item_planned_date
+        # For planned_only mode: also include sheets that have items with planned_date
         # matching target date (even if sheet's ordered_date is different).
         # This handles items whose dates were manually overridden at item level.
         if len(target_dates) == 1:
@@ -2309,9 +2309,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 WHERE (
                     {date_condition}
                     OR EXISTS (
-                        SELECT 1 FROM `tabPlanning Sheet Item` psi
+                        SELECT 1 FROM `tabPlanning Table` psi
                         WHERE psi.parent = p.name
-                        AND DATE(psi.custom_item_planned_date) = DATE(%s)
+                        AND DATE(psi.planned_date) = DATE(%s)
                     )
                 )
                 AND p.docstatus < 2
@@ -2748,7 +2748,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     # Fetch SPR production via custom_spr_name field on Planning Sheet Items
     spr_psi_achieved_weight_map = {}  # Map PSI to SPR achieved weight
     try:
-        if frappe.db.has_column("Planning Sheet Item", "custom_spr_name"):
+        if frappe.db.has_column("Planning Table", "custom_spr_name"):
             # Use the correct field name: custom_total_achieved_weight
             achieved_col_select = "COALESCE(spr.custom_total_achieved_weight, 0) as total_achieved"
             
@@ -2758,7 +2758,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                     psi.custom_spr_name as spr_name,
                     COALESCE(spr.custom_total_produced_weight, 0) as total_produced,
                     {achieved_col_select}
-                FROM `tabPlanning Sheet Item` psi
+                FROM `tabPlanning Table` psi
                 LEFT JOIN `tabShaft Production Run` spr ON psi.custom_spr_name = spr.name
                 WHERE psi.parent IN ({{}})
                   AND psi.custom_spr_name IS NOT NULL 
@@ -2785,11 +2785,11 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     # Item-level produced quantity map via sales_order_item/custom_sales_order_item
     if sheet_names:
         # 1) Strongest link: Planning Sheet Item -> Production Plan -> Work Order
-        if psi_pp_field and frappe.db.has_column("Planning Sheet Item", psi_pp_field):
+        if psi_pp_field and frappe.db.has_column("Planning Table", psi_pp_field):
             fmt_sheet = ','.join(['%s'] * len(sheet_names))
             psi_pp_rows = frappe.db.sql(f"""
                 SELECT name as psi_name, {psi_pp_field} as production_plan
-                FROM `tabPlanning Sheet Item`
+                FROM `tabPlanning Table`
                 WHERE parent IN ({fmt_sheet})
                   AND IFNULL({psi_pp_field}, '') != ''
             """, tuple(sheet_names), as_dict=True)
@@ -2831,14 +2831,14 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                         pp_wo_count_map[pp] = cint(row.get("wo_count"))
 
         # 2) Fallback link: Planning Sheet Item sales_order_item -> Work Order
-        psi_so_item_col = "sales_order_item" if frappe.db.has_column("Planning Sheet Item", "sales_order_item") else "custom_sales_order_item"
+        psi_so_item_col = "sales_order_item" if frappe.db.has_column("Planning Table", "sales_order_item") else "custom_sales_order_item"
         wo_so_item_col = "sales_order_item" if frappe.db.has_column("Work Order", "sales_order_item") else "custom_sales_order_item"
 
-        if psi_so_item_col and wo_so_item_col and frappe.db.has_column("Planning Sheet Item", psi_so_item_col) and frappe.db.has_column("Work Order", wo_so_item_col):
+        if psi_so_item_col and wo_so_item_col and frappe.db.has_column("Planning Table", psi_so_item_col) and frappe.db.has_column("Work Order", wo_so_item_col):
             fmt_sheet = ','.join(['%s'] * len(sheet_names))
             so_item_rows = frappe.db.sql(f"""
                 SELECT DISTINCT {psi_so_item_col} as so_item
-                FROM `tabPlanning Sheet Item`
+                FROM `tabPlanning Table`
                 WHERE parent IN ({fmt_sheet})
                   AND IFNULL({psi_so_item_col}, '') != ''
             """, tuple(sheet_names), as_dict=True)
@@ -3024,7 +3024,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         return flt(alloc)
     for sheet in planning_sheets:
         items = frappe.get_all(
-            "Planning Sheet Item",
+            "Planning Table",
             filters={"parent": sheet.name},
             fields=["*"],
             order_by="idx"
@@ -3071,7 +3071,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             effective_date_str = str(item.get("ordered_date") or sheet.get("ordered_date") or "")
             
             # ΓöÇΓöÇ Granular filtering: determine if item belongs to the current date view ΓöÇΓöÇ
-            item_pdate = item.get("custom_item_planned_date")
+            item_pdate = item.get("planned_date")
             is_white = _is_white_color(color)
             
             # Effective item date for filtering: 
@@ -3114,11 +3114,11 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 item_pp = so_item_pp_cache.get(so_item_key)
                 if item_pp:
                     item_pp_map[item.get("name")] = item_pp
-                    if psi_pp_field and frappe.db.has_column("Planning Sheet Item", psi_pp_field):
+                    if psi_pp_field and frappe.db.has_column("Planning Table", psi_pp_field):
                         try:
-                            current_pp = frappe.db.get_value("Planning Sheet Item", item.get("name"), psi_pp_field)
+                            current_pp = frappe.db.get_value("Planning Table", item.get("name"), psi_pp_field)
                             if not current_pp:
-                                frappe.db.set_value("Planning Sheet Item", item.get("name"), psi_pp_field, item_pp)
+                                frappe.db.set_value("Planning Table", item.get("name"), psi_pp_field, item_pp)
                         except Exception:
                             pass
 
@@ -3141,7 +3141,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             # Do not use SPR shaft_jobs target weight as produced fallback.
             # Produced quantity must come from produced sources only (WO/SE/SPR produced fields).
 
-            if item_level_produced is None and item_pp and not so_item_key and not cint(item.get("custom_is_split")):
+            if item_level_produced is None and item_pp and not so_item_key and not cint(item.get("is_split")):
                 item_level_produced = pp_produced_map.get(item_pp)
                 item_level_wo_count = max(item_level_wo_count, pp_wo_count_map.get(item_pp, 0))
                 if item_level_produced is None:
@@ -3189,7 +3189,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 item_level_produced = 0
 
             # Split-safe produced allocation: distribute produced total once across split rows.
-            if so_item_key and cint(item.get("custom_is_split")):
+            if so_item_key and cint(item.get("is_split")):
                 alloc_key = f"so::{so_item_key}"
                 produced_total = flt(item_level_produced)
                 already_alloc = flt(split_so_item_produced_alloc_map.get(alloc_key, 0))
@@ -3201,13 +3201,13 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             spr_name = ""
             if psi_name and psi_name in spr_psi_name_map:
                 spr_name = spr_psi_name_map[psi_name]
-            elif so_item_key and not cint(item.get("custom_is_split")) and so_item_key in spr_so_item_name_map:
+            elif so_item_key and not cint(item.get("is_split")) and so_item_key in spr_so_item_name_map:
                 spr_name = spr_so_item_name_map[so_item_key]
-            elif item_pp and not so_item_key and not cint(item.get("custom_is_split")) and item_pp in spr_pp_name_map:
+            elif item_pp and not so_item_key and not cint(item.get("is_split")) and item_pp in spr_pp_name_map:
                 spr_name = spr_pp_name_map[item_pp]
             
             # Fallback to direct field on Production Plan if still not found
-            if not spr_name and item_pp and not so_item_key and not cint(item.get("custom_is_split")):
+            if not spr_name and item_pp and not so_item_key and not cint(item.get("is_split")):
                 if item_pp in spr_link_cache:
                     spr_name = spr_link_cache[item_pp]
                 else:
@@ -3275,7 +3275,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "unit": unit,
                 "planName": sheet.get("planName") or sheet.get("custom_plan_name") or "Default",
                 "pbPlanName": sheet.get("custom_pb_plan_name") or "",
-                "planCode": item.get("custom_plan_code") or "",
+                "planCode": item.get("plan_name") or "",
                 "ordered_date": str(sheet.ordered_date) if sheet.ordered_date else "",
                 "planned_date": str(item_pdate or (sheet.get("custom_planned_date") if is_white else "")),
                 "plannedDate": str(item_pdate or (sheet.get("custom_planned_date") if is_white else "")),
@@ -3296,7 +3296,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 "pp_pending_qty": flt(pp_pending_qty),
                 "wo_open": wo_open,
                 "wo_terminal": wo_terminal,
-                "isSplit": item.get("custom_is_split"),
+                "isSplit": item.get("is_split"),
                 "pp_id": item_pp or "",  # Item-level production plan ID for direct PP view routing
                 "spr_name": spr_name,  # SPR linked to PP (validated)
                 "spr_docstatus": spr_docstatus,
@@ -3314,14 +3314,14 @@ def _deduplicate_items(items):
     Groups by sales_order_item and prioritizes:
     1. Scheduled items (in custom plans) over Draft items (in Default).
     2. Newer items (higher idx or recent creation) over older ones.
-    Legitimate splits (custom_is_split=1) are PRESERVED.
+    Legitimate splits (is_split=1) are PRESERVED.
     """
     seen = {}
     result = []
     for item in items:
         # Support both dict keys (camelCase vs snake_case) 
         so_item = item.get("salesOrderItem") or item.get("sales_order_item")
-        is_split = item.get("isSplit") or item.get("custom_is_split")
+        is_split = item.get("isSplit") or item.get("is_split")
         
         if is_split or not so_item:
             result.append(item)
@@ -3375,7 +3375,7 @@ def get_orders_for_date(date):
             COALESCE(c.customer_name, p.customer) as customer_name,
             p.ordered_date{extra_fields},
             {eff} as effective_date
-        FROM `tabPlanning Sheet Item` i
+        FROM `tabPlanning Table` i
         JOIN `tabPlanning sheet` p ON i.parent = p.name
         LEFT JOIN `tabCustomer` c ON p.customer = c.name
         WHERE {eff} = %s
@@ -3392,7 +3392,7 @@ def update_item_unit(item_name, unit):
     if not item_name or not unit:
         frappe.throw(_("Item Name and Unit are required"))
 
-    frappe.db.set_value("Planning Sheet Item", item_name, "unit", unit)
+    frappe.db.set_value("Planning Table", item_name, "unit", unit)
     return {"status": "success"}
 
 
@@ -3429,7 +3429,7 @@ def update_items_bulk(items, plan_name=None):
 
         # Fetch current state to provide sensible fallbacks
         current = frappe.db.get_value(
-            "Planning Sheet Item",
+            "Planning Table",
             name,
             ["unit", "parent"],
             as_dict=True,
@@ -3506,7 +3506,7 @@ def bulk_confirm_orders(items):
     count = 0
     for item_name in items:
         # Planning Sheet -> Sales Order
-        parent_sheet = frappe.db.get_value("Planning Sheet Item", item_name, "parent")
+        parent_sheet = frappe.db.get_value("Planning Table", item_name, "parent")
         if parent_sheet:
             so_name = frappe.db.get_value("Planning sheet", parent_sheet, "sales_order")
             if so_name:
@@ -3800,11 +3800,11 @@ def create_plan_name_field():
         frappe.db.commit()
 
     # Create Plan Code custom fields for Tracking Code logic
-    if not frappe.db.exists('Custom Field', 'Planning sheet-custom_plan_code'):
+    if not frappe.db.exists('Custom Field', 'Planning sheet-plan_name'):
         cf4 = frappe.get_doc({
             "doctype": "Custom Field",
             "dt": "Planning sheet",
-            "fieldname": "custom_plan_code",
+            "fieldname": "plan_name",
             "label": "Plan Code",
             "fieldtype": "Data",
             "read_only": 0,
@@ -3812,13 +3812,13 @@ def create_plan_name_field():
         })
         cf4.insert(ignore_permissions=True)
     else:
-        frappe.db.set_value('Custom Field', 'Planning sheet-custom_plan_code', 'read_only', 0)
+        frappe.db.set_value('Custom Field', 'Planning sheet-plan_name', 'read_only', 0)
         
-    if not frappe.db.exists('Custom Field', 'Planning Sheet Item-custom_plan_code'):
+    if not frappe.db.exists('Custom Field', 'Planning Sheet Item-plan_name'):
         cf5 = frappe.get_doc({
             "doctype": "Custom Field",
-            "dt": "Planning Sheet Item",
-            "fieldname": "custom_plan_code",
+            "dt": "Planning Table",
+            "fieldname": "plan_name",
             "label": "Plan Code",
             "fieldtype": "Data",
             "read_only": 0,
@@ -3827,7 +3827,7 @@ def create_plan_name_field():
         })
         cf5.insert(ignore_permissions=True)
     else:
-        frappe.db.set_value('Custom Field', 'Planning Sheet Item-custom_plan_code', 'read_only', 0)
+        frappe.db.set_value('Custom Field', 'Planning Sheet Item-plan_name', 'read_only', 0)
 
     # Create Approval Status custom field on Planning Sheet
     if not frappe.db.exists('Custom Field', 'Planning sheet-custom_approval_status'):
@@ -3883,7 +3883,7 @@ def split_order(item_name, split_qty, target_unit):
     if not item_name or not split_qty or not target_unit:
         frappe.throw("Missing required parameters: item_name, split_qty, target_unit")
 
-    doc = frappe.get_doc("Planning Sheet Item", item_name)
+    doc = frappe.get_doc("Planning Table", item_name)
     original_qty = float(doc.qty or 0)
     split_qty_val = float(split_qty)
 
@@ -3905,8 +3905,8 @@ def split_order(item_name, split_qty, target_unit):
     # Traceability (Try to set custom fields if they exist)
     # Assuming user will add these fields via Customize Form if not present
         # but we try to set them on the doc object anyway
-    new_doc.custom_split_from = item_name
-    new_doc.custom_is_split = 1
+    new_doc.split_from = item_name
+    new_doc.is_split = 1
     
     new_doc.insert()
     
@@ -4145,12 +4145,12 @@ def get_last_unit_order(unit, date=None, plan_name=None, exclude_items=None):
         SELECT 
             i.color, i.custom_quality as quality, i.gsm, i.item_name, i.idx, 
             p.name as sheet, p.modified, p.docstatus
-        FROM `tabPlanning Sheet Item` i
+        FROM `tabPlanning Table` i
         JOIN `tabPlanning sheet` p ON i.parent = p.name
         WHERE REPLACE(UPPER(i.unit), ' ', '') = %s
           AND p.docstatus < 2
           AND (i.color IS NOT NULL AND i.color != '' AND i.color != '0' AND i.color != '0.0')
-          AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
+          AND DATE(COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date)) = DATE(%s)
           {exclude_sql}
         ORDER BY 
           -- Prioritize color items over white if they share the same date
@@ -4187,9 +4187,9 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
     if isinstance(item_names, str):
         item_names = json.loads(item_names)
     
-    items = frappe.get_all("Planning Sheet Item", 
+    items = frappe.get_all("Planning Table", 
         filters={"name": ["in", item_names]},
-        fields=["name", "item_code", "item_name", "qty", "unit", "color", "custom_quality", "gsm", "parent", "custom_item_planned_date"]
+        fields=["name", "item_code", "item_name", "qty", "unit", "color", "custom_quality", "gsm", "parent", "planned_date"]
     )
     
     if not items:
@@ -4272,7 +4272,7 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
             it["unit"] = _normalize_unit(it.get("unit"))
             it["unitKey"] = it["unit"]
             it["gsmVal"] = float(it.get("gsm") or 0)
-            it["plannedDate"] = str(it.get("custom_item_planned_date") or "")
+            it["plannedDate"] = str(it.get("planned_date") or "")
             it["description"] = it.get("item_name") or ""
             
             result_sequence.append(it)
@@ -4317,7 +4317,7 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
 
     for name in item_names:
         try:
-            item_doc = frappe.get_doc("Planning Sheet Item", name)
+            item_doc = frappe.get_doc("Planning Table", name)
             parent_sheet = frappe.get_doc("Planning sheet", item_doc.parent)
 
             target_unit = item_doc.unit or "Mixed"
@@ -4380,7 +4380,7 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
                 daily_limit = UNIT_LIMITS.get(target_unit, 9999)
                 scaled_limit = daily_limit * days_in_view
                 target_items = frappe.get_all(
-                    "Planning Sheet Item",
+                    "Planning Table",
                     filters={"parent": target_sheet_name, "unit": target_unit},
                     fields=["qty"]
                 )
@@ -4396,7 +4396,7 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
             # --- RE-PARENT the item to target sheet via raw SQL ---
             # (frappe.db.set_value fails on children of submitted docs)
             frappe.db.sql("""
-                UPDATE `tabPlanning Sheet Item`
+                UPDATE `tabPlanning Table`
                 SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items'
                 WHERE name = %s
             """, (target_sheet_name, name))
@@ -4438,7 +4438,7 @@ def get_orders_for_date(date):
             i.gsm, i.custom_quality as quality,
             p.name as planning_sheet, p.party_code, p.customer
         FROM
-            `tabPlanning Sheet Item` i
+            `tabPlanning Table` i
         LEFT JOIN
             `tabPlanning sheet` p ON i.parent = p.name
         WHERE
@@ -4515,7 +4515,7 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         req_qty = flt(entry.get("qty")) if isinstance(entry, dict) else None
         
         try:
-            doc = frappe.get_doc("Planning Sheet Item", name)
+            doc = frappe.get_doc("Planning Table", name)
 
             produced_qty = _get_item_wo_produced_qty(doc)
             available_qty = max(flt(doc.qty) - produced_qty, 0)
@@ -4541,8 +4541,8 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                 split_part = frappe.copy_doc(doc)
                 split_part.qty = req_qty
                 split_part.name = None # Clear name to generate new one
-                if frappe.db.has_column("Planning Sheet Item", "custom_is_split"):
-                    split_part.custom_is_split = 1
+                if frappe.db.has_column("Planning Table", "is_split"):
+                    split_part.is_split = 1
                 
                 # IMPORTANT: Insert into original parent first, we reparent it to target sheet later in the loop
                 split_part.insert(ignore_permissions=True)
@@ -4552,18 +4552,18 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                 if cint(doc.docstatus) == 1:
                     # Submitted parent rows cannot be changed via doc.save; use direct SQL update.
                     frappe.db.sql(
-                        "UPDATE `tabPlanning Sheet Item` SET qty = %s WHERE name = %s",
+                        "UPDATE `tabPlanning Table` SET qty = %s WHERE name = %s",
                         (new_qty, doc.name),
                     )
-                    if frappe.db.has_column("Planning Sheet Item", "custom_is_split"):
+                    if frappe.db.has_column("Planning Table", "is_split"):
                         frappe.db.sql(
-                            "UPDATE `tabPlanning Sheet Item` SET custom_is_split = 1 WHERE name = %s",
+                            "UPDATE `tabPlanning Table` SET is_split = 1 WHERE name = %s",
                             (doc.name,),
                         )
                 else:
                     doc.qty = new_qty
-                    if hasattr(doc, "custom_is_split"):
-                        doc.custom_is_split = 1
+                    if hasattr(doc, "is_split"):
+                        doc.is_split = 1
                     doc.save(ignore_permissions=True)
                 
                 move_doc = split_part
@@ -4688,10 +4688,10 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                 new_unit = get_preferred_unit(qual)
             
             # Use SQL for direct re-parenting (Robust for rescue)
-            # Make sure we also update custom_item_planned_date so pulled items don't vanish from the board
-            set_date = f", custom_item_planned_date = '{target_date}'" if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date") else ""
+            # Make sure we also update planned_date so pulled items don't vanish from the board
+            set_date = f", planned_date = '{target_date}'" if frappe.db.has_column("Planning Table", "planned_date") else ""
             frappe.db.sql(f"""
-                UPDATE `tabPlanning Sheet Item`
+                UPDATE `tabPlanning Table`
                 SET parent = %s, idx = %s, unit = %s, parenttype='Planning sheet', parentfield='items'{set_date}
                 WHERE name = %s
             """, (target_sheet.name, new_idx, new_unit, item_doc.name))
@@ -4739,7 +4739,7 @@ def rescue_orphaned_items(target_date=None, colour=None, party_code=None):
         SELECT item.name, item.parent, item.unit, item.colour, item.qty,
                item.party_code, item.customer, item.custom_quality, item.item_name,
                item.sales_order
-        FROM `tabPlanning Sheet Item` item
+        FROM `tabPlanning Table` item
         LEFT JOIN `tabPlanning sheet` sheet ON item.parent = sheet.name
         WHERE sheet.name IS NULL
         {extra}
@@ -4786,7 +4786,7 @@ def rescue_orphaned_items(target_date=None, colour=None, party_code=None):
         # Reparent all orphaned items to this sheet
         for item in items:
             frappe.db.sql("""
-                UPDATE `tabPlanning Sheet Item`
+                UPDATE `tabPlanning Table`
                 SET parent = %s, parenttype='Planning sheet', parentfield='items'
                 WHERE name = %s
             """, (sheet_name, item.name))
@@ -4807,7 +4807,7 @@ def get_items_by_sheet(sheet_name):
         
     sql = """
         SELECT name, item_name, qty, unit, docstatus, parent, idx
-        FROM `tabPlanning Sheet Item`
+        FROM `tabPlanning Table`
         WHERE parent = %s
         ORDER BY idx ASC
     """
@@ -4830,7 +4830,7 @@ def get_unscheduled_planning_sheets():
             p.party_code, p.docstatus, p.ordered_date,
             SUM(i.qty) as total_qty
         FROM `tabPlanning sheet` p
-        LEFT JOIN `tabPlanning Sheet Item` i ON i.parent = p.name
+        LEFT JOIN `tabPlanning Table` i ON i.parent = p.name
         LEFT JOIN `tabCustomer` c ON p.customer = c.name
         WHERE 
             (p.ordered_date IS NULL OR p.ordered_date = '')
@@ -4880,7 +4880,7 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
             so.transaction_date as so_date, so.custom_production_status, so.delivery_status,
             {eff} as effective_date
         FROM
-            `tabPlanning Sheet Item` i
+            `tabPlanning Table` i
         JOIN
             `tabPlanning sheet` p ON i.parent = p.name
         LEFT JOIN
@@ -5001,9 +5001,9 @@ def create_production_plan_from_sheet(sheet_name):
     if psi_pp_field or psi_order_sheet_field:
         for item in sheet.items:
             if psi_pp_field:
-                frappe.db.set_value("Planning Sheet Item", item.name, psi_pp_field, pp.name)
+                frappe.db.set_value("Planning Table", item.name, psi_pp_field, pp.name)
             if psi_order_sheet_field and psi_order_sheet_field != psi_pp_field:
-                frappe.db.set_value("Planning Sheet Item", item.name, psi_order_sheet_field, pp.name)
+                frappe.db.set_value("Planning Table", item.name, psi_order_sheet_field, pp.name)
     
     # Update Status to Planned
     if sheet.sales_order:
@@ -5099,9 +5099,9 @@ def create_production_plan_bulk(sheets):
             if psi_pp_field or psi_order_sheet_field:
                 for item in s.items:
                     if psi_pp_field:
-                        frappe.db.set_value("Planning Sheet Item", item.name, psi_pp_field, pp.name)
+                        frappe.db.set_value("Planning Table", item.name, psi_pp_field, pp.name)
                     if psi_order_sheet_field and psi_order_sheet_field != psi_pp_field:
-                        frappe.db.set_value("Planning Sheet Item", item.name, psi_order_sheet_field, pp.name)
+                        frappe.db.set_value("Planning Table", item.name, psi_order_sheet_field, pp.name)
 
         created_plans.append(pp.name)
         
@@ -5192,7 +5192,7 @@ def update_sequence(items):
         
     # Batch update? No, simple loop is fine for < 50 items usually.
     for i in items:
-        frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET idx=%s WHERE name=%s", (i["idx"], i["name"]))
+        frappe.db.sql("UPDATE `tabPlanning Table` SET idx=%s WHERE name=%s", (i["idx"], i["name"]))
         
     frappe.db.commit() # Ensure committed immediately 
     return "ok"
@@ -5315,14 +5315,14 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
 
     for name in item_names:
         try:
-            item = frappe.get_doc("Planning Sheet Item", name)
+            item = frappe.get_doc("Planning Table", name)
             parent = frappe.get_doc("Planning sheet", item.parent)
             # Prevent re-pushing the same order again until it is reverted
             already_pushed = False
             if parent.get("custom_pb_plan_name"):
                 already_pushed = True
-            if not already_pushed and frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-                if item.get("custom_item_planned_date"):
+            if not already_pushed and frappe.db.has_column("Planning Table", "planned_date"):
+                if item.get("planned_date"):
                     already_pushed = True
             if already_pushed:
                 skipped_already_pushed.append(name)
@@ -5402,21 +5402,21 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
 
             # Find the current max idx on this PB sheet to append correctly
             max_idx = frappe.db.sql("""
-                SELECT COALESCE(MAX(idx), 0) FROM `tabPlanning Sheet Item` WHERE parent = %s
+                SELECT COALESCE(MAX(idx), 0) FROM `tabPlanning Table` WHERE parent = %s
             """, (pb_sheet_name,))[0][0]
 
             # Move item to the PB sheet via raw SQL (works on submitted docs)
             frappe.db.sql("""
-                UPDATE `tabPlanning Sheet Item`
+                UPDATE `tabPlanning Table`
                 SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items', idx = %s
                 WHERE name = %s
             """, (pb_sheet_name, max_idx + 1, name))
 
             # Also set item-level planned date for consistency
-            if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+            if frappe.db.has_column("Planning Table", "planned_date"):
                 frappe.db.sql("""
-                    UPDATE `tabPlanning Sheet Item`
-                    SET custom_item_planned_date = %s
+                    UPDATE `tabPlanning Table`
+                    SET planned_date = %s
                     WHERE name = %s
                 """, (effective_date, name))
 
@@ -5474,7 +5474,7 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
         """
         Shift queued white items forward day-by-day for a given unit/date slot.
         This frees the target slot for incoming color push while preserving white order.
-        Updates only item-level custom_item_planned_date (and plan code when available).
+        Updates only item-level planned_date (and plan code when available).
         """
         from frappe.utils import getdate, add_days
 
@@ -5494,23 +5494,23 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
                 i.name,
                 i.qty,
                 i.unit,
-                COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date) AS effective_date
-            FROM `tabPlanning Sheet Item` i
+                COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date) AS effective_date
+            FROM `tabPlanning Table` i
             JOIN `tabPlanning sheet` p ON i.parent = p.name
             WHERE p.docstatus < 2
               AND i.docstatus < 2
               AND i.unit = %s
-              AND DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) >= DATE(%s)
+              AND DATE(COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date)) >= DATE(%s)
               AND REPLACE(UPPER(COALESCE(i.color, '')), ' ', '') IN ({white_sql})
               {plan_cond}
-            ORDER BY DATE(COALESCE(i.custom_item_planned_date, p.custom_planned_date, p.ordered_date)) ASC, i.idx ASC
+            ORDER BY DATE(COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date)) ASC, i.idx ASC
         """, tuple([params[1], params[0]] + params[2:]), as_dict=True)
 
         if not rows:
             return {"moved": 0, "dates": set()}
 
-        has_item_planned_col = frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date")
-        has_plan_code_col = frappe.db.has_column("Planning Sheet Item", "custom_plan_code")
+        has_item_planned_col = frappe.db.has_column("Planning Table", "planned_date")
+        has_plan_code_col = frappe.db.has_column("Planning Table", "plan_name")
 
         moved_count = 0
         moved_dates = set()
@@ -5558,15 +5558,15 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
             if has_plan_code_col:
                 new_code = generate_plan_code(candidate_str, unit_val, active_pb_plan)
                 frappe.db.sql("""
-                    UPDATE `tabPlanning Sheet Item`
-                    SET custom_item_planned_date = %s,
-                        custom_plan_code = %s
+                    UPDATE `tabPlanning Table`
+                    SET planned_date = %s,
+                        plan_name = %s
                     WHERE name = %s
                 """, (candidate_str, new_code, item_name))
             else:
                 frappe.db.sql("""
-                    UPDATE `tabPlanning Sheet Item`
-                    SET custom_item_planned_date = %s
+                    UPDATE `tabPlanning Table`
+                    SET planned_date = %s
                     WHERE name = %s
                 """, (candidate_str, item_name))
 
@@ -5597,13 +5597,13 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 
         try:
             # Get item + parent sheet info
-            item_doc = frappe.get_doc("Planning Sheet Item", name)
+            item_doc = frappe.get_doc("Planning Table", name)
             parent_doc = frappe.get_doc("Planning sheet", item_doc.parent)
             # Prevent re-pushing ΓÇö check ITEM-LEVEL only (not parent-level!)
             # Parent-level check was blocking ALL items from a sheet once one was pushed
             already_pushed = False
-            if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-                if item_doc.get("custom_item_planned_date"):
+            if frappe.db.has_column("Planning Table", "planned_date"):
+                if item_doc.get("planned_date"):
                     already_pushed = True
             if already_pushed:
                 skipped_already_pushed.append(name)
@@ -5762,7 +5762,7 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
             # ΓöÇΓöÇ Set item-level unit if user picked a different unit ΓöÇΓöÇ
             if target_unit:
                 frappe.db.sql("""
-                    UPDATE `tabPlanning Sheet Item` SET unit = %s WHERE name = %s
+                    UPDATE `tabPlanning Table` SET unit = %s WHERE name = %s
                 """, (target_unit, name))
 
             # ΓöÇΓöÇ Find or create a dedicated PB Planning Sheet ΓöÇΓöÇ
@@ -5818,25 +5818,25 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 
             # ΓöÇΓöÇ Find the current max idx on this PB sheet ΓöÇΓöÇ
             max_idx = frappe.db.sql("""
-                SELECT COALESCE(MAX(idx), 0) FROM `tabPlanning Sheet Item` WHERE parent = %s
+                SELECT COALESCE(MAX(idx), 0) FROM `tabPlanning Table` WHERE parent = %s
             """, (pb_sheet_name,))[0][0]
 
             # ΓöÇΓöÇ Move item to the PB sheet via raw SQL ΓöÇΓöÇ
             # 1. Update parent link AND explicitly save the target unit to the DB
             frappe.db.sql("""
-                UPDATE `tabPlanning Sheet Item`
+                UPDATE `tabPlanning Table`
                 SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items', unit = %s
                 WHERE name = %s
             """, (pb_sheet_name, unit, name))
 
             # 2. Set item-level planned date + plan code for consistency
             # This ensures ONLY the pushed item moves, staying granular.
-            if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+            if frappe.db.has_column("Planning Table", "planned_date"):
                 new_plan_code = generate_plan_code(effective_date, unit, pb_plan_name)
                 
                 frappe.db.sql("""
-                    UPDATE `tabPlanning Sheet Item`
-                    SET custom_item_planned_date = %s, custom_plan_code = %s
+                    UPDATE `tabPlanning Table`
+                    SET planned_date = %s, plan_name = %s
                     WHERE name = %s
                 """, (effective_date, new_plan_code, name))
             effective_dates_used.add(effective_date)
@@ -5850,7 +5850,7 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
                 # (Not just the new pb_sheet_name, to avoid collisions with items already on board)
                 res = frappe.db.sql("""
                     SELECT COALESCE(MAX(i.idx), 0)
-                    FROM `tabPlanning Sheet Item` i
+                    FROM `tabPlanning Table` i
                     JOIN `tabPlanning sheet` p ON i.parent = p.name
                     WHERE i.unit = %s AND p.custom_planned_date = %s
                       AND p.docstatus < 2
@@ -5863,14 +5863,14 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
                 unit_date_idx_offsets[idx_key] += 1
                 new_idx = unit_date_idx_offsets[idx_key]
             
-            frappe.db.set_value("Planning Sheet Item", name, "idx", new_idx)
+            frappe.db.set_value("Planning Table", name, "idx", new_idx)
 
             # ΓöÇΓöÇ Track which original sheets were touched ΓöÇΓöÇ
             updated_sheets.add(item_doc.parent)  # original parent
 
             # ΓöÇΓöÇ Clean up original sheet if now empty ΓöÇΓöÇ
             if item_doc.parent != pb_sheet_name:
-                remaining = frappe.db.count("Planning Sheet Item", {"parent": item_doc.parent})
+                remaining = frappe.db.count("Planning Table", {"parent": item_doc.parent})
                 if remaining == 0:
                     try:
                         frappe.delete_doc("Planning sheet", item_doc.parent, ignore_permissions=True, force=True)
@@ -5964,7 +5964,7 @@ def backfill_production_plan_links(sales_order=None):
                 pp_name = pps[0]["name"]
                 
                 # Update all items in this sheet
-                items = frappe.get_all("Planning Sheet Item", 
+                items = frappe.get_all("Planning Table", 
                     filters={"parent": sheet_name},
                     fields=["name"]
                 )
@@ -5972,7 +5972,7 @@ def backfill_production_plan_links(sales_order=None):
                 for item in items:
                     try:
                         frappe.db.set_value(
-                            "Planning Sheet Item",
+                            "Planning Table",
                             item["name"],
                             "custom_production_plan",
                             pp_name
@@ -6028,7 +6028,7 @@ def backfill_sales_order_item_links(sales_order=None):
                     continue
                 
                 # Get all items in this Planning Sheet
-                psi_items = frappe.get_all("Planning Sheet Item",
+                psi_items = frappe.get_all("Planning Table",
                     filters={"parent": sheet_name},
                     fields=["name", "item_code"]
                 )
@@ -6049,7 +6049,7 @@ def backfill_sales_order_item_links(sales_order=None):
                         so_item_name = so_item_map[item_code]
                         try:
                             frappe.db.set_value(
-                                "Planning Sheet Item",
+                                "Planning Table",
                                 psi["name"],
                                 "sales_order_item",
                                 so_item_name
@@ -6105,7 +6105,7 @@ def backfill_wo_production_plan_links(sales_order=None, item_code=None):
                 sheet_name = sheet["name"]
                 
                 # Get all items in this Planning Sheet
-                psi_items = frappe.get_all("Planning Sheet Item",
+                psi_items = frappe.get_all("Planning Table",
                     filters={"parent": sheet_name},
                     fields=["name", "item_code"]
                 )
@@ -6128,14 +6128,14 @@ def backfill_wo_production_plan_links(sales_order=None, item_code=None):
                             pp = wos[0]["production_plan"]
                             if psi_pp_field:
                                 frappe.db.set_value(
-                                    "Planning Sheet Item",
+                                    "Planning Table",
                                     psi["name"],
                                     psi_pp_field,
                                     pp
                                 )
                             if psi_order_sheet_field and psi_order_sheet_field != psi_pp_field:
                                 frappe.db.set_value(
-                                    "Planning Sheet Item",
+                                    "Planning Table",
                                     psi["name"],
                                     psi_order_sheet_field,
                                     pp
@@ -6259,7 +6259,7 @@ def debug_production_qty_mapping(planning_sheet=None, item_name=None):
         return result
     
     try:
-        item_doc = frappe.get_doc("Planning Sheet Item", item_name)
+        item_doc = frappe.get_doc("Planning Table", item_name)
         sheet_doc = frappe.get_doc("Planning sheet", planning_sheet)
         
         result["item"] = {
@@ -6351,7 +6351,7 @@ def debug_production_qty_fallback_map(planning_sheet=None, item_name=None):
         if not planning_sheet or not item_name:
             return {"status": "error", "message": "planning_sheet and item_name required"}
         
-        item_doc = frappe.get_doc("Planning Sheet Item", item_name)
+        item_doc = frappe.get_doc("Planning Table", item_name)
         sheet_doc = frappe.get_doc("Planning sheet", planning_sheet)
         
         # Get SO
@@ -6457,15 +6457,15 @@ def revert_items_from_pb(item_names):
 
     for name in item_names:
         try:
-            parent = frappe.db.get_value("Planning Sheet Item", name, "parent")
+            parent = frappe.db.get_value("Planning Table", name, "parent")
             if not parent:
                 continue
             
             parent_doc = frappe.get_doc("Planning sheet", parent)
             
             # Clear Item-level Planned Date
-            if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-                frappe.db.set_value("Planning Sheet Item", name, "custom_item_planned_date", None)
+            if frappe.db.has_column("Planning Table", "planned_date"):
+                frappe.db.set_value("Planning Table", name, "planned_date", None)
             
             # If the parent has custom_pb_plan_name (it's a PB sheet), move item back
             # to an original CC sheet (one without custom_pb_plan_name)
@@ -6499,12 +6499,12 @@ def revert_items_from_pb(item_names):
                         orig_name = orig.name
                 
                 # Move item back to original sheet
-                frappe.db.set_value("Planning Sheet Item", name, "parent", orig_name)
-                frappe.db.set_value("Planning Sheet Item", name, "parenttype", "Planning sheet")
-                frappe.db.set_value("Planning Sheet Item", name, "parentfield", "items")
+                frappe.db.set_value("Planning Table", name, "parent", orig_name)
+                frappe.db.set_value("Planning Table", name, "parenttype", "Planning sheet")
+                frappe.db.set_value("Planning Table", name, "parentfield", "items")
                 
                 # Delete PB sheet if now empty
-                remaining = frappe.db.count("Planning Sheet Item", {"parent": parent})
+                remaining = frappe.db.count("Planning Table", {"parent": parent})
                 if remaining == 0:
                     try:
                         frappe.delete_doc("Planning sheet", parent, ignore_permissions=True, force=True)
@@ -6527,17 +6527,17 @@ def revert_items_from_pb(item_names):
 @frappe.whitelist()
 def sync_custom_fields():
     """
-    Creates the custom_item_planned_date field on Planning Sheet Item and other key fields.
+    Creates the planned_date field on Planning Sheet Item and other key fields.
     Run this once from the browser console.
     """
     create_plan_name_field()
 
     # Check if custom field exists
-    if not frappe.db.exists("Custom Field", {"dt": "Planning Sheet Item", "fieldname": "custom_item_planned_date"}):
+    if not frappe.db.exists("Custom Field", {"dt": "Planning Table", "fieldname": "planned_date"}):
         doc = frappe.get_doc({
             "doctype": "Custom Field",
-            "dt": "Planning Sheet Item",
-            "fieldname": "custom_item_planned_date",
+            "dt": "Planning Table",
+            "fieldname": "planned_date",
             "label": "Planned Date",
             "fieldtype": "Date",
             "insert_after": "unit"
@@ -6545,15 +6545,15 @@ def sync_custom_fields():
         doc.insert(ignore_permissions=True)
 
     # Item-level Production Plan link for exact View Plan routing
-    if not frappe.db.exists("Custom Field", {"dt": "Planning Sheet Item", "fieldname": "custom_production_plan"}):
+    if not frappe.db.exists("Custom Field", {"dt": "Planning Table", "fieldname": "custom_production_plan"}):
         pp_cf = frappe.get_doc({
             "doctype": "Custom Field",
-            "dt": "Planning Sheet Item",
+            "dt": "Planning Table",
             "fieldname": "custom_production_plan",
             "label": "Production Plan",
             "fieldtype": "Link",
             "options": "Production Plan",
-            "insert_after": "custom_plan_code",
+            "insert_after": "plan_name",
             "read_only": 1,
             "in_list_view": 1,
             "columns": 2,
@@ -6562,10 +6562,10 @@ def sync_custom_fields():
 
     # Ensure the field is visible for legacy setups where it may exist but be hidden/misplaced.
     try:
-        cf_name = frappe.db.get_value("Custom Field", {"dt": "Planning Sheet Item", "fieldname": "custom_production_plan"}, "name")
+        cf_name = frappe.db.get_value("Custom Field", {"dt": "Planning Table", "fieldname": "custom_production_plan"}, "name")
         if cf_name:
             frappe.db.set_value("Custom Field", cf_name, "hidden", 0)
-            frappe.db.set_value("Custom Field", cf_name, "insert_after", "custom_plan_code")
+            frappe.db.set_value("Custom Field", cf_name, "insert_after", "plan_name")
             frappe.db.set_value("Custom Field", cf_name, "in_list_view", 1)
             frappe.db.set_value("Custom Field", cf_name, "columns", 2)
             frappe.db.set_value("Custom Field", cf_name, "read_only", 1)
@@ -6591,7 +6591,7 @@ def backfill_item_level_production_plan_links(planning_sheet_name=None):
         filters["parent"] = planning_sheet_name
 
     rows = frappe.get_all(
-        "Planning Sheet Item",
+        "Planning Table",
         filters=filters,
         fields=["name", "parent", "sales_order_item", "custom_sales_order_item"],
         limit_page_length=0,
@@ -6616,9 +6616,9 @@ def backfill_item_level_production_plan_links(planning_sheet_name=None):
 
         if pp_id:
             if psi_pp_field:
-                frappe.db.set_value("Planning Sheet Item", r.name, psi_pp_field, pp_id)
+                frappe.db.set_value("Planning Table", r.name, psi_pp_field, pp_id)
             if psi_order_sheet_field and psi_order_sheet_field != psi_pp_field:
-                frappe.db.set_value("Planning Sheet Item", r.name, psi_order_sheet_field, pp_id)
+                frappe.db.set_value("Planning Table", r.name, psi_order_sheet_field, pp_id)
             linked += 1
         else:
             unresolved += 1
@@ -6662,7 +6662,7 @@ def revert_items_to_last_sheet_planned_date(
     dry_run=1,
 ):
     """
-    Revert item-level planned dates (custom_item_planned_date) back to the best
+    Revert item-level planned dates (planned_date) back to the best
     recoverable prior date when items were accidentally shifted across months.
 
     Default use-case:
@@ -6678,8 +6678,8 @@ def revert_items_to_last_sheet_planned_date(
     try:
         frappe.only_for("System Manager")
 
-        if not frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
-            return {"status": "error", "message": "custom_item_planned_date column not found"}
+        if not frappe.db.has_column("Planning Table", "planned_date"):
+            return {"status": "error", "message": "planned_date column not found"}
 
         src_months = from_months
         if src_months in (None, "", []):
@@ -6714,17 +6714,17 @@ def revert_items_to_last_sheet_planned_date(
                 i.name,
                 i.parent,
                 i.unit,
-                i.custom_item_planned_date AS current_item_date,
+                i.planned_date AS current_item_date,
                 p.custom_planned_date AS sheet_planned_date,
                 p.ordered_date,
                 p.custom_pb_plan_name,
                 p.custom_plan_name
-            FROM `tabPlanning Sheet Item` i
+            FROM `tabPlanning Table` i
             INNER JOIN `tabPlanning sheet` p ON p.name = i.parent
             WHERE p.docstatus < 2
               AND i.docstatus < 2
-              AND i.custom_item_planned_date IS NOT NULL
-              AND MONTH(i.custom_item_planned_date) = %s
+              AND i.planned_date IS NOT NULL
+              AND MONTH(i.planned_date) = %s
               AND (
                     MONTH(COALESCE(p.ordered_date, p.custom_planned_date)) IN ({placeholders})
                     OR MONTH(COALESCE(p.custom_planned_date, p.ordered_date)) IN ({placeholders})
@@ -6745,7 +6745,7 @@ def revert_items_to_last_sheet_planned_date(
                 "samples": [],
             }
 
-        has_plan_code_col = frappe.db.has_column("Planning Sheet Item", "custom_plan_code")
+        has_plan_code_col = frappe.db.has_column("Planning Table", "plan_name")
         updated = 0
         skipped = 0
         samples = []
@@ -6785,9 +6785,9 @@ def revert_items_to_last_sheet_planned_date(
                 new_code = generate_plan_code(str(restore_date), r.get("unit") or "Unit 1", plan_name_for_code)
                 frappe.db.sql(
                     """
-                    UPDATE `tabPlanning Sheet Item`
-                    SET custom_item_planned_date = %s,
-                        custom_plan_code = %s
+                    UPDATE `tabPlanning Table`
+                    SET planned_date = %s,
+                        plan_name = %s
                     WHERE name = %s
                     """,
                     (restore_date, new_code, r.get("name")),
@@ -6795,8 +6795,8 @@ def revert_items_to_last_sheet_planned_date(
             else:
                 frappe.db.sql(
                     """
-                    UPDATE `tabPlanning Sheet Item`
-                    SET custom_item_planned_date = %s
+                    UPDATE `tabPlanning Table`
+                    SET planned_date = %s
                     WHERE name = %s
                     """,
                     (restore_date, r.get("name")),
@@ -6881,9 +6881,9 @@ def emergency_cleanup_all_pushed_status():
     # We exclude items with WHITE colors to avoid erasing auto-planned white orders
     clean_white_sql = ", ".join([f"'{c.upper()}'" for c in WHITE_COLORS])
     frappe.db.sql(f"""
-        UPDATE `tabPlanning Sheet Item` 
-        SET custom_item_planned_date = NULL, custom_plan_code = NULL
-        WHERE (custom_item_planned_date IS NOT NULL OR custom_plan_code IS NOT NULL)
+        UPDATE `tabPlanning Table` 
+        SET planned_date = NULL, plan_name = NULL
+        WHERE (planned_date IS NOT NULL OR plan_name IS NOT NULL)
           AND UPPER(color) NOT IN ({clean_white_sql})
     """)
     
@@ -6905,9 +6905,9 @@ def fix_recently_cleared_whites():
     
     count = 0
     for s in sheets:
-        items = frappe.get_all("Planning Sheet Item", 
+        items = frappe.get_all("Planning Table", 
                                filters={"parent": s.name}, 
-                               fields=["name", "color", "custom_item_planned_date"])
+                               fields=["name", "color", "planned_date"])
         
         has_white = False
         restored_item_count = 0
@@ -6916,8 +6916,8 @@ def fix_recently_cleared_whites():
             if _is_white_color(it.color):
                 has_white = True
                 # Bring back the item date if it was cleared
-                if not it.custom_item_planned_date:
-                    frappe.db.set_value("Planning Sheet Item", it.name, "custom_item_planned_date", s.ordered_date)
+                if not it.planned_date:
+                    frappe.db.set_value("Planning Table", it.name, "planned_date", s.ordered_date)
                     restored_item_count += 1
         
         if has_white:
@@ -6968,20 +6968,20 @@ def revert_items_to_color_chart(item_names):
     for name in item_names:
         try:
             # 1. Clean item-level tracking explicitly
-            if frappe.db.has_column("Planning Sheet Item", "custom_item_planned_date"):
+            if frappe.db.has_column("Planning Table", "planned_date"):
                 frappe.db.sql("""
-                    UPDATE `tabPlanning Sheet Item`
-                    SET custom_item_planned_date = NULL, custom_plan_code = NULL
+                    UPDATE `tabPlanning Table`
+                    SET planned_date = NULL, plan_name = NULL
                     WHERE name = %s
                 """, (name,))
 
             # 2. Check if parent sheet should be unlinked from PB
-            parent = frappe.db.get_value("Planning Sheet Item", name, "parent")
+            parent = frappe.db.get_value("Planning Table", name, "parent")
             if parent and parent not in updated_sheets:
                 # Only clear parent-level tracking if NO OTHER items in this sheet are still pushed
                 still_pushed = frappe.db.sql("""
-                    SELECT COUNT(*) FROM `tabPlanning Sheet Item`
-                    WHERE parent = %s AND custom_item_planned_date IS NOT NULL
+                    SELECT COUNT(*) FROM `tabPlanning Table`
+                    WHERE parent = %s AND planned_date IS NOT NULL
                 """, (parent,))[0][0]
                 
                 if still_pushed == 0:
@@ -7053,11 +7053,11 @@ def revert_pb_push(pb_plan_name, date=None):
                 original_sheet_name = orig_sheet.name
 
         # Move all items from PB sheet back to original sheet
-        items = frappe.get_all("Planning Sheet Item", filters={"parent": pb_sheet.name}, fields=["name"])
+        items = frappe.get_all("Planning Table", filters={"parent": pb_sheet.name}, fields=["name"])
         for item in items:
-            frappe.db.set_value("Planning Sheet Item", item.name, "parent", original_sheet_name)
-            frappe.db.set_value("Planning Sheet Item", item.name, "parenttype", "Planning sheet")
-            frappe.db.set_value("Planning Sheet Item", item.name, "parentfield", "items")
+            frappe.db.set_value("Planning Table", item.name, "parent", original_sheet_name)
+            frappe.db.set_value("Planning Table", item.name, "parenttype", "Planning sheet")
+            frappe.db.set_value("Planning Table", item.name, "parentfield", "items")
             reverted += 1
 
         # Delete the now-empty PB sheet
@@ -7121,7 +7121,7 @@ def auto_create_planning_sheet(doc, method=None):
     ps.custom_plan_name = _get_contextual_plan_name(cc_plan, doc.transaction_date)
     ps.custom_pb_plan_name = ""
     # NOTE: Do NOT set custom_planned_date here — it would make Color Chart show
-    # color orders as "pushed". White items have custom_item_planned_date set by
+    # color orders as "pushed". White items have planned_date set by
     # _populate_planning_sheet_items, and the SQL filter finds them via EXISTS.
 
     _populate_planning_sheet_items(ps, doc)
@@ -7134,7 +7134,7 @@ def auto_create_planning_sheet(doc, method=None):
     
     # White items are auto-visible on the Production Board because:
     # 1. The sheet has custom_planned_date set (passes SQL filter)
-    # 2. White items have custom_item_planned_date set (from _populate_planning_sheet_items)
+    # 2. White items have planned_date set (from _populate_planning_sheet_items)
     # 3. The _is_white_color check allows them through without custom_pb_plan_name
     # Non-white items stay in the Color Chart only (no custom_pb_plan_name, not white)
         
@@ -7143,7 +7143,7 @@ def auto_create_planning_sheet(doc, method=None):
     # RE-FETCH TO UPDATE HEADER PLAN CODES
     final_doc = frappe.get_doc("Planning sheet", ps.name)
     update_sheet_plan_codes(final_doc)
-    frappe.db.set_value("Planning sheet", ps.name, "custom_plan_code", final_doc.custom_plan_code)
+    frappe.db.set_value("Planning sheet", ps.name, "plan_name", final_doc.plan_name)
     
     return final_doc
 
@@ -7200,7 +7200,7 @@ def regenerate_planning_sheet(so_name):
     frappe.db.commit()
     
     # White items are auto-visible on the Production Board because:
-    # 1. White items have custom_item_planned_date set (from _populate_planning_sheet_items)
+    # 1. White items have planned_date set (from _populate_planning_sheet_items)
     # 2. The EXISTS SQL filter finds them
     # 3. The _is_white_color check allows them through without custom_pb_plan_name
     # Non-white items stay in the Color Chart only (no custom_pb_plan_name, not white)
@@ -7249,7 +7249,7 @@ def run_global_cleanup():
         for dup_name in dup_sheet_names:
             # Move items from duplicate to kept sheet using raw SQL
             frappe.db.sql(
-                "UPDATE `tabPlanning Sheet Item` SET parent = %s WHERE parent = %s",
+                "UPDATE `tabPlanning Table` SET parent = %s WHERE parent = %s",
                 (keep_sheet, dup_name)
             )
             # PROPER DELETE: Use frappe.delete_doc to clean up child table records
@@ -7265,28 +7265,28 @@ def run_global_cleanup():
     # —— PHASE 2: Deduplicate Planning Sheet ITEMS by name within same parent ——
     dup_items_in_sheet = frappe.db.sql("""
         SELECT parent, item_name, COUNT(*) AS cnt
-        FROM `tabPlanning Sheet Item`
+        FROM `tabPlanning Table`
         GROUP BY parent, item_name, qty
         HAVING COUNT(*) > 1
     """, as_dict=True)
 
     for row in dup_items_in_sheet:
         items = frappe.db.sql("""
-            SELECT name FROM `tabPlanning Sheet Item`
+            SELECT name FROM `tabPlanning Table`
             WHERE parent = %s AND item_name = %s AND qty = 0
             ORDER BY creation ASC
         """, (row.parent, row.item_name), as_dict=True)
 
         if not items:
             items = frappe.db.sql("""
-                SELECT name FROM `tabPlanning Sheet Item`
+                SELECT name FROM `tabPlanning Table`
                 WHERE parent = %s AND item_name = %s
                 ORDER BY creation ASC
             """, (row.parent, row.item_name), as_dict=True)
 
         if len(items) > 1:
             for it in items[1:]:
-                frappe.db.sql("DELETE FROM `tabPlanning Sheet Item` WHERE name = %s", (it.name,))
+                frappe.db.sql("DELETE FROM `tabPlanning Table` WHERE name = %s", (it.name,))
                 removed_items += 1
 
     frappe.db.commit()
@@ -7425,7 +7425,7 @@ def force_merge_order_sheets(sales_order):
     moved_count = 0
     for src in source_sheets:
         # Move items via SQL
-        frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET parent = %s WHERE parent = %s", (target_sheet, src))
+        frappe.db.sql("UPDATE `tabPlanning Table` SET parent = %s WHERE parent = %s", (target_sheet, src))
         # Delete source sheet
         frappe.delete_doc("Planning sheet", src, force=1, ignore_permissions=True)
         moved_count += 1
@@ -7458,7 +7458,7 @@ def fix_white_orders_planned_date():
 
     for sheet in sheets_without_date:
         items = frappe.get_all(
-            "Planning Sheet Item",
+            "Planning Table",
             filters={"parent": sheet.name},
             fields=["color"]
         )
@@ -7495,21 +7495,21 @@ def revert_split_item(item_name):
     Useful for undoing partial pulls.
     """
     try:
-        it = frappe.get_doc("Planning Sheet Item", item_name)
-        if not it.get("custom_is_split"):
+        it = frappe.get_doc("Planning Table", item_name)
+        if not it.get("is_split"):
             # If not marked as split, check if we can find any peer to merge with
             pass
             
         # Find the 'original' or 'primary' item for this SO row in the same sheet
-        # Original is defined as custom_is_split=0 or the oldest one
-        candidates = frappe.get_all("Planning Sheet Item", 
+        # Original is defined as is_split=0 or the oldest one
+        candidates = frappe.get_all("Planning Table", 
             filters={
                 "parent": it.parent,
                 "sales_order_item": it.sales_order_item,
                 "name": ["!=", it.name]
             },
-            fields=["name", "qty", "custom_is_split"],
-            order_by="custom_is_split asc, creation asc"
+            fields=["name", "qty", "is_split"],
+            order_by="is_split asc, creation asc"
         )
         
         if not candidates:
@@ -7519,8 +7519,8 @@ def revert_split_item(item_name):
         new_qty = flt(target.qty) + flt(it.qty)
         
         # Update target and remove current
-        frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET qty = %s WHERE name = %s", (new_qty, target.name))
-        frappe.db.sql("DELETE FROM `tabPlanning Sheet Item` WHERE name = %s", (it.name,))
+        frappe.db.sql("UPDATE `tabPlanning Table` SET qty = %s WHERE name = %s", (new_qty, target.name))
+        frappe.db.sql("DELETE FROM `tabPlanning Table` WHERE name = %s", (it.name,))
         
         frappe.logger().info(f"[RevertSplit] Merged {it.name} ({it.qty}) into {target.name} ({target.qty} -> {new_qty})")
         
@@ -7695,7 +7695,7 @@ def debug_plan_check():
 @frappe.whitelist()
 def recalculate_all_plan_codes():
     """
-    Bulk-recalculates and writes custom_plan_code for EVERY Planning Sheet and its items.
+    Bulk-recalculates and writes plan_name for EVERY Planning Sheet and its items.
     Call this once from Frappe console or a Script button to fix historical blank plan codes.
     Returns count of sheets updated.
     """
@@ -7715,16 +7715,16 @@ def recalculate_all_plan_codes():
             
             # Write the plan code to the sheet header
             frappe.db.sql(
-                "UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s",
-                (doc.custom_plan_code, doc.name)
+                "UPDATE `tabPlanning sheet` SET plan_name = %s WHERE name = %s",
+                (doc.plan_name, doc.name)
             )
             
             # Write each item's plan code
             for item in doc.items:
-                if item.custom_plan_code:
+                if item.plan_name:
                     frappe.db.sql(
-                        "UPDATE `tabPlanning Sheet Item` SET custom_plan_code = %s WHERE name = %s",
-                        (item.custom_plan_code, item.name)
+                        "UPDATE `tabPlanning Table` SET plan_name = %s WHERE name = %s",
+                        (item.plan_name, item.name)
                     )
             
             updated += 1
@@ -8135,16 +8135,16 @@ def run_orphan_cleanup():
     
     # 1. Clean up orphaned items (linked to deleted sheets)
     # Using get_all + delete_doc is slower but safer than raw SQL DELETE in Console
-    all_items = frappe.get_all("Planning Sheet Item", fields=["name", "parent"])
+    all_items = frappe.get_all("Planning Table", fields=["name", "parent"])
     orphans_count = 0
     for it in all_items:
         if not it.parent or not frappe.db.exists("Planning sheet", it.parent):
-            frappe.delete_doc("Planning Sheet Item", it.name, force=1, ignore_permissions=True)
+            frappe.delete_doc("Planning Table", it.name, force=1, ignore_permissions=True)
             orphans_count += 1
             
     # 2. Deduplicate items within sheets (handle dynamic schema)
     # Get actual table columns to avoid 1054 errors - USE DOCTYPE NAME
-    columns = frappe.db.get_table_columns("Planning Sheet Item")
+    columns = frappe.db.get_table_columns("Planning Table")
     
     so_item_col = None
     if "sales_order_item" in columns:
@@ -8156,19 +8156,19 @@ def run_orphan_cleanup():
     if so_item_col:
         dups = frappe.db.sql(f"""
             SELECT parent, {so_item_col}, COUNT(*) as cnt
-            FROM `tabPlanning Sheet Item`
+            FROM `tabPlanning Table`
             GROUP BY parent, {so_item_col}
             HAVING COUNT(*) > 1
         """, as_dict=True)
 
         for d in dups:
-            items = frappe.get_all("Planning Sheet Item", 
+            items = frappe.get_all("Planning Table", 
                 filters={"parent": d.parent, so_item_col: d.get(so_item_col)},
                 fields=["name"],
                 order_by="creation asc"
             )
             for it in items[1:]:
-                frappe.delete_doc("Planning Sheet Item", it.name, force=1, ignore_permissions=True)
+                frappe.delete_doc("Planning Table", it.name, force=1, ignore_permissions=True)
                 dup_count += 1
                 
     # 3. Specific ghost sheet cleanup
@@ -8205,16 +8205,16 @@ def get_planning_sheet_pp_id(planning_sheet_name, sales_order_item=None, plannin
         # Strategy 0: exact item-level linkage from clicked row item
         if not planning_sheet_item and sales_order_item:
             planning_sheet_item = frappe.db.get_value(
-                "Planning Sheet Item",
+                "Planning Table",
                 {"parent": planning_sheet_name, "sales_order_item": sales_order_item},
                 "name",
             ) or frappe.db.get_value(
-                "Planning Sheet Item",
+                "Planning Table",
                 {"parent": planning_sheet_name, "custom_sales_order_item": sales_order_item},
                 "name",
             )
 
-        if planning_sheet_item and frappe.db.exists("Planning Sheet Item", planning_sheet_item):
+        if planning_sheet_item and frappe.db.exists("Planning Table", planning_sheet_item):
             pp_id = _get_item_level_production_plan(planning_sheet_item)
 
         # Strategy 0.5: resolve by Production Plan Item + sales_order_item
@@ -8310,7 +8310,7 @@ def debug_psi_fields():
         cols = frappe.db.sql("""
             SELECT COLUMN_NAME 
             FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_NAME='tabPlanning Sheet Item' 
+            WHERE TABLE_NAME='tabPlanning Table' 
             ORDER BY COLUMN_NAME
         """, as_dict=True)
         
@@ -8342,11 +8342,11 @@ def debug_item_pp_id(item_name):
     if not item_name:
         return {"status": "error", "message": "item_name required"}
     
-    if not frappe.db.exists("Planning Sheet Item", item_name):
+    if not frappe.db.exists("Planning Table", item_name):
         return {"status": "error", "message": f"Item {item_name} not found"}
     
     try:
-        item = frappe.get_doc("Planning Sheet Item", item_name)
+        item = frappe.get_doc("Planning Table", item_name)
         parent_sheet = frappe.get_doc("Planning sheet", item.parent)
         
         # Check each PP resolution strategy
@@ -8357,7 +8357,7 @@ def debug_item_pp_id(item_name):
         
         # Strategy 1: direct fields
         for field in _psi_production_plan_fields():
-            value = frappe.db.get_value("Planning Sheet Item", item_name, field)
+            value = frappe.db.get_value("Planning Table", item_name, field)
             result["strategies"][f"Direct: {field}"] = value or "empty"
         
         # Strategy 2: via sales_order_item
@@ -8412,7 +8412,7 @@ def backfill_pp_id_to_sheet_items(planning_sheet_name=None, dry_run=1):
 
     items = frappe.db.sql(
         f"SELECT `name`, `parent`, `item_code`, `order_sheet` "
-        f"FROM `tabPlanning Sheet Item` {parent_filter} ORDER BY parent ASC, idx ASC",
+        f"FROM `tabPlanning Table` {parent_filter} ORDER BY parent ASC, idx ASC",
         params, as_dict=True
     )
 
@@ -8460,7 +8460,7 @@ def backfill_pp_id_to_sheet_items(planning_sheet_name=None, dry_run=1):
             
             if found_pp:
                 if not dry_run:
-                    frappe.db.set_value("Planning Sheet Item", psi["name"], "order_sheet", found_pp)
+                    frappe.db.set_value("Planning Table", psi["name"], "order_sheet", found_pp)
                 results["updated"].append({
                     "item": psi["name"],
                     "sheet": psi["parent"],
@@ -8580,8 +8580,8 @@ def test_quality_extraction():
         })
         
         # TEST 4: Planning Sheet Item Population Status
-        psi_total = frappe.db.count("Planning Sheet Item", {"docstatus": ["<", 2]})
-        psi_with_qual = frappe.db.count("Planning Sheet Item", {"docstatus": ["<", 2], "custom_quality": ["!=", ""]})
+        psi_total = frappe.db.count("Planning Table", {"docstatus": ["<", 2]})
+        psi_with_qual = frappe.db.count("Planning Table", {"docstatus": ["<", 2], "custom_quality": ["!=", ""]})
         psi_without_qual = psi_total - psi_with_qual
         
         pct_populated = round((psi_with_qual / psi_total * 100) if psi_total > 0 else 0, 2)
@@ -8599,7 +8599,7 @@ def test_quality_extraction():
         if psi_with_qual > 0:
             psi_samples = frappe.db.sql("""
                 SELECT name, item_code, custom_quality, parent, unit, qty
-                FROM `tabPlanning Sheet Item`
+                FROM `tabPlanning Table`
                 WHERE docstatus < 2 AND custom_quality IS NOT NULL AND custom_quality != ''
                 ORDER BY creation DESC
                 LIMIT 5
@@ -8673,11 +8673,11 @@ def create_item_spr(pp_id, planning_sheet_item_names):
             try:
                 if not spr_name_to_link or not planning_sheet_item_names:
                     return
-                if not frappe.db.has_column("Planning Sheet Item", "custom_spr_name"):
+                if not frappe.db.has_column("Planning Table", "custom_spr_name"):
                     return
                 for psi_name in planning_sheet_item_names:
-                    if frappe.db.exists("Planning Sheet Item", psi_name):
-                        frappe.db.set_value("Planning Sheet Item", psi_name, "custom_spr_name", spr_name_to_link)
+                    if frappe.db.exists("Planning Table", psi_name):
+                        frappe.db.set_value("Planning Table", psi_name, "custom_spr_name", spr_name_to_link)
             except Exception:
                 pass
 
@@ -8749,8 +8749,8 @@ def create_item_spr(pp_id, planning_sheet_item_names):
         psi_list = []
         existing_links = set()
         for psi_name in planning_sheet_item_names:
-            if frappe.db.exists("Planning Sheet Item", psi_name):
-                psi = frappe.get_doc("Planning Sheet Item", psi_name)
+            if frappe.db.exists("Planning Table", psi_name):
+                psi = frappe.get_doc("Planning Table", psi_name)
                 psi_list.append(psi)
                 link_name = (psi.get("custom_spr_name") or "").strip()
                 if link_name:
@@ -9197,7 +9197,7 @@ def _get_item_merge_key(item_name):
     """Get order_code + quality + color key for merge validation."""
     try:
         item = frappe.db.get_value(
-            "Planning Sheet Item",
+            "Planning Table",
             item_name,
             ["custom_quality", "color", "parent"],
             as_dict=True
@@ -9262,7 +9262,7 @@ def create_merge(date, unit, plan_name, item_names, merge_label=None):
         fmt = ','.join(['%s'] * len(item_names))
         total_kg = frappe.db.sql(f"""
             SELECT SUM(IFNULL(qty, 0))
-            FROM `tabPlanning Sheet Item`
+            FROM `tabPlanning Table`
             WHERE name IN ({fmt})
         """, tuple(item_names))[0][0] or 0
         if flt(total_kg) > flt(hard_limit_tons) * 1000:
@@ -9350,7 +9350,7 @@ def delete_merge(merge_id):
         fmt = ','.join(['%s'] * len(merged_items))
         dispatched = frappe.db.sql(f"""
             SELECT DISTINCT COALESCE(so.delivery_status, 'Not Delivered') as delivery_status
-            FROM `tabPlanning Sheet Item` i
+            FROM `tabPlanning Table` i
             JOIN `tabPlanning sheet` p ON i.parent = p.name
             LEFT JOIN `tabSales Order` so ON p.sales_order = so.name
             WHERE i.name IN ({fmt})
@@ -9414,9 +9414,9 @@ def sync_merge_planned_date(merge_id, new_date):
     
     # Update each item's planned_date if the column exists
     updated_count = 0
-    if frappe.db.has_column("Planning Sheet Item", "custom_planned_date"):
+    if frappe.db.has_column("Planning Table", "custom_planned_date"):
         for item_name in merged_items:
-            frappe.db.set_value("Planning Sheet Item", item_name, "custom_planned_date", new_date)
+            frappe.db.set_value("Planning Table", item_name, "custom_planned_date", new_date)
             updated_count += 1
     
     return {"status": "success", "updated": updated_count}
