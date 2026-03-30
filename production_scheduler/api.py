@@ -407,6 +407,18 @@ def _populate_planning_sheet_items(ps, doc):
         else:
             # CREATE new PSI record
             ps.append("items", psi_data)
+            
+            # DUPLICATE into the new 'Planning Table' child doctype
+            pt_data = psi_data.copy()
+            # Map the planned date to the correct fieldname in the new table
+            pt_data["planned_date"] = p_date
+            
+            if hasattr(ps, "planning_table") or ps.meta.has_field("planning_table"):
+                ps.append("planning_table", pt_data)
+            elif hasattr(ps, "custom_planning_table") or ps.meta.has_field("custom_planning_table"):
+                ps.append("custom_planning_table", pt_data)
+            elif hasattr(ps, "table") or ps.meta.has_field("table"): 
+                ps.append("table", pt_data)
     return ps
 
 
