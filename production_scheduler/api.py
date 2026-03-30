@@ -1485,8 +1485,8 @@ def update_sheet_plan_codes(sheet_doc):
         if code:
             unique_codes.add(code)
             
-    # Update parent custom field
-    sheet_doc.custom_plan_code = ", ".join(sorted(unique_codes))
+    # Update parent custom field ΓÇö DISABLED TEMPORARILY PER USER REQUEST
+    # sheet_doc.custom_plan_code = ", ".join(sorted(unique_codes))
 
 @frappe.whitelist()
 def recalculate_all_plan_codes():
@@ -7238,10 +7238,10 @@ def auto_create_planning_sheet(doc, method=None):
         
     frappe.msgprint(f"✅ Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{ps.custom_plan_name}</b>")
     
-    # RE-FETCH TO UPDATE HEADER PLAN CODES
-    final_doc = frappe.get_doc("Planning sheet", ps.name)
-    update_sheet_plan_codes(final_doc)
-    frappe.db.set_value("Planning sheet", ps.name, "custom_plan_code", final_doc.custom_plan_code)
+    # RE-FETCH TO UPDATE HEADER PLAN CODES ΓÇö DISABLED TEMPORARILY PER USER REQUEST
+    # final_doc = frappe.get_doc("Planning sheet", ps.name)
+    # update_sheet_plan_codes(final_doc)
+    # frappe.db.set_value("Planning sheet", ps.name, "custom_plan_code", final_doc.custom_plan_code)
     
     return final_doc
 
