@@ -1,6 +1,6 @@
 import frappe
 
-def run():
+def execute():
     frappe.logger().info("Starting legacy data migration to Planning Table...")
     
     # 1. Get all Planning Sheets
