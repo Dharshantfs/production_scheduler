@@ -1632,6 +1632,9 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
             legacy_table = "Planning Sheet Item"
             parent_doc = frappe.get_doc("Planning sheet", item.parent)
             
+            # Use confirmed field name
+            table_fieldname = "planned_items"
+
             if item.source_item:
                 if item.unit != unit:
                     # CROSS-UNIT SPLIT: Mandatory legacy split (both tables split)
@@ -1644,8 +1647,8 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
                     new_legacy_doc.unit = unit
                     new_legacy_doc.insert(ignore_permissions=True)
                     
-                    # Add new split row to New Table (Board)
-                    new_row = parent_doc.append("planning_table", {})
+                    # Add new split row to Correct Child Table
+                    new_row = parent_doc.append(table_fieldname, {})
                     # Copy data from item, excluding name/idx
                     for field in item.meta.fields:
                         if field.fieldtype not in ["Section Break", "Column Break", "Table"] and field.fieldname not in ["name", "idx"]:
@@ -1659,8 +1662,8 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
                     parent_doc.save(ignore_permissions=True)
                 else:
                     # SAME-UNIT SPLIT: Board splits, but legacy row stays ONE row (Total weight)
-                    # Add new split row to New Table (Board)
-                    new_row = parent_doc.append("planning_table", {})
+                    # Add new split row to Correct Child Table
+                    new_row = parent_doc.append(table_fieldname, {})
                     for field in item.meta.fields:
                         if field.fieldtype not in ["Section Break", "Column Break", "Table"] and field.fieldname not in ["name", "idx"]:
                             new_row.set(field.fieldname, item.get(field.fieldname))
@@ -3994,6 +3997,9 @@ def split_order(item_name, split_qty, target_unit):
     legacy_table = "Planning Sheet Item"
     parent_doc = frappe.get_doc("Planning sheet", doc.parent)
     
+    # Use confirmed field name
+    table_fieldname = "planned_items"
+
     if unit_changed:
         # Cross-Unit: Split legacy row 1:1
         if doc.source_item:
@@ -4006,8 +4012,8 @@ def split_order(item_name, split_qty, target_unit):
             new_legacy_doc.unit = target_unit
             new_legacy_doc.insert(ignore_permissions=True)
             
-            # Create new board row via append for visibility
-            new_row = parent_doc.append("planning_table", {})
+            # Create new board row via append for visibility (using correct field)
+            new_row = parent_doc.append(table_fieldname, {})
             for field in doc.meta.fields:
                 if field.fieldtype not in ["Section Break", "Column Break", "Table"] and field.fieldname not in ["name", "idx"]:
                     new_row.set(field.fieldname, doc.get(field.fieldname))
@@ -4020,7 +4026,7 @@ def split_order(item_name, split_qty, target_unit):
             parent_doc.save(ignore_permissions=True)
     else:
         # SAME UNIT: Share legacy row, do not split weights in old table
-        new_row = parent_doc.append("planning_table", {})
+        new_row = parent_doc.append(table_fieldname, {})
         for field in doc.meta.fields:
             if field.fieldtype not in ["Section Break", "Column Break", "Table"] and field.fieldname not in ["name", "idx"]:
                 new_row.set(field.fieldname, doc.get(field.fieldname))
@@ -4041,7 +4047,7 @@ def split_order(item_name, split_qty, target_unit):
         "status": "success",
         "original_item": doc.name,
         "remaining_qty": remaining_qty,
-        "new_item": new_doc.name,
+        "new_item": new_row.name,
         "split_qty": split_qty_val, 
         "target_unit": target_unit
     }
