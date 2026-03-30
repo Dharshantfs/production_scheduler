@@ -1628,50 +1628,31 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
             item.is_split = 1
             item.save()
             
-            # DUAL TABLE SYNC: Check if split is across DIFFERENT units.
-            unit_changed = (item.unit != unit)
+            # MANDATORY 1:1 SYNC: Always split the legacy row for split pieces.
             legacy_table = "Planning Sheet Item"
-            if unit_changed and item.source_item:
-                frappe.db.sql(
-                    f"UPDATE `tab{legacy_table}` SET qty = %s WHERE name = %s",
-                    (remainder_qty, item.source_item)
-                )
-
-            # Create New Item in Target Unit/Date
-            new_item = frappe.copy_doc(item)
-            new_item.name = None
-            new_item.qty = split_qty
-            new_item.unit = unit
-            new_item.is_split = 1
-            new_item.split_from = item.name
-            new_item.db_insert() # Direct DB write for child table
-            
-            if unit_changed:
-                # NEW UNIT: Create a new row in the legacy table
-                if item.source_item:
-                    old_legacy_doc = frappe.get_doc(legacy_table, item.source_item)
-                    new_legacy_doc = frappe.copy_doc(old_legacy_doc)
-                    new_legacy_doc.name = None
-                    new_legacy_doc.qty = split_qty
-                    new_legacy_doc.unit = unit
-                    new_legacy_doc.db_insert()
-                    # Link new board row to the new legacy row
-                    new_item.source_item = new_legacy_doc.name
-                    new_item.db_update()
-                    
-                    # Reduce original legacy row qty since it moved units
-                    frappe.db.set_value(legacy_table, item.source_item, "qty", remainder_qty)
-            else:
-                # SAME UNIT: Board splits, but legacy remains ONE row.
-                # Both board rows point to the same legacy item.
-                new_item.source_item = item.source_item
-                new_item.db_update()
+            if item.source_item:
+                # Update Original legacy row quantity first
+                frappe.db.set_value(legacy_table, item.source_item, "qty", flt(remainder_qty))
                 
-                # Update legacy unit just in case (for pulls)
-                if item.source_item:
-                    frappe.db.set_value(legacy_table, item.source_item, "unit", unit)
-            
-            frappe.db.commit() # Ensure split persists
+                # Create a new legacy row for the split quantity
+                old_legacy_doc = frappe.get_doc(legacy_table, item.source_item)
+                new_legacy_doc = frappe.copy_doc(old_legacy_doc)
+                new_legacy_doc.name = None
+                new_legacy_doc.qty = flt(split_qty)
+                new_legacy_doc.unit = unit
+                new_legacy_doc.insert(ignore_permissions=True)
+                
+                # Create New Item in Target Unit/Date on the Board
+                new_item = frappe.copy_doc(item)
+                new_item.name = None
+                new_item.qty = flt(split_qty)
+                new_item.unit = unit
+                new_item.is_split = 1
+                new_item.split_from = item.name
+                new_item.source_item = new_legacy_doc.name
+                new_item.db_insert() 
+                
+                frappe.db.commit() # Persistent split
             
             # Find best slot for the REMAINDER (Original item)
             best_slot_rem = find_best_slot(remainder_qty / 1000.0, quality, unit, target_date)
@@ -1738,46 +1719,11 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
     # 2. Handle IDX Shifting if inserting at specific position
     # Update Item unit and parent first ΓÇö use raw SQL to bypass docstatus immutability
     
-    # DUAL TABLE SYNC: If unit changed, update the legacy 'Planning Sheet Item' table too
-    # This is critical because Work Orders (Production Plans) are generated from the legacy table.
-    if item_doc.unit != unit and item_doc.source_item:
+    # DUAL TABLE SYNC: ALWAYS update legacy row's unit on board move
+    if item_doc.source_item:
         legacy_table = "Planning Sheet Item"
-        
-        # SIBLING CHECK: Do any OTHER board rows share this legacy row?
-        siblings = frappe.get_all("Planning Table", filters={
-            "source_item": item_doc.source_item,
-            "name": ["!=", item_doc.name]
-        }, fields=["name", "unit"])
-        
-        # If there are siblings STILL in the old unit, we must split the legacy row now
-        needs_legacy_split = False
-        for s in siblings:
-            if s.unit != unit:
-                needs_legacy_split = True
-                break
-                
-        if needs_legacy_split:
-            # We are moving this board row to a different unit than its siblings.
-            # We must split the legacy row so they have their own units.
-            old_legacy_doc = frappe.get_doc(legacy_table, item_doc.source_item)
-            new_legacy_doc = frappe.copy_doc(old_legacy_doc)
-            new_legacy_doc.name = None
-            new_legacy_doc.qty = item_doc.qty
-            new_legacy_doc.unit = unit
-            new_legacy_doc.db_insert()
-            
-            # Update original legacy row quantity (subtract this board row's weight)
-            new_orig_qty = max(0, flt(old_legacy_doc.qty) - flt(item_doc.qty))
-            frappe.db.set_value(legacy_table, old_legacy_doc.name, "qty", new_orig_qty)
-            
-            # Link this board row to its new split legacy row
-            item_doc.source_item = new_legacy_doc.name
-            # No need to db_update source_item here, it'll be handled by the SQL below or separately
-        else:
-            # All board rows pointing here are moving to the same unit (or this is the only row)
-            frappe.db.set_value(legacy_table, item_doc.source_item, "unit", unit)
-            
-        frappe.db.commit() # FORCE SAVE FOR SYNC
+        frappe.db.set_value(legacy_table, item_doc.source_item, "unit", unit)
+        frappe.db.commit()
 
     update_fields = {"unit": unit, "source_item": item_doc.source_item}
     if frappe.db.has_column("Planning Table", "planned_date"):
@@ -3993,46 +3939,48 @@ def split_order(item_name, split_qty, target_unit):
     remaining_qty = original_qty - split_qty_val
     doc.db_set("qty", remaining_qty)
     
-    # DUAL TABLE SYNC: If unit changed, sync reduction to the legacy table via source_item.
-    unit_changed = (doc.unit != target_unit)
+    # DUAL TABLE SYNC: Reduce original legacy Qty 1:1
     legacy_table = "Planning Sheet Item"
-    if unit_changed and doc.source_item:
-        # If unit changes, the legacy row is reduced because some Qty moved to a new legacy row.
-        frappe.db.sql(
-            f"UPDATE `tab{legacy_table}` SET qty = %s, unit = %s WHERE name = %s",
-            (remaining_qty, doc.unit, doc.source_item)
-        )
-    elif doc.source_item:
-        # Same unit: Just ensure unit is correct (for pulls)
-        frappe.db.set_value(legacy_table, doc.source_item, "unit", target_unit)
+    if doc.source_item:
+        frappe.db.set_value(legacy_table, doc.source_item, "qty", remaining_qty)
+        frappe.db.set_value(legacy_table, doc.source_item, "unit", doc.unit)
 
     # 2. Create Split Item (New Row in Planning Table)
-    new_doc = frappe.copy_doc(doc)
-    new_doc.qty = split_qty_val
-    new_doc.unit = target_unit
-    new_doc.name = None # Ensure new name
-    new_doc.split_from = item_name
-    new_doc.is_split = 1
-    new_doc.db_insert() # Direct DB write
-    
-    if unit_changed:
-        # NEW UNIT: create a new row in the legacy table for the new unit
-        if doc.source_item:
-            old_legacy_doc = frappe.get_doc(legacy_table, doc.source_item)
-            new_legacy_doc = frappe.copy_doc(old_legacy_doc)
-            new_legacy_doc.name = None
-            new_legacy_doc.qty = split_qty_val
-            new_legacy_doc.unit = target_unit
-            new_legacy_doc.db_insert()
-            # Link new board row to its own new legacy row
-            new_doc.source_item = new_legacy_doc.name
-            new_doc.db_update()
+    # MANDATORY 1:1 SYNC: Create a new legacy row for the split
+    if doc.source_item:
+        old_legacy_doc = frappe.get_doc(legacy_table, doc.source_item)
+        new_legacy_doc = frappe.copy_doc(old_legacy_doc)
+        new_legacy_doc.name = None
+        new_legacy_doc.qty = split_qty_val
+        new_legacy_doc.unit = target_unit
+        new_legacy_doc.insert(ignore_permissions=True)
+        
+        # Create board row linked to newly created legacy row
+        new_doc = frappe.copy_doc(doc)
+        new_doc.qty = split_qty_val
+        new_doc.unit = target_unit
+        new_doc.is_split = 1
+        new_doc.split_from = doc.name
+        new_doc.source_item = new_legacy_doc.name
+        new_doc.insert(ignore_permissions=True)
     else:
-        # SAME UNIT: board splits, but legacy row is SHARED.
-        new_doc.source_item = doc.source_item
-        new_doc.db_update()
-    
-    frappe.db.commit() # FORCE SAVE MANUALLY
+        # Fallback if source_item is missing
+        new_doc = frappe.copy_doc(doc)
+        new_doc.qty = split_qty_val
+        new_doc.unit = target_unit
+        new_doc.is_split = 1
+        new_doc.split_from = doc.name
+        new_doc.insert(ignore_permissions=True)
+
+    frappe.db.commit()
+    return {
+        "status": "success",
+        "original_item": doc.name,
+        "remaining_qty": remaining_qty,
+        "new_item": new_doc.name,
+        "split_qty": split_qty_val, 
+        "target_unit": target_unit
+    }
     
     return {
         "status": "success",
@@ -7262,13 +7210,13 @@ def auto_create_planning_sheet(doc, method=None):
     final_doc = frappe.get_doc("Planning sheet", ps.name)
     
     # We assume 'items' is the legacy table and 'planning_table' is the new board table.
-    legacy_rows = sorted(final_doc.get("items", []), key=lambda x: x.idx)
-    board_rows = sorted(final_doc.get("planning_table", []), key=lambda x: x.idx)
+    legacy_rows = sorted((final_doc.get("items") or []), key=lambda x: x.idx)
+    board_rows = sorted((final_doc.get("planning_table") or []), key=lambda x: x.idx)
     
     # If board_rows is empty, check alternate fields from _populate_planning_sheet_items
     if not board_rows:
         for field in ["planned_items", "custom_planned_items", "custom_planning_table", "table"]:
-            board_rows = sorted(final_doc.get(field, []), key=lambda x: x.idx)
+            board_rows = sorted((final_doc.get(field) or []), key=lambda x: x.idx)
             if board_rows: break
             
     if legacy_rows and board_rows and len(legacy_rows) == len(board_rows):
@@ -7339,12 +7287,12 @@ def regenerate_planning_sheet(so_name):
 
     # LINK BOARD ROWS TO LEGACY ROWS (source_item)
     final_doc = frappe.get_doc("Planning sheet", ps.name)
-    legacy_rows = sorted(final_doc.get("items", []), key=lambda x: x.idx)
-    board_rows = sorted(final_doc.get("planning_table", []), key=lambda x: x.idx)
+    legacy_rows = sorted((final_doc.get("items") or []), key=lambda x: x.idx)
+    board_rows = sorted((final_doc.get("planning_table") or []), key=lambda x: x.idx)
 
     if not board_rows:
         for field in ["planned_items", "custom_planned_items", "custom_planning_table", "table"]:
-            board_rows = sorted(final_doc.get(field, []), key=lambda x: x.idx)
+            board_rows = sorted((final_doc.get(field) or []), key=lambda x: x.idx)
             if board_rows: break
 
     if legacy_rows and board_rows and len(legacy_rows) == len(board_rows):
@@ -7660,22 +7608,16 @@ def revert_split_item(item_name):
         target = candidates[0]
         new_qty = flt(target.qty) + flt(it.qty)
         
-        # DUAL TABLE SYNC: Handle legacy table cleanup via source_item
+        # DUAL TABLE SYNC: 1:1 Merge Cleanup
         legacy_table = "Planning Sheet Item"
-        
-        # Determine if we should delete a legacy row
-        # We delete 'it.source_item' ONLY if it is different from 'target.source_item'
-        if it.source_item and target.source_item and it.source_item != target.source_item:
-            # They were in different units (or somehow had different rows)
-            frappe.db.sql(f"DELETE FROM `tab{legacy_table}` WHERE name = %s", (it.source_item,))
+        if it.source_item and target.source_item:
+            # Merging piece 'it' back into 'target'
+            # 1. Add qty back to target legacy row
+            frappe.db.set_value(legacy_table, target.source_item, "qty", flt(new_qty))
             
-            # Update target legacy row quantity to the new total
-            frappe.db.set_value(legacy_table, target.source_item, "qty", new_qty)
-        elif target.source_item:
-            # They shared the same legacy row (same unit split)
-            # Legacy row quantity is already the total of its children,
-            # but we'll re-set it to be safe in case of any drift.
-            frappe.db.set_value(legacy_table, target.source_item, "qty", new_qty)
+            # 2. Delete the extra legacy row
+            if it.source_item != target.source_item:
+                frappe.db.sql(f"DELETE FROM `tab{legacy_table}` WHERE name = %s", (it.source_item,))
             
         # Update target and remove current in Planning Table
         frappe.db.sql("UPDATE `tabPlanning Table` SET qty = %s WHERE name = %s", (new_qty, target.name))
