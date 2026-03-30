@@ -1628,15 +1628,15 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
             item.is_split = 1
             item.save()
             
-            # HYBRID SYNC: Only split legacy row if units differ
+            # HYBRID SYNC: Handle legacy split per Unit Rules
             legacy_table = "Planning Sheet Item"
+            parent_doc = frappe.get_doc("Planning sheet", item.parent)
+            
             if item.source_item:
                 if item.unit != unit:
-                    # CROSS-UNIT SPLIT: Mandatory legacy split
-                    # Update Original legacy row quantity (reduce)
+                    # CROSS-UNIT SPLIT: Mandatory legacy split (both tables split)
                     frappe.db.set_value(legacy_table, item.source_item, "qty", flt(remainder_qty))
                     
-                    # Create new legacy row for the split quantity
                     old_legacy_doc = frappe.get_doc(legacy_table, item.source_item)
                     new_legacy_doc = frappe.copy_doc(old_legacy_doc)
                     new_legacy_doc.name = None
@@ -1644,25 +1644,33 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
                     new_legacy_doc.unit = unit
                     new_legacy_doc.insert(ignore_permissions=True)
                     
-                    # Create New Item on Board linked to new legacy row
-                    new_item = frappe.copy_doc(item)
-                    new_item.name = None
-                    new_item.qty = flt(split_qty)
-                    new_item.unit = unit
-                    new_item.is_split = 1
-                    new_item.split_from = item.name
-                    new_item.source_item = new_legacy_doc.name
-                    new_item.db_insert()
+                    # Add new split row to New Table (Board)
+                    new_row = parent_doc.append("planning_table", {})
+                    # Copy data from item, excluding name/idx
+                    for field in item.meta.fields:
+                        if field.fieldtype not in ["Section Break", "Column Break", "Table"] and field.fieldname not in ["name", "idx"]:
+                            new_row.set(field.fieldname, item.get(field.fieldname))
+                    
+                    new_row.qty = flt(split_qty)
+                    new_row.unit = unit
+                    new_row.is_split = 1
+                    new_row.split_from = item.name
+                    new_row.source_item = new_legacy_doc.name
+                    parent_doc.save(ignore_permissions=True)
                 else:
-                    # SAME-UNIT SPLIT: Share the legacy row, keep row weight TOTAL
-                    new_item = frappe.copy_doc(item)
-                    new_item.name = None
-                    new_item.qty = flt(split_qty)
-                    new_item.unit = unit
-                    new_item.is_split = 1
-                    new_item.split_from = item.name
-                    new_item.source_item = item.source_item 
-                    new_item.db_insert()
+                    # SAME-UNIT SPLIT: Board splits, but legacy row stays ONE row (Total weight)
+                    # Add new split row to New Table (Board)
+                    new_row = parent_doc.append("planning_table", {})
+                    for field in item.meta.fields:
+                        if field.fieldtype not in ["Section Break", "Column Break", "Table"] and field.fieldname not in ["name", "idx"]:
+                            new_row.set(field.fieldname, item.get(field.fieldname))
+                    
+                    new_row.qty = flt(split_qty)
+                    new_row.unit = unit
+                    new_row.is_split = 1
+                    new_row.split_from = item.name
+                    new_row.source_item = item.source_item # SHARED LINK
+                    parent_doc.save(ignore_permissions=True)
                     
                     # Update legacy unit just in case
                     frappe.db.set_value(legacy_table, item.source_item, "unit", unit)
@@ -3984,14 +3992,13 @@ def split_order(item_name, split_qty, target_unit):
     # 2. Logic for Legacy Row (Hybrid Sync)
     unit_changed = (doc.unit != target_unit)
     legacy_table = "Planning Sheet Item"
+    parent_doc = frappe.get_doc("Planning sheet", doc.parent)
     
     if unit_changed:
         # Cross-Unit: Split legacy row 1:1
         if doc.source_item:
-            # Update original legacy row (reduce qty)
             frappe.db.set_value(legacy_table, doc.source_item, "qty", remaining_qty)
             
-            # Create new legacy row
             old_legacy_doc = frappe.get_doc(legacy_table, doc.source_item)
             new_legacy_doc = frappe.copy_doc(old_legacy_doc)
             new_legacy_doc.name = None
@@ -3999,26 +4006,33 @@ def split_order(item_name, split_qty, target_unit):
             new_legacy_doc.unit = target_unit
             new_legacy_doc.insert(ignore_permissions=True)
             
-            # Create new board row linked to new legacy row
-            new_doc = frappe.copy_doc(doc)
-            new_doc.qty = split_qty_val
-            new_doc.unit = target_unit
-            new_doc.is_split = 1
-            new_doc.split_from = doc.name
-            new_doc.source_item = new_legacy_doc.name
-            new_doc.insert(ignore_permissions=True)
+            # Create new board row via append for visibility
+            new_row = parent_doc.append("planning_table", {})
+            for field in doc.meta.fields:
+                if field.fieldtype not in ["Section Break", "Column Break", "Table"] and field.fieldname not in ["name", "idx"]:
+                    new_row.set(field.fieldname, doc.get(field.fieldname))
+            
+            new_row.qty = split_qty_val
+            new_row.unit = target_unit
+            new_row.is_split = 1
+            new_row.split_from = doc.name
+            new_row.source_item = new_legacy_doc.name
+            parent_doc.save(ignore_permissions=True)
     else:
         # SAME UNIT: Share legacy row, do not split weights in old table
-        new_doc = frappe.copy_doc(doc)
-        new_doc.qty = split_qty_val
-        new_doc.unit = target_unit
-        new_doc.is_split = 1
-        new_doc.split_from = doc.name
-        new_doc.source_item = doc.source_item # Shared link
-        new_doc.insert(ignore_permissions=True)
+        new_row = parent_doc.append("planning_table", {})
+        for field in doc.meta.fields:
+            if field.fieldtype not in ["Section Break", "Column Break", "Table"] and field.fieldname not in ["name", "idx"]:
+                new_row.set(field.fieldname, doc.get(field.fieldname))
+        
+        new_row.qty = split_qty_val
+        new_row.unit = target_unit
+        new_row.is_split = 1
+        new_row.split_from = doc.name
+        new_row.source_item = doc.source_item 
+        parent_doc.save(ignore_permissions=True)
         
         if doc.source_item:
-            # Just ensure unit is correct
             frappe.db.set_value(legacy_table, doc.source_item, "unit", target_unit)
 
     frappe.db.commit()
