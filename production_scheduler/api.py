@@ -1485,21 +1485,24 @@ def recalculate_all_plan_codes():
     Persists plan_name to both legacy (Planning Sheet Item) and new (Planning Table) rows.
     """
     create_plan_name_field()
+    frappe.clear_cache(doctype="Planning Sheet Item")
+    frappe.clear_cache(doctype="Planning Table")
+
+    has_psi_plan = frappe.db.has_column("Planning Sheet Item", "plan_name")
+    has_psi_unit = frappe.db.has_column("Planning Sheet Item", "unit")
+    has_psi_pd = frappe.db.has_column("Planning Sheet Item", "planned_date")
 
     sheets = frappe.get_all("Planning sheet", filters={"docstatus": 0})
     count = 0
     for s in sheets:
         try:
             doc = frappe.get_doc("Planning sheet", s.name)
+            sheet_date = doc.get("custom_planned_date") or doc.get("ordered_date")
+            active_plan = doc.get("custom_plan_name") or "Default"
+
             update_sheet_plan_codes(doc)
 
-            # Persist to old table rows
-            if frappe.db.has_column("Planning Sheet Item", "plan_name"):
-                for i in doc.get("items", []):
-                    if i.get("plan_name"):
-                        frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET plan_name = %s WHERE name = %s", (i.plan_name, i.name))
-
-            # Persist to new table rows (Planning Table)
+            # Persist to new table rows via in-memory objects
             for tf in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]:
                 new_items = doc.get(tf)
                 if new_items:
@@ -1507,6 +1510,21 @@ def recalculate_all_plan_codes():
                         if i.get("plan_name"):
                             frappe.db.sql("UPDATE `tabPlanning Table` SET plan_name = %s WHERE name = %s", (i.plan_name, i.name))
                     break
+
+            # Persist to old table rows via direct SQL (more reliable than in-memory)
+            if has_psi_plan:
+                unit_col = "unit" if has_psi_unit else "NULL"
+                pd_col = "planned_date" if has_psi_pd else "NULL"
+                old_rows = frappe.db.sql(f"""
+                    SELECT name, {unit_col} as item_unit, {pd_col} as item_pd
+                    FROM `tabPlanning Sheet Item` WHERE parent = %s
+                """, (doc.name,), as_dict=True)
+                for row in old_rows:
+                    item_unit = row.get("item_unit") or ""
+                    item_date = row.get("item_pd") or sheet_date
+                    code = generate_plan_code(item_date, item_unit, active_plan)
+                    if code:
+                        frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET plan_name = %s WHERE name = %s", (code, row.name))
 
             count += 1
         except Exception:
@@ -1861,12 +1879,6 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
             update_sheet_plan_codes(doc_sheet)
             frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s", (doc_sheet.custom_plan_code, doc_sheet.name))
 
-            # Persist plan codes to old table
-            if frappe.db.has_column("Planning Sheet Item", "plan_name"):
-                for d in doc_sheet.get("items", []):
-                    if d.get("plan_name"):
-                        frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET plan_name = %s WHERE name = %s", (d.plan_name, d.name))
-
             # Persist plan codes to new table
             for tf in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]:
                 new_items = doc_sheet.get(tf)
@@ -1875,6 +1887,21 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
                         if d.get("plan_name"):
                             frappe.db.sql("UPDATE `tabPlanning Table` SET plan_name = %s WHERE name = %s", (d.plan_name, d.name))
                     break
+
+            # Persist plan codes to old table via direct SQL
+            if frappe.db.has_column("Planning Sheet Item", "plan_name"):
+                s_date = doc_sheet.get("custom_planned_date") or doc_sheet.get("ordered_date")
+                a_plan = doc_sheet.get("custom_plan_name") or "Default"
+                unit_col = "unit" if frappe.db.has_column("Planning Sheet Item", "unit") else "NULL"
+                pd_col = "planned_date" if frappe.db.has_column("Planning Sheet Item", "planned_date") else "NULL"
+                old_rows = frappe.db.sql(f"""
+                    SELECT name, {unit_col} as item_unit, {pd_col} as item_pd
+                    FROM `tabPlanning Sheet Item` WHERE parent = %s
+                """, (doc_sheet.name,), as_dict=True)
+                for row in old_rows:
+                    code = generate_plan_code(row.get("item_pd") or s_date, row.get("item_unit") or "", a_plan)
+                    if code:
+                        frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET plan_name = %s WHERE name = %s", (code, row.name))
 
 @frappe.whitelist()
 def get_kanban_board(start_date, end_date):
