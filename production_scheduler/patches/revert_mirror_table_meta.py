@@ -9,7 +9,7 @@ def execute():
     # 2. Reset Planning Table DocType to a standalone state (istable: 0)
     # This stops Frappe from treating it as a child table during form loads
     if frappe.db.exists("DocType", "Planning Table"):
-        frappe.db.set_value("DocType", "Planning Table", "istable", 0)
+        frappe.db.set_value("DocType", "Planning Table", "istable", 1)
         frappe.db.set_value("DocType", "Planning Table", "custom", 1)  # Ensure it remains a custom doc
     
     # 3. Clear cache and commit
