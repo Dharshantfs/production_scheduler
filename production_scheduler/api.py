@@ -1426,40 +1426,49 @@ def generate_plan_code(date_str, unit, plan_name):
 
 def update_sheet_plan_codes(sheet_doc):
     """
-    Calculates and sets the `plan_name` for each item, and aggregates them on the header.
+    Calculates and sets the `plan_name` for each item in BOTH the legacy (items)
+    and new (Planning Table) child tables, and aggregates them on the header.
     Must be called right before saving a sheet or after manual SQL updates.
     """
     sheet_date = sheet_doc.get("custom_planned_date") or sheet_doc.get("ordered_date")
-    # Look at PB plan if it exists, otherwise rely on CC plan
     active_plan = sheet_doc.get("custom_plan_name") or "Default"
-    
+
     unique_codes = set()
-    
-    for item in sheet_doc.get("items", []):
+
+    def _calc_code_for_item(item):
         item_unit = item.get("unit")
-        
-        # Robustness: ensure we use the canonical unit name
         if item_unit:
             iu_upper = item_unit.upper().replace(" ", "")
             if "UNIT1" in iu_upper: item_unit = "Unit 1"
             elif "UNIT2" in iu_upper: item_unit = "Unit 2"
             elif "UNIT3" in iu_upper: item_unit = "Unit 3"
             elif "UNIT4" in iu_upper: item_unit = "Unit 4"
-
         item_date = item.get("planned_date") or sheet_date
-        code = generate_plan_code(item_date, item_unit, active_plan)
+        return generate_plan_code(item_date, item_unit, active_plan)
+
+    # Old table (Planning Sheet Item / "items")
+    for item in sheet_doc.get("items", []):
+        code = _calc_code_for_item(item)
         item.plan_name = code
         if code:
             unique_codes.add(code)
-            
-    # Update parent custom field ΓÇö DISABLED TEMPORARILY PER USER REQUEST
-    # sheet_doc.custom_plan_code = ", ".join(sorted(unique_codes))
+
+    # New table (Planning Table) -- check all possible fieldnames
+    for tf in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]:
+        new_items = sheet_doc.get(tf)
+        if new_items:
+            for item in new_items:
+                code = _calc_code_for_item(item)
+                item.plan_name = code
+                if code:
+                    unique_codes.add(code)
+            break
 
 @frappe.whitelist()
 def recalculate_all_plan_codes():
     """
     Bulk recalculates plan codes for all unlocked Planning Sheets.
-    Useful for updating existing records after logic changes.
+    Persists plan_name to both legacy (Planning Sheet Item) and new (Planning Table) rows.
     """
     sheets = frappe.get_all("Planning sheet", filters={"docstatus": 0})
     count = 0
@@ -1467,18 +1476,25 @@ def recalculate_all_plan_codes():
         try:
             doc = frappe.get_doc("Planning sheet", s.name)
             update_sheet_plan_codes(doc)
-            
-            # Update parent
-            frappe.db.sql("UPDATE `tabPlanning sheet` SET plan_name = %s WHERE name = %s", (doc.plan_name, doc.name))
-            
-            # Update children
-            for i in doc.items:
-                frappe.db.sql("UPDATE `tabPlanning Table` SET plan_name = %s WHERE name = %s", (i.plan_name, i.name))
-            
+
+            # Persist to old table rows
+            for i in doc.get("items", []):
+                if i.get("plan_name"):
+                    frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET plan_name = %s WHERE name = %s", (i.plan_name, i.name))
+
+            # Persist to new table rows (Planning Table)
+            for tf in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]:
+                new_items = doc.get(tf)
+                if new_items:
+                    for i in new_items:
+                        if i.get("plan_name"):
+                            frappe.db.sql("UPDATE `tabPlanning Table` SET plan_name = %s WHERE name = %s", (i.plan_name, i.name))
+                    break
+
             count += 1
         except Exception:
             pass
-            
+
     frappe.db.commit()
     return {"status": "success", "count": count}
 
@@ -1790,28 +1806,26 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
         except Exception as e:
             frappe.log_error(f"Global Sequence Fix Error: {str(e)}")
 
-    # 3. Update Plan Codes for Affected Sheets
+    # 3. Update Plan Codes for Affected Sheets (both tables)
     for sheet_name in set([source_parent.name, item_doc.parent]):
         if frappe.db.exists("Planning sheet", sheet_name):
-            # Use ignore_cache=True to ensure we see the updated item units/dates
             doc_sheet = frappe.get_doc("Planning sheet", sheet_name, ignore_cache=True)
             update_sheet_plan_codes(doc_sheet)
-            # Parent field is custom_plan_code
             frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s", (doc_sheet.custom_plan_code, doc_sheet.name))
-            
-            # As per user requirement, all subsequent board updates only happen in the NEW table.
-            target_field = "planned_items"
-            for field in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]:
-                if hasattr(doc_sheet, field) or doc_sheet.meta.has_field(field):
-                    target_field = field
+
+            # Persist plan codes to old table
+            for d in doc_sheet.get("items", []):
+                if d.get("plan_name"):
+                    frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET plan_name = %s WHERE name = %s", (d.plan_name, d.name))
+
+            # Persist plan codes to new table
+            for tf in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]:
+                new_items = doc_sheet.get(tf)
+                if new_items:
+                    for d in new_items:
+                        if d.get("plan_name"):
+                            frappe.db.sql("UPDATE `tabPlanning Table` SET plan_name = %s WHERE name = %s", (d.plan_name, d.name))
                     break
-            
-            items_data = doc_sheet.get(target_field)
-            if items_data:
-                child_doctype = doc_sheet.meta.get_field(target_field).options
-                if child_doctype:
-                    for d in items_data:
-                        frappe.db.sql(f"UPDATE `tab{child_doctype}` SET plan_name = %s WHERE name = %s", (d.plan_name, d.name))
 
 @frappe.whitelist()
 def get_kanban_board(start_date, end_date):
@@ -3868,7 +3882,7 @@ def create_plan_name_field():
     else:
         frappe.db.set_value('Custom Field', 'Planning sheet-plan_name', 'read_only', 0)
         
-    if not frappe.db.exists('Custom Field', 'Planning Sheet Item-plan_name'):
+    if not frappe.db.exists('Custom Field', {'dt': 'Planning Table', 'fieldname': 'plan_name'}):
         cf5 = frappe.get_doc({
             "doctype": "Custom Field",
             "dt": "Planning Table",
@@ -3881,7 +3895,9 @@ def create_plan_name_field():
         })
         cf5.insert(ignore_permissions=True)
     else:
-        frappe.db.set_value('Custom Field', 'Planning Sheet Item-plan_name', 'read_only', 0)
+        cf_name = frappe.db.get_value('Custom Field', {'dt': 'Planning Table', 'fieldname': 'plan_name'}, 'name')
+        if cf_name:
+            frappe.db.set_value('Custom Field', cf_name, 'read_only', 0)
 
     # Create Approval Status custom field on Planning Sheet
     if not frappe.db.exists('Custom Field', 'Planning sheet-custom_approval_status'):
