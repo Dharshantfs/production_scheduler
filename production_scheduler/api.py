@@ -4613,36 +4613,36 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
             
             # If partial quantity requested, perform split
             if req_qty and 0 < req_qty < flt(doc.qty):
-                # Create split item (this is the part that moves to the target date)
-                split_part = frappe.copy_doc(doc)
-                split_part.qty = req_qty
-                split_part.name = None # Clear name to generate new one
-                if frappe.db.has_column("Planning Table", "is_split"):
-                    split_part.is_split = 1
-                
-                # IMPORTANT: Insert into original parent first, we reparent it to target sheet later in the loop
-                split_part.insert(ignore_permissions=True)
-                
+                parent_sheet = frappe.get_doc("Planning sheet", doc.parent)
+                table_fieldname = "planned_items"
+                for tf in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]:
+                    if hasattr(parent_sheet, tf) or parent_sheet.meta.has_field(tf):
+                        table_fieldname = tf
+                        break
+
+                new_row = parent_sheet.append(table_fieldname, {})
+                for field in doc.meta.fields:
+                    if field.fieldtype not in ("Section Break", "Column Break", "Table") and field.fieldname not in ("name", "idx", "parent", "parentfield", "parenttype"):
+                        new_row.set(field.fieldname, doc.get(field.fieldname))
+                new_row.qty = flt(req_qty)
+                new_row.is_split = 1
+                new_row.split_from = doc.name
+                parent_sheet.save(ignore_permissions=True)
+
                 # Reduce original item quantity (stays on original date/parent)
                 new_qty = flt(doc.qty) - req_qty
                 if cint(doc.docstatus) == 1:
-                    # Submitted parent rows cannot be changed via doc.save; use direct SQL update.
                     frappe.db.sql(
-                        "UPDATE `tabPlanning Table` SET qty = %s WHERE name = %s",
+                        "UPDATE `tabPlanning Table` SET qty = %s, is_split = 1 WHERE name = %s",
                         (new_qty, doc.name),
                     )
-                    if frappe.db.has_column("Planning Table", "is_split"):
-                        frappe.db.sql(
-                            "UPDATE `tabPlanning Table` SET is_split = 1 WHERE name = %s",
-                            (doc.name,),
-                        )
                 else:
                     doc.qty = new_qty
                     if hasattr(doc, "is_split"):
                         doc.is_split = 1
                     doc.save(ignore_permissions=True)
-                
-                move_doc = split_part
+
+                move_doc = new_row
             else:
                 # Move the entire original item
                 move_doc = doc
