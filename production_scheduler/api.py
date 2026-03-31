@@ -2893,15 +2893,18 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     spr_psi_achieved_weight_map = {}  # Map PSI to SPR achieved weight
     try:
         if frappe.db.has_column("Planning Table", "spr_name"):
-            # Use the correct field name: custom_total_achieved_weight
-            achieved_col_select = "COALESCE(spr.custom_total_achieved_weight, 0) as total_achieved"
-            
+            produced_col_sql = f"COALESCE(spr.{spr_produced_col}, 0)" if spr_produced_col else "0"
+            achieved_col_sql = "COALESCE(spr.custom_total_achieved_weight, 0)"
+            if "custom_total_achieved_weight" not in spr_cols and "total_achieved_weight" in spr_cols:
+                achieved_col_sql = "COALESCE(spr.total_achieved_weight, 0)"
+
             psi_spr_data = frappe.db.sql(f"""
                 SELECT 
                     psi.name as psi_name,
                     psi.spr_name as spr_name,
-                    COALESCE(spr.custom_total_produced_weight, 0) as total_produced,
-                    {achieved_col_select}
+                    spr.docstatus as spr_docstatus,
+                    {produced_col_sql} as total_produced,
+                    {achieved_col_sql} as total_achieved
                 FROM `tabPlanning Table` psi
                 LEFT JOIN `tabShaft Production Run` spr ON psi.spr_name = spr.name
                 WHERE psi.parent IN ({{}})
@@ -2920,9 +2923,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                         spr_psi_name_map[psi_name] = spr_name
                     if achieved > 0:
                         spr_psi_achieved_weight_map[psi_name] = achieved
-                    if row.get('docstatus') == 1 and produced > 0:
-                        spr_psi_produced_map[psi_name] = produced
-                        spr_psi_count_map[psi_name] = 1
+                    if produced > 0:
+                        spr_psi_produced_map[psi_name] = spr_psi_produced_map.get(psi_name, 0) + produced
+                        spr_psi_count_map[psi_name] = spr_psi_count_map.get(psi_name, 0) + 1
     except Exception:
         pass
 
@@ -3053,7 +3056,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         if not spr_id:
             spr_id = str(spr_pp_name_map.get(pp_id) or "").strip()
         if not spr_id:
-            spr_id = str(frappe.db.get_value("Production Plan", pp_id, "custom_shaft_production_run_id") or "").strip()
+            raw_link = str(frappe.db.get_value("Production Plan", pp_id, "custom_shaft_production_run_id") or "").strip()
+            spr_id = raw_link.split(",")[0].strip() if raw_link else ""
 
         weights_by_gsm = {}
         if spr_id and frappe.db.exists("Shaft Production Run", spr_id):
@@ -3084,7 +3088,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
         if not spr_id:
             spr_id = str(spr_pp_name_map.get(pp_id) or "").strip()
         if not spr_id:
-            spr_id = str(frappe.db.get_value("Production Plan", pp_id, "custom_shaft_production_run_id") or "").strip()
+            raw_link = str(frappe.db.get_value("Production Plan", pp_id, "custom_shaft_production_run_id") or "").strip()
+            spr_id = raw_link.split(",")[0].strip() if raw_link else ""
 
         achieved_by_gsm = {}
         if spr_id and frappe.db.exists("Shaft Production Run", spr_id):
@@ -3333,7 +3338,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 item_level_produced = 0
 
             # Split-safe produced allocation: distribute produced total once across split rows.
-            if so_item_key and cint(item.get("is_split")):
+            # Skip allocation when per-item SPR data is available — each row shows its own SPR weight.
+            has_own_spr_produced = psi_name and psi_name in spr_psi_produced_map
+            if so_item_key and cint(item.get("is_split")) and not has_own_spr_produced:
                 alloc_key = f"so::{so_item_key}"
                 produced_total = flt(item_level_produced)
                 already_alloc = flt(split_so_item_produced_alloc_map.get(alloc_key, 0))
@@ -3355,8 +3362,8 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 if item_pp in spr_link_cache:
                     spr_name = spr_link_cache[item_pp]
                 else:
-                    linked_spr = frappe.db.get_value("Production Plan", item_pp, "custom_shaft_production_run_id") or ""
-                    linked_spr = str(linked_spr).strip()
+                    raw_spr_link = frappe.db.get_value("Production Plan", item_pp, "custom_shaft_production_run_id") or ""
+                    linked_spr = str(raw_spr_link).split(",")[0].strip() if raw_spr_link else ""
                     if linked_spr and frappe.db.exists("Shaft Production Run", linked_spr):
                         spr_name = linked_spr
                     else:
@@ -3388,10 +3395,13 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             wo_terminal = bool(item_pp and pp_has_wo_map.get(item_pp) and not wo_open)
 
             # Get total achieved weight from SPR if available.
-            # Rule: PSI-linked SPR takes precedence, else latest submitted SPR for PP.
+            # Rule: PSI-linked SPR takes precedence, else produced weight from per-item SPR,
+            # else latest submitted SPR for PP.
             total_achieved_weight_kgs = 0
             if psi_name and psi_name in spr_psi_achieved_weight_map:
                 total_achieved_weight_kgs = spr_psi_achieved_weight_map[psi_name]
+            elif psi_name and psi_name in spr_psi_produced_map:
+                total_achieved_weight_kgs = spr_psi_produced_map[psi_name]
             elif item_pp:
                 spr_row_achieved = _take_next_spr_achieved(item_pp, item.get("gsm"), preferred_spr=spr_name)
                 if spr_row_achieved > 0:
@@ -9203,8 +9213,11 @@ def create_item_spr(pp_id, planning_sheet_item_names):
             frappe.log_error(frappe.get_traceback(), "create_item_spr_insert")
             return {"status": "error", "message": f"Failed to create SPR: {error_msg}"}
         
-        # Link SPR back to Production Plan using correct field name
-        frappe.db.set_value("Production Plan", pp_id, "custom_shaft_production_run_id", spr.name)
+        # Link SPR back to Production Plan — append to existing value instead of overwriting
+        existing_spr_link = str(frappe.db.get_value("Production Plan", pp_id, "custom_shaft_production_run_id") or "").strip()
+        if spr.name not in existing_spr_link:
+            new_link = f"{existing_spr_link}, {spr.name}".strip(", ") if existing_spr_link else spr.name
+            frappe.db.set_value("Production Plan", pp_id, "custom_shaft_production_run_id", new_link)
         _link_items_to_spr(spr.name)
         
         frappe.db.commit()
