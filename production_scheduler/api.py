@@ -2894,9 +2894,11 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     try:
         if frappe.db.has_column("Planning Table", "spr_name"):
             produced_col_sql = f"COALESCE(spr.{spr_produced_col}, 0)" if spr_produced_col else "0"
-            achieved_col_sql = "COALESCE(spr.custom_total_achieved_weight, 0)"
-            if "custom_total_achieved_weight" not in spr_cols and "total_achieved_weight" in spr_cols:
-                achieved_col_sql = "COALESCE(spr.total_achieved_weight, 0)"
+            achieved_col_sql = "0"
+            for _ach_col in ["custom_total_achieved_weight", "total_achieved_weight", "total_achieved_weight_kgs", "achieved_weight", "total_achieved"]:
+                if _ach_col in spr_cols:
+                    achieved_col_sql = f"COALESCE(spr.{_ach_col}, 0)"
+                    break
 
             psi_spr_data = frappe.db.sql(f"""
                 SELECT 
