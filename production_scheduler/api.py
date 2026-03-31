@@ -4960,27 +4960,14 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                 WHERE name = %s
             """, (target_sheet.name, new_idx, new_unit, pt_pf, item_doc.name))
 
-            # DUAL-TABLE SYNC: mirror move on legacy table row when linked.
-            # Pull-orders path uses raw SQL re-parenting for Planning Table, so we must
-            # explicitly keep Planning Sheet Item aligned for unit/date/parent changes.
+            # DUAL-TABLE SYNC: old table only needs unit aligned with new table on pull/move.
             legacy_name = (item_doc.get("source_item") or "").strip()
             if legacy_name and frappe.db.exists("Planning Sheet Item", legacy_name):
-                legacy_updates = {
-                    "unit": new_unit,
-                    "parent": target_sheet.name,
-                    "parenttype": "Planning sheet",
-                }
-                if frappe.db.has_column("Planning Sheet Item", "planned_date"):
-                    legacy_updates["planned_date"] = target_date
-                # Keep/repair parentfield for legacy child table
-                legacy_parentfield = frappe.db.get_value("Planning Sheet Item", legacy_name, "parentfield") or "items"
-                legacy_updates["parentfield"] = legacy_parentfield
-
-                legacy_set = ", ".join([f"`{k}` = %s" for k in legacy_updates.keys()])
-                frappe.db.sql(
-                    f"UPDATE `tabPlanning Sheet Item` SET {legacy_set} WHERE name = %s",
-                    list(legacy_updates.values()) + [legacy_name],
-                )
+                if frappe.db.has_column("Planning Sheet Item", "unit"):
+                    frappe.db.sql(
+                        "UPDATE `tabPlanning Sheet Item` SET unit = %s WHERE name = %s",
+                        (new_unit, legacy_name),
+                    )
             
             count = int(count) + 1
         
