@@ -29,6 +29,20 @@ def _resolve_customer_link(raw_customer, party_code=None):
 
     return ""
 
+
+def _get_pt_parentfield():
+    """Return the correct parentfield for Planning Table rows on Planning Sheet.
+    The form field linking to Planning Table is NOT 'items' (that's the old table).
+    """
+    meta = frappe.get_meta("Planning sheet")
+    for field in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]:
+        if meta.has_field(field):
+            df = meta.get_field(field)
+            if df and getattr(df, "options", "") == "Planning Table":
+                return field
+    return "planned_items"
+
+
 def generate_party_code(doc):
     """DISABLED PER USER REQUEST - Manual Entry Only"""
     return
@@ -1643,7 +1657,7 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
                 if field.fieldtype not in ("Section Break", "Column Break", "Table") and field.fieldname not in ("name", "idx", "parent", "parentfield", "parenttype"):
                     new_row_doc.set(field.fieldname, item.get(field.fieldname))
             new_row_doc.parent = parent_name
-            new_row_doc.parentfield = "items"
+            new_row_doc.parentfield = _get_pt_parentfield()
             new_row_doc.parenttype = "Planning sheet"
             new_row_doc.idx = new_idx
             new_row_doc.qty = flt(split_qty)
@@ -4002,7 +4016,7 @@ def split_order(item_name, split_qty, target_unit):
         if field.fieldtype not in ("Section Break", "Column Break", "Table") and field.fieldname not in ("name", "idx", "parent", "parentfield", "parenttype"):
             new_row_doc.set(field.fieldname, doc.get(field.fieldname))
     new_row_doc.parent = parent_name
-    new_row_doc.parentfield = "items"
+    new_row_doc.parentfield = _get_pt_parentfield()
     new_row_doc.parenttype = "Planning sheet"
     new_row_doc.idx = new_idx
     new_row_doc.qty = flt(split_qty_val)
@@ -4503,9 +4517,9 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
             # (frappe.db.set_value fails on children of submitted docs)
             frappe.db.sql("""
                 UPDATE `tabPlanning Table`
-                SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items'
+                SET parent = %s, parenttype = 'Planning sheet', parentfield = %s
                 WHERE name = %s
-            """, (target_sheet_name, name))
+            """, (target_sheet_name, _get_pt_parentfield(), name))
             moved += 1
 
         except Exception as e:
@@ -4654,7 +4668,7 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                     if field.fieldtype not in ("Section Break", "Column Break", "Table") and field.fieldname not in ("name", "idx", "parent", "parentfield", "parenttype"):
                         new_row_doc.set(field.fieldname, doc.get(field.fieldname))
                 new_row_doc.parent = parent_name
-                new_row_doc.parentfield = "items"
+                new_row_doc.parentfield = _get_pt_parentfield()
                 new_row_doc.parenttype = "Planning sheet"
                 new_row_doc.idx = new_idx
                 new_row_doc.qty = flt(req_qty)
@@ -4792,12 +4806,13 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
             
             # Use SQL for direct re-parenting (Robust for rescue)
             # Make sure we also update planned_date so pulled items don't vanish from the board
+            pt_pf = _get_pt_parentfield()
             set_date = f", planned_date = '{target_date}'" if frappe.db.has_column("Planning Table", "planned_date") else ""
             frappe.db.sql(f"""
                 UPDATE `tabPlanning Table`
-                SET parent = %s, idx = %s, unit = %s, parenttype='Planning sheet', parentfield='items'{set_date}
+                SET parent = %s, idx = %s, unit = %s, parenttype='Planning sheet', parentfield=%s{set_date}
                 WHERE name = %s
-            """, (target_sheet.name, new_idx, new_unit, item_doc.name))
+            """, (target_sheet.name, new_idx, new_unit, pt_pf, item_doc.name))
             
             count = int(count) + 1
         
@@ -4890,13 +4905,28 @@ def rescue_orphaned_items(target_date=None, colour=None, party_code=None):
         for item in items:
             frappe.db.sql("""
                 UPDATE `tabPlanning Table`
-                SET parent = %s, parenttype='Planning sheet', parentfield='items'
+                SET parent = %s, parenttype='Planning sheet', parentfield=%s
                 WHERE name = %s
-            """, (sheet_name, item.name))
+            """, (sheet_name, _get_pt_parentfield(), item.name))
             rescued += 1
     
     frappe.db.commit()
     return {"status": "success", "count": rescued, "message": f"Rescued {rescued} orphaned items to {target_date}"}
+
+
+@frappe.whitelist()
+def fix_planning_table_parentfield():
+    """One-time fix: update all Planning Table rows that have the wrong parentfield."""
+    correct_pf = _get_pt_parentfield()
+    updated = frappe.db.sql(
+        "UPDATE `tabPlanning Table` SET parentfield = %s WHERE parentfield != %s AND parenttype = 'Planning sheet'",
+        (correct_pf, correct_pf),
+    )
+    count = frappe.db.sql(
+        "SELECT ROW_COUNT() as cnt"
+    )[0][0]
+    frappe.db.commit()
+    return {"status": "success", "fixed": count, "parentfield": correct_pf}
 
 
 @frappe.whitelist()
@@ -5511,9 +5541,9 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
             # Move item to the PB sheet via raw SQL (works on submitted docs)
             frappe.db.sql("""
                 UPDATE `tabPlanning Table`
-                SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items', idx = %s
+                SET parent = %s, parenttype = 'Planning sheet', parentfield = %s, idx = %s
                 WHERE name = %s
-            """, (pb_sheet_name, max_idx + 1, name))
+            """, (pb_sheet_name, _get_pt_parentfield(), max_idx + 1, name))
 
             # Also set item-level planned date for consistency
             if frappe.db.has_column("Planning Table", "planned_date"):
@@ -5928,9 +5958,9 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
             # 1. Update parent link AND explicitly save the target unit to the DB
             frappe.db.sql("""
                 UPDATE `tabPlanning Table`
-                SET parent = %s, parenttype = 'Planning sheet', parentfield = 'items', unit = %s
+                SET parent = %s, parenttype = 'Planning sheet', parentfield = %s, unit = %s
                 WHERE name = %s
-            """, (pb_sheet_name, unit, name))
+            """, (pb_sheet_name, _get_pt_parentfield(), unit, name))
 
             # 2. Set item-level planned date + plan code for consistency
             # This ensures ONLY the pushed item moves, staying granular.
@@ -6604,7 +6634,7 @@ def revert_items_from_pb(item_names):
                 # Move item back to original sheet
                 frappe.db.set_value("Planning Table", name, "parent", orig_name)
                 frappe.db.set_value("Planning Table", name, "parenttype", "Planning sheet")
-                frappe.db.set_value("Planning Table", name, "parentfield", "items")
+                frappe.db.set_value("Planning Table", name, "parentfield", _get_pt_parentfield())
                 
                 # Delete PB sheet if now empty
                 remaining = frappe.db.count("Planning Table", {"parent": parent})
@@ -7160,7 +7190,7 @@ def revert_pb_push(pb_plan_name, date=None):
         for item in items:
             frappe.db.set_value("Planning Table", item.name, "parent", original_sheet_name)
             frappe.db.set_value("Planning Table", item.name, "parenttype", "Planning sheet")
-            frappe.db.set_value("Planning Table", item.name, "parentfield", "items")
+            frappe.db.set_value("Planning Table", item.name, "parentfield", _get_pt_parentfield())
             reverted += 1
 
         # Delete the now-empty PB sheet
