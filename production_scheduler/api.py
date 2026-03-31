@@ -3185,14 +3185,41 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             _k = (_it.get("sales_order_item") or _it.get("custom_sales_order_item") or "").strip()
             if _k:
                 so_item_row_counts[_k] = so_item_row_counts.get(_k, 0) + 1
-        so_item_spr_total = {}
+        pt_by_name = {it.get("name"): it for it in items if it.get("name")}
+
+        def _pt_root_ancestor(nm):
+            """Oldest Planning Table row in a split chain (split_from / custom_split_from)."""
+            seen = set()
+            cur = nm
+            while cur in pt_by_name:
+                it = pt_by_name[cur]
+                sf = (it.get("split_from") or it.get("custom_split_from") or "").strip()
+                if not sf or sf not in pt_by_name or cur in seen:
+                    return cur
+                seen.add(cur)
+                cur = sf
+            return cur
+
+        pt_split_root = {nm: _pt_root_ancestor(nm) for nm in pt_by_name}
+        from collections import Counter
+
+        _root_tally = Counter(pt_split_root.values())
+        pt_in_multi_split = {nm: _root_tally[pt_split_root[nm]] > 1 for nm in pt_split_root}
+        # Sum SPR-produced weight per allocation bucket (SO line or split family without SO link).
+        spr_claimed_by_bucket = {}
         for _it in items:
-            _k = (_it.get("sales_order_item") or _it.get("custom_sales_order_item") or "").strip()
-            if not _k:
-                continue
             _pn = _it.get("name")
-            if _pn and _pn in spr_psi_produced_map:
-                so_item_spr_total[_k] = so_item_spr_total.get(_k, 0) + flt(spr_psi_produced_map.get(_pn, 0))
+            if not _pn or _pn not in spr_psi_produced_map:
+                continue
+            amt = flt(spr_psi_produced_map.get(_pn, 0))
+            _k = (_it.get("sales_order_item") or _it.get("custom_sales_order_item") or "").strip()
+            if _k and so_item_row_counts.get(_k, 0) > 1:
+                bucket = f"so::{_k}"
+            elif pt_in_multi_split.get(_pn, False):
+                bucket = f"ptroot::{pt_split_root.get(_pn, _pn)}"
+            else:
+                continue
+            spr_claimed_by_bucket[bucket] = spr_claimed_by_bucket.get(bucket, 0) + amt
 
         # Determine PP and WO boolean states for this sheet
         sheet_has_pp = False
@@ -3265,7 +3292,9 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
             psi_name = item.get("name")
             so_item_key = (item.get("sales_order_item") or item.get("custom_sales_order_item") or "").strip()
-            split_group = bool(so_item_key and so_item_row_counts.get(so_item_key, 0) > 1)
+            split_group = bool(so_item_key and so_item_row_counts.get(so_item_key, 0) > 1) or pt_in_multi_split.get(
+                psi_name, False
+            )
             item_pp = item_pp_map.get(item.get("name"))
             if not item_pp:
                 item_pp = _get_item_level_production_plan(item.get("name"))
@@ -3356,28 +3385,36 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             # Split-safe produced allocation: distribute produced total once across split rows.
             # Skip allocation when per-item SPR data is available — each row shows its own SPR weight.
             # split_group: first row may not have is_split=1; spr_claimed subtracts weight already on SPR-linked rows.
+            # alloc_bucket: same SO line, or split_from family when sales_order_item is missing on child rows.
             has_own_spr_produced = psi_name and psi_name in spr_psi_produced_map
-            if so_item_key and (cint(item.get("is_split")) or split_group) and not has_own_spr_produced:
-                alloc_key = f"so::{so_item_key}"
+            alloc_bucket = ""
+            if so_item_key and so_item_row_counts.get(so_item_key, 0) > 1:
+                alloc_bucket = f"so::{so_item_key}"
+            elif pt_in_multi_split.get(psi_name, False):
+                alloc_bucket = f"ptroot::{pt_split_root.get(psi_name, psi_name)}"
+            if alloc_bucket and (cint(item.get("is_split")) or split_group) and not has_own_spr_produced:
                 produced_total = flt(item_level_produced)
-                already_alloc = flt(split_so_item_produced_alloc_map.get(alloc_key, 0))
-                spr_claimed = flt(so_item_spr_total.get(so_item_key, 0))
+                already_alloc = flt(split_so_item_produced_alloc_map.get(alloc_bucket, 0))
+                spr_claimed = flt(spr_claimed_by_bucket.get(alloc_bucket, 0))
                 row_qty = flt(item.get("qty", 0))
                 pool = max(produced_total - spr_claimed, 0)
                 row_alloc = min(max(pool - already_alloc, 0), row_qty)
-                split_so_item_produced_alloc_map[alloc_key] = already_alloc + row_alloc
+                split_so_item_produced_alloc_map[alloc_bucket] = already_alloc + row_alloc
                 item_level_produced = row_alloc
 
             spr_name = ""
             if psi_name and psi_name in spr_psi_name_map:
                 spr_name = spr_psi_name_map[psi_name]
+            elif split_group:
+                # Do not attach SO-line or PP-level SPR to sibling rows — only spr_name on this PT row counts.
+                spr_name = ""
             elif so_item_key and not cint(item.get("is_split")) and so_item_key in spr_so_item_name_map:
                 spr_name = spr_so_item_name_map[so_item_key]
             elif item_pp and not so_item_key and not cint(item.get("is_split")) and item_pp in spr_pp_name_map:
                 spr_name = spr_pp_name_map[item_pp]
             
             # Fallback to direct field on Production Plan if still not found
-            if not spr_name and item_pp and not so_item_key and not cint(item.get("is_split")):
+            if not spr_name and item_pp and not so_item_key and not cint(item.get("is_split")) and not split_group:
                 if item_pp in spr_link_cache:
                     spr_name = spr_link_cache[item_pp]
                 else:
