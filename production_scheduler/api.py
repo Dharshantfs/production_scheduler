@@ -7705,6 +7705,20 @@ def validate_planning_sheet_duplicates(doc, method=None):
         )
 
 
+def normalize_work_order_pending_status(doc, method=None):
+    """
+    Defensive normalization: ERPNext Work Order does not allow status "Pending".
+    Some custom flows submit linked docs while status is still "Pending", which
+    triggers a validation error. Coerce to a valid baseline status.
+    """
+    try:
+        current_status = (doc.get("status") or "").strip()
+        if current_status and current_status.lower() == "pending":
+            doc.status = "Not Started"
+    except Exception:
+        pass
+
+
 @frappe.whitelist()
 def force_merge_order_sheets(sales_order):
     """
