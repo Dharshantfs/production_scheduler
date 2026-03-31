@@ -7719,6 +7719,33 @@ def normalize_work_order_pending_status(doc, method=None):
         pass
 
 
+def normalize_linked_work_orders_for_spr(doc, method=None):
+    """
+    Prevent intermittent submit popups on SPR when linked Work Orders carry an
+    invalid transient status value "Pending". Normalize to ERP-valid value.
+    """
+    try:
+        pp_id = (doc.get("production_plan") or "").strip()
+        if not pp_id or not frappe.db.exists("DocType", "Work Order"):
+            return
+
+        wo_names = frappe.get_all(
+            "Work Order",
+            filters={"production_plan": pp_id, "docstatus": ["<", 2]},
+            pluck="name",
+        ) or []
+        if not wo_names:
+            return
+
+        for wo_name in wo_names:
+            wo_status = (frappe.db.get_value("Work Order", wo_name, "status") or "").strip().lower()
+            if wo_status == "pending":
+                frappe.db.set_value("Work Order", wo_name, "status", "Not Started", update_modified=True)
+    except Exception:
+        # Keep SPR flow safe; this is a defensive normalization only.
+        pass
+
+
 @frappe.whitelist()
 def force_merge_order_sheets(sales_order):
     """

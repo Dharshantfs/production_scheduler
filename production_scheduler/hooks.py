@@ -25,5 +25,9 @@ doc_events = {
     },
     "Work Order": {
         "before_validate": "production_scheduler.api.normalize_work_order_pending_status"
+    },
+    "Shaft Production Run": {
+        "before_validate": "production_scheduler.api.normalize_linked_work_orders_for_spr",
+        "before_submit": "production_scheduler.api.normalize_linked_work_orders_for_spr"
     }
 }
