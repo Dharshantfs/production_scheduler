@@ -1484,6 +1484,8 @@ def recalculate_all_plan_codes():
     Bulk recalculates plan codes for all unlocked Planning Sheets.
     Persists plan_name to both legacy (Planning Sheet Item) and new (Planning Table) rows.
     """
+    create_plan_name_field()
+
     sheets = frappe.get_all("Planning sheet", filters={"docstatus": 0})
     count = 0
     for s in sheets:
@@ -1765,7 +1767,33 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
         else:
             # 4. Same Unit or No Siblings: Just update the Unit normally
             frappe.db.set_value(legacy_table, item_doc.source_item, "unit", unit)
-            
+
+        # OLD-TABLE ONLY: Merge split legacy rows back into one when they end up in the same unit.
+        # New table (Planning Table) rows are NEVER merged — they stay separate.
+        try:
+            cur_legacy = frappe.get_doc(legacy_table, item_doc.source_item)
+            so_item = cur_legacy.get("sales_order_item")
+            legacy_parent = cur_legacy.parent
+            if so_item and legacy_parent:
+                dupes = frappe.db.sql("""
+                    SELECT name, qty FROM `tabPlanning Sheet Item`
+                    WHERE parent = %s AND sales_order_item = %s AND unit = %s AND name != %s
+                """, (legacy_parent, so_item, unit, cur_legacy.name), as_dict=True)
+
+                if dupes:
+                    merged_qty = flt(cur_legacy.qty)
+                    for d in dupes:
+                        merged_qty += flt(d.qty)
+                        # Re-point new-table rows that referenced the deleted old row
+                        frappe.db.sql(
+                            "UPDATE `tabPlanning Table` SET source_item = %s WHERE source_item = %s",
+                            (cur_legacy.name, d.name),
+                        )
+                        frappe.db.sql("DELETE FROM `tabPlanning Sheet Item` WHERE name = %s", (d.name,))
+                    frappe.db.set_value(legacy_table, cur_legacy.name, "qty", merged_qty)
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "Legacy merge error")
+
         frappe.db.commit()
 
     update_fields = {"unit": unit, "source_item": item_doc.source_item}
