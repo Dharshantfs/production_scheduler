@@ -2889,24 +2889,24 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
     except Exception as e:
         frappe.log_error(f"Error fetching SPR achieved weights: {str(e)}")
 
-    # Fetch SPR production via custom_spr_name field on Planning Sheet Items
+    # Fetch SPR production via spr_name field on Planning Sheet Items
     spr_psi_achieved_weight_map = {}  # Map PSI to SPR achieved weight
     try:
-        if frappe.db.has_column("Planning Table", "custom_spr_name"):
+        if frappe.db.has_column("Planning Table", "spr_name"):
             # Use the correct field name: custom_total_achieved_weight
             achieved_col_select = "COALESCE(spr.custom_total_achieved_weight, 0) as total_achieved"
             
             psi_spr_data = frappe.db.sql(f"""
                 SELECT 
                     psi.name as psi_name,
-                    psi.custom_spr_name as spr_name,
+                    psi.spr_name as spr_name,
                     COALESCE(spr.custom_total_produced_weight, 0) as total_produced,
                     {achieved_col_select}
                 FROM `tabPlanning Table` psi
-                LEFT JOIN `tabShaft Production Run` spr ON psi.custom_spr_name = spr.name
+                LEFT JOIN `tabShaft Production Run` spr ON psi.spr_name = spr.name
                 WHERE psi.parent IN ({{}})
-                  AND psi.custom_spr_name IS NOT NULL 
-                  AND psi.custom_spr_name != ''
+                  AND psi.spr_name IS NOT NULL 
+                  AND psi.spr_name != ''
                   AND spr.docstatus < 2
             """.format(','.join(['%s'] * len(sheet_names))), tuple(sheet_names), as_dict=True)
             
@@ -8910,11 +8910,11 @@ def create_item_spr(pp_id, planning_sheet_item_names):
             try:
                 if not spr_name_to_link or not planning_sheet_item_names:
                     return
-                if not frappe.db.has_column("Planning Table", "custom_spr_name"):
+                if not frappe.db.has_column("Planning Table", "spr_name"):
                     return
                 for psi_name in planning_sheet_item_names:
                     if frappe.db.exists("Planning Table", psi_name):
-                        frappe.db.set_value("Planning Table", psi_name, "custom_spr_name", spr_name_to_link)
+                        frappe.db.set_value("Planning Table", psi_name, "spr_name", spr_name_to_link)
             except Exception:
                 pass
 
@@ -8989,7 +8989,7 @@ def create_item_spr(pp_id, planning_sheet_item_names):
             if frappe.db.exists("Planning Table", psi_name):
                 psi = frappe.get_doc("Planning Table", psi_name)
                 psi_list.append(psi)
-                link_name = (psi.get("custom_spr_name") or "").strip()
+                link_name = (psi.get("spr_name") or "").strip()
                 if link_name:
                     existing_links.add(link_name)
 
