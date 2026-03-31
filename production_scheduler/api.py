@@ -1492,9 +1492,10 @@ def recalculate_all_plan_codes():
             update_sheet_plan_codes(doc)
 
             # Persist to old table rows
-            for i in doc.get("items", []):
-                if i.get("plan_name"):
-                    frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET plan_name = %s WHERE name = %s", (i.plan_name, i.name))
+            if frappe.db.has_column("Planning Sheet Item", "plan_name"):
+                for i in doc.get("items", []):
+                    if i.get("plan_name"):
+                        frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET plan_name = %s WHERE name = %s", (i.plan_name, i.name))
 
             # Persist to new table rows (Planning Table)
             for tf in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]:
@@ -1828,9 +1829,10 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
             frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_plan_code = %s WHERE name = %s", (doc_sheet.custom_plan_code, doc_sheet.name))
 
             # Persist plan codes to old table
-            for d in doc_sheet.get("items", []):
-                if d.get("plan_name"):
-                    frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET plan_name = %s WHERE name = %s", (d.plan_name, d.name))
+            if frappe.db.has_column("Planning Sheet Item", "plan_name"):
+                for d in doc_sheet.get("items", []):
+                    if d.get("plan_name"):
+                        frappe.db.sql("UPDATE `tabPlanning Sheet Item` SET plan_name = %s WHERE name = %s", (d.plan_name, d.name))
 
             # Persist plan codes to new table
             for tf in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]:
@@ -3912,6 +3914,19 @@ def create_plan_name_field():
         cf_name = frappe.db.get_value('Custom Field', {'dt': 'Planning Table', 'fieldname': 'plan_name'}, 'name')
         if cf_name:
             frappe.db.set_value('Custom Field', cf_name, 'read_only', 0)
+
+    if not frappe.db.exists('Custom Field', {'dt': 'Planning Sheet Item', 'fieldname': 'plan_name'}):
+        cf5b = frappe.get_doc({
+            "doctype": "Custom Field",
+            "dt": "Planning Sheet Item",
+            "fieldname": "plan_name",
+            "label": "Plan Code",
+            "fieldtype": "Data",
+            "read_only": 0,
+            "insert_after": "color",
+            "in_list_view": 1
+        })
+        cf5b.insert(ignore_permissions=True)
 
     # Create Approval Status custom field on Planning Sheet
     if not frappe.db.exists('Custom Field', 'Planning sheet-custom_approval_status'):
