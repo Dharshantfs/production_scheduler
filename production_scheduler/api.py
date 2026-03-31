@@ -3180,7 +3180,20 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
             fields=["*"],
             order_by="idx"
         )
-        
+        so_item_row_counts = {}
+        for _it in items:
+            _k = (_it.get("sales_order_item") or _it.get("custom_sales_order_item") or "").strip()
+            if _k:
+                so_item_row_counts[_k] = so_item_row_counts.get(_k, 0) + 1
+        so_item_spr_total = {}
+        for _it in items:
+            _k = (_it.get("sales_order_item") or _it.get("custom_sales_order_item") or "").strip()
+            if not _k:
+                continue
+            _pn = _it.get("name")
+            if _pn and _pn in spr_psi_produced_map:
+                so_item_spr_total[_k] = so_item_spr_total.get(_k, 0) + flt(spr_psi_produced_map.get(_pn, 0))
+
         # Determine PP and WO boolean states for this sheet
         sheet_has_pp = False
         sheet_has_wo = False
@@ -3252,6 +3265,7 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
             psi_name = item.get("name")
             so_item_key = (item.get("sales_order_item") or item.get("custom_sales_order_item") or "").strip()
+            split_group = bool(so_item_key and so_item_row_counts.get(so_item_key, 0) > 1)
             item_pp = item_pp_map.get(item.get("name"))
             if not item_pp:
                 item_pp = _get_item_level_production_plan(item.get("name"))
@@ -3341,13 +3355,16 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
 
             # Split-safe produced allocation: distribute produced total once across split rows.
             # Skip allocation when per-item SPR data is available — each row shows its own SPR weight.
+            # split_group: first row may not have is_split=1; spr_claimed subtracts weight already on SPR-linked rows.
             has_own_spr_produced = psi_name and psi_name in spr_psi_produced_map
-            if so_item_key and cint(item.get("is_split")) and not has_own_spr_produced:
+            if so_item_key and (cint(item.get("is_split")) or split_group) and not has_own_spr_produced:
                 alloc_key = f"so::{so_item_key}"
                 produced_total = flt(item_level_produced)
                 already_alloc = flt(split_so_item_produced_alloc_map.get(alloc_key, 0))
+                spr_claimed = flt(so_item_spr_total.get(so_item_key, 0))
                 row_qty = flt(item.get("qty", 0))
-                row_alloc = min(max(produced_total - already_alloc, 0), row_qty)
+                pool = max(produced_total - spr_claimed, 0)
+                row_alloc = min(max(pool - already_alloc, 0), row_qty)
                 split_so_item_produced_alloc_map[alloc_key] = already_alloc + row_alloc
                 item_level_produced = row_alloc
 
@@ -3410,6 +3427,11 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                     total_achieved_weight_kgs = spr_row_achieved
                 else:
                     total_achieved_weight_kgs = _take_next_pp_header_achieved(item_pp, item.get("qty"))
+
+            # Production Table shows actual_production_weight_kgs from this field. For split lines, PP-level
+            # SPR achieved fallback above repeats the same total on every row without its own spr_name.
+            if cint(item.get("is_split")) or split_group:
+                total_achieved_weight_kgs = flt(item_level_produced)
             
             data.append({
                 "name": "{}-{}".format(sheet.name, item.get("idx", 0)),
