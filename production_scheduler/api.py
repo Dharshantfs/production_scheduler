@@ -1617,17 +1617,25 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
                     # SAME-UNIT SPLIT: Legacy row stays one row
                     frappe.db.set_value(legacy_table, item.source_item, "unit", unit)
 
-            parent_sheet_doc = frappe.get_doc("Planning sheet", parent_name)
-            new_row = parent_sheet_doc.append(table_fieldname, {})
+            max_idx = frappe.db.sql(
+                "SELECT MAX(idx) FROM `tabPlanning Table` WHERE parent = %s", (parent_name,)
+            )
+            new_idx = int(max_idx[0][0] or 0) + 1 if max_idx and max_idx[0][0] else 1
+
+            new_row_doc = frappe.new_doc("Planning Table")
             for field in item.meta.fields:
                 if field.fieldtype not in ("Section Break", "Column Break", "Table") and field.fieldname not in ("name", "idx", "parent", "parentfield", "parenttype"):
-                    new_row.set(field.fieldname, item.get(field.fieldname))
-            new_row.qty = flt(split_qty)
-            new_row.unit = unit
-            new_row.is_split = 1
-            new_row.split_from = item.name
-            new_row.source_item = new_legacy_name if (item.source_item and item.unit != unit) else item.source_item
-            parent_sheet_doc.save(ignore_permissions=True)
+                    new_row_doc.set(field.fieldname, item.get(field.fieldname))
+            new_row_doc.parent = parent_name
+            new_row_doc.parentfield = "items"
+            new_row_doc.parenttype = "Planning sheet"
+            new_row_doc.idx = new_idx
+            new_row_doc.qty = flt(split_qty)
+            new_row_doc.unit = unit
+            new_row_doc.is_split = 1
+            new_row_doc.split_from = item.name
+            new_row_doc.source_item = new_legacy_name if (item.source_item and item.unit != unit) else item.source_item
+            new_row_doc.insert(ignore_permissions=True)
 
             frappe.db.commit()
             
@@ -3968,21 +3976,27 @@ def split_order(item_name, split_qty, target_unit):
         if doc.source_item:
             frappe.db.set_value(legacy_table, doc.source_item, "unit", target_unit)
 
-    parent_doc = frappe.get_doc("Planning sheet", parent_name)
-    new_row = parent_doc.append(table_fieldname, {})
+    max_idx = frappe.db.sql(
+        "SELECT MAX(idx) FROM `tabPlanning Table` WHERE parent = %s", (parent_name,)
+    )
+    new_idx = int(max_idx[0][0] or 0) + 1 if max_idx and max_idx[0][0] else 1
+
+    new_row_doc = frappe.new_doc("Planning Table")
     for field in doc.meta.fields:
         if field.fieldtype not in ("Section Break", "Column Break", "Table") and field.fieldname not in ("name", "idx", "parent", "parentfield", "parenttype"):
-            new_row.set(field.fieldname, doc.get(field.fieldname))
-    new_row.qty = flt(split_qty_val)
-    new_row.unit = target_unit
-    new_row.is_split = 1
-    new_row.split_from = doc.name
-    new_row.planning_sheet = parent_name
-    new_row.source_ps = parent_name
-    new_row.source_item = new_legacy_name if unit_changed else doc.source_item
-    parent_doc.save(ignore_permissions=True)
-
-    new_row_doc = new_row
+            new_row_doc.set(field.fieldname, doc.get(field.fieldname))
+    new_row_doc.parent = parent_name
+    new_row_doc.parentfield = "items"
+    new_row_doc.parenttype = "Planning sheet"
+    new_row_doc.idx = new_idx
+    new_row_doc.qty = flt(split_qty_val)
+    new_row_doc.unit = target_unit
+    new_row_doc.is_split = 1
+    new_row_doc.split_from = doc.name
+    new_row_doc.planning_sheet = parent_name
+    new_row_doc.source_ps = parent_name
+    new_row_doc.source_item = new_legacy_name if unit_changed else doc.source_item
+    new_row_doc.insert(ignore_permissions=True)
 
     frappe.db.commit()
 
@@ -4613,32 +4627,33 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
             
             # If partial quantity requested, perform split
             if req_qty and 0 < req_qty < flt(doc.qty):
-                parent_sheet = frappe.get_doc("Planning sheet", doc.parent)
-                table_fieldname = "planned_items"
-                for tf in ["planned_items", "custom_planned_items", "planning_table", "custom_planning_table", "table"]:
-                    if hasattr(parent_sheet, tf) or parent_sheet.meta.has_field(tf):
-                        table_fieldname = tf
-                        break
+                parent_name = doc.parent
+                max_idx = frappe.db.sql(
+                    "SELECT MAX(idx) FROM `tabPlanning Table` WHERE parent = %s", (parent_name,)
+                )
+                new_idx = int(max_idx[0][0] or 0) + 1 if max_idx and max_idx[0][0] else 1
 
-                new_row = parent_sheet.append(table_fieldname, {})
+                new_row_doc = frappe.new_doc("Planning Table")
                 for field in doc.meta.fields:
                     if field.fieldtype not in ("Section Break", "Column Break", "Table") and field.fieldname not in ("name", "idx", "parent", "parentfield", "parenttype"):
-                        new_row.set(field.fieldname, doc.get(field.fieldname))
-                new_row.qty = flt(req_qty)
-                new_row.is_split = 1
-                new_row.split_from = doc.name
-                parent_sheet.save(ignore_permissions=True)
+                        new_row_doc.set(field.fieldname, doc.get(field.fieldname))
+                new_row_doc.parent = parent_name
+                new_row_doc.parentfield = "items"
+                new_row_doc.parenttype = "Planning sheet"
+                new_row_doc.idx = new_idx
+                new_row_doc.qty = flt(req_qty)
+                new_row_doc.is_split = 1
+                new_row_doc.split_from = doc.name
+                new_row_doc.insert(ignore_permissions=True)
 
-                # Reduce original item quantity (stays on original date/parent).
-                # Use direct SQL because parent_sheet.save() above already updated
-                # this row's modified timestamp, making doc.save() stale.
+                # Reduce original item quantity
                 new_qty = flt(doc.qty) - req_qty
                 frappe.db.sql(
                     "UPDATE `tabPlanning Table` SET qty = %s, is_split = 1 WHERE name = %s",
                     (new_qty, doc.name),
                 )
 
-                move_doc = new_row
+                move_doc = new_row_doc
             else:
                 # Move the entire original item
                 move_doc = doc
