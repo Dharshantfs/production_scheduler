@@ -4629,18 +4629,14 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                 new_row.split_from = doc.name
                 parent_sheet.save(ignore_permissions=True)
 
-                # Reduce original item quantity (stays on original date/parent)
+                # Reduce original item quantity (stays on original date/parent).
+                # Use direct SQL because parent_sheet.save() above already updated
+                # this row's modified timestamp, making doc.save() stale.
                 new_qty = flt(doc.qty) - req_qty
-                if cint(doc.docstatus) == 1:
-                    frappe.db.sql(
-                        "UPDATE `tabPlanning Table` SET qty = %s, is_split = 1 WHERE name = %s",
-                        (new_qty, doc.name),
-                    )
-                else:
-                    doc.qty = new_qty
-                    if hasattr(doc, "is_split"):
-                        doc.is_split = 1
-                    doc.save(ignore_permissions=True)
+                frappe.db.sql(
+                    "UPDATE `tabPlanning Table` SET qty = %s, is_split = 1 WHERE name = %s",
+                    (new_qty, doc.name),
+                )
 
                 move_doc = new_row
             else:
