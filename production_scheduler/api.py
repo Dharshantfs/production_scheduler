@@ -5225,9 +5225,10 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
 
         target_sheet = frappe.get_doc("Planning sheet", target_sheet_name)
         
-        # Ensure target sheet has custom_planned_date synced if it's new/different
-        if frappe.db.has_column("Planning sheet", "custom_planned_date") and not target_sheet.custom_planned_date:
-            frappe.db.sql("UPDATE `tabPlanning sheet` SET custom_planned_date = %s WHERE name = %s", (target_date, target_sheet.name))
+        # IMPORTANT:
+        # Do not auto-write sheet-level custom_planned_date when reusing an existing sheet.
+        # Pull/move is item-level; forcing parent header date can make unrelated items
+        # appear on a single date (for example 03-01-2026) unexpectedly.
         
         # Get starting idx for target
         target_sheet.reload()
