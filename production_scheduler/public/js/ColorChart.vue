@@ -3713,9 +3713,42 @@ async function pushToProductionBoard() {
                         target_date: targetDate,
                         pb_plan_name: selectedPlanLabel.value,
                         strict_target_date: 1,
-                        approve_cross_month: 0
+                        approve_cross_month: 0,
+                        approve_maintenance_move: 0
                     }
                 });
+                if (r.message && r.message.status === "maintenance_move_approval_required") {
+                    const rows = (r.message.candidates || []).slice(0, 15)
+                      .map(c => `• ${c.party_code || '-'} | ${c.item_code || c.item_name || '-'} | ${c.from_date} → ${c.to_date} | ${c.qty} Kg`)
+                      .join("<br>");
+                    const more = (r.message.count || 0) > 15 ? `<br>...and ${(r.message.count || 0) - 15} more` : "";
+                    const ok = await new Promise(resolve => {
+                      frappe.confirm(
+                        `<b>${r.message.count || 0} orders are on maintenance dates.</b><br><br>${rows}${more}<br><br>Approve moving these to shown dates?`,
+                        () => resolve(true),
+                        () => resolve(false)
+                      );
+                    });
+                    if (!ok) {
+                      pBtn.prop('disabled', false).text('✅ Approve Arrangement');
+                      return;
+                    }
+                    const r2 = await frappe.call({
+                      method: "production_scheduler.api.push_items_to_pb",
+                      args: {
+                        items_data: JSON.stringify(itemsToMove),
+                        fetch_dates: fetchDatesValue,
+                        target_date: targetDate,
+                        pb_plan_name: selectedPlanLabel.value,
+                        strict_target_date: 1,
+                        approve_maintenance_move: 1,
+                        approve_cross_month: 0
+                      }
+                    });
+                    if (r2.message) {
+                      r.message = r2.message;
+                    }
+                }
                 if (r.message && r.message.status === "cross_month_approval_required") {
                     const rows = (r.message.candidates || []).slice(0, 15)
                       .map(c => `• ${c.party_code || '-'} | ${c.item_code || c.item_name || '-'} | ${c.from_date} → ${c.to_date} | ${c.qty} Kg`)
@@ -3740,7 +3773,8 @@ async function pushToProductionBoard() {
                         target_date: targetDate,
                         pb_plan_name: selectedPlanLabel.value,
                         strict_target_date: 1,
-                        approve_cross_month: 1
+                        approve_cross_month: 1,
+                        approve_maintenance_move: 1
                       }
                     });
                     if (r2.message) {
@@ -5239,9 +5273,34 @@ async function openPushColorDialog(color, inputTargetDate = null) {
                  try {
                      const r = await frappe.call({
                          method: "production_scheduler.api.push_items_to_pb",
-                        args: { items_data: JSON.stringify(payload), pb_plan_name: pbPlan, approve_cross_month: 0 },
+                        args: { items_data: JSON.stringify(payload), pb_plan_name: pbPlan, approve_cross_month: 0, approve_maintenance_move: 0 },
                          freeze: true
                      });
+                    if (r.message && r.message.status === "maintenance_move_approval_required") {
+                        const rows = (r.message.candidates || []).slice(0, 15)
+                          .map(c => `• ${c.party_code || '-'} | ${c.item_code || c.item_name || '-'} | ${c.from_date} → ${c.to_date} | ${c.qty} Kg`)
+                          .join("<br>");
+                        const more = (r.message.count || 0) > 15 ? `<br>...and ${(r.message.count || 0) - 15} more` : "";
+                        const ok = await new Promise(resolve => {
+                          frappe.confirm(
+                            `<b>${r.message.count || 0} orders are on maintenance dates.</b><br><br>${rows}${more}<br><br>Approve moving these to shown dates?`,
+                            () => resolve(true),
+                            () => resolve(false)
+                          );
+                        });
+                        if (!ok) {
+                            d.get_primary_btn().prop("disabled", false).text("Push to Production Board");
+                            return;
+                        }
+                        const r2 = await frappe.call({
+                          method: "production_scheduler.api.push_items_to_pb",
+                          args: { items_data: JSON.stringify(payload), pb_plan_name: pbPlan, approve_maintenance_move: 1, approve_cross_month: 0 },
+                          freeze: true
+                        });
+                        if (r2.message) {
+                          r.message = r2.message;
+                        }
+                    }
                     if (r.message && r.message.status === "cross_month_approval_required") {
                         const rows = (r.message.candidates || []).slice(0, 15)
                           .map(c => `• ${c.party_code || '-'} | ${c.item_code || c.item_name || '-'} | ${c.from_date} → ${c.to_date} | ${c.qty} Kg`)
@@ -5260,7 +5319,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
                         }
                         const r2 = await frappe.call({
                           method: "production_scheduler.api.push_items_to_pb",
-                          args: { items_data: JSON.stringify(payload), pb_plan_name: pbPlan, approve_cross_month: 1 },
+                          args: { items_data: JSON.stringify(payload), pb_plan_name: pbPlan, approve_cross_month: 1, approve_maintenance_move: 1 },
                           freeze: true
                         });
                         if (r2.message) {

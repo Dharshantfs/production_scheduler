@@ -5890,6 +5890,7 @@ def push_items_to_pb(
     strict_target_date=0,
     allow_month_cascade=0,
     approve_cross_month=0,
+    approve_maintenance_move=0,
 ):
     """
     Pushes Planning Sheet Items to a Production Board plan.
@@ -6014,6 +6015,7 @@ def push_items_to_pb(
         return {"moved": moved_count, "dates": moved_dates, "maintenance_skipped": maintenance_encountered is not None, "maintenance_info": maintenance_encountered}
 
     approve_cross_month = cint(approve_cross_month)
+    approve_maintenance_move = cint(approve_maintenance_move)
     count = 0
     skipped_already_pushed = []
     updated_sheets = set()
@@ -6024,6 +6026,7 @@ def push_items_to_pb(
     white_shifted_count = 0
     white_shifted_dates = set()
     cross_month_candidates = []
+    maintenance_move_candidates = []
 
     # Disabled by request: do not pre-shift queued white orders when pushing colors.
     # Keep counters for response compatibility.
@@ -6063,14 +6066,41 @@ def push_items_to_pb(
             # Individual push can force exact selected date, skipping auto-next-day cascade.
             strict_keep_date = cint(strict_target_date) or cint(item_strict_target)
             if strict_keep_date:
-                # STRICT MODE: exact target date only. No auto-cascade for maintenance or capacity.
+                # STRICT MODE:
+                # - capacity overflow: do not auto-cascade (user must change date)
+                # - maintenance block: auto-propose next available day, but require user approval
                 if is_date_under_maintenance(unit, current_check_date):
-                    maint_info = get_maintenance_info_on_date(unit, current_check_date)
-                    frappe.msgprint(
-                        f"⚠️ Item {item_doc.item_code}: target date {current_check_date} is under maintenance ({maint_info['type']}). Please change date.",
-                        indicator='orange'
-                    )
-                    continue
+                    proposed = current_check_date
+                    for _ in range(31):
+                        next_d = add_days(proposed, 1)
+                        proposed = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
+                        if is_date_under_maintenance(unit, proposed):
+                            continue
+                        load_key_next = (proposed, unit)
+                        if load_key_next not in local_loads:
+                            local_loads[load_key_next] = get_unit_load(proposed, unit, "__all__", pb_only=1)
+                        next_load = local_loads[load_key_next]
+                        if ((next_load + item_wt <= limit * 1.05) or (next_load == 0 and item_wt >= limit)):
+                            break
+                    if proposed == current_check_date:
+                        frappe.msgprint(
+                            f"⚠️ Item {item_doc.item_code}: no available date found after maintenance. Please change date.",
+                            indicator='orange'
+                        )
+                        continue
+
+                    maintenance_move_candidates.append({
+                        "item_name": name,
+                        "item_code": item_doc.get("item_code"),
+                        "party_code": parent_doc.get("party_code") or "",
+                        "unit": unit,
+                        "from_date": str(current_check_date),
+                        "to_date": str(proposed),
+                        "qty": flt(item_doc.qty or 0),
+                    })
+                    if not approve_maintenance_move:
+                        continue
+                    current_check_date = proposed
 
                 load_key = (current_check_date, unit)
                 if load_key not in local_loads:
@@ -6293,6 +6323,15 @@ def push_items_to_pb(
 
         except Exception as e:
             frappe.log_error(f"Push to PB failed: {str(e)}", "Push to Board Error")
+
+    if maintenance_move_candidates and not approve_maintenance_move:
+        frappe.db.rollback()
+        return {
+            "status": "maintenance_move_approval_required",
+            "message": "Some orders are on maintenance dates and need next-day movement. User approval required.",
+            "candidates": maintenance_move_candidates[:200],
+            "count": len(maintenance_move_candidates),
+        }
 
     if cross_month_candidates and not approve_cross_month:
         frappe.db.rollback()
