@@ -67,7 +67,11 @@ def _repair_child_table_schema(target_doctypes=None):
         ) or []
 
     for dt in doctypes:
-        table_cols = set(frappe.db.get_table_columns(dt) or [])
+        try:
+            table_cols = set(frappe.db.get_table_columns(dt) or [])
+        except Exception:
+            # Table may be missing or not synced yet; skip safely.
+            continue
         missing = [c for c in required if c not in table_cols]
         if not missing:
             continue
