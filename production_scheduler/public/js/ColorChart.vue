@@ -3680,57 +3680,14 @@ async function pushToProductionBoard() {
 
             const pBtn = d.get_primary_btn();
             
-            // CASCADE CONFIRMATION
+            // No auto-cascading on global push.
+            // If target day is full, user must change target date and push again.
             if (d.capacityExceeded) {
-                const confirmed = await new Promise(resolve => {
-                    frappe.confirm(
-                        '<b>Capacity Warning:</b> Some items will be pushed to the next day due to capacity overflow. Continue?',
-                        () => resolve(true),
-                        () => resolve(false)
-                    );
-                });
-                if (!confirmed) return;
+                frappe.msgprint(
+                    '<b>Target date capacity is full.</b><br>Please change target date and check capacity again.<br>Cascading is disabled.'
+                );
+                return;
             }
-
-            // ========== FORWARD EXISTING ORDERS BEFORE PUSHING ==========
-            // Extract cascade range from fetch_dates
-            const fetchDatesArray = (fetchDatesValue || "").split(",").map(d => d.trim()).filter(Boolean);
-            if (fetchDatesArray.length > 0) {
-                const cascadeStartDate = fetchDatesArray[0];
-                const cascadeEndDate = fetchDatesArray[fetchDatesArray.length - 1];
-                
-                if (cascadeStartDate && cascadeEndDate) {
-                    pBtn.prop('disabled', true).text('⏳ Clearing cascade range...');
-                    
-                    try {
-                        const forwardRes = await frappe.call({
-                            method: "production_scheduler.api.forward_orders_from_date_range",
-                            args: {
-                                cascade_start_date: cascadeStartDate,
-                                cascade_end_date: cascadeEndDate,
-                                plan_name: selectedPlanLabel.value
-                            },
-                            freeze: false
-                        });
-                        
-                        if (forwardRes.message && forwardRes.message.status === 'success') {
-                            const forwardedCount = forwardRes.message.forwarded_count || 0;
-                            if (forwardedCount > 0) {
-                                frappe.show_alert({
-                                    message: `✅ Forwarded ${forwardedCount} order(s) from ${cascadeStartDate} to ${cascadeEndDate}. Clearing cascade range.`,
-                                    indicator: 'green'
-                                });
-                            }
-                        } else {
-                            frappe.msgprint('Error forwarding existing orders. Continuing with push anyway.');
-                        }
-                    } catch (e) {
-                        console.error('Forward orders failed', e);
-                        frappe.msgprint('Error clearing cascade range. Continuing with push.');
-                    }
-                }
-            }
-            // ========== END: FORWARD LOGIC ==========
 
             pBtn.prop('disabled', true).text('⏳ Pushing...');
             frappe.show_alert({ message: `Pushing ${checkedItems.length} items from fetch date(s) to ${targetDate}...`, indicator: 'blue' });
@@ -3754,7 +3711,8 @@ async function pushToProductionBoard() {
                         items_data: JSON.stringify(itemsToMove),
                         fetch_dates: fetchDatesValue,
                         target_date: targetDate,
-                        pb_plan_name: selectedPlanLabel.value
+                        pb_plan_name: selectedPlanLabel.value,
+                        strict_target_date: 1
                     }
                 });
                 if (r.message && r.message.status === 'success') {
@@ -4979,13 +4937,6 @@ onMounted(async () => {
   
   if (params.get('plan')) selectedPlan.value = params.get('plan');
   
-  // Create Plan Name custom field if not exist
-  try {
-      await frappe.call("production_scheduler.api.create_plan_name_field");
-  } catch (e) {
-      console.log(e);
-  }
-  
   // 2. Fetch Data
   frappe.call({ method: "production_scheduler.api.cleanup_legacy_plans" });
   await fetchData();
@@ -5243,13 +5194,13 @@ async function openPushColorDialog(color, inputTargetDate = null) {
                  console.warn("Capacity pre-check failed; proceeding with push on target date only (no cascade)", e);
              }
 
-             const doPush = async (allowCascade) => {
+            const doPush = async () => {
                  const dialogTargetUnit = d.get_value("target_unit");
                  const payload = selected.map(s => ({
                      name: s.name,
                      target_unit: dialogTargetUnit || s.target_unit,
                      target_date: targetDate,
-                     strict_target_date: allowCascade ? 0 : 1
+                    strict_target_date: 1
                  }));
 
                  d.get_primary_btn().prop("disabled", true).text("Pushing...");
@@ -5271,7 +5222,7 @@ async function openPushColorDialog(color, inputTargetDate = null) {
                             whiteShiftMsg = ` Whites shifted: ${r.message.white_shifted_count}` + (wDates ? ` (${wDates})` : '');
                         }
                         frappe.show_alert({
-                            message: `✅ Pushed ${r.message.count} order(s)${dateMsg} to Plan "${r.message.plan_name || pbPlan}" automatically.${whiteShiftMsg}`,
+                            message: `✅ Pushed ${r.message.count} order(s)${dateMsg} to Plan "${r.message.plan_name || pbPlan}".${whiteShiftMsg}`,
                             indicator: 'green'
                         });
                          setTimeout(() => { d.hide(); fetchData(); }, 1000);
@@ -5289,17 +5240,13 @@ async function openPushColorDialog(color, inputTargetDate = null) {
              if (shouldAskCascade) {
                  const html = `<b>Capacity is full on ${targetDate}.</b><br>` +
                               `Projected load exceeds limit for:<br>${overflowLines.join('<br>')}<br><br>` +
-                              `<span style="color:#dc2626; font-weight: 600;">⚠️ WARNING:</span> Items may cascade to subsequent dates, potentially crossing into the next month.<br><br>` +
-                              `Do you want to auto-push overflow items to the next available days?`;
-                 frappe.confirm(
-                     html,
-                     () => doPush(true),
-                     () => doPush(false)
-                 );
+                             `Please change target date and check capacity again.<br>` +
+                             `Cascading is disabled.`;
+                frappe.msgprint(html);
                  return;
              }
 
-             await doPush(false);
+            await doPush();
         }
     });
 

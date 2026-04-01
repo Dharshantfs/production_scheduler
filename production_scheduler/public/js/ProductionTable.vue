@@ -54,6 +54,14 @@
       >
         {{ arrangementSaving ? 'Saving Arrangement...' : '💾 Save Arrangement' }}
       </button>
+      <button
+        class="cc-clear-btn"
+        @click="restoreLastArrangement"
+        :disabled="arrangementSaving || arrangementRestoring"
+        title="Restore last saved arrangement snapshot for current table view"
+      >
+        {{ arrangementRestoring ? 'Restoring...' : '↩ Restore Last' }}
+      </button>
       <span v-if="arrangementSaving" class="cc-arrange-indicator saving">Saving...</span>
       <span v-else-if="arrangementDirty" class="cc-arrange-indicator dirty">Unsaved arrangement changes</span>
       <span v-else class="cc-arrange-indicator clean">Arrangement saved</span>
@@ -724,6 +732,7 @@ const sortableInstances = ref([]);
 const pendingArrangementUpdates = ref({});
 const arrangementDirty = ref(false);
 const arrangementSaving = ref(false);
+const arrangementRestoring = ref(false);
 const mergeMode = ref(false);
 const showMergeDialog = ref(false);
 const merges = ref([]);
@@ -850,6 +859,48 @@ async function saveArrangement() {
     frappe.msgprint('Failed to save arrangement');
   } finally {
     arrangementSaving.value = false;
+  }
+}
+
+async function restoreLastArrangement() {
+  if (arrangementSaving.value || arrangementRestoring.value) return;
+  if (!window.confirm("Restore previous saved row arrangement for current view?")) return;
+
+  const pairs = [];
+  (tableData.value || []).forEach((unitGroup) => {
+    const unit = normalizeUnit(unitGroup.unit);
+    (unitGroup.dateGroups || []).forEach((dg) => {
+      const date = dg.date;
+      if (unit && date && date !== "No Date") {
+        pairs.push({ unit, date });
+      }
+    });
+  });
+
+  if (!pairs.length) {
+    frappe.msgprint("No date/unit groups available to restore.");
+    return;
+  }
+
+  arrangementRestoring.value = true;
+  try {
+    let restored = 0;
+    for (const p of pairs) {
+      const res = await frappe.call({
+        method: "production_scheduler.api.restore_last_color_sequence",
+        args: { date: p.date, unit: p.unit, plan_name: "Default" },
+      });
+      if (res?.message?.status === "success") restored += 1;
+    }
+    arrangementDirty.value = false;
+    pendingArrangementUpdates.value = {};
+    await fetchData();
+    frappe.show_alert({ message: `Restored ${restored} arrangement snapshot(s).`, indicator: "green" });
+  } catch (e) {
+    console.error("Failed to restore arrangement:", e);
+    frappe.msgprint("Failed to restore last arrangement.");
+  } finally {
+    arrangementRestoring.value = false;
   }
 }
 

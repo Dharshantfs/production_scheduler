@@ -2147,6 +2147,11 @@ def save_color_sequence(date, unit, sequence_data, plan_name="Default", new_date
         doc.status = "Draft"
     else:
         doc = frappe.get_doc("Color Sequence Approval", name)
+        # Keep a rollback snapshot of previous sequence before overwrite.
+        try:
+            _append_sequence_history(date, unit, plan_name, doc.sequence_data, doc.status)
+        except Exception:
+            pass
         # Update the internal date field just in case
         doc.date = date
     
@@ -2158,6 +2163,59 @@ def save_color_sequence(date, unit, sequence_data, plan_name="Default", new_date
     doc.save()
     frappe.db.commit()
     return {"status": "success", "name": name, "date": date}
+
+
+def _sequence_history_key(date, unit, plan_name):
+    return f"production_sequence_history::{plan_name}::{_normalize_unit(unit)}::{date}"
+
+
+def _append_sequence_history(date, unit, plan_name, sequence_data, status=None):
+    """
+    Store compact sequence history in defaults for rollback.
+    Keeps most recent 20 snapshots per date/unit/plan.
+    """
+    if not sequence_data:
+        return
+    key = _sequence_history_key(date, unit, plan_name or "Default")
+    raw = frappe.defaults.get_global_default(key) or "[]"
+    try:
+        arr = json.loads(raw) if raw else []
+    except Exception:
+        arr = []
+    arr.append({
+        "ts": frappe.utils.now(),
+        "by": frappe.session.user,
+        "status": status or "Draft",
+        "sequence_data": sequence_data if isinstance(sequence_data, str) else json.dumps(sequence_data),
+    })
+    if len(arr) > 20:
+        arr = arr[-20:]
+    frappe.defaults.set_global_default(key, json.dumps(arr))
+
+
+@frappe.whitelist()
+def restore_last_color_sequence(date, unit, plan_name="Default"):
+    """
+    Restore previous saved sequence snapshot for a specific unit/date/plan.
+    """
+    unit = _normalize_unit(unit)
+    key = _sequence_history_key(date, unit, plan_name)
+    raw = frappe.defaults.get_global_default(key) or "[]"
+    try:
+        arr = json.loads(raw) if raw else []
+    except Exception:
+        arr = []
+    if not arr:
+        return {"status": "error", "message": f"No saved history for {unit} on {date}"}
+
+    last = arr.pop()
+    frappe.defaults.set_global_default(key, json.dumps(arr))
+    return save_color_sequence(
+        date=date,
+        unit=unit,
+        sequence_data=last.get("sequence_data") or "[]",
+        plan_name=plan_name,
+    )
 
 @frappe.whitelist()
 def request_sequence_approval(date, unit, plan_name="Default"):
@@ -4094,7 +4152,11 @@ def create_plan_name_field():
         frappe.db.commit()
 
     # Create Plan Code custom fields for Tracking Code logic
-    if not frappe.db.exists('Custom Field', 'Planning sheet-plan_name'):
+    sheet_meta = frappe.get_meta("Planning sheet")
+    pt_meta = frappe.get_meta("Planning Table")
+    psi_meta = frappe.get_meta("Planning Sheet Item")
+
+    if (not sheet_meta.has_field("plan_name")) and (not frappe.db.exists('Custom Field', 'Planning sheet-plan_name')):
         cf4 = frappe.get_doc({
             "doctype": "Custom Field",
             "dt": "Planning sheet",
@@ -4106,9 +4168,10 @@ def create_plan_name_field():
         })
         cf4.insert(ignore_permissions=True)
     else:
-        frappe.db.set_value('Custom Field', 'Planning sheet-plan_name', 'read_only', 0)
+        if frappe.db.exists('Custom Field', 'Planning sheet-plan_name'):
+            frappe.db.set_value('Custom Field', 'Planning sheet-plan_name', 'read_only', 0)
         
-    if not frappe.db.exists('Custom Field', {'dt': 'Planning Table', 'fieldname': 'plan_name'}):
+    if (not pt_meta.has_field("plan_name")) and (not frappe.db.exists('Custom Field', {'dt': 'Planning Table', 'fieldname': 'plan_name'})):
         cf5 = frappe.get_doc({
             "doctype": "Custom Field",
             "dt": "Planning Table",
@@ -4125,7 +4188,7 @@ def create_plan_name_field():
         if cf_name:
             frappe.db.set_value('Custom Field', cf_name, 'read_only', 0)
 
-    if not frappe.db.exists('Custom Field', {'dt': 'Planning Sheet Item', 'fieldname': 'plan_name'}):
+    if (not psi_meta.has_field("plan_name")) and (not frappe.db.exists('Custom Field', {'dt': 'Planning Sheet Item', 'fieldname': 'plan_name'})):
         cf5b = frappe.get_doc({
             "doctype": "Custom Field",
             "dt": "Planning Sheet Item",
@@ -5990,77 +6053,28 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
             # Individual push can force exact selected date, skipping auto-next-day cascade.
             strict_keep_date = cint(strict_target_date) or cint(item_strict_target)
             if strict_keep_date:
-                # STRICT MODE: Use exact target date, no cascading at all (except maintenance)
+                # STRICT MODE: exact target date only. No auto-cascade for maintenance or capacity.
                 if is_date_under_maintenance(unit, current_check_date):
-                    # Maintenance on target date - cascade forward ONLY within same month
                     maint_info = get_maintenance_info_on_date(unit, current_check_date)
                     frappe.msgprint(
-                        f"⚠️ Target date {current_check_date} has {maint_info['type']} (until {maint_info['end_date']}). Cascading within month only.",
-                        indicator='yellow'
+                        f"⚠️ Item {item_doc.item_code}: target date {current_check_date} is under maintenance ({maint_info['type']}). Please change date.",
+                        indicator='orange'
                     )
-                    # Calculate month boundary
-                    target_dt = getdate(current_check_date)
-                    month_start = target_dt.replace(day=1)
-                    if target_dt.month == 12:
-                        month_end = month_start.replace(year=target_dt.year + 1, month=1, day=1) - add_days("2000-01-02", -1)
-                    else:
-                        month_end = month_start.replace(month=target_dt.month + 1, day=1) - add_days("2000-01-02", -1)
-                    month_end_str = month_end.strftime("%Y-%m-%d")
-                    
-                    maintenance_block = None
-                    cascade_days = 0
-                    while True and cascade_days < 31:  # Max 31 days cascade
-                        if is_date_under_maintenance(unit, current_check_date):
-                            maint_info = get_maintenance_info_on_date(unit, current_check_date)
-                            if not maintenance_block:
-                                maintenance_block = maint_info
-                            next_d = add_days(current_check_date, 1)
-                            current_check_date = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
-                            cascade_days += 1
-                            # Check if we've exceeded month boundary
-                            if current_check_date > month_end_str:
-                                frappe.msgprint(
-                                    f"⚠️ Item {item_doc.item_code}: Cannot place due to maintenance throughout {month_start.strftime('%B')}. Skipped.",
-                                    indicator='orange'
-                                )
-                                effective_date = None  # Skip this item
-                                break
-                            continue
-                        
-                        load_key = (current_check_date, unit)
-                        if load_key not in local_loads:
-                            local_loads[load_key] = get_unit_load(current_check_date, unit, "__all__", pb_only=1)
-                        
-                        load = local_loads[load_key]
-                        if (load + item_wt <= limit * 1.05) or (load == 0 and item_wt >= limit):
-                            effective_date = current_check_date
-                            local_loads[load_key] = load + item_wt
-                            break
-                        
-                        # Check month boundary before next day
-                        next_d = add_days(current_check_date, 1)
-                        next_d_str = next_d if isinstance(next_d, str) else next_d.strftime("%Y-%m-%d")
-                        if next_d_str > month_end_str:
-                            frappe.msgprint(
-                                f"⚠️ Item {item_doc.item_code} ({item_doc.item_name}): Cannot fit in {month_start.strftime('%B')}. Month boundary reached.",
-                                indicator='orange'
-                            )
-                            effective_date = None  # Skip this item
-                            break
-                        
-                        current_check_date = next_d_str
-                        cascade_days += 1
-                    
-                    if effective_date is None:
-                        # Item couldn't be placed - skip it
-                        continue
-                else:
-                    # No maintenance - use strict date as-is
-                    effective_date = current_check_date
-                    load_key = (effective_date, unit)
-                    if load_key not in local_loads:
-                        local_loads[load_key] = get_unit_load(effective_date, unit, "__all__", pb_only=1)
-                    local_loads[load_key] = local_loads[load_key] + item_wt
+                    continue
+
+                load_key = (current_check_date, unit)
+                if load_key not in local_loads:
+                    local_loads[load_key] = get_unit_load(current_check_date, unit, "__all__", pb_only=1)
+                load = local_loads[load_key]
+                if not ((load + item_wt <= limit * 1.05) or (load == 0 and item_wt >= limit)):
+                    frappe.msgprint(
+                        f"⚠️ Item {item_doc.item_code}: target date {current_check_date} is at capacity for {unit}. Please change date.",
+                        indicator='orange'
+                    )
+                    continue
+
+                effective_date = current_check_date
+                local_loads[load_key] = load + item_wt
             else:
                 # FLEX MODE: User confirmed cascading - allow flexible dates but WITH LIMITS
                 maintenance_block = None
