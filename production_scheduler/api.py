@@ -3055,22 +3055,73 @@ def _get_color_chart_data_impl(date=None, start_date=None, end_date=None, plan_n
                 ),
                 None,
             )
-            if not spr_pp_link_col or not spr_achieved_col:
-                raise Exception("SPR achieved-weight or production-plan link column missing")
+            if not spr_pp_link_col:
+                raise Exception("SPR production-plan link column missing")
 
             fmt_pps = ",".join(["%s"] * len(valid_pps))
-            # Pick latest submitted SPR with non-zero achieved weight per PP.
-            spr_achieved_rows = frappe.db.sql(f"""
-                SELECT 
-                    spr.name,
-                    spr.{spr_pp_link_col} as production_plan,
-                    COALESCE(spr.{spr_achieved_col}, 0) as achieved_weight
-                FROM `tabShaft Production Run` spr
-                WHERE spr.{spr_pp_link_col} IN ({fmt_pps})
-                  AND spr.docstatus = 1
-                  AND COALESCE(spr.{spr_achieved_col}, 0) > 0
-                ORDER BY spr.creation DESC
-            """, tuple(valid_pps), as_dict=True)
+            spr_achieved_rows = []
+            if spr_achieved_col:
+                # Pick latest submitted SPR with non-zero achieved weight per PP (parent-level field).
+                spr_achieved_rows = frappe.db.sql(f"""
+                    SELECT 
+                        spr.name,
+                        spr.{spr_pp_link_col} as production_plan,
+                        COALESCE(spr.{spr_achieved_col}, 0) as achieved_weight
+                    FROM `tabShaft Production Run` spr
+                    WHERE spr.{spr_pp_link_col} IN ({fmt_pps})
+                      AND spr.docstatus = 1
+                      AND COALESCE(spr.{spr_achieved_col}, 0) > 0
+                    ORDER BY spr.creation DESC
+                """, tuple(valid_pps), as_dict=True)
+            else:
+                # Fallback: achieved weight is stored in SPR child table rows (for example, shaft_jobs).
+                child_table_field = next(
+                    (
+                        df.fieldname
+                        for df in (frappe.get_meta("Shaft Production Run").fields or [])
+                        if df.fieldtype == "Table" and (df.options or "").strip()
+                    ),
+                    None,
+                )
+                child_dt = None
+                child_ach_col = None
+                if child_table_field:
+                    child_options = (
+                        frappe.get_meta("Shaft Production Run").get_field(child_table_field).options
+                        if frappe.get_meta("Shaft Production Run").get_field(child_table_field)
+                        else None
+                    )
+                    child_dt = (child_options or "").strip()
+                if child_dt and frappe.db.exists("DocType", child_dt):
+                    child_cols = frappe.db.get_table_columns(child_dt) or []
+                    child_ach_col = next(
+                        (
+                            c
+                            for c in [
+                                "custom_total_achieved_weight",
+                                "total_achieved_weight",
+                                "total_achieved_weight_kgs",
+                                "achieved_weight",
+                                "total_achieved",
+                            ]
+                            if c in child_cols
+                        ),
+                        None,
+                    )
+                if child_dt and child_ach_col:
+                    spr_achieved_rows = frappe.db.sql(f"""
+                        SELECT
+                            spr.name,
+                            spr.{spr_pp_link_col} as production_plan,
+                            SUM(COALESCE(ch.{child_ach_col}, 0)) as achieved_weight
+                        FROM `tabShaft Production Run` spr
+                        LEFT JOIN `tab{child_dt}` ch ON ch.parent = spr.name
+                        WHERE spr.{spr_pp_link_col} IN ({fmt_pps})
+                          AND spr.docstatus = 1
+                        GROUP BY spr.name, spr.{spr_pp_link_col}
+                        HAVING SUM(COALESCE(ch.{child_ach_col}, 0)) > 0
+                        ORDER BY spr.creation DESC
+                    """, tuple(valid_pps), as_dict=True)
             
             for row in spr_achieved_rows:
                 pp_id = row.get('production_plan')
