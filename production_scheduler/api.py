@@ -3035,21 +3035,40 @@ def _get_color_chart_data_impl(date=None, start_date=None, end_date=None, plan_n
         pass
 
     # Fetch SPR achieved weights by Production Plan (primary method)
-    # Use latest submitted SPR.custom_total_achieved_weight per PP.
+    # Use latest submitted SPR achieved-weight column available on this site.
     spr_pp_achieved_weight_map = {}  # Map PP to SPR achieved weight
     try:
         if valid_pps and frappe.db.exists("DocType", "Shaft Production Run"):
+            spr_cols_local = frappe.db.get_table_columns("Shaft Production Run") or []
+            spr_pp_link_col = next((c for c in ["production_plan", "custom_production_plan"] if c in spr_cols_local), None)
+            spr_achieved_col = next(
+                (
+                    c
+                    for c in [
+                        "custom_total_achieved_weight",
+                        "total_achieved_weight",
+                        "total_achieved_weight_kgs",
+                        "achieved_weight",
+                        "total_achieved",
+                    ]
+                    if c in spr_cols_local
+                ),
+                None,
+            )
+            if not spr_pp_link_col or not spr_achieved_col:
+                raise Exception("SPR achieved-weight or production-plan link column missing")
+
             fmt_pps = ",".join(["%s"] * len(valid_pps))
-                        # Pick latest submitted SPR with non-zero achieved weight per PP.
+            # Pick latest submitted SPR with non-zero achieved weight per PP.
             spr_achieved_rows = frappe.db.sql(f"""
                 SELECT 
                     spr.name,
-                    spr.production_plan,
-                    COALESCE(spr.custom_total_achieved_weight, 0) as achieved_weight
+                    spr.{spr_pp_link_col} as production_plan,
+                    COALESCE(spr.{spr_achieved_col}, 0) as achieved_weight
                 FROM `tabShaft Production Run` spr
-                WHERE spr.production_plan IN ({fmt_pps})
+                WHERE spr.{spr_pp_link_col} IN ({fmt_pps})
                   AND spr.docstatus = 1
-                                    AND COALESCE(spr.custom_total_achieved_weight, 0) > 0
+                  AND COALESCE(spr.{spr_achieved_col}, 0) > 0
                 ORDER BY spr.creation DESC
             """, tuple(valid_pps), as_dict=True)
             
