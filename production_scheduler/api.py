@@ -5,6 +5,10 @@ import json
 import re
 import datetime
 
+# Party / order code auto-generation (MonthLetter+YY+NNN + SO writeback).
+# Set True to enable; False disables all calls (no codes generated, no SO writeback from this path).
+PARTY_CODE_GENERATION_ENABLED = False
+
 
 def _resolve_customer_link(raw_customer, party_code=None):
     """Return a valid Customer docname for link-field assignments."""
@@ -63,6 +67,9 @@ def generate_party_code(doc):
     Format: {MonthLetter}{YY}{NNN} e.g. C26 means March (C) + year 26 + 3-digit series.
     Reuses existing code from SO or another Planning sheet for the same SO when present.
     """
+    if not PARTY_CODE_GENERATION_ENABLED:
+        return
+
     # Identify Sales Order reference correctly
     so_ref = doc.name if doc.doctype == "Sales Order" else doc.get('sales_order')
     
@@ -119,6 +126,62 @@ def generate_party_code(doc):
     # Planning sheet: write order code back to linked Sales Order after party_code is set
     if doc.doctype == "Planning sheet" and doc.get("sales_order") and doc.get("party_code"):
         _sync_generated_order_code_to_sales_order(doc.sales_order, doc.party_code)
+
+
+@frappe.whitelist()
+def reset_party_code_series(clear_sales_order_mirror_fields=0):
+    """
+    System Manager only: clear stored party_code on active Planning sheets so the numeric
+    series restarts at 001 for the current month prefix when PARTY_CODE_GENERATION_ENABLED is True again.
+
+    Does not enable generation — set PARTY_CODE_GENERATION_ENABLED = True in code after reset.
+
+    If clear_sales_order_mirror_fields=1, also clears custom_party_code / party_code / custom_order_code
+    on Sales Order (destructive — use only if mirrors were filled by auto-generation).
+    """
+    frappe.only_for("System Manager")
+    clear_sales_order_mirror_fields = cint(clear_sales_order_mirror_fields)
+
+    cleared_ps = frappe.db.count(
+        "Planning sheet",
+        {"docstatus": ["<", 2], "party_code": ["!=", ""]},
+    )
+    frappe.db.sql(
+        """
+        UPDATE `tabPlanning sheet`
+        SET party_code = NULL
+        WHERE docstatus < 2
+          AND IFNULL(party_code, '') != ''
+        """
+    )
+
+    cleared_so = 0
+    if clear_sales_order_mirror_fields:
+        if frappe.db.has_column("Sales Order", "custom_party_code"):
+            cleared_so += frappe.db.count(
+                "Sales Order",
+                {"docstatus": ["<", 2], "custom_party_code": ["!=", ""]},
+            )
+            frappe.db.sql(
+                "UPDATE `tabSales Order` SET custom_party_code = NULL WHERE docstatus < 2 AND IFNULL(custom_party_code, '') != ''"
+            )
+        if frappe.db.has_column("Sales Order", "party_code"):
+            frappe.db.sql(
+                "UPDATE `tabSales Order` SET party_code = NULL WHERE docstatus < 2 AND IFNULL(party_code, '') != ''"
+            )
+        if frappe.db.has_column("Sales Order", "custom_order_code"):
+            frappe.db.sql(
+                "UPDATE `tabSales Order` SET custom_order_code = NULL WHERE docstatus < 2 AND IFNULL(custom_order_code, '') != ''"
+            )
+
+    frappe.db.commit()
+    return {
+        "status": "success",
+        "party_code_generation_enabled": PARTY_CODE_GENERATION_ENABLED,
+        "planning_sheets_updated": cleared_ps,
+        "sales_orders_cleared": bool(clear_sales_order_mirror_fields),
+        "message": "Series baseline cleared on Planning sheets. Set PARTY_CODE_GENERATION_ENABLED = True in api.py to start fresh from 001.",
+    }
 
 
 def _find_existing_sheet_for_sales_order(sales_order, exclude_name=None):
