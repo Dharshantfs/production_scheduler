@@ -1396,7 +1396,17 @@ async function loadOrders(d) {
                 html += `</div></div>`;
             }
             
-            html += `<div style="margin-top:8px; text-align:right; font-weight:600; font-size:12px; color:#64748b;">Filtered Orders: ${filtered.length} / ${items.length}</div>`;
+            const selectedRows = d.calc_selected_items || [];
+            const selectedTotalKg = selectedRows.reduce((sum, r) => sum + (parseFloat(r.qty) || 0), 0);
+            html += `
+              <div style="margin-top:8px; display:flex; justify-content:space-between; align-items:center; font-weight:600; font-size:12px; color:#64748b;">
+                <div>
+                  Selected: <span id="pull-selected-count">${selectedRows.length}</span>
+                  &nbsp;|&nbsp;
+                  Total: <span id="pull-selected-total">${selectedTotalKg.toFixed(0)} KG (${(selectedTotalKg / 1000).toFixed(3)} T)</span>
+                </div>
+                <div>Filtered Orders: ${filtered.length} / ${items.length}</div>
+              </div>`;
             d.set_value('preview_html', html);
             
             d.$wrapper.find('#pull-filter-unit').val(activeFilters.unit);
@@ -1468,7 +1478,11 @@ function updateSelection(d) {
     const hiddenSelected = (d.calc_selected_items || []).filter(s => !currentHtmlNames.has(s.itemName));
     
     d.calc_selected_items = [...hiddenSelected, ...visibleSelected];
+    const totalKg = (d.calc_selected_items || []).reduce((sum, r) => sum + (parseFloat(r.qty) || 0), 0);
+    const totalText = `${totalKg.toFixed(0)} KG (${(totalKg / 1000).toFixed(3)} T)`;
     d.get_primary_btn().text(`Move ${d.calc_selected_items.length} to Today`);
+    d.$wrapper.find('#pull-selected-total').text(totalText);
+    d.$wrapper.find('#pull-selected-count').text(String(d.calc_selected_items.length));
 }
 
 function openRescueDialog() {
