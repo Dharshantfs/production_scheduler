@@ -5882,7 +5882,15 @@ def push_to_pb(item_names, pb_plan_name, target_dates=None, target_date=None, fe
 
 
 @frappe.whitelist()
-def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_date=None, strict_target_date=0, allow_month_cascade=0):
+def push_items_to_pb(
+    items_data,
+    pb_plan_name=None,
+    fetch_dates=None,
+    target_date=None,
+    strict_target_date=0,
+    allow_month_cascade=0,
+    approve_cross_month=0,
+):
     """
     Pushes Planning Sheet Items to a Production Board plan.
     Re-parents each item to a PB Planning Sheet (with custom_planned_date set)
@@ -6005,6 +6013,7 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 
         return {"moved": moved_count, "dates": moved_dates, "maintenance_skipped": maintenance_encountered is not None, "maintenance_info": maintenance_encountered}
 
+    approve_cross_month = cint(approve_cross_month)
     count = 0
     skipped_already_pushed = []
     updated_sheets = set()
@@ -6014,6 +6023,7 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
     effective_dates_used = set()
     white_shifted_count = 0
     white_shifted_dates = set()
+    cross_month_candidates = []
 
     # Disabled by request: do not pre-shift queued white orders when pushing colors.
     # Keep counters for response compatibility.
@@ -6133,6 +6143,27 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
             # Safety check: if effective_date is None or empty, skip this item
             if not effective_date:
                 continue
+
+            # Strict month-boundary guard: require explicit approval before moving any item
+            # from selected/source month to a different month.
+            source_ref_date = target_dates[0] if target_dates else str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
+            try:
+                src_dt = getdate(source_ref_date)
+                dst_dt = getdate(effective_date)
+                if src_dt and dst_dt and (src_dt.month != dst_dt.month or src_dt.year != dst_dt.year):
+                    cross_month_candidates.append({
+                        "item_name": name,
+                        "item_code": item_doc.get("item_code"),
+                        "party_code": parent_doc.get("party_code") or "",
+                        "unit": unit,
+                        "from_date": str(src_dt),
+                        "to_date": str(dst_dt),
+                        "qty": flt(item_doc.qty or 0),
+                    })
+                    if not approve_cross_month:
+                        continue
+            except Exception:
+                pass
             
             # ------------------------------------------------
 
@@ -6262,6 +6293,15 @@ def push_items_to_pb(items_data, pb_plan_name=None, fetch_dates=None, target_dat
 
         except Exception as e:
             frappe.log_error(f"Push to PB failed: {str(e)}", "Push to Board Error")
+
+    if cross_month_candidates and not approve_cross_month:
+        frappe.db.rollback()
+        return {
+            "status": "cross_month_approval_required",
+            "message": "Some orders would move to next month. User approval required.",
+            "candidates": cross_month_candidates[:200],
+            "count": len(cross_month_candidates),
+        }
 
     # Persist this PB plan name
     persisted = get_persisted_plans("production_board")
