@@ -2333,6 +2333,12 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                 WHERE i.color IS NOT NULL AND i.color != ''
                   AND p.docstatus < 2
                   AND DATE(COALESCE(NULLIF(i.planned_date, ''), NULLIF(p.custom_planned_date, ''), p.ordered_date)) = DATE(%s)
+                  AND (
+                        REPLACE(UPPER(COALESCE(i.color, '')), ' ', '') IN ({clean_white_sql_pull})
+                        OR COALESCE(NULLIF(i.planned_date, ''), '') != ''
+                        OR COALESCE(NULLIF(p.custom_planned_date, ''), '') != ''
+                        OR COALESCE(NULLIF(p.custom_pb_plan_name, ''), '') != ''
+                  )
                 ORDER BY i.unit, i.idx
             """, (target_date,), as_dict=True)
         else:
