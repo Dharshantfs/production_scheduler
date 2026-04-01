@@ -43,10 +43,26 @@ def _get_pt_parentfield():
     return "planned_items"
 
 
+def _sync_generated_order_code_to_sales_order(so_name, party_code):
+    """Write planning-sheet party code (order code) back to Sales Order."""
+    if not so_name or not party_code:
+        return
+    if frappe.db.has_column("Sales Order", "custom_party_code"):
+        frappe.db.set_value("Sales Order", so_name, "custom_party_code", party_code, update_modified=True)
+    elif frappe.db.has_column("Sales Order", "party_code"):
+        frappe.db.set_value("Sales Order", so_name, "party_code", party_code, update_modified=True)
+    if frappe.db.has_column("Sales Order", "custom_order_code"):
+        cur_oc = frappe.db.get_value("Sales Order", so_name, "custom_order_code")
+        if not (cur_oc or "").strip():
+            frappe.db.set_value("Sales Order", so_name, "custom_order_code", party_code, update_modified=True)
+
+
 def generate_party_code(doc):
-    """DISABLED PER USER REQUEST - Manual Entry Only"""
-    return
-    
+    """
+    Generate or reuse party_code (order code) for Planning sheet / Sales Order.
+    Format: {MonthLetter}{YY}{NNN} e.g. C26 means March (C) + year 26 + 3-digit series.
+    Reuses existing code from SO or another Planning sheet for the same SO when present.
+    """
     # Identify Sales Order reference correctly
     so_ref = doc.name if doc.doctype == "Sales Order" else doc.get('sales_order')
     
@@ -93,16 +109,16 @@ def generate_party_code(doc):
         s = str(series).zfill(3)
         doc.party_code = prefix + s
 
-    # Persist back to Sales Order if generated for one
+    # Persist back to Sales Order if generated from SO doc
     if doc.doctype == "Sales Order" and doc.name and doc.party_code:
-        if frappe.db.has_column("Sales Order", "custom_party_code"):
-            frappe.db.set_value("Sales Order", doc.name, "custom_party_code", doc.party_code)
-        elif frappe.db.has_column("Sales Order", "party_code"):
-            frappe.db.set_value("Sales Order", doc.name, "party_code", doc.party_code)
+        _sync_generated_order_code_to_sales_order(doc.name, doc.party_code)
     # Copy to child items if any
     if doc.get("items"):
         for item_row in doc.items:
             item_row.party_code = doc.party_code
+    # Planning sheet: write order code back to linked Sales Order after party_code is set
+    if doc.doctype == "Planning sheet" and doc.get("sales_order") and doc.get("party_code"):
+        _sync_generated_order_code_to_sales_order(doc.sales_order, doc.party_code)
 
 
 def _find_existing_sheet_for_sales_order(sales_order, exclude_name=None):
@@ -7388,6 +7404,9 @@ def auto_create_planning_sheet(doc, method=None):
                 sheet.custom_plan_name = new_ctx_name
                 sheet.db_set("custom_plan_name", new_ctx_name)
 
+            if not (sheet.get("party_code") or "").strip():
+                generate_party_code(sheet)
+
             _populate_planning_sheet_items(sheet, doc)
             update_sheet_plan_codes(sheet)
             sheet.save(ignore_permissions=True)
@@ -7396,12 +7415,11 @@ def auto_create_planning_sheet(doc, method=None):
         frappe.msgprint(f"Planning Sheet <b>{sheet.name}</b> already exists for Sales Order <b>{doc.name}</b>. Reusing existing sheet.")
         return sheet
 
-    # 3. CREATE PLANNING SHEET 
-    # generate_party_code(doc) ΓÇö DISABLED PER USER REQUEST
+    # 3. CREATE PLANNING SHEET (party_code / order code: MonthLetter+YY+NNN, writeback to SO)
     ps = frappe.new_doc("Planning sheet")
     ps.sales_order = doc.name
     ps.customer = _resolve_customer_link(doc.customer, doc.get("party_code"))
-    # ps.party_code = doc.party_code ΓÇö DISABLED PER USER REQUEST
+    generate_party_code(ps)
     ps.ordered_date = doc.transaction_date
     ps.dod = doc.delivery_date
     ps.planning_status = "Draft"
@@ -7481,12 +7499,11 @@ def regenerate_planning_sheet(so_name):
         frappe.msgprint(f"⚠️ All Color Chart plans are locked - cannot regenerate Planning Sheet. Plans found: {plan_summary}", indicator="orange", alert=True)
         return None
 
-    # 2. CREATE PLANNING SHEET
-    # generate_party_code(doc) ΓÇö DISABLED PER USER REQUEST
+    # 2. CREATE PLANNING SHEET (order code generation + SO writeback)
     ps = frappe.new_doc("Planning sheet")
     ps.sales_order = doc.name
     ps.customer = _resolve_customer_link(doc.customer, doc.get("party_code"))
-    ps.party_code = doc.get("party_code") or ""
+    generate_party_code(ps)
     ps.ordered_date = doc.transaction_date
     ps.dod = doc.delivery_date
     ps.planning_status = "Draft"
