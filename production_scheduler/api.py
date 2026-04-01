@@ -184,6 +184,23 @@ def reset_party_code_series(clear_sales_order_mirror_fields=0):
     }
 
 
+@frappe.whitelist()
+def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=None, mode=None, planned_only=0):
+    """Safe wrapper to avoid UI 502s; logs root cause."""
+    try:
+        return _get_color_chart_data_impl(
+            date=date,
+            start_date=start_date,
+            end_date=end_date,
+            plan_name=plan_name,
+            mode=mode,
+            planned_only=planned_only,
+        )
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "get_color_chart_data_error")
+        return []
+
+
 def _find_existing_sheet_for_sales_order(sales_order, exclude_name=None):
     """Return the oldest existing Planning Sheet for a Sales Order, or None."""
     so = str(sales_order or "").strip()
@@ -2094,32 +2111,40 @@ def get_color_sequence(date, unit, plan_name="Default"):
 @frappe.whitelist()
 def get_color_sequences_range(start_date, end_date, unit=None, plan_name="__all__"):
     """Fetches all color sequences for a range of dates and units."""
-    filters = {
-        "date": ["between", [start_date, end_date]]
-    }
-    if unit and unit != "All Units":
-        filters["unit"] = _normalize_unit(unit)
-    if plan_name and plan_name != "__all__":
-        filters["plan_name"] = plan_name
-        
-    sequences = frappe.get_all("Color Sequence Approval", 
-        filters=filters, 
-        fields=["name", "date", "unit", "plan_name", "sequence_data", "status"],
-        order_by="modified desc"
-    )
-    
-    result = {}
-    for s in sequences:
-        # Key by unit-date for easy frontend lookup
-        key = f"{s.unit}-{s.date}"
-        # Keep first seen entry (latest modified due to order_by).
-        if key in result:
-            continue
-        result[key] = {
-            "sequence": json.loads(s.sequence_data) if s.sequence_data else [],
-            "status": s.status
+    try:
+        filters = {
+            "date": ["between", [start_date, end_date]]
         }
-    return result
+        if unit and unit != "All Units":
+            filters["unit"] = _normalize_unit(unit)
+        if plan_name and plan_name != "__all__":
+            filters["plan_name"] = plan_name
+            
+        sequences = frappe.get_all("Color Sequence Approval", 
+            filters=filters, 
+            fields=["name", "date", "unit", "plan_name", "sequence_data", "status"],
+            order_by="modified desc"
+        )
+        
+        result = {}
+        for s in sequences:
+            # Key by unit-date for easy frontend lookup
+            key = f"{s.unit}-{s.date}"
+            # Keep first seen entry (latest modified due to order_by).
+            if key in result:
+                continue
+            try:
+                seq = json.loads(s.sequence_data) if s.sequence_data else []
+            except Exception:
+                seq = []
+            result[key] = {
+                "sequence": seq,
+                "status": s.status
+            }
+        return result
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "get_color_sequences_range_error")
+        return {}
 
 @frappe.whitelist()
 def save_color_sequence(date, unit, sequence_data, plan_name="Default", new_date=None):
@@ -2283,8 +2308,7 @@ def get_items_by_name(names):
         WHERE i.name IN %s
     """, (names,), as_dict=True)
 
-@frappe.whitelist()
-def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=None, mode=None, planned_only=0):
+def _get_color_chart_data_impl(date=None, start_date=None, end_date=None, plan_name=None, mode=None, planned_only=0):
     from frappe.utils import getdate
     
     # PULL MODE: Return raw items by ordered_date, exclude items with Work Orders
