@@ -21,7 +21,8 @@ doc_events = {
     },
     "Planning sheet": {
         "before_validate": "production_scheduler.api.normalize_planning_sheet_customer_link",
-        "validate": "production_scheduler.api.validate_planning_sheet_duplicates"
+        "validate": "production_scheduler.api.validate_planning_sheet_duplicates",
+        "before_cancel": "production_scheduler.api.ensure_child_table_schema_for_planning_cancel",
     },
     "Work Order": {
         "before_validate": "production_scheduler.api.normalize_work_order_pending_status"

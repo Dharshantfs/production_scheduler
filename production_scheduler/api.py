@@ -47,6 +47,57 @@ def _get_pt_parentfield():
     return "planned_items"
 
 
+def _repair_child_table_schema(target_doctypes=None):
+    """Ensure required child-table columns exist for istable DocTypes."""
+    required = {
+        "parent": "VARCHAR(140)",
+        "parenttype": "VARCHAR(140)",
+        "parentfield": "VARCHAR(140)",
+        "idx": "INT NOT NULL DEFAULT 0",
+    }
+    repaired = []
+
+    if target_doctypes:
+        doctypes = [d for d in target_doctypes if d and frappe.db.exists("DocType", d)]
+    else:
+        doctypes = frappe.get_all(
+            "DocType",
+            filters={"istable": 1},
+            pluck="name",
+        ) or []
+
+    for dt in doctypes:
+        table_cols = set(frappe.db.get_table_columns(dt) or [])
+        missing = [c for c in required if c not in table_cols]
+        if not missing:
+            continue
+        for col in missing:
+            frappe.db.sql(f"ALTER TABLE `tab{dt}` ADD COLUMN `{col}` {required[col]}")
+        repaired.append({"doctype": dt, "added": missing})
+
+    if repaired:
+        frappe.db.commit()
+    return repaired
+
+
+def ensure_child_table_schema_for_planning_cancel(doc=None, method=None):
+    """
+    Defensive repair before Planning Sheet cancel flow.
+    Prevents 'Unknown column parenttype' from linked_with traversal.
+    """
+    try:
+        _repair_child_table_schema()
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "ensure_child_table_schema_for_planning_cancel failed")
+
+
+@frappe.whitelist()
+def repair_child_table_schema_now():
+    """Manual schema repair utility for child-table metadata drift."""
+    frappe.only_for("System Manager")
+    return _repair_child_table_schema()
+
+
 def _sync_generated_order_code_to_sales_order(so_name, party_code):
     """Write planning-sheet party code (order code) back to Sales Order."""
     if not so_name or not party_code:
