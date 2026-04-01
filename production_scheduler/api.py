@@ -2350,9 +2350,14 @@ def get_color_chart_data(date=None, start_date=None, end_date=None, plan_name=No
                     i.color, i.custom_quality as quality, i.gsm, i.idx, i.plan_name,
                     {so_item_col} {split_col}
                     p.name as planningSheet, p.party_code as partyCode, p.customer,
-                COALESCE(c.customer_name, p.customer) as customer_name,
-                  AND i.color IS NOT NULL AND i.color != ''
+                    COALESCE(c.customer_name, p.customer) as customer_name,
+                    p.ordered_date, p.dod, p.sales_order as salesOrder
+                FROM `tabPlanning Table` i
+                JOIN `tabPlanning sheet` p ON i.parent = p.name
+                LEFT JOIN `tabCustomer` c ON p.customer = c.name
+                WHERE i.color IS NOT NULL AND i.color != ''
                   AND p.docstatus < 2
+                  AND DATE({sheet_date_col}) = DATE(%s)
                 ORDER BY i.unit, i.idx
             """, (target_date,), as_dict=True)
         
@@ -5606,14 +5611,18 @@ def save_color_order(order):
 @frappe.whitelist()
 def get_color_order():
     """Get custom color order global default."""
-    order_str = frappe.defaults.get_global_default("production_color_order")
-    if order_str:
-        try:
-            import json
-            return json.loads(order_str)
-        except:
-            return []
-    return []
+    try:
+        order_str = frappe.defaults.get_global_default("production_color_order")
+        if order_str:
+            try:
+                import json
+                return json.loads(order_str)
+            except Exception:
+                return []
+        return []
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "get_color_order_error")
+        return []
 
 @frappe.whitelist()
 def update_sequence(items):
