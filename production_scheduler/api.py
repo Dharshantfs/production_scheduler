@@ -5432,15 +5432,26 @@ def get_unscheduled_planning_sheets():
     
     return sheets
 
-@frappe.whitelist()
-def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=None, start_date=None, end_date=None):
+def _get_confirmed_orders_kanban_impl(order_date=None, delivery_date=None, party_code=None, start_date=None, end_date=None):
     """
     Fetches Planning Sheet Items where the linked Sales Order is 'Confirmed'.
     Supports date, start_date/end_date range, delivery_date, and party_code filters.
     """
     eff = _effective_date_expr("p")
-    conditions = ["so.custom_production_status = 'Confirmed'", "p.docstatus < 2"]
+    conditions = ["p.docstatus < 2"]
     values = []
+
+    so_confirmed_sql = "1=1"
+    if frappe.db.has_column("Sales Order", "custom_production_status"):
+        so_confirmed_sql = "so.custom_production_status = 'Confirmed'"
+    else:
+        frappe.log_error(
+            "Sales Order missing custom_production_status; confirmed orders list cannot filter. Add field or restore column.",
+            "get_confirmed_orders_kanban",
+        )
+        return []
+
+    conditions.append(so_confirmed_sql)
 
     # Date range support (weekly/monthly)
     if start_date and end_date:
@@ -5451,7 +5462,7 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
         values.append(order_date)
 
     # Filter by Delivery Date (DOD)
-    if delivery_date:
+    if delivery_date and frappe.db.has_column("Planning sheet", "dod"):
         conditions.append("p.dod = %s")
         values.append(delivery_date)
 
@@ -5461,14 +5472,20 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
 
     where_clause = " AND ".join(conditions)
 
+    so_status_sel = "so.delivery_status" if frappe.db.has_column("Sales Order", "delivery_status") else "NULL"
+    so_cps_sel = "so.custom_production_status" if frappe.db.has_column("Sales Order", "custom_production_status") else "NULL"
+
+    qual_expr = "i.custom_quality" if frappe.db.has_column("Planning Table", "custom_quality") else "NULL"
+    width_expr = "i.width_inch" if frappe.db.has_column("Planning Table", "width_inch") else "0"
+
     sql = f"""
         SELECT 
-            i.name, i.item_code, i.item_name, i.qty, i.unit, i.color, 
-            i.gsm, i.custom_quality as quality, i.width_inch, i.idx,
+            i.name, i.item_code, i.item_name, i.qty, i.unit, i.color,
+            i.gsm, {qual_expr} as quality, {width_expr} as width_inch, i.idx,
             p.name as planning_sheet, p.party_code, p.customer,
             COALESCE(c.customer_name, p.customer) as customer_name,
             p.dod, p.planning_status, p.creation,
-            so.transaction_date as so_date, so.custom_production_status, so.delivery_status,
+            so.transaction_date as so_date, {so_cps_sel} as custom_production_status, {so_status_sel} as delivery_status,
             {eff} as effective_date
         FROM
             `tabPlanning Table` i
@@ -5483,15 +5500,14 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
         ORDER BY
             {eff} ASC, p.creation DESC, i.idx ASC
     """
-    
+
     items = frappe.db.sql(sql, tuple(values), as_dict=True)
-    
+
     data = []
     for item in items:
-        # Format for Kanban (matches ColorChart)
         data.append({
-            "name": "{}-{}".format(item.planning_sheet, item.idx), # Unique ID for card
-            "itemName": item.name, # Actual Item Name for updates
+            "name": "{}-{}".format(item.planning_sheet, item.idx),
+            "itemName": item.name,
             "planningSheet": item.planning_sheet,
             "customer": item.customer,
             "partyCode": item.party_code,
@@ -5501,13 +5517,29 @@ def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=
             "gsm": item.gsm or "",
             "qty": flt(item.qty),
             "width": flt(item.width_inch or 0),
-            "unit": item.unit or "", 
+            "unit": item.unit or "",
             "dod": str(item.dod) if item.dod else "",
             "order_date": str(item.effective_date),
-            "delivery_status": item.delivery_status or "Not Delivered"
+            "delivery_status": item.delivery_status or "Not Delivered",
         })
-        
+
     return _deduplicate_items(data)
+
+
+@frappe.whitelist()
+def get_confirmed_orders_kanban(order_date=None, delivery_date=None, party_code=None, start_date=None, end_date=None):
+    """Safe wrapper so Confirmed Order page never 502s on schema drift."""
+    try:
+        return _get_confirmed_orders_kanban_impl(
+            order_date=order_date,
+            delivery_date=delivery_date,
+            party_code=party_code,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "get_confirmed_orders_kanban_error")
+        return []
 
 
 

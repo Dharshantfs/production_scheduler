@@ -205,8 +205,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from "vue";
-import Sortable from "sortablejs";
+import { ref, computed, onMounted, watch } from "vue";
 
 // Color groups for keyword-based matching
 // Check MOST SPECIFIC (multi-word) first, then SINGLE-WORD catch-all groups
