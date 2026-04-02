@@ -5441,7 +5441,6 @@ def _get_confirmed_orders_kanban_impl(order_date=None, delivery_date=None, party
     conditions = ["p.docstatus < 2"]
     values = []
 
-    so_confirmed_sql = "1=1"
     if frappe.db.has_column("Sales Order", "custom_production_status"):
         so_confirmed_sql = "so.custom_production_status = 'Confirmed'"
     else:
@@ -5477,6 +5476,7 @@ def _get_confirmed_orders_kanban_impl(order_date=None, delivery_date=None, party
 
     qual_expr = "i.custom_quality" if frappe.db.has_column("Planning Table", "custom_quality") else "NULL"
     width_expr = "i.width_inch" if frappe.db.has_column("Planning Table", "width_inch") else "0"
+    dod_expr = "p.dod" if frappe.db.has_column("Planning sheet", "dod") else "NULL"
 
     sql = f"""
         SELECT 
@@ -5484,7 +5484,7 @@ def _get_confirmed_orders_kanban_impl(order_date=None, delivery_date=None, party
             i.gsm, {qual_expr} as quality, {width_expr} as width_inch, i.idx,
             p.name as planning_sheet, p.party_code, p.customer,
             COALESCE(c.customer_name, p.customer) as customer_name,
-            p.dod, p.planning_status, p.creation,
+            {dod_expr} as dod, p.planning_status, p.creation,
             so.transaction_date as so_date, {so_cps_sel} as custom_production_status, {so_status_sel} as delivery_status,
             {eff} as effective_date
         FROM
