@@ -5437,7 +5437,16 @@ def _get_confirmed_orders_kanban_impl(order_date=None, delivery_date=None, party
     Fetches Planning Sheet Items where the linked Sales Order is 'Confirmed'.
     Supports date, start_date/end_date range, delivery_date, and party_code filters.
     """
-    eff = _effective_date_expr("p")
+    # Effective date for Confirmed Orders grouping:
+    # Prefer item-level `planned_date` so the queue date matches what users see on the Board.
+    # Fallback to sheet-level `custom_planned_date`, then `ordered_date`.
+    if frappe.db.has_column("Planning Table", "planned_date"):
+        if frappe.db.has_column("Planning sheet", "custom_planned_date"):
+            eff = "COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date)"
+        else:
+            eff = "COALESCE(i.planned_date, p.ordered_date)"
+    else:
+        eff = _effective_date_expr("p")
     conditions = ["p.docstatus < 2"]
     values = []
 
