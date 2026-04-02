@@ -5442,9 +5442,11 @@ def _get_confirmed_orders_kanban_impl(order_date=None, delivery_date=None, party
     # Fallback to sheet-level `custom_planned_date`, then `ordered_date`.
     if frappe.db.has_column("Planning Table", "planned_date"):
         if frappe.db.has_column("Planning sheet", "custom_planned_date"):
-            eff = "COALESCE(i.planned_date, p.custom_planned_date, p.ordered_date)"
+            # Some sites store dates as empty string '' instead of NULL.
+            # NULLIF(...,'') lets COALESCE correctly fall back.
+            eff = "COALESCE(NULLIF(i.planned_date, ''), NULLIF(p.custom_planned_date, ''), NULLIF(p.ordered_date, ''))"
         else:
-            eff = "COALESCE(i.planned_date, p.ordered_date)"
+            eff = "COALESCE(NULLIF(i.planned_date, ''), NULLIF(p.ordered_date, ''))"
     else:
         eff = _effective_date_expr("p")
     conditions = ["p.docstatus < 2"]
