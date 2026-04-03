@@ -14,21 +14,8 @@ app_include_css = "/assets/production_scheduler/css/production_scheduler.css"
 app_include_js = "production_scheduler.bundle.js"
 
 
-
-doc_events = {
-    "Sales Order": {
-        "on_submit": "production_scheduler.api.auto_create_planning_sheet"
-    },
-    "Planning sheet": {
-        "before_validate": "production_scheduler.api.normalize_planning_sheet_customer_link",
-        "validate": "production_scheduler.api.validate_planning_sheet_duplicates",
-        "before_cancel": "production_scheduler.api.ensure_child_table_schema_for_planning_cancel",
-    },
-    "Work Order": {
-        "before_validate": "production_scheduler.api.normalize_work_order_pending_status"
-    },
-    "Shaft Production Run": {
-        "before_validate": "production_scheduler.api.normalize_linked_work_orders_for_spr",
-        "before_submit": "production_scheduler.api.normalize_linked_work_orders_for_spr"
-    }
-}
+# Document hooks are owned by production_entry when both apps are installed
+# (scheduler_hooks + scheduler_api) to avoid double execution. Sales Order
+# on_submit creates Planning sheets only via production_entry.
+# Color Chart / board UIs call production_scheduler.api.* for whitelisted methods.
+doc_events = {}
