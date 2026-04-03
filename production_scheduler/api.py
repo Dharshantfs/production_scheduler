@@ -479,6 +479,24 @@ def _populate_planning_sheet_items(ps, doc):
                     col = c
                     break
 
+        # Mandatory `quality` on Planning sheet Item / Planning Table (DocType requires it)
+        line_quality = (qual or "").strip()
+        if not line_quality:
+            line_quality = (
+                str(getattr(it, "custom_quality", None) or getattr(it, "quality", None) or "").strip()
+            )
+        if not line_quality and it.item_code:
+            try:
+                line_quality = str(
+                    frappe.db.get_value("Item", it.item_code, "custom_quality")
+                    or frappe.db.get_value("Item", it.item_code, "quality")
+                    or ""
+                ).strip()
+            except Exception:
+                line_quality = ""
+        if not line_quality:
+            line_quality = "GENERIC"
+
         m_roll = flt(it.custom_meter_per_roll)
         wt = 0.0
         if gsm > 0 and width > 0 and m_roll > 0:
@@ -515,7 +533,8 @@ def _populate_planning_sheet_items(ps, doc):
             "no_of_rolls": flt(it.custom_no_of_rolls),
             "gsm": gsm,
             "width_inch": width,
-            "custom_quality": qual,
+            "quality": line_quality,
+            "custom_quality": (qual or line_quality),
             "color": col,
             "weight_per_roll": wt,
             "unit": unit,
@@ -530,7 +549,8 @@ def _populate_planning_sheet_items(ps, doc):
             for existing_psi in existing_psi_list:
                 # Update base info but PRESERVE unit and qty (don't overwrite board splits)
                 existing_psi.uom = it.uom
-                existing_psi.custom_quality = qual
+                existing_psi.quality = line_quality
+                existing_psi.custom_quality = qual or line_quality
                 existing_psi.color = col
                 # Ensure the link to parent is set
                 existing_psi.planning_sheet = ps.name
@@ -7807,15 +7827,19 @@ def auto_create_planning_sheet(doc, method=None):
     # Rows were appended in the same order, so idx should match 1:1.
     final_doc = frappe.get_doc("Planning sheet", ps.name)
     
-    # We assume 'items' is the legacy table and 'planning_table' is the new board table.
     legacy_rows = sorted((final_doc.get("items") or []), key=lambda x: x.idx)
-    board_rows = sorted((final_doc.get("planning_table") or []), key=lambda x: x.idx)
-    
-    # If board_rows is empty, check alternate fields from _populate_planning_sheet_items
-    if not board_rows:
-        for field in ["planned_items", "custom_planned_items", "custom_planning_table", "table"]:
-            board_rows = sorted((final_doc.get(field) or []), key=lambda x: x.idx)
-            if board_rows: break
+    board_rows = []
+    for field in [
+        "planned_items",
+        "planning_table",
+        "custom_planned_items",
+        "custom_planning_table",
+        "table",
+    ]:
+        br = final_doc.get(field) or []
+        if br:
+            board_rows = sorted(br, key=lambda x: x.idx)
+            break
             
     if legacy_rows and board_rows and len(legacy_rows) == len(board_rows):
         for i in range(len(legacy_rows)):
@@ -7885,12 +7909,18 @@ def regenerate_planning_sheet(so_name):
     # LINK BOARD ROWS TO LEGACY ROWS (source_item)
     final_doc = frappe.get_doc("Planning sheet", ps.name)
     legacy_rows = sorted((final_doc.get("items") or []), key=lambda x: x.idx)
-    board_rows = sorted((final_doc.get("planning_table") or []), key=lambda x: x.idx)
-
-    if not board_rows:
-        for field in ["planned_items", "custom_planned_items", "custom_planning_table", "table"]:
-            board_rows = sorted((final_doc.get(field) or []), key=lambda x: x.idx)
-            if board_rows: break
+    board_rows = []
+    for field in [
+        "planned_items",
+        "planning_table",
+        "custom_planned_items",
+        "custom_planning_table",
+        "table",
+    ]:
+        br = final_doc.get(field) or []
+        if br:
+            board_rows = sorted(br, key=lambda x: x.idx)
+            break
 
     if legacy_rows and board_rows and len(legacy_rows) == len(board_rows):
         for i in range(len(legacy_rows)):
