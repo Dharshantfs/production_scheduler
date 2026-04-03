@@ -1,2 +1,3 @@
 production_scheduler.migrate_legacy_data
 production_scheduler.patches.repair_istable_schema_columns
+production_scheduler.patches.fix_planning_sheet_module
