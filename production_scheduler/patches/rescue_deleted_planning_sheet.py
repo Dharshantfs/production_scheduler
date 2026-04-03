@@ -20,18 +20,24 @@ def execute():
                 if not frappe.db.exists("Module Def", "Production Planning"):
                     frappe.get_doc({"doctype": "Module Def", "module_name": "Production Planning", "app_name": "production_scheduler"}).insert()
 
-                # 3. Restore POC child table field 'planning_table' if missing
-                # We do this at the dict level before re-inserting
+                # 3. Restore POC child table field 'planned_items' (Matches April 1st JSON)
                 fields = doc_dict.get("fields", [])
-                if not any(f.get("fieldname") == "planning_table" for f in fields):
+                
+                # Check for 'planned_items'
+                if not any(f.get("fieldname") == "planned_items" for f in fields):
                     fields.append({
-                        "label": "Planning Table",
-                        "fieldname": "planning_table",
+                        "label": "Planned Items",
+                        "fieldname": "planned_items",
                         "fieldtype": "Table",
                         "options": "Planning Table",
                         "idx": len(fields) + 1
                     })
                 
+                # Check if 'quality' is there and make it optional if it is
+                for f in fields:
+                    if f.get("fieldname") == "quality":
+                        f["reqd"] = 0 # Make optional to fix the MandatoryError
+
                 # 4. Force metadata alignment
                 doc_dict.update({
                     "doctype": "DocType",
