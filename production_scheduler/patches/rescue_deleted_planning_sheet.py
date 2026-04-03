@@ -16,27 +16,48 @@ def execute():
                 # 1. Parse the backup data
                 doc_dict = json.loads(deleted_entry.data)
                 
-                # 2. Force it to be a CUSTOM DocType in Manufacturing
+                # 2. Add the 'Production Planning' module if missing
+                if not frappe.db.exists("Module Def", "Production Planning"):
+                    frappe.get_doc({"doctype": "Module Def", "module_name": "Production Planning", "app_name": "production_scheduler"}).insert()
+
+                # 3. Restore POC child table field 'planning_table' if missing
+                # We do this at the dict level before re-inserting
+                fields = doc_dict.get("fields", [])
+                if not any(f.get("fieldname") == "planning_table" for f in fields):
+                    fields.append({
+                        "label": "Planning Table",
+                        "fieldname": "planning_table",
+                        "fieldtype": "Table",
+                        "options": "Planning Table",
+                        "idx": len(fields) + 1
+                    })
+                
+                # 4. Force metadata alignment
                 doc_dict.update({
                     "doctype": "DocType",
-                    "module": "Manufacturing",
+                    "module": "Production Planning",
                     "custom": 1,
-                    "__islocal": 1
+                    "__islocal": 1,
+                    "fields": fields
                 })
                 
                 # Remove system fields
                 for field in ["creation", "modified", "modified_by", "owner", "docstatus"]:
                     doc_dict.pop(field, None)
                 
-                # 3. Check if already exists in DocType table (even if not in cache)
+                # 5. Check if already exists in DocType table (even if not in cache)
                 if not frappe.db.exists("DocType", doc_dict['name']):
                     new_doc = frappe.get_doc(doc_dict)
                     new_doc.insert(ignore_permissions=True, ignore_if_duplicate=True)
                     frappe.logger().info(f"✅ RESCUED {doctype_name}")
                 else:
-                    # Just update the existing record
-                    frappe.db.sql("UPDATE `tabDocType` SET module='Manufacturing', custom=1 WHERE name=%s", doc_dict['name'])
-                    frappe.logger().info(f"✅ UPDATED {doctype_name}")
+                    # Update existing record and fields
+                    existing_doc = frappe.get_doc("DocType", doc_dict['name'])
+                    existing_doc.module = "Production Planning"
+                    existing_doc.custom = 1
+                    existing_doc.fields = fields
+                    existing_doc.save(ignore_permissions=True)
+                    frappe.logger().info(f"✅ UPDATED {doctype_name} to April 1st Alignment")
 
             except Exception as e:
                 frappe.logger().error(f"❌ Rescue failed for {doctype_name}: {str(e)}")
