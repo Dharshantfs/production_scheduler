@@ -5,6 +5,8 @@ import json
 import re
 import datetime
 
+from production_scheduler.planning_doctypes import normalize_planning_unit_for_select
+
 # Party / order code auto-generation (MonthLetter+YY+NNN + SO writeback).
 # Set True to enable; False disables all calls (no codes generated, no SO writeback from this path).
 PARTY_CODE_GENERATION_ENABLED = False
@@ -1687,7 +1689,8 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
     force_move = flt(force_move)
     perform_split = flt(perform_split)
     strict_next_day = flt(strict_next_day)
-    
+    unit = normalize_planning_unit_for_select(unit)
+
     # 1. Get Item and Parent Details
     item = frappe.get_doc("Planning Table", item_name)
     parent_sheet = frappe.get_doc("Planning sheet", item.parent)
@@ -1769,6 +1772,21 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
             item.save()
 
             parent_name = item.parent
+            legacy_table = "Planning sheet Item"
+            new_legacy_name = None
+            src_psi = _resolve_planning_table_source_item_link(item.get("source_item"), item.name)
+            if src_psi and frappe.db.exists(legacy_table, src_psi):
+                if item.unit != unit:
+                    frappe.db.set_value(legacy_table, src_psi, "qty", flt(remainder_qty))
+                    old_legacy_doc = frappe.get_doc(legacy_table, src_psi)
+                    new_legacy_doc = frappe.copy_doc(old_legacy_doc)
+                    new_legacy_doc.name = None
+                    new_legacy_doc.qty = flt(split_qty)
+                    new_legacy_doc.unit = unit
+                    new_legacy_doc.insert(ignore_permissions=True)
+                    new_legacy_name = new_legacy_doc.name
+                else:
+                    frappe.db.set_value(legacy_table, src_psi, "unit", unit)
 
             max_idx = frappe.db.sql(
                 "SELECT MAX(idx) FROM `tabPlanning Table` WHERE parent = %s", (parent_name,)
@@ -1787,7 +1805,12 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
             new_row_doc.unit = unit
             new_row_doc.is_split = 1
             new_row_doc.split_from = item.name
-            new_row_doc.source_item = item.source_item
+            if new_legacy_name and src_psi and item.unit != unit:
+                new_row_doc.source_item = new_legacy_name
+            else:
+                new_row_doc.source_item = src_psi or _resolve_planning_table_source_item_link(
+                    item.get("source_item"), item.name
+                )
             new_row_doc.insert(ignore_permissions=True)
 
             frappe.db.commit()
@@ -1841,6 +1864,15 @@ def update_schedule(item_name, unit, date, index=0, force_move=0, perform_split=
         "moved_to": {"date": final_date, "unit": final_unit}
     }
 
+def _planning_sheet_item_so_line_column():
+    """Column on Planning sheet Item that links to the Sales Order line (for merge logic)."""
+    if frappe.db.has_column("Planning sheet Item", "sales_order_item"):
+        return "sales_order_item"
+    if frappe.db.has_column("Planning sheet Item", "so_item"):
+        return "so_item"
+    return None
+
+
 def _sync_legacy_planning_sheet_item_unit(source_item, unit):
     """After a board move, mirror only `unit` onto Planning sheet Item (SO snapshot grid)."""
     name = (source_item or "").strip()
@@ -1848,15 +1880,43 @@ def _sync_legacy_planning_sheet_item_unit(source_item, unit):
         return
     if not frappe.db.has_column("Planning sheet Item", "unit"):
         return
+    unit = normalize_planning_unit_for_select(unit)
     frappe.db.sql(
         "UPDATE `tabPlanning sheet Item` SET unit = %s WHERE name = %s",
         (unit, name),
     )
 
 
+def _resolve_planning_table_source_item_link(source_item_value, board_row_name=None):
+    """Planning Table.source_item must link to Planning sheet Item. Board row ids often get stored by mistake.
+
+    Walk Planning Table.source_item chains until a valid Planning sheet Item is found.
+    """
+    def _walk(cur):
+        cur = (cur or "").strip()
+        for _ in range(8):
+            if not cur:
+                return None
+            if frappe.db.exists("Planning sheet Item", cur):
+                return cur
+            if frappe.db.exists("Planning Table", cur):
+                cur = frappe.db.get_value("Planning Table", cur, "source_item") or ""
+                continue
+            return None
+        return None
+
+    out = _walk(source_item_value)
+    if out:
+        return out
+    if board_row_name:
+        return _walk(board_row_name)
+    return None
+
+
 def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
     """Internal helper to move a Planning Sheet Item to a specific slot.
     Re-parents item if date changes, avoiding moving the entire order."""
+    unit = normalize_planning_unit_for_select(unit)
     target_date = getdate(date)
     source_parent = frappe.get_doc("Planning sheet", item_doc.parent)
     
@@ -1867,8 +1927,69 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
     # Therefore, we do not reparent items to new sheets when their date changes.
     # We rely solely on updating the `planned_date` at the item level below.
 
-    # 2. Handle IDX Shifting if inserting at specific position
-    # Update Item unit and parent first ΓÇö use raw SQL to bypass docstatus immutability
+    # 2. DUAL TABLE SYNC: Planning Table <-> Planning sheet Item (legacy grid)
+    # When split rows share one legacy PSI and move to different units, clone the legacy row.
+    # When two legacy rows for the same SO line end up on the same unit again, merge them.
+    legacy_table = "Planning sheet Item"
+    if item_doc.get("source_item") and frappe.db.exists(legacy_table, item_doc.source_item):
+        siblings = frappe.get_all(
+            "Planning Table",
+            filters={"source_item": item_doc.source_item, "name": ["!=", item_doc.name]},
+            fields=["name", "unit"],
+        )
+        s0 = normalize_planning_unit_for_select(siblings[0].unit or "")
+        if siblings and normalize_planning_unit_for_select(unit) != s0:
+            old_legacy_doc = frappe.get_doc(legacy_table, item_doc.source_item)
+            new_legacy_doc = frappe.copy_doc(old_legacy_doc)
+            new_legacy_doc.name = None
+            new_legacy_doc.qty = flt(item_doc.qty)
+            new_legacy_doc.unit = unit
+            new_legacy_doc.insert(ignore_permissions=True)
+            new_orig_qty = max(0, flt(old_legacy_doc.qty) - flt(item_doc.qty))
+            frappe.db.set_value(legacy_table, old_legacy_doc.name, "qty", new_orig_qty)
+            item_doc.source_item = new_legacy_doc.name
+        else:
+            _sync_legacy_planning_sheet_item_unit(item_doc.get("source_item"), unit)
+
+        try:
+            cur_legacy = frappe.get_doc(legacy_table, item_doc.source_item)
+            so_col = _planning_sheet_item_so_line_column()
+            so_item = (cur_legacy.get(so_col) if so_col else None) or ""
+            so_item = str(so_item or "").strip()
+            legacy_parent = cur_legacy.parent
+            if so_col and so_item and legacy_parent:
+                unit_key = unit.upper().replace(" ", "")
+                dupes = frappe.db.sql(
+                    f"""
+                    SELECT name, qty FROM `tab{legacy_table}`
+                    WHERE parent = %s AND `{so_col}` = %s
+                      AND UPPER(REPLACE(unit, ' ', '')) = %s
+                      AND name != %s
+                    """,
+                    (legacy_parent, so_item, unit_key, cur_legacy.name),
+                    as_dict=True,
+                )
+                if dupes:
+                    merged_qty = flt(cur_legacy.qty)
+                    for d in dupes:
+                        merged_qty += flt(d.qty)
+                        frappe.db.sql(
+                            "UPDATE `tabPlanning Table` SET source_item = %s WHERE source_item = %s",
+                            (cur_legacy.name, d.name),
+                        )
+                        frappe.db.sql(f"DELETE FROM `tab{legacy_table}` WHERE name = %s", (d.name,))
+                    frappe.db.set_value(
+                        legacy_table,
+                        cur_legacy.name,
+                        {"qty": merged_qty, "unit": unit},
+                    )
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "Legacy merge error")
+
+        frappe.db.commit()
+
+    # 3. Handle IDX Shifting if inserting at specific position
+    # Update Item unit and parent first — use raw SQL to bypass docstatus immutability
 
     update_fields = {"unit": unit, "source_item": item_doc.source_item}
     if frappe.db.has_column("Planning Table", "planned_date"):
@@ -1880,7 +2001,6 @@ def _move_item_to_slot(item_doc, unit, date, new_idx=None, plan_name=None):
     )
     frappe.db.commit() # FORCE SAVE FOR BOARD
     item_doc.unit = unit
-    _sync_legacy_planning_sheet_item_unit(item_doc.get("source_item"), unit)
 
     if new_idx is not None:
         try:
@@ -3789,7 +3909,9 @@ def update_item_unit(item_name, unit):
     if not item_name or not unit:
         frappe.throw(_("Item Name and Unit are required"))
 
-    frappe.db.set_value("Planning Table", item_name, "unit", unit)
+    frappe.db.set_value(
+        "Planning Table", item_name, "unit", normalize_planning_unit_for_select(unit)
+    )
     return {"status": "success"}
 
 
@@ -4199,7 +4321,7 @@ def create_plan_name_field():
     # Create Plan Code custom fields for Tracking Code logic
     sheet_meta = frappe.get_meta("Planning sheet")
     pt_meta = frappe.get_meta("Planning Table")
-    psi_meta = frappe.get_meta("Planning Sheet Item")
+    psi_meta = frappe.get_meta("Planning sheet Item")
 
     if (not sheet_meta.has_field("plan_name")) and (not frappe.db.exists('Custom Field', 'Planning sheet-plan_name')):
         cf4 = frappe.get_doc({
@@ -4233,10 +4355,10 @@ def create_plan_name_field():
         if cf_name:
             frappe.db.set_value('Custom Field', cf_name, 'read_only', 0)
 
-    if (not psi_meta.has_field("plan_name")) and (not frappe.db.exists('Custom Field', {'dt': 'Planning Sheet Item', 'fieldname': 'plan_name'})):
+    if (not psi_meta.has_field("plan_name")) and (not frappe.db.exists('Custom Field', {'dt': 'Planning sheet Item', 'fieldname': 'plan_name'})):
         cf5b = frappe.get_doc({
             "doctype": "Custom Field",
-            "dt": "Planning Sheet Item",
+            "dt": "Planning sheet Item",
             "fieldname": "plan_name",
             "label": "Plan Code",
             "fieldtype": "Data",
@@ -4320,6 +4442,8 @@ def split_order(item_name, split_qty, target_unit):
     if split_qty_val <= 0:
         frappe.throw("Split quantity must be positive")
 
+    target_unit = normalize_planning_unit_for_select(target_unit)
+
     # 1. Update Board qty
     remaining_qty = original_qty - split_qty_val
     doc.db_set("qty", remaining_qty)
@@ -4345,7 +4469,7 @@ def split_order(item_name, split_qty, target_unit):
     new_row_doc.split_from = doc.name
     new_row_doc.planning_sheet = parent_name
     new_row_doc.source_ps = parent_name
-    new_row_doc.source_item = doc.source_item
+    new_row_doc.source_item = _resolve_planning_table_source_item_link(doc.get("source_item"), doc.name)
     new_row_doc.insert(ignore_permissions=True)
 
     frappe.db.commit()
@@ -4906,6 +5030,8 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
         return {"status": "failed", "message": "No items selected"}
 
     target_date = getdate(target_date)
+    if target_unit:
+        target_unit = normalize_planning_unit_for_select(target_unit)
     
     # --- CAPACITY VALIDATION & SPLITTING PREPARATION ---
     # 1. Calculate weight to add per unit and prepare docs
@@ -4994,6 +5120,9 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                 new_row_doc.qty = flt(req_qty)
                 new_row_doc.is_split = 1
                 new_row_doc.split_from = doc.name
+                new_row_doc.source_item = _resolve_planning_table_source_item_link(
+                    new_row_doc.get("source_item"), doc.name
+                )
                 new_row_doc.insert(ignore_permissions=True)
 
                 # Reduce original item quantity
@@ -5119,8 +5248,8 @@ def move_orders_to_date(item_names, target_date, target_unit=None, plan_name=Non
                     item_doc.custom_quality or "Generic", new_unit, item_doc.item_name
                 ))
 
-            # HEAL UNASSIGNED: If unit is missing OR "Unassigned"/"Mixed", auto-assign based on Quality
-            if not new_unit or new_unit in ["Unassigned", "Mixed"]:
+            # HEAL UNASSIGNED: If unit is missing OR pool rows, auto-assign based on Quality
+            if not new_unit or new_unit in ["Unassigned", "UNASSIGNED", "Mixed"]:
                 # Use item quality to find best unit
                 qual = item_doc.custom_quality or ""
                 new_unit = get_preferred_unit(qual)
@@ -6095,6 +6224,7 @@ def push_items_to_pb(
     approve_maintenance_move = cint(approve_maintenance_move)
     count = 0
     skipped_already_pushed = []
+    push_errors = []
     updated_sheets = set()
     pb_sheet_cache = {}  # (party_code, target_date) -> pb sheet name
     local_loads = {} # (date, unit) -> current load
@@ -6136,6 +6266,7 @@ def push_items_to_pb(
 
             # --- FIND CAPACITY SLOT ACROSS MULTIPLE DATES (LIMITED CASCADE) ---
             unit = target_unit or item_doc.unit or get_preferred_unit(item_doc.custom_quality)
+            unit = normalize_planning_unit_for_select(unit)
             limit = HARD_LIMITS.get(unit, 999.0)
             
             current_check_date = target_dates[0] if target_dates else str(parent_doc.get("custom_planned_date") or parent_doc.ordered_date)
@@ -6282,7 +6413,7 @@ def push_items_to_pb(
             if target_unit:
                 frappe.db.sql("""
                     UPDATE `tabPlanning Table` SET unit = %s WHERE name = %s
-                """, (target_unit, name))
+                """, (unit, name))
 
             # ΓöÇΓöÇ Find or create a dedicated PB Planning Sheet ΓöÇΓöÇ
             # BUG FIX: Prefer keeping items in original sheet if possible to prevent "Multiple Sheets per SO" issue.
@@ -6399,7 +6530,8 @@ def push_items_to_pb(
             count += 1
 
         except Exception as e:
-            frappe.log_error(f"Push to PB failed: {str(e)}", "Push to Board Error")
+            frappe.log_error(frappe.get_traceback(), "Push to Board Error")
+            push_errors.append({"item": name, "error": str(e)})
 
     if maintenance_move_candidates and not approve_maintenance_move:
         frappe.db.rollback()
@@ -6442,8 +6574,12 @@ def push_items_to_pb(
         "skipped_already_pushed": len(skipped_already_pushed),
         "updated_sheets": len(updated_sheets),
         "plan_name": pb_plan_name,
+        "errors": push_errors[:50],
     }
-    
+    if push_errors and not count:
+        response["status"] = "error"
+        response["message"] = push_errors[0].get("error") or "Push failed"
+
     # Add maintenance conflicts if any were encountered
     if "maintenance_conflicts" in locals() and maintenance_conflicts:
         response["maintenance_conflicts"] = maintenance_conflicts
@@ -7612,15 +7748,7 @@ def auto_create_planning_sheet(doc, method=None):
     - Uses the first unlocked Color Chart plan.
     - If *all* plans are locked, aborts creation (no default fallback).
     - Does NOT set `custom_planned_date`; it will be filled when the sheet is pushed to the Production Board.
-
-    When ``production_entry`` is installed, delegates to its handler (single SO submit path).
     """
-    try:
-        from production_entry.production_planning.scheduler_api import auto_create_planning_sheet as _pe_auto_create_planning_sheet
-
-        return _pe_auto_create_planning_sheet(doc, method)
-    except ImportError:
-        pass
     # 1. FETCH UNLOCKED PLAN
     parsed = get_persisted_plans("color_chart")
     cc_plan = _find_best_unlocked_plan(parsed, doc.transaction_date)
@@ -7675,10 +7803,9 @@ def auto_create_planning_sheet(doc, method=None):
     
     update_sheet_plan_codes(ps, include_legacy=True)
 
-    # Unblock MandatoryError for quality field
     if not ps.get("quality"):
         ps.quality = "Standard"
-        
+
     ps.flags.ignore_permissions = True
     ps.insert()
     frappe.db.commit()
@@ -7726,15 +7853,7 @@ def regenerate_planning_sheet(so_name):
     - Fails if an active sheet already exists.
     - Uses the first unlocked Color Chart plan; aborts if all locked.
     - Does NOT set `custom_planned_date` on creation.
-
-    When ``production_entry`` is installed, delegates to its implementation.
     """
-    try:
-        from production_entry.production_planning.scheduler_api import regenerate_planning_sheet as _pe_regenerate
-
-        return _pe_regenerate(so_name)
-    except ImportError:
-        pass
     if not so_name:
         frappe.throw("Sales Order Name is required")
 
@@ -7771,10 +7890,9 @@ def regenerate_planning_sheet(so_name):
     
     update_sheet_plan_codes(ps, include_legacy=True)
 
-    # Unblock MandatoryError for quality field
     if not ps.get("quality"):
         ps.quality = "Standard"
-        
+
     ps.flags.ignore_permissions = True
     ps.insert()
     frappe.db.commit()
