@@ -5640,7 +5640,7 @@ async function loadOrders(d) {
     try {
         const r = await frappe.call({
             method: "production_scheduler.api.get_color_chart_data",
-            args: { date: date, mode: 'pull' }
+            args: { date: date, mode: 'pull_board' }
         });
         
         const items = r.message || [];
