@@ -213,6 +213,14 @@
                               </button>
                             </td>
                             <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">
+                              <div class="pt-stock-cell">
+                                <div
+                                  v-if="itemProductionStatusLine(row.item)"
+                                  class="pt-prod-status-line"
+                                  :title="itemProductionStatusTitle(row.item)"
+                                >
+                                  {{ itemProductionStatusLine(row.item) }}
+                                </div>
                               <button 
                                 v-if="canShowStockEntry(row.item)" 
                                 @click="handleStockEntryAction(row.item)" 
@@ -224,11 +232,17 @@
                                 v-else-if="row.item.spr_name" 
                                 @click="openItemSPR(row.item.spr_name, row.item)" 
                                 class="cc-pp-btn" 
-                                style="background:#10b981; color:white;" 
-                                title="View SPR">
-                                {{ row.item.spr_docstatus === 1 ? '✅ Completed Entry' : '✅ Open SPR' }}
+                                :style="Number(row.item.spr_docstatus) === 1 && row.item.wo_terminal ? 'background:#059669; color:white;' : 'background:#10b981; color:white;'" 
+                                :title="itemSprPrimaryButtonTitle(row.item)">
+                                {{ itemSprPrimaryButtonLabel(row.item) }}
                               </button>
+                              <span
+                                v-else-if="row.item.pp_id && row.item.wo_terminal"
+                                class="pt-wo-closed-hint"
+                                title="All Work Orders linked to this Production Plan are closed (Completed / Stopped / Cancelled). No further stock entry from this button until a new WO exists."
+                              >✅ WO closed</span>
                               <span v-else style="color:#999; font-size:10px; white-space: nowrap;">No PP</span>
+                              </div>
                             </td>
                           </tr>
 
@@ -295,21 +309,30 @@
                               </button>
                             </td>
                             <td class="cell-center" style="position: sticky; right: 0; background: white; z-index: 9;">
+                              <div class="pt-stock-cell">
+                                <div
+                                  v-if="mergeProductionStatusLine(row)"
+                                  class="pt-prod-status-line pt-prod-status-merge"
+                                  :title="mergeProductionStatusTitle(row)"
+                                >
+                                  {{ mergeProductionStatusLine(row) }}
+                                </div>
                               <button 
                                 v-if="!row.spr_name" 
                                 @click="createMergedStockEntry(row)" 
                                 class="cc-pp-btn" 
-                                title="Create Stock Entry for merged items">
-                                📝 Stock Entry
+                                :title="mergedStockPrimaryTitle(row)">
+                                📝 {{ mergedStockPrimaryLabel(row) }}
                               </button>
                               <button 
                                 v-else 
                                 @click="openMergedSPR(row.spr_name, row)" 
                                 class="cc-pp-btn" 
-                                style="background:#10b981; color:white;" 
-                                title="View SPR">
-                                ✅ Open SPR
+                                :style="Number(row.spr_docstatus) === 1 && row.mergeAllWoTerminal ? 'background:#059669; color:white;' : Number(row.spr_docstatus) === 1 ? 'background:#0d9488; color:white;' : 'background:#10b981; color:white;'" 
+                                :title="mergedSprPrimaryButtonTitle(row)">
+                                {{ mergedSprPrimaryButtonLabel(row) }}
                               </button>
+                              </div>
                             </td>
                           </tr>
                         </template>
@@ -1234,6 +1257,18 @@ const tableData = computed(() => {
                 .sort((a, b) => Number(a) - Number(b))
                 .join(",");
               const displayLabel = `${customer}(${mergeItems.length}items)`;
+              const sprNames = mergeItems.map((it) => String(it.spr_name || "").trim()).filter(Boolean);
+              const uniqueSprs = [...new Set(sprNames)];
+              const spr_name =
+                uniqueSprs.length === 1 ? uniqueSprs[0] : uniqueSprs.length > 1 ? uniqueSprs[0] : "";
+              const sprItem = spr_name ? mergeItems.find((it) => String(it.spr_name || "").trim() === spr_name) : null;
+              const spr_docstatus = sprItem != null ? sprItem.spr_docstatus : null;
+              const mergeAnyWoOpen = mergeItems.some((it) => it.wo_open);
+              const mergeAllWoTerminal = mergeItems.length > 0 && mergeItems.every((it) => it.wo_terminal);
+              const mergeMaxPendingKg = mergeItems.reduce(
+                (m, it) => Math.max(m, parseFloat(it.pending_qty ?? it.item_pending_qty ?? 0) || 0),
+                0
+              );
               rows.push({
                 type: "merge",
                 rowKey: `merge-${mergeId}`,
@@ -1250,6 +1285,11 @@ const tableData = computed(() => {
                 totalActualWeight,
                 hasDispatchLock,
                 mergeDispatchStatus,
+                spr_name,
+                spr_docstatus,
+                mergeAnyWoOpen,
+                mergeAllWoTerminal,
+                mergeMaxPendingKg,
               });
             });
 
@@ -1294,6 +1334,123 @@ function formatWidth(value) {
   const num = parseFloat(value);
   if (!Number.isFinite(num) || num <= 0) return "-";
   return `${num} in`;
+}
+
+/** One-line hint under Stock Entry: WO state vs plan (single Planning row). */
+function itemProductionStatusLine(item) {
+  if (!item) return "";
+  const t = parseFloat(item.qty) || 0;
+  const a = parseFloat(item.actual_production_weight_kgs) || 0;
+  const gap = t - a;
+  if (item.wo_terminal) {
+    return gap > 0.5 ? `WO done · ${formatKg2(gap)} kg short of plan` : "WO complete";
+  }
+  if (item.wo_open) {
+    return gap > 0.5 ? `WO open · ${formatKg2(gap)} kg left vs plan` : "WO open · in progress";
+  }
+  if (Math.abs(gap) > 0.5) {
+    return gap > 0 ? `${formatKg2(gap)} kg left vs plan` : `${formatKg2(-gap)} kg over plan`;
+  }
+  return "";
+}
+
+function itemProductionStatusTitle(item) {
+  const line = itemProductionStatusLine(item);
+  const p = Number(item.pending_qty ?? item.item_pending_qty ?? 0);
+  const extra =
+    p > 0
+      ? ` Pending (system): ${formatKg2(p)} kg. Stock Entry is only if you still need to record production — use Continue SPR when a draft SPR exists.`
+      : " No pending qty on this line; check WO/PP on the plan.";
+  return (line || "Production status") + extra;
+}
+
+function mergeTargetGapKg(row) {
+  const t = parseFloat(row.totalTargetWeight) || 0;
+  const a = parseFloat(row.totalActualWeight) || 0;
+  return t - a;
+}
+
+function mergeProductionStatusLine(row) {
+  if (!row || row.type !== "merge") return "";
+  const g = mergeTargetGapKg(row);
+  const parts = [];
+  if (row.mergeAllWoTerminal) {
+    parts.push(g > 0.5 ? `WO done · ${formatKg2(g)} kg short of plan` : "WO complete");
+  } else if (row.mergeAnyWoOpen) {
+    parts.push(g > 0.5 ? `WO open · ${formatKg2(g)} kg left vs plan` : "WO open");
+  }
+  if (row.spr_name && Number(row.spr_docstatus) === 0) {
+    parts.push("Draft SPR — save more rolls, then Submit when done");
+  } else if (row.spr_name && Number(row.spr_docstatus) === 1 && g > 0.5) {
+    parts.push(`Submitted SPR · ${formatKg2(g)} kg still vs plan (next shift OK)`);
+  }
+  return parts.filter(Boolean).join(" · ") || (Math.abs(g) > 0.5 ? `${formatKg2(Math.abs(g))} kg ${g > 0 ? "under" : "over"} plan` : "");
+}
+
+function mergeProductionStatusTitle(row) {
+  const line = mergeProductionStatusLine(row);
+  const p = Number(row.mergeMaxPendingKg || 0);
+  const base =
+    line ||
+    "Merged row: WO/PP status is aggregated from the lines in this merge. Same SPR counts once toward Actual.";
+  const pend =
+    p > 0
+      ? ` System pending total (max across lines): ${formatKg2(p)} kg. Partial entry today + more production tomorrow is normal — use Continue SPR while draft exists.`
+      : "";
+  return base + pend;
+}
+
+function mergedStockPrimaryLabel(row) {
+  if (!row || row.type !== "merge") return "Stock";
+  if (!row.spr_name) return "Start entry";
+  if (Number(row.spr_docstatus) === 0) return "Continue SPR";
+  return "View SPR";
+}
+
+function mergedStockPrimaryTitle(row) {
+  if (!row || row.type !== "merge") return "";
+  if (!row.spr_name) {
+    return "Create the first Shaft Production Run for this merged group (one SPR can cover all merged lines).";
+  }
+  if (Number(row.spr_docstatus) === 0) {
+    return "Open draft SPR — add rolls, Submit when finished for the day. Come back tomorrow for more production on the same SPR if needed.";
+  }
+  return "Open submitted SPR (read-only). If you still need to record more weight and WO/PP allow it, system may link a new run — check pending qty.";
+}
+
+/** SPR button label when WO(s) are manually closed → show “Complete entry” for submitted SPR. */
+function itemSprPrimaryButtonLabel(item) {
+  if (!item?.spr_name) return "";
+  if (Number(item.spr_docstatus) === 0) return "✅ Draft SPR";
+  if (item.wo_terminal) return "✅ Complete entry";
+  return "✅ Submitted SPR";
+}
+
+function itemSprPrimaryButtonTitle(item) {
+  if (!item?.spr_name) return "";
+  if (Number(item.spr_docstatus) === 0) return "Draft SPR — continue recording rolls, then Submit.";
+  if (item.wo_terminal) {
+    return "All work orders on this Production Plan are in a closed/terminal status and this SPR is submitted — shop-floor entry is complete. Open to review the document only.";
+  }
+  return "Submitted SPR — WO may still be open; use Stock Entry / Continue if pending remains.";
+}
+
+function mergedSprPrimaryButtonLabel(row) {
+  if (!row?.spr_name) return "";
+  if (Number(row.spr_docstatus) === 0) return "✅ Continue SPR";
+  if (row.mergeAllWoTerminal) return "✅ Complete entry";
+  return "✅ Submitted SPR";
+}
+
+function mergedSprPrimaryButtonTitle(row) {
+  if (!row?.spr_name) return mergedStockPrimaryTitle(row);
+  if (Number(row.spr_docstatus) === 0) {
+    return "Draft SPR for merged group — same SPR can cover all merged lines when linked.";
+  }
+  if (row.mergeAllWoTerminal) {
+    return "All linked WOs are terminal and this SPR is submitted — merged entry is complete. Open to review only.";
+  }
+  return mergedStockPrimaryTitle(row);
 }
 
 function getMergeRuleKey(item) {
@@ -2514,6 +2671,36 @@ onBeforeUnmount(() => {
 
 .pt-sortable-body.sortable-ghost {
   background-color: #f5f5f5 !important;
+}
+
+.pt-stock-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  max-width: 118px;
+  margin: 0 auto;
+}
+.pt-prod-status-line {
+  font-size: 9px;
+  line-height: 1.25;
+  color: #475569;
+  text-align: center;
+  max-width: 116px;
+}
+.pt-prod-status-merge {
+  color: #334155;
+  font-weight: 600;
+}
+
+.pt-wo-closed-hint {
+  font-size: 10px;
+  font-weight: 700;
+  color: #047857;
+  white-space: nowrap;
+  text-align: center;
+  max-width: 108px;
+  line-height: 1.2;
 }
 
 .pt-merge-overlay {
