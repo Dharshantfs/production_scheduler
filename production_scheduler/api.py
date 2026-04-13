@@ -9667,6 +9667,21 @@ def create_item_spr(pp_id, planning_sheet_item_names):
         
         spr.custom_order_code = parent_sheet.party_code or ""
         spr.customer = pp.customer or parent_sheet.customer or ""
+
+        # Prefer PP custom_label, then PP label, then planning sheet label fields.
+        pp_meta = frappe.get_meta("Production Plan")
+        ps_meta = frappe.get_meta("Planning sheet")
+        label_value = ""
+        if pp_meta.has_field("custom_label"):
+            label_value = pp.get("custom_label") or ""
+        if not label_value and pp_meta.has_field("label"):
+            label_value = pp.get("label") or ""
+        if not label_value and ps_meta.has_field("custom_label"):
+            label_value = parent_sheet.get("custom_label") or ""
+        if not label_value and ps_meta.has_field("label"):
+            label_value = parent_sheet.get("label") or ""
+        if label_value:
+            spr.custom_label = label_value
         
         def pick_value(source, keys, default=None):
             for k in keys:
@@ -9777,8 +9792,7 @@ def create_item_spr(pp_id, planning_sheet_item_names):
                 row.quality = first_psi.custom_quality or first_psi.get("quality") or ""
                 row.color = first_psi.color or ""
                 row.party_code = parent_sheet.party_code or ""
-                row.custom_label = pick_value(pp_shaft, ["custom_label", "label"], "")
-                row.custom_label = pick_value(pp_shaft, ["custom_label", "label"], "")
+                row.custom_label = pick_value(pp_shaft, ["custom_label", "label"], label_value or "")
         elif not pp_shafts:
             # Fallback: create one shaft job from PSI data if PP has no shaft_details
             for i, psi in enumerate(psi_list):
@@ -9788,8 +9802,7 @@ def create_item_spr(pp_id, planning_sheet_item_names):
                 row.color = psi.color or ""
                 row.party_code = parent_sheet.party_code or ""
                 row.gsm = psi.gsm or ""
-                row.custom_label = pp.get("custom_label") or ""
-                row.custom_label = pp.get("custom_label") or ""
+                row.custom_label = label_value or ""
                 
                 # Get width info from PSI
                 width = flt(psi.get("width") or psi.get("custom_width") or psi.get("width_inch") or 0)
