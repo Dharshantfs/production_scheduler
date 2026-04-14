@@ -5,7 +5,7 @@ import json
 import re
 import datetime
 
-from production_scheduler.planning_doctypes import normalize_planning_unit_for_select
+from production_entry.production_planning.planning_doctypes import normalize_planning_unit_for_select
 
 # Party / order code auto-generation (MonthLetter+YY+NNN + SO writeback).
 # Set True to enable; False disables all calls (no codes generated, no SO writeback from this path).
@@ -278,13 +278,97 @@ def _find_existing_sheet_for_sales_order(sales_order, exclude_name=None):
     return existing[0] if existing else None
 
 
+def _production_plan_usable(pp_name):
+    """Return pp_name if document exists and is not cancelled; else None."""
+    if not pp_name or not str(pp_name).strip():
+        return None
+    pp_name = str(pp_name).strip()
+    if not frappe.db.exists("Production Plan", pp_name):
+        return None
+    if frappe.db.get_value("Production Plan", pp_name, "docstatus") == 2:
+        return None
+    return pp_name
+
+
+def _resolve_existing_production_plan_for_planning_sheet(sheet_name):
+    """
+    If this Planning sheet already has a Production Plan, return its name so callers
+    do not create duplicate PP rows for the same sheet (repeated "Create Plan" clicks).
+    Order: header link → first item-level link → PP.custom_planning_sheet / planning_sheet.
+    """
+    if not sheet_name or not frappe.db.exists("Planning sheet", sheet_name):
+        return None
+
+    for col in ("custom_production_plan", "production_plan", "production_plan_id", "pp_id"):
+        if frappe.db.has_column("Planning sheet", col):
+            pp = _production_plan_usable(frappe.db.get_value("Planning sheet", sheet_name, col))
+            if pp:
+                return pp
+
+    for fieldname in _psi_production_plan_fields():
+        rows = frappe.get_all(
+            "Planning Table",
+            filters={"parent": sheet_name},
+            fields=[fieldname],
+            limit=50,
+        )
+        for r in rows:
+            pp = _production_plan_usable(r.get(fieldname))
+            if pp:
+                return pp
+
+    for col in ("custom_planning_sheet", "planning_sheet"):
+        if not frappe.db.has_column("Production Plan", col):
+            continue
+        rows = frappe.get_all(
+            "Production Plan",
+            filters={col: sheet_name, "docstatus": ["!=", 2]},
+            fields=["name"],
+            order_by="creation desc",
+            limit_page_length=1,
+        )
+        if rows:
+            return rows[0].name
+
+    # Last resort: exactly one submitted PP for this sheet's Sales Order (e.g. PP created/submitted
+    # from Manufacturing before Planning sheet stored custom_production_plan — avoids a second PP on finalize).
+    so = frappe.db.get_value("Planning sheet", sheet_name, "sales_order")
+    if so:
+        pp_so = _single_submitted_production_plan_for_sales_order_when_unique(so)
+        if pp_so:
+            return _production_plan_usable(pp_so)
+
+    return None
+
+
+def _single_submitted_production_plan_for_sales_order_when_unique(sales_order):
+    """If exactly one submitted Production Plan has po_items for this Sales Order, return its name."""
+    if not sales_order:
+        return None
+    if not frappe.db.has_column("Production Plan Item", "sales_order"):
+        return None
+    rows = frappe.db.sql(
+        """
+        SELECT DISTINCT pp.name
+        FROM `tabProduction Plan` pp
+        INNER JOIN `tabProduction Plan Item` ppi ON ppi.parent = pp.name
+        WHERE pp.docstatus = 1 AND IFNULL(ppi.sales_order, '') = %s
+        """,
+        (sales_order,),
+        as_dict=True,
+    )
+    names = [r["name"] for r in rows]
+    if len(names) == 1:
+        return names[0]
+    return None
+
+
 def _psi_production_plan_fields():
-    """Return available Planning Sheet Item fields that may store item-level Production Plan links."""
+    """Return available Planning Table fields that may store item-level Production Plan links."""
     candidates = [
         "custom_production_plan",
         "production_plan",
         "custom_production_plan_id",
-        # Legacy/custom deployments sometimes store PP in order-sheet style fields.
         "custom_order_sheet",
         "order_sheet",
         "custom_order_plan",
@@ -313,9 +397,94 @@ def _get_item_level_production_plan(item_name):
 
     for fieldname in _psi_production_plan_fields():
         pp = frappe.db.get_value("Planning Table", item_name, fieldname)
+        if not pp and frappe.db.has_column("Planning sheet Item", fieldname):
+            pp = frappe.db.get_value("Planning sheet Item", item_name, fieldname)
         if pp:
             return pp
     return None
+
+
+def _collect_all_production_plans_for_planning_sheet(sheet_name):
+    """Return distinct Production Plan names linked to this Planning sheet (header, lines, reverse link)."""
+    if not sheet_name:
+        return []
+    names = set()
+    for col in ("custom_production_plan", "production_plan", "production_plan_id", "pp_id"):
+        if frappe.db.has_column("Planning sheet", col):
+            v = frappe.db.get_value("Planning sheet", sheet_name, col)
+            if v:
+                names.add(v)
+    for row in frappe.get_all("Planning sheet Item", filters={"parent": sheet_name}, fields=["name"]):
+        pp = _get_item_level_production_plan(row.name)
+        if pp:
+            names.add(pp)
+    for col in ("custom_planning_sheet", "planning_sheet"):
+        if not frappe.db.has_column("Production Plan", col):
+            continue
+        for r in frappe.get_all("Production Plan", filters={col: sheet_name}, fields=["name"]):
+            names.add(r.name)
+    return [n for n in names if _production_plan_usable(n)]
+
+
+def _planning_sheets_referencing_production_plan(pp_name):
+    """Planning sheet document names that reference this Production Plan (header, board row, or reverse)."""
+    sheets = set()
+    pp_name = (pp_name or "").strip()
+    if not pp_name:
+        return []
+    for col in ("custom_planning_sheet", "planning_sheet"):
+        if not frappe.db.has_column("Production Plan", col):
+            continue
+        v = frappe.db.get_value("Production Plan", pp_name, col)
+        if v:
+            sheets.add(v)
+    for col in ("custom_production_plan", "production_plan", "production_plan_id", "pp_id"):
+        if frappe.db.has_column("Planning sheet", col):
+            for r in frappe.get_all("Planning sheet", filters={col: pp_name}, fields=["name"]):
+                sheets.add(r.name)
+    for fieldname in _psi_production_plan_fields():
+        for r in frappe.get_all("Planning Table", filters={fieldname: pp_name}, fields=["parent"]):
+            if r.parent:
+                sheets.add(r.parent)
+        if frappe.db.has_column("Planning sheet Item", fieldname):
+            for r in frappe.get_all("Planning sheet Item", filters={fieldname: pp_name}, fields=["parent"]):
+                if r.parent:
+                    sheets.add(r.parent)
+    return list(sheets)
+
+
+def _planning_sheet_all_linked_production_plans_submitted(sheet_name):
+    """True if every Production Plan linked to the sheet exists and is submitted (docstatus 1)."""
+    pps = _collect_all_production_plans_for_planning_sheet(sheet_name)
+    if not pps:
+        return False
+    for pp in pps:
+        if cint(frappe.db.get_value("Production Plan", pp, "docstatus")) != 1:
+            return False
+    return True
+
+
+def on_production_plan_submitted(doc, method=None):
+    """Link Work Orders onto Planning sheet items when a PP is submitted; auto-submit Planning sheet when all PPs are."""
+    pp_name = doc.name if doc else None
+    if not pp_name:
+        return
+    try:
+        for sheet_name in _planning_sheets_referencing_production_plan(pp_name):
+            if not frappe.db.exists("Planning sheet", sheet_name):
+                continue
+            ps = frappe.get_doc("Planning sheet", sheet_name)
+            ps.link_work_orders_for_production_plan(pp_name)
+            if cint(frappe.db.get_value("Planning sheet", sheet_name, "docstatus")) != 0:
+                continue
+            if _planning_sheet_all_linked_production_plans_submitted(sheet_name):
+                frappe.flags.ignore_permissions = True
+                try:
+                    frappe.get_doc("Planning sheet", sheet_name).submit()
+                finally:
+                    frappe.flags.ignore_permissions = False
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), f"on_production_plan_submitted: {pp_name}")
 
 
 def _resolve_pp_by_sales_order_item(sales_order_item):
@@ -480,6 +649,13 @@ def _populate_planning_sheet_items(ps, doc):
                 if (" " + c + " ") in search_text:
                     col = c
                     break
+        # Fallback: substring match (longest-first COL_LIST) when spacing breaks " GOLDEN YELLOW " style match
+        if not col:
+            su = search_text.upper()
+            for c in COL_LIST:
+                if c in su:
+                    col = c
+                    break
 
         # Mandatory `quality` on Planning sheet Item / Planning Table (DocType requires it)
         line_quality = (qual or "").strip()
@@ -504,22 +680,7 @@ def _populate_planning_sheet_items(ps, doc):
         if gsm > 0 and width > 0 and m_roll > 0:
             wt = flt(gsm * width * m_roll * 0.0254) / 1000
 
-        unit = ""
-        if _is_white_color(col):
-            unit = "UNASSIGNED"
-        else:
-            UNIT_WIDTHS = {"Unit 1": 63, "Unit 2": 126, "Unit 3": 126, "Unit 4": 90}
-            UNIT_TONNAGE_LIMITS = {"Unit 1": 4.4, "Unit 2": 12, "Unit 3": 9, "Unit 4": 5.5}
-            item_tonnage = flt(it.qty) / 1000.0
-            viable_units = []
-            for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
-                unit_width = UNIT_WIDTHS[u]
-                if unit_width >= width:
-                    viable_units.append({"name": u, "width_waste": unit_width - width})
-            if viable_units:
-                best_unit_option = min(viable_units, key=lambda x: x["width_waste"])
-                unit = best_unit_option["name"]
-            else: unit = "Unit 2"
+        unit = compute_default_production_unit(col, width)
 
         p_date = getdate(ps.ordered_date) if _is_white_color(col) else None
 
@@ -587,6 +748,56 @@ def _is_white_color(color):
         return False
     c = color.upper().strip()
     return any(w == c for w in WHITE_COLORS)
+
+
+def compute_default_production_unit(color, width_inch):
+    """
+    Only white-family colors use UNASSIGNED (pool for that order date).
+    All other colors: pick one of Unit 1–4 by minimum width waste (same rule as SO populate).
+    """
+    w = flt(width_inch)
+    if _is_white_color(color):
+        return "UNASSIGNED"
+    UNIT_WIDTHS = {"Unit 1": 63, "Unit 2": 126, "Unit 3": 126, "Unit 4": 90}
+    viable_units = []
+    for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4"]:
+        uw = UNIT_WIDTHS[u]
+        if uw >= w:
+            viable_units.append({"name": u, "width_waste": uw - w})
+    if viable_units:
+        return min(viable_units, key=lambda x: x["width_waste"])["name"]
+    return "Unit 2"
+
+
+def resolve_color_name_for_planning_row(item_code, item_name, existing_color=None):
+    """Resolve color for width/unit rules when `color` was blank (item text / code parsing)."""
+    if (existing_color or "").strip():
+        return (existing_color or "").strip()
+    raw_txt = ((item_code or "") + " " + (item_name or "")).strip()
+    if not raw_txt:
+        return ""
+    clean_txt = raw_txt.upper().replace("-", " ").replace("_", " ").replace("(", " ").replace(")", " ")
+    words = clean_txt.split()
+    search_text = " " + " ".join(words) + " "
+    col = ""
+    item_code_str = str(item_code or "").strip()
+    if len(item_code_str) >= 9 and item_code_str.startswith("100"):
+        c_code = item_code_str[6:9]
+        try:
+            color_result = _get_color_by_code(c_code)
+            if color_result:
+                return color_result.upper().strip()
+        except Exception:
+            pass
+    for c in COL_LIST:
+        if (" " + c + " ") in search_text:
+            return c
+    su = search_text.upper()
+    for c in COL_LIST:
+        if c in su:
+            return c
+    return ""
+
 
 def _get_color_by_code(color_code):
     """
@@ -894,13 +1105,17 @@ WHITE_COLORS = {
 }
 
 def _normalize_unit(raw):
-    """Returns title-case unit names like 'Unit 1', 'Unit 2', etc. from any raw string."""
+    """Returns title-case unit names like 'Unit 1', … or UNASSIGNED for unassigned / legacy Mixed."""
     r = (raw or "").strip().upper().replace(" ", "")
-    if "UNIT1" in r: return "Unit 1"
-    if "UNIT2" in r: return "Unit 2"
-    if "UNIT3" in r: return "Unit 3"
-    if "UNIT4" in r: return "Unit 4"
-    return "Mixed"
+    if "UNIT1" in r:
+        return "Unit 1"
+    if "UNIT2" in r:
+        return "Unit 2"
+    if "UNIT3" in r:
+        return "Unit 3"
+    if "UNIT4" in r:
+        return "Unit 4"
+    return "UNASSIGNED"
 
 def _get_standard_month_name(month_index):
     # month_index 1-12
@@ -1037,7 +1252,7 @@ def is_sheet_locked(sheet_name):
         cc_plan = sheet.get("custom_plan_name") or "Default"
         
         # We need to fetch persisted plans to check lock status
-        from production_scheduler.api import get_persisted_plans
+        from production_entry.production_planning.scheduler_api import get_persisted_plans
         
         cc_plans = get_persisted_plans("color_chart")
         if any(p["name"] == cc_plan and p.get("locked") for p in cc_plans):
@@ -1854,6 +2069,7 @@ def generate_plan_code(date_str, unit, plan_name):
     """
     Generates a readable plan code: {YY}{MonthLetter}{Unit}-{PlanName}
     e.g. 26CU1-PLAN 1
+    UNASSIGNED uses segment UA. Legacy Mixed normalizes to UNASSIGNED before this runs.
     """
     if not str(date_str) or not plan_name or not unit:
         return ""
@@ -1861,11 +2077,18 @@ def generate_plan_code(date_str, unit, plan_name):
     try:
         # Robust unit normalization for code generation
         u_clean = str(unit).upper().replace(" ", "")
-        if "UNIT1" in u_clean: u_code = "U1"
-        elif "UNIT2" in u_clean: u_code = "U2"
-        elif "UNIT3" in u_clean: u_code = "U3"
-        elif "UNIT4" in u_clean: u_code = "U4"
-        else: return ""
+        if "UNIT1" in u_clean:
+            u_code = "U1"
+        elif "UNIT2" in u_clean:
+            u_code = "U2"
+        elif "UNIT3" in u_clean:
+            u_code = "U3"
+        elif "UNIT4" in u_clean:
+            u_code = "U4"
+        elif u_clean in ("UNASSIGNED", "NONE", "NA") or "MIXED" in u_clean:
+            u_code = "UA"
+        else:
+            return ""
 
         d = frappe.utils.getdate(str(date_str))
         yy = str(d.year)[-2:]
@@ -1882,29 +2105,67 @@ def generate_plan_code(date_str, unit, plan_name):
 
 def update_sheet_plan_codes(sheet_doc, include_legacy=False):
     """
-    Sets `plan_name` on Planning Table (board) rows. Optionally on legacy `items`
-    when include_legacy=True (SO create / manual bulk on snapshot rows).
+    Sets plan codes on board rows (`plan_name` + `custom_plan_code`) and on legacy `items`
+    (`custom_plan_code` — the field shown as Plan Code on Planning sheet Item).
+    Aligns with color chart / active plan name + date + unit segment.
     """
     sheet_date = sheet_doc.get("custom_planned_date") or sheet_doc.get("ordered_date")
     active_plan = sheet_doc.get("custom_plan_name") or "Default"
 
     unique_codes = set()
 
-    def _calc_code_for_item(item):
-        item_unit = item.get("unit")
+    def _row_unit(raw):
+        item_unit = raw
         if item_unit:
-            iu_upper = item_unit.upper().replace(" ", "")
-            if "UNIT1" in iu_upper: item_unit = "Unit 1"
-            elif "UNIT2" in iu_upper: item_unit = "Unit 2"
-            elif "UNIT3" in iu_upper: item_unit = "Unit 3"
-            elif "UNIT4" in iu_upper: item_unit = "Unit 4"
-        item_date = item.get("planned_date") or sheet_date
+            iu_upper = str(item_unit).upper().replace(" ", "")
+            if "UNIT1" in iu_upper:
+                item_unit = "Unit 1"
+            elif "UNIT2" in iu_upper:
+                item_unit = "Unit 2"
+            elif "UNIT3" in iu_upper:
+                item_unit = "Unit 3"
+            elif "UNIT4" in iu_upper:
+                item_unit = "Unit 4"
+        return normalize_planning_unit_for_select(item_unit)
+
+    def _row_planned_date(item):
+        if isinstance(item, dict):
+            return (
+                item.get("planned_date")
+                or item.get("custom_item_planned_date")
+                or sheet_date
+            )
+        return (
+            getattr(item, "planned_date", None)
+            or getattr(item, "custom_item_planned_date", None)
+            or sheet_date
+        )
+
+    def _item_unit_raw(item):
+        if isinstance(item, dict):
+            return item.get("unit")
+        return getattr(item, "unit", None)
+
+    def _calc_code_for_item(item):
+        item_unit = _row_unit(_item_unit_raw(item))
+        item_date = _row_planned_date(item)
         return generate_plan_code(item_date, item_unit, active_plan)
+
+    def _apply_code_to_row(item, code):
+        """Set only fields that exist on the child DocType (Planning sheet Item vs Planning Table)."""
+        dt = getattr(item, "doctype", None)
+        if not dt:
+            return
+        meta = frappe.get_meta(dt)
+        if meta.has_field("custom_plan_code"):
+            item.custom_plan_code = code
+        if meta.has_field("plan_name"):
+            item.plan_name = code
 
     if include_legacy:
         for item in sheet_doc.get("items", []):
             code = _calc_code_for_item(item)
-            item.plan_name = code
+            _apply_code_to_row(item, code)
             if code:
                 unique_codes.add(code)
 
@@ -1914,7 +2175,7 @@ def update_sheet_plan_codes(sheet_doc, include_legacy=False):
         if new_items:
             for item in new_items:
                 code = _calc_code_for_item(item)
-                item.plan_name = code
+                _apply_code_to_row(item, code)
                 if code:
                     unique_codes.add(code)
             break
@@ -2246,6 +2507,7 @@ def _merge_reunited_legacy_psi_rows(sheet_parent):
             {"qty": merged_qty, "unit": u_only},
         )
 
+    # 1) Same SO line (preferred)
     if so_col:
         by_so = defaultdict(list)
         for r in all_rows:
@@ -2255,6 +2517,7 @@ def _merge_reunited_legacy_psi_rows(sheet_parent):
         for lst in by_so.values():
             _try_merge_group(lst)
 
+    # 2) Same item_code on this sheet when SO line is blank (common after split / clone)
     by_item = defaultdict(list)
     for r in all_rows:
         if so_col and str(r.get(so_col) or "").strip():
@@ -3626,16 +3889,29 @@ def _get_color_chart_data_impl(date=None, start_date=None, end_date=None, plan_n
     except Exception as e:
         frappe.log_error(f"Error fetching SPR achieved weights: {str(e)}")
 
-    # Fetch SPR production via spr_name field on Planning Sheet Items
+    # Fetch SPR production via spr_name field on Planning Table (board rows)
     spr_psi_achieved_weight_map = {}  # Map PSI to SPR achieved weight
     try:
-        if frappe.db.has_column("Planning Table", "spr_name"):
-            produced_col_sql = f"COALESCE(spr.{spr_produced_col}, 0)" if spr_produced_col else "0"
-            achieved_col_sql = "0"
-            for _ach_col in ["custom_total_achieved_weight", "total_achieved_weight", "total_achieved_weight_kgs", "achieved_weight", "total_achieved"]:
-                if _ach_col in spr_cols:
-                    achieved_col_sql = f"COALESCE(spr.{_ach_col}, 0)"
+        if frappe.db.has_column("Planning Table", "spr_name") and frappe.db.exists("DocType", "Shaft Production Run"):
+            spr_cols_pt = frappe.db.get_table_columns("Shaft Production Run") or []
+            spr_produced_col_pt = None
+            for c in ["total_produced_weight", "custom_total_produced_weight", "produced_qty"]:
+                if c in spr_cols_pt:
+                    spr_produced_col_pt = c
                     break
+            # Parent SPR fields are often 0 until submit; always include sum of roll line net weights.
+            items_net_sql = (
+                "(SELECT IFNULL(SUM(IFNULL(spi.net_weight, 0)), 0) FROM `tabShaft Production Run Item` spi "
+                "WHERE spi.parent = spr.name)"
+            )
+            base_prod = f"COALESCE(spr.{spr_produced_col_pt}, 0)" if spr_produced_col_pt else "0"
+            produced_col_sql = f"GREATEST({base_prod}, {items_net_sql})"
+            base_ach = "0"
+            for _ach_col in ["custom_total_achieved_weight", "total_achieved_weight", "total_achieved_weight_kgs", "achieved_weight", "total_achieved"]:
+                if _ach_col in spr_cols_pt:
+                    base_ach = f"COALESCE(spr.{_ach_col}, 0)"
+                    break
+            achieved_col_sql = f"GREATEST({base_ach}, {items_net_sql})"
 
             psi_spr_data = frappe.db.sql(f"""
                 SELECT 
@@ -3657,11 +3933,14 @@ def _get_color_chart_data_impl(date=None, start_date=None, end_date=None, plan_n
                 spr_name = row.get('spr_name')
                 produced = flt(row.get('total_produced', 0))
                 achieved = flt(row.get('total_achieved', 0))
+                eff_kg = max(achieved, produced)
                 if psi_name and spr_name:
                     if psi_name not in spr_psi_name_map:
                         spr_psi_name_map[psi_name] = spr_name
-                    if achieved > 0:
-                        spr_psi_achieved_weight_map[psi_name] = achieved
+                    if eff_kg > 0:
+                        spr_psi_achieved_weight_map[psi_name] = max(
+                            flt(spr_psi_achieved_weight_map.get(psi_name, 0)), eff_kg
+                        )
                     if produced > 0:
                         spr_psi_produced_map[psi_name] = spr_psi_produced_map.get(psi_name, 0) + produced
                         spr_psi_count_map[psi_name] = spr_psi_count_map.get(psi_name, 0) + 1
@@ -3757,8 +4036,8 @@ def _get_color_chart_data_impl(date=None, start_date=None, end_date=None, plan_n
                         so_item_wo_count_map[row.so_item] = cint(row.wo_count)
 
     data = []
-    spr_link_cache = {}
     spr_meta_cache = {}
+    pp_docstatus_cache = {}
     spr_pp_gsm_weights_cache = {}
     spr_pp_gsm_index_cache = {}
     spr_pp_gsm_achieved_cache = {}
@@ -4139,29 +4418,11 @@ def _get_color_chart_data_impl(date=None, start_date=None, end_date=None, plan_n
                 split_so_item_produced_alloc_map[alloc_bucket] = already_alloc + row_alloc
                 item_level_produced = row_alloc
 
+            # STRICT mapping: only use explicit Planning Table row -> SPR link.
+            # Never inherit SPR from SO/PP level; each row must continue only its own SPR.
             spr_name = ""
             if psi_name and psi_name in spr_psi_name_map:
                 spr_name = spr_psi_name_map[psi_name]
-            elif split_group:
-                # Do not attach SO-line or PP-level SPR to sibling rows — only spr_name on this PT row counts.
-                spr_name = ""
-            elif so_item_key and not cint(item.get("is_split")) and so_item_key in spr_so_item_name_map:
-                spr_name = spr_so_item_name_map[so_item_key]
-            elif item_pp and not so_item_key and not cint(item.get("is_split")) and item_pp in spr_pp_name_map:
-                spr_name = spr_pp_name_map[item_pp]
-            
-            # Fallback to direct field on Production Plan if still not found
-            if not spr_name and item_pp and not so_item_key and not cint(item.get("is_split")) and not split_group:
-                if item_pp in spr_link_cache:
-                    spr_name = spr_link_cache[item_pp]
-                else:
-                    raw_spr_link = frappe.db.get_value("Production Plan", item_pp, "custom_shaft_production_run_id") or ""
-                    linked_spr = str(raw_spr_link).split(",")[0].strip() if raw_spr_link else ""
-                    if linked_spr and frappe.db.exists("Shaft Production Run", linked_spr):
-                        spr_name = linked_spr
-                    else:
-                        spr_name = ""
-                    spr_link_cache[item_pp] = spr_name
 
             spr_docstatus = None
             spr_unit = ""
@@ -4177,6 +4438,14 @@ def _get_color_chart_data_impl(date=None, start_date=None, end_date=None, plan_n
                     spr_meta_cache[spr_name] = {"docstatus": spr_docstatus, "unit": spr_unit}
 
             item_pending_qty = max(flt(item.get("qty", 0)) - flt(item_level_produced), 0)
+
+            pp_docstatus = None
+            if item_pp:
+                if item_pp in pp_docstatus_cache:
+                    pp_docstatus = pp_docstatus_cache[item_pp]
+                else:
+                    pp_docstatus = cint(frappe.db.get_value("Production Plan", item_pp, "docstatus") or 0)
+                    pp_docstatus_cache[item_pp] = pp_docstatus
 
             pp_target_qty = flt(pp_wo_target_qty_map.get(item_pp, 0)) if item_pp else 0
             pp_produced_qty = flt(pp_wo_produced_qty_map.get(item_pp, 0)) if item_pp else 0
@@ -4202,10 +4471,16 @@ def _get_color_chart_data_impl(date=None, start_date=None, end_date=None, plan_n
                 else:
                     total_achieved_weight_kgs = _take_next_pp_header_achieved(item_pp, item.get("qty"))
 
-            # Production Table shows actual_production_weight_kgs from this field. For split lines, PP-level
-            # SPR achieved fallback above repeats the same total on every row without its own spr_name.
+            # Production Table shows actual_production_weight_kgs from this field.
+            # Split rows: keep per-row SPR weight when this Planning Table row is linked to an SPR
+            # (spr_psi_* maps); only use allocated item_level_produced when no SPR weight exists.
             if cint(item.get("is_split")) or split_group:
-                total_achieved_weight_kgs = flt(item_level_produced)
+                has_psi_spr_weight = psi_name and (
+                    (psi_name in spr_psi_achieved_weight_map and flt(spr_psi_achieved_weight_map.get(psi_name)) > 0)
+                    or (psi_name in spr_psi_produced_map and flt(spr_psi_produced_map.get(psi_name)) > 0)
+                )
+                if not has_psi_spr_weight:
+                    total_achieved_weight_kgs = flt(item_level_produced)
             
             delivered_qty = max(
                 flt(so_item_delivered_qty_map.get(((sheet.sales_order or "").strip(), (item.get("item_code") or "").strip()), 0)),
@@ -4263,6 +4538,7 @@ def _get_color_chart_data_impl(date=None, start_date=None, end_date=None, plan_n
                 "wo_terminal": wo_terminal,
                 "isSplit": item.get("is_split"),
                 "pp_id": item_pp or "",  # Item-level production plan ID for direct PP view routing
+                "pp_docstatus": pp_docstatus,
                 "spr_name": spr_name,  # SPR linked to PP (validated)
                 "spr_docstatus": spr_docstatus,
                 "spr_unit": spr_unit,
@@ -4833,7 +5109,7 @@ def create_plan_name_field():
     frappe.db.commit()
     
     # Automatically kick off a background job to populate old sheets if they are missing codes
-    frappe.enqueue("production_scheduler.api.backfill_plan_codes", queue="short", timeout=300)
+    frappe.enqueue("production_entry.production_planning.scheduler_api.backfill_plan_codes", queue="short", timeout=300)
 
     return {"status": "success"}
 
@@ -5217,7 +5493,7 @@ def get_smart_push_sequence(item_names, target_date=None, seed_quality=None, see
     
     # Group by unit for specialized sorting
     result_sequence = []
-    for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"]:
+    for u in ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "UNASSIGNED"]:
         unit_items = [it for it in items if _normalize_unit(it.get("unit")) == u]
         if not unit_items: continue
         
@@ -5332,7 +5608,7 @@ def move_items_to_plan(item_names, target_plan, date=None, start_date=None, end_
             item_doc = frappe.get_doc("Planning Table", name)
             parent_sheet = frappe.get_doc("Planning sheet", item_doc.parent)
 
-            target_unit = item_doc.unit or "Mixed"
+            target_unit = item_doc.unit or "UNASSIGNED"
             effective_date = parent_sheet.get("custom_planned_date") or parent_sheet.ordered_date
             party_code = parent_sheet.party_code or ""
 
@@ -6049,10 +6325,16 @@ def create_planning_sheet_from_so(doc):
 def create_production_plan_from_sheet(sheet_name):
     """
     Creates a Production Plan from a Planning Sheet.
+    If the sheet already has a linked Production Plan (header or row), returns it — no duplicate PP.
     """
-    if not sheet_name: return
+    if not sheet_name:
+        return
     sheet = frappe.get_doc("Planning sheet", sheet_name)
-    
+
+    existing = _resolve_existing_production_plan_for_planning_sheet(sheet_name)
+    if existing:
+        return existing
+
     pp = frappe.new_doc("Production Plan")
     pp.company = frappe.defaults.get_user_default("Company")
     pp.customer = sheet.customer
@@ -6067,6 +6349,11 @@ def create_production_plan_from_sheet(sheet_name):
              row.sales_order_item = item.sales_order_item
              
     pp.insert()
+
+    if frappe.db.has_column("Production Plan", "custom_planning_sheet"):
+        frappe.db.set_value("Production Plan", pp.name, "custom_planning_sheet", sheet.name)
+    elif frappe.db.has_column("Production Plan", "planning_sheet"):
+        frappe.db.set_value("Production Plan", pp.name, "planning_sheet", sheet.name)
 
     # Persist PP link at sheet header (legacy) and item-level (source of truth for row actions)
     if frappe.db.has_column("Planning sheet", "custom_production_plan"):
@@ -6133,6 +6420,31 @@ def create_production_plan_bulk(sheets):
         
     # 3. Create Plans
     for cust, cust_sheets in sheets_by_customer.items():
+        existing_pps = [
+            _resolve_existing_production_plan_for_planning_sheet(s.name) for s in cust_sheets
+        ]
+        non_null = [p for p in existing_pps if p]
+        if non_null:
+            unique = set(non_null)
+            if len(unique) > 1:
+                frappe.throw(
+                    _(
+                        "These planning sheets are already linked to different Production Plans ({0}). "
+                        "Cancel duplicate plans in Manufacturing or unlink sheets before creating a new merged plan."
+                    ).format(", ".join(sorted(unique)))
+                )
+            only_pp = list(unique)[0]
+            if len(non_null) == len(cust_sheets):
+                # Every sheet in this batch already points at the same PP — do not create another.
+                created_plans.append(only_pp)
+                continue
+            frappe.throw(
+                _(
+                    "Some planning sheets already have Production Plan {0}; others do not. "
+                    "Link all rows first or create plans one sheet at a time."
+                ).format(only_pp)
+            )
+
         pp = frappe.new_doc("Production Plan")
         pp.company = frappe.defaults.get_user_default("Company")
         pp.customer = cust if cust != "No Customer" else None
@@ -6165,6 +6477,13 @@ def create_production_plan_bulk(sheets):
         
         pp.insert()
 
+        if len(cust_sheets) == 1:
+            s0 = cust_sheets[0]
+            if frappe.db.has_column("Production Plan", "custom_planning_sheet"):
+                frappe.db.set_value("Production Plan", pp.name, "custom_planning_sheet", s0.name)
+            elif frappe.db.has_column("Production Plan", "planning_sheet"):
+                frappe.db.set_value("Production Plan", pp.name, "planning_sheet", s0.name)
+
         # Persist PP link at item-level for exact row-to-PP mapping
         psi_pp_field = _psi_production_plan_field()
         psi_order_sheet_field = _psi_order_sheet_field()
@@ -6184,6 +6503,45 @@ def create_production_plan_bulk(sheets):
         created_plans.append(pp.name)
         
     return created_plans
+
+
+@frappe.whitelist()
+def audit_production_plans_for_planning_sheet(planning_sheet_name):
+    """
+    Read-only helper: list Production Plan documents tied to a Planning sheet.
+    Use after repeated "Create Plan" clicks to see duplicates before cancelling extras in Manufacturing.
+    """
+    if not planning_sheet_name:
+        return {"ok": False, "message": "planning_sheet_name required"}
+    if not frappe.db.exists("Planning sheet", planning_sheet_name):
+        return {"ok": False, "message": "Planning sheet not found"}
+
+    resolved = _resolve_existing_production_plan_for_planning_sheet(planning_sheet_name)
+    by_link = []
+    for col in ("custom_planning_sheet", "planning_sheet"):
+        if frappe.db.has_column("Production Plan", col):
+            by_link.extend(
+                frappe.get_all(
+                    "Production Plan",
+                    filters={col: planning_sheet_name},
+                    fields=["name", "docstatus", "status", "creation"],
+                    order_by="creation asc",
+                )
+            )
+
+    header_pp = None
+    for col in ("custom_production_plan", "production_plan"):
+        if frappe.db.has_column("Planning sheet", col):
+            header_pp = frappe.db.get_value("Planning sheet", planning_sheet_name, col)
+            break
+
+    return {
+        "ok": True,
+        "planning_sheet": planning_sheet_name,
+        "reuse_would_return": resolved,
+        "header_production_plan": header_pp,
+        "production_plans_with_reverse_link": by_link,
+    }
 
 
 @frappe.whitelist()
@@ -8564,6 +8922,24 @@ def validate_planning_sheet_duplicates(doc, method=None):
         )
 
 
+def sync_work_order_custom_production_plan(doc, method=None):
+    """Keep Work Order.custom_production_plan in sync with production_plan when the custom field exists.
+
+    Many sites filter list views by custom_production_plan; ERPNext only fills production_plan.
+    Without mirroring, filters show no rows even when WOs exist.
+    """
+    try:
+        if not frappe.db.has_column("tabWork Order", "custom_production_plan"):
+            return
+        pp = (doc.get("production_plan") or "").strip()
+        if not pp:
+            return
+        if not (doc.get("custom_production_plan") or "").strip():
+            doc.custom_production_plan = pp
+    except Exception:
+        pass
+
+
 def normalize_work_order_pending_status(doc, method=None):
     """
     Defensive normalization: ERPNext Work Order does not allow status "Pending".
@@ -9688,7 +10064,7 @@ def backfill_pp_id_to_sheet_items(planning_sheet_name=None, dry_run=1):
 def test_quality_extraction():
     """
     Test and verify that quality code extraction is working correctly.
-    Can be called from console: frappe.call({method: 'production_scheduler.api.test_quality_extraction'})
+    Can be called from console: frappe.call({method: 'production_entry.production_planning.scheduler_api.test_quality_extraction'})
     
     Tests:
     1. Quality Master structure and available fields
@@ -9810,7 +10186,7 @@ def test_quality_extraction():
         
         # TEST 6: Verify implementation function exists
         try:
-            from production_scheduler.api import _populate_planning_sheet_items, _get_color_by_code
+            from production_entry.production_planning.scheduler_api import _populate_planning_sheet_items, _get_color_by_code
             results["tests"].append({
                 "name": "Implementation Functions",
                 "functions": ["_populate_planning_sheet_items", "_get_color_by_code"],
@@ -9999,6 +10375,8 @@ def create_item_spr(pp_id, planning_sheet_item_names):
         if label_value:
             spr.custom_label = label_value
 
+        frappe.logger().info(f"[create_item_spr] Set custom_label={label_value or ''} for PP {pp_id}")
+        
         def pick_value(source, keys, default=None):
             for k in keys:
                 v = source.get(k)
@@ -10019,6 +10397,7 @@ def create_item_spr(pp_id, planning_sheet_item_names):
         wo_names_str = ", ".join([wo.name for wo in pp_work_orders]) if pp_work_orders else ""
         wo_total_qty = sum(flt(wo.qty) for wo in pp_work_orders)
 
+        # Set custom_total_planned_qty from Work Orders; if WOs are missing/zero, use PP / PP-items (same as desk).
         if wo_total_qty > 0:
             spr.custom_total_planned_qty = wo_total_qty
             frappe.logger().info(f"[create_item_spr] Set custom_total_planned_qty={wo_total_qty} from WO sum for PP {pp_id}")
@@ -10314,7 +10693,7 @@ def get_spr_shaft_jobs_from_pp(pp_id):
             if not flt(jobs[-1]["total_weight_kgs"]) and wo_total_qty:
                 jobs[-1]["total_weight_kgs"] = flt(wo_total_qty)
 
-            # Resolve work_orders from combination + GSM (multi-width jobs need multiple WOs)
+            # Resolve work_orders from combination + GSM (e.g. 46"+42"+38" → three WOs on the PP)
             try:
                 from production_entry.production_planning.doctype.shaft_production_run.shaft_production_run import (
                     _resolve_wos_for_pp_job_row,
