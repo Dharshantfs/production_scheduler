@@ -21,7 +21,7 @@ def normalize_planning_unit_for_select(raw, _depth=0):
         parts = [p.strip() for p in s.split("|")]
         if len(parts) >= 2 and parts[1]:
             return normalize_planning_unit_for_select(parts[1], _depth + 1)
-    allowed = ("UNASSIGNED", "Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed")
+    allowed = ("UNASSIGNED", "Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed", "Lamination Unit")
     if s in allowed:
         return s
     u = s.upper().replace(" ", "").replace("_", "")
@@ -30,6 +30,8 @@ def normalize_planning_unit_for_select(raw, _depth=0):
     # Exact "Mixed" only — substring match caused false positives (e.g. composite keys containing |Mixed|).
     if u == "MIXED":
         return "Mixed"
+    if u == "LAMINATIONUNIT" or s.strip().lower() == "lamination unit":
+        return "Lamination Unit"
     for i in (1, 2, 3, 4):
         if f"UNIT{i}" in u:
             return f"Unit {i}"
