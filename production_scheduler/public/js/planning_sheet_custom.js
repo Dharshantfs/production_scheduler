@@ -2,6 +2,13 @@
 frappe.ui.form.on('Planning sheet', {
     refresh: function(frm) {
         if (!frm.doc || !frm.doc.name) return;
+        if (!frm.__board_sync_listener_bound) {
+            frm.__board_sync_listener_bound = true;
+            frappe.realtime.on('planning_sheet_row_sync', (payload) => {
+                if (!payload || payload.planning_sheet !== frm.doc.name) return;
+                frm.reload_doc();
+            });
+        }
         frm.add_custom_button(__('Update Colors'), function() {
             frappe.call({
                 method: 'production_scheduler.api.refresh_planning_sheet_colors',
