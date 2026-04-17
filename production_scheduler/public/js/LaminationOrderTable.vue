@@ -147,12 +147,14 @@
                   type="button"
                   @click="startParentWO(row)"
                   class="cc-pp-btn pt-btn-entry"
+                  :title="startWoTitle(row)"
                 >{{ woActionLabel(row) }}</button>
                 <button
                   v-else-if="canOpenWO(row)"
                   type="button"
                   @click="openParentWO(row)"
                   class="cc-pp-btn pt-btn-entry"
+                  title="Open parent Work Order"
                 >Open WO</button>
                 <button
                   v-if="canShowStockEntry(row)"
@@ -618,20 +620,29 @@ function canShowStockEntry(item) {
 function canStartWO(item) {
   if (!item || !item.pp_id) return false;
   if (!item.is_lamination_parent) return false;
-  if (!item.parent_ready_for_wo) return false;
   if (item.parent_wo_terminal) return false;
-  if (item.parent_wo_started && Number(item.parent_wo_docstatus || 0) === 1) return false;
+  if (Number(item.parent_wo_docstatus || 0) === 1) return false;
   return true;
 }
 
 function woActionLabel(item) {
-  if (item?.parent_wo_started && Number(item?.parent_wo_docstatus || 0) === 0) return "Start WO";
-  return item?.parent_wo_started ? "Open WO" : "Start WO";
+  const docstatus = Number(item?.parent_wo_docstatus || 0);
+  if (item?.parent_wo_name && docstatus === 0) return "Submit WO";
+  return "Start WO";
+}
+
+function startWoTitle(item) {
+  if (!item) return "";
+  if (!item.parent_ready_for_wo) return "Complete child WO first to start this Work Order";
+  const docstatus = Number(item?.parent_wo_docstatus || 0);
+  if (item?.parent_wo_name && docstatus === 0) return "Submit draft WO";
+  return "Create draft WO";
 }
 
 function canOpenWO(item) {
   if (!item || !item.is_lamination_parent) return false;
-  return Number(item.parent_wo_started || 0) === 1 && Number(item.parent_wo_docstatus || 0) === 1;
+  if (!item.parent_wo_name) return false;
+  return Number(item.parent_wo_docstatus || 0) === 1;
 }
 
 function openParentWO(item) {
