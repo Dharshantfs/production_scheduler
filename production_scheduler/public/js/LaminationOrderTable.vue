@@ -149,6 +149,12 @@
                   class="cc-pp-btn pt-btn-entry"
                 >{{ woActionLabel(row) }}</button>
                 <button
+                  v-else-if="canOpenWO(row)"
+                  type="button"
+                  @click="openParentWO(row)"
+                  class="cc-pp-btn pt-btn-entry"
+                >Open WO</button>
+                <button
                   v-if="canShowStockEntry(row)"
                   type="button"
                   @click="handleStockEntryAction(row)"
@@ -165,7 +171,7 @@
                 >{{ itemSprPrimaryButtonLabel(row) }}</button>
                 <span v-else-if="row.pp_id && Number(row.pp_docstatus) !== 1" class="pt-wo-closed-hint">PP Draft</span>
                 <span v-else-if="row.pp_id && row.wo_terminal" class="pt-wo-closed-hint">âœ… WO closed</span>
-                <span v-else-if="row.is_lamination_parent && !row.parent_ready_for_wo" class="pt-wo-closed-hint">Create child WO first</span>
+                <span v-else-if="row.is_lamination_parent && !row.parent_ready_for_wo" class="pt-wo-closed-hint">Complete child WO first</span>
                 <span v-else style="color:#999;font-size:10px;">No PP</span>
               </div>
             </td>
@@ -614,6 +620,7 @@ function canStartWO(item) {
   if (!item.is_lamination_parent) return false;
   if (!item.parent_ready_for_wo) return false;
   if (item.parent_wo_terminal) return false;
+  if (item.parent_wo_started && Number(item.parent_wo_docstatus || 0) === 1) return false;
   return true;
 }
 
@@ -622,12 +629,23 @@ function woActionLabel(item) {
   return item?.parent_wo_started ? "Open WO" : "Start WO";
 }
 
+function canOpenWO(item) {
+  if (!item || !item.is_lamination_parent) return false;
+  return Number(item.parent_wo_started || 0) === 1 && Number(item.parent_wo_docstatus || 0) === 1;
+}
+
+function openParentWO(item) {
+  const woName = String(item?.parent_wo_name || "").trim();
+  if (!woName) return;
+  frappe.set_route("Form", "Work Order", woName);
+}
+
 async function startParentWO(item) {
   if (!item?.itemName) return;
   try {
     if (!item.parent_ready_for_wo) {
       frappe.msgprint(
-        `Child WO not completed. Create child WO first. Current fabric: ${formatKg2(item.fabric_achieved_kg)} / ${formatKg2(item.fabric_required_kg)} Kg`
+        `Child WO not completed. Complete child WO first. Current fabric: ${formatKg2(item.fabric_achieved_kg)} / ${formatKg2(item.fabric_required_kg)} Kg`
       );
       return;
     }
