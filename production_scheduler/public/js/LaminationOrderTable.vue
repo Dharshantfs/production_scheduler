@@ -93,6 +93,7 @@
             <th>ACHIEVED MTR</th>
             <th>KGS</th>
             <th>FABRIC QTY (KG)</th>
+            <th>CHILD WO PROD (KG)</th>
             <th style="min-width:90px;">PRODUCTION PLAN</th>
             <th style="min-width:128px;">SPR / WO</th>
             <th style="min-width:84px;">ORDER</th>
@@ -128,6 +129,7 @@
             <td class="cell-right">{{ formatNum(row.achieved_meter) }}</td>
             <td class="cell-right">{{ formatKg2(row.actual_production_weight_kgs) }}</td>
             <td class="cell-right">{{ formatKg2(row.fabric_achieved_kg) }} / {{ formatKg2(row.fabric_required_kg) }}</td>
+            <td class="cell-right">{{ formatKg2(row.child_wo_produced_kg) }}</td>
             <td class="cell-center">
               <button v-if="row.pp_id" type="button" @click="openProductionPlanView(row.planningSheet, row.salesOrderItem, row.itemName, row.pp_id || '')" class="cc-pp-btn">📋 View</button>
               <span v-else class="pt-no-pp-hint">No PP</span>
@@ -173,7 +175,7 @@
             </td>
           </tr>
           <tr v-if="!filteredRows.length">
-            <td colspan="16" class="cell-center" style="padding:24px;color:#64748b;">No lamination orders for this view.</td>
+            <td colspan="17" class="cell-center" style="padding:24px;color:#64748b;">No lamination orders for this view.</td>
           </tr>
         </tbody>
       </table>
@@ -612,7 +614,6 @@ function canStartWO(item) {
   if (!item.is_lamination_parent) return false;
   if (!item.parent_ready_for_wo) return false;
   if (item.parent_wo_terminal) return false;
-  if (item.parent_wo_started && Number(item.parent_wo_docstatus || 0) === 1) return false;
   return true;
 }
 
