@@ -759,44 +759,137 @@ def get_lamination_order_table_data(
                 spr_meters[r["parent"]] = flt(r.get("mtrs"))
 
     pp_child_wo_cache = {}
+    child_so_pp_cache = {}
     fabric_progress = {}
 
-    def _get_child_progress(sheet_name, so_item):
-        key = (str(sheet_name or "").strip(), str(so_item or "").strip())
+    def _get_child_progress(sheet_name, so_item, parent_pp_id=None):
+        key = (str(sheet_name or "").strip(), str(so_item or "").strip(), str(parent_pp_id or "").strip())
         if key in fabric_progress:
             return fabric_progress[key]
-        if not key[0]:
-            fabric_progress[key] = {"required": 0.0, "achieved": 0.0, "child_wo_produced_kg": 0.0, "child_wo_created": False, "child_wo_done": False, "count": 0}
-            return fabric_progress[key]
-        where_so = "AND IFNULL(sales_order_item, '') = %s" if frappe.db.has_column("Planning Table", "sales_order_item") else ""
-        params = [key[0]]
-        if where_so:
-            params.append(key[1])
+        empty = {"required": 0.0, "achieved": 0.0, "child_wo_produced_kg": 0.0, "child_wo_created": False, "child_wo_done": False, "count": 0}
+        if not key[0] and not key[1]:
+            fabric_progress[key] = empty
+            return empty
+
+        has_so_item = frappe.db.has_column("Planning Table", "sales_order_item")
+        has_custom_so_item = frappe.db.has_column("Planning Table", "custom_sales_order_item")
         achieved_expr = "IFNULL(actual_production_weight_kgs, 0)" if frappe.db.has_column("Planning Table", "actual_production_weight_kgs") else "0"
-        child_rows = frappe.db.sql(
-            f"""
-            SELECT name, qty, {achieved_expr} as achieved
-            FROM `tabPlanning Table`
-            WHERE parent = %s
-              AND item_code LIKE '100%%'
-              {where_so}
-            """,
-            tuple(params),
-            as_dict=True,
+        child_pp_fields = _psi_production_plan_fields()
+        child_pp_select = (
+            ", " + ", ".join([f"IFNULL({f}, '') as {f}" for f in child_pp_fields])
+            if child_pp_fields else ""
         )
+
+        child_rows = []
+
+        # Path 1: same planning sheet
+        if key[0]:
+            where_so = ""
+            params = [key[0]]
+            if key[1] and has_so_item and has_custom_so_item:
+                where_so = "AND (IFNULL(sales_order_item, '') = %s OR IFNULL(custom_sales_order_item, '') = %s)"
+                params.extend([key[1], key[1]])
+            elif key[1] and has_so_item:
+                where_so = "AND IFNULL(sales_order_item, '') = %s"
+                params.append(key[1])
+            elif key[1] and has_custom_so_item:
+                where_so = "AND IFNULL(custom_sales_order_item, '') = %s"
+                params.append(key[1])
+            same_sheet_rows = frappe.db.sql(
+                f"""
+                SELECT name, qty, item_code, {achieved_expr} as achieved{child_pp_select}
+                FROM `tabPlanning Table`
+                WHERE parent = %s
+                  AND item_code LIKE '100%%'
+                  {where_so}
+                """,
+                tuple(params),
+                as_dict=True,
+            )
+            child_rows.extend(same_sheet_rows or [])
+
+        # Path 2: different sheet — cross-sheet lookup by sales_order_item
+        if not child_rows and key[1]:
+            so_cols = []
+            if has_so_item:
+                so_cols.append("IFNULL(sales_order_item, '') = %s")
+            if has_custom_so_item:
+                so_cols.append("IFNULL(custom_sales_order_item, '') = %s")
+            if so_cols:
+                where_cross = " OR ".join(so_cols)
+                cross_params = [key[1]] * len(so_cols)
+                exclude_parent = ""
+                exclude_params = []
+                if key[0]:
+                    exclude_parent = "AND parent != %s"
+                    exclude_params.append(key[0])
+                cross_rows = frappe.db.sql(
+                    f"""
+                    SELECT name, qty, item_code, {achieved_expr} as achieved{child_pp_select}
+                    FROM `tabPlanning Table`
+                    WHERE item_code LIKE '100%%'
+                      AND ({where_cross})
+                      {exclude_parent}
+                    """,
+                    tuple(cross_params + exclude_params),
+                    as_dict=True,
+                )
+                child_rows.extend(cross_rows or [])
+
+        # Path 3: resolve directly via sales_order_item → fabric PP → WO
+        if not child_rows and key[1]:
+            if key[1] not in child_so_pp_cache:
+                child_so_pp_cache[key[1]] = _resolve_pp_by_sales_order_item(key[1])
+            fabric_pp = child_so_pp_cache.get(key[1])
+            if fabric_pp:
+                if fabric_pp not in pp_child_wo_cache:
+                    wo_rows = frappe.get_all(
+                        "Work Order",
+                        filters={"production_plan": fabric_pp, "docstatus": ["<", 2]},
+                        fields=["name", "status", "produced_qty", "qty"],
+                    )
+                    produced = sum(flt(w.get("produced_qty") or 0) for w in (wo_rows or []))
+                    planned = sum(flt(w.get("qty") or 0) for w in (wo_rows or []))
+                    terminal = bool(wo_rows) and all(
+                        str(w.get("status") or "").strip().lower() in {"completed", "stopped", "cancelled", "closed"}
+                        for w in (wo_rows or [])
+                    )
+                    pp_child_wo_cache[fabric_pp] = {"produced": produced, "planned": planned, "created": bool(wo_rows), "terminal": terminal}
+                cached = pp_child_wo_cache.get(fabric_pp) or {}
+                bucket = {
+                    "required": flt(cached.get("planned") or 0),
+                    "achieved": flt(cached.get("produced") or 0),
+                    "child_wo_produced_kg": flt(cached.get("produced") or 0),
+                    "child_wo_created": bool(cached.get("created")),
+                    "child_wo_done": bool(cached.get("terminal")),
+                    "count": 1 if cached.get("created") else 0,
+                }
+                fabric_progress[key] = bucket
+                return bucket
+
         bucket = {"required": 0.0, "achieved": 0.0, "child_wo_produced_kg": 0.0, "child_wo_created": False, "child_wo_done": True, "count": 0}
         for ch in child_rows or []:
             bucket["count"] += 1
             bucket["required"] += flt(ch.get("qty") or 0)
-            bucket["achieved"] += flt(ch.get("achieved") or 0)
-            child_pp = _get_item_level_production_plan(ch.get("name"))
+            child_pp = ""
+            for _ppf in child_pp_fields:
+                _v = str(ch.get(_ppf) or "").strip()
+                if _v:
+                    child_pp = _v
+                    break
+            if not child_pp:
+                child_pp = _get_item_level_production_plan(ch.get("name"))
+            if not child_pp and key[1]:
+                if key[1] not in child_so_pp_cache:
+                    child_so_pp_cache[key[1]] = _resolve_pp_by_sales_order_item(key[1])
+                child_pp = child_so_pp_cache.get(key[1])
             child_wo = {"produced": 0.0, "created": False, "terminal": False}
             if child_pp:
                 if child_pp not in pp_child_wo_cache:
                     wo_rows = frappe.get_all(
                         "Work Order",
                         filters={"production_plan": child_pp, "docstatus": ["<", 2]},
-                        fields=["status", "produced_qty"],
+                        fields=["status", "produced_qty", "qty"],
                     )
                     produced = sum(flt(w.get("produced_qty") or 0) for w in (wo_rows or []))
                     terminal = bool(wo_rows) and all(
@@ -805,11 +898,18 @@ def get_lamination_order_table_data(
                     )
                     pp_child_wo_cache[child_pp] = {"produced": produced, "created": bool(wo_rows), "terminal": terminal}
                 child_wo = pp_child_wo_cache.get(child_pp) or {"produced": 0.0, "created": False, "terminal": False}
-            bucket["child_wo_produced_kg"] += flt(ch.get("achieved") or 0)
+
+            # Use live WO produced_qty (manufactured_qty) for real-time progress.
+            wo_produced = flt(child_wo.get("produced") or 0)
+            row_achieved = wo_produced if wo_produced > 0 else flt(ch.get("achieved") or 0)
+            bucket["achieved"] += row_achieved
+            bucket["child_wo_produced_kg"] += row_achieved
+
             if cint(child_wo.get("created") or 0):
                 bucket["child_wo_created"] = True
             if not cint(child_wo.get("terminal") or 0):
                 bucket["child_wo_done"] = False
+
         if bucket["count"] == 0:
             bucket["child_wo_done"] = False
         fabric_progress[key] = bucket
@@ -837,7 +937,7 @@ def get_lamination_order_table_data(
             str(row.get("planningSheet") or "").strip(),
             str(row.get("salesOrderItem") or row.get("sales_order_item") or "").strip(),
         )
-        progress = _get_child_progress(key[0], key[1])
+        progress = _get_child_progress(key[0], key[1], row.get("pp_id"))
         row["fabric_required_kg"] = flt(progress.get("required") or 0)
         row["fabric_achieved_kg"] = flt(progress.get("achieved") or 0)
         row["child_wo_produced_kg"] = flt(progress.get("child_wo_produced_kg") or 0)
@@ -891,6 +991,58 @@ def get_lamination_order_table_data(
 
 
 @frappe.whitelist()
+    def sync_spr_weight_to_lamination_table(spr_name=None):
+        """Force-refresh Planning Table fabric weights from submitted SPRs."""
+        try:
+            if not frappe.db.has_column("Planning Table", "actual_production_weight_kgs"):
+                return {"status": "error", "message": "Planning Table missing actual_production_weight_kgs"}
+            if not frappe.db.has_column("Planning Table", "spr_name"):
+                return {"status": "error", "message": "Planning Table missing spr_name"}
+
+            if spr_name:
+                spr_rows = frappe.db.sql(
+                    """
+                    SELECT name, total_produced_weight
+                    FROM `tabShaft Production Run`
+                    WHERE name = %s AND docstatus = 1
+                    """,
+                    (spr_name,),
+                    as_dict=True,
+                )
+            else:
+                spr_rows = frappe.db.sql(
+                    """
+                    SELECT name, total_produced_weight
+                    FROM `tabShaft Production Run`
+                    WHERE docstatus = 1
+                      AND IFNULL(total_produced_weight, 0) > 0
+                    """,
+                    as_dict=True,
+                )
+
+            updated = 0
+            for spr in spr_rows or []:
+                spr_id = str(spr.get("name") or "").strip()
+                weight = flt(spr.get("total_produced_weight") or 0)
+                if not spr_id or weight <= 0:
+                    continue
+                frappe.db.sql(
+                    """
+                    UPDATE `tabPlanning Table`
+                    SET actual_production_weight_kgs = %s
+                    WHERE spr_name = %s
+                    """,
+                    (weight, spr_id),
+                )
+                updated += 1
+
+            return {"status": "success", "updated": updated, "message": f"Synced {updated} SPR(s)"}
+        except Exception:
+            frappe.log_error(frappe.get_traceback(), "sync_spr_weight_to_lamination_table")
+            return {"status": "error", "message": "Sync failed"}
+
+
+    @frappe.whitelist()
 def start_lamination_parent_wo(item_name, submit_existing=0):
     """Create parent lamination WO in Draft once child fabric WO is terminal; user edits source warehouse then starts."""
     item_name = str(item_name or "").strip()
@@ -899,7 +1051,9 @@ def start_lamination_parent_wo(item_name, submit_existing=0):
 
     pt_cols = frappe.db.get_table_columns("Planning Table") or []
     so_col = "sales_order_item" if "sales_order_item" in pt_cols else ("custom_sales_order_item" if "custom_sales_order_item" in pt_cols else None)
-    fields = ["name", "parent", "item_code", "qty", "bom_no"]
+    fields = ["name", "parent", "item_code", "qty"]
+    if "bom_no" in pt_cols:
+        fields.append("bom_no")
     if so_col:
         fields.append(so_col)
     item = frappe.db.get_value("Planning Table", item_name, fields, as_dict=True) or {}
