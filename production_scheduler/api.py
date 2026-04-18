@@ -782,28 +782,18 @@ def get_lamination_order_table_data(
 
         child_rows = []
 
-        # Path 1: same planning sheet
+        # Path 1: same planning sheet — find ALL 100% (fabric) rows in the same sheet.
+        # No sales_order_item filter: 104 parent and 100 child have DIFFERENT SO items
+        # but live on the same Planning Sheet. SO item filter would return zero rows.
         if key[0]:
-            where_so = ""
-            params = [key[0]]
-            if key[1] and has_so_item and has_custom_so_item:
-                where_so = "AND (IFNULL(sales_order_item, '') = %s OR IFNULL(custom_sales_order_item, '') = %s)"
-                params.extend([key[1], key[1]])
-            elif key[1] and has_so_item:
-                where_so = "AND IFNULL(sales_order_item, '') = %s"
-                params.append(key[1])
-            elif key[1] and has_custom_so_item:
-                where_so = "AND IFNULL(custom_sales_order_item, '') = %s"
-                params.append(key[1])
             same_sheet_rows = frappe.db.sql(
                 f"""
                 SELECT name, qty, item_code, {achieved_expr} as achieved{child_pp_select}
                 FROM `tabPlanning Table`
                 WHERE parent = %s
                   AND item_code LIKE '100%%'
-                  {where_so}
                 """,
-                tuple(params),
+                (key[0],),
                 as_dict=True,
             )
             child_rows.extend(same_sheet_rows or [])
