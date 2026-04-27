@@ -5,7 +5,7 @@ import json
 import re
 import datetime
 
-from production_entry.production_planning.planning_doctypes import normalize_planning_unit_for_select
+from production_scheduler.planning_doctypes import normalize_planning_unit_for_select
 
 # Party / order code auto-generation (MonthLetter+YY+NNN + SO writeback).
 # Set True to enable; False disables all calls (no codes generated, no SO writeback from this path).
@@ -14,11 +14,50 @@ PARTY_CODE_GENERATION_ENABLED = False
 # Lamination: SO lines with item 104 (laminated FG) get a paired fabric (100*) row from BOM on the same Planning sheet.
 # Board filter only applies when callers pass board_process_scope (see get_color_chart_data).
 LAMINATION_FLOW_ENABLED = True
+SLITTING_FLOW_ENABLED = True
 
 
 def _item_process_prefix(item_code):
 	ic = (item_code or "").strip()
 	return ic[:3] if len(ic) >= 3 else ""
+
+
+def _parent_child_trace_id_from_item_code(item_code):
+	"""
+	Readable trace id format requested by operations team:
+	<process>-<parentLast4>-<parentGsm3>
+	Example: 1041030010231475-B1 -> 104-1475-023
+	"""
+	ic = str(item_code or "").strip()
+	if len(ic) < 12:
+		return ""
+	process = _item_process_prefix(ic)
+	if process not in ("103", "104"):
+		return ""
+	parent_last4 = ic[-4:] if len(ic) >= 4 else ""
+	parent_gsm3 = ic[9:12] if len(ic) >= 12 else ""
+	if not parent_last4 or not parent_gsm3:
+		return ""
+	return f"{process}-{parent_last4}-{parent_gsm3}"
+
+
+def _set_trace_id_if_supported(row_dict_or_doc, trace_id):
+	if not trace_id:
+		return
+	can_write = False
+	try:
+		can_write = frappe.db.has_column("Planning Table", "custom_parent_child_trace_id") or frappe.db.has_column("Planning sheet Item", "custom_parent_child_trace_id")
+	except Exception:
+		can_write = False
+	if not can_write:
+		return
+	try:
+		if isinstance(row_dict_or_doc, dict):
+			row_dict_or_doc["custom_parent_child_trace_id"] = trace_id
+		else:
+			setattr(row_dict_or_doc, "custom_parent_child_trace_id", trace_id)
+	except Exception:
+		pass
 
 
 def _month_letter_from_date(dt):
@@ -104,7 +143,8 @@ def ensure_lamination_booking_for_planning_sheet(doc):
 	if has_sheet_code_old:
 		doc.custom_lamination_booking_id = code
 
-	# Build SO item -> lamination side map (supports multiple SOI fieldnames)
+	# Build a map of SO item -> lamination side for 104 rows.
+	# Support multiple possible field names on Sales Order Item.
 	so_lam_side_map = {}
 	so_name = (getattr(doc, "sales_order", None) or "").strip()
 	if so_name:
@@ -128,6 +168,7 @@ def ensure_lamination_booking_for_planning_sheet(doc):
 		except Exception:
 			pass
 
+	# Stamp header-level lam side (from first 104 SO item that has a value)
 	if has_ps_lam_side and so_lam_side_map:
 		first_lam_side = next(iter(so_lam_side_map.values()), "")
 		if first_lam_side:
@@ -161,7 +202,7 @@ def ensure_lamination_booking_for_planning_sheet(doc):
 					if lam_side_val:
 						row.custom_lam_side = lam_side_val
 
-	# Header fallback: derive from first 104 row if map empty.
+	# Header fallback: if map was empty, derive from first 104 row lam side value.
 	if has_ps_lam_side and not (getattr(doc, "custom_lam_side", None) or "").strip():
 		for fn in ("planned_items", "items", "custom_planned_items"):
 			if not meta.has_field(fn):
@@ -193,16 +234,66 @@ def ensure_lamination_booking_for_planning_sheet(doc):
 
 
 def _fabric_gsm_from_item_name(item_name: str) -> int:
-    """Parse Fabric GSM from item name by finding the F-<number> pattern (e.g. 'F-60' → 60)."""
+    """Parse Fabric GSM from item name by finding the F-<number> pattern (e.g. 'F-60' or 'F - 60' → 60)."""
     if not item_name:
         return 0
-    m = re.search(r'\bF-(\d+)\b', item_name, re.IGNORECASE)
+    m = re.search(r'\bF\s*-\s*(\d+)\b', item_name, re.IGNORECASE)
     if m:
         try:
             return int(m.group(1))
         except Exception:
             pass
     return 0
+
+
+def _gsm_from_lamination_item_code(item_code: str) -> int:
+    """Read laminated GSM from item-code index 9:12 (digits-only code), e.g. ...070... -> 70."""
+    if not item_code:
+        return 0
+    digits = "".join(ch for ch in str(item_code).strip() if ch.isdigit())
+    if len(digits) < 12:
+        return 0
+    try:
+        return cint(digits[9:12])
+    except Exception:
+        return 0
+
+
+# Lamination GSM from suffix after '-':
+# 10-A, 12-B, 13-C, 15-D, 20-E, 30-F
+_LAM_GSM_SUFFIX_MAP = {
+    "A": 10,
+    "B": 12,
+    "C": 13,
+    "D": 15,
+    "E": 20,
+    "F": 30,
+}
+
+
+def _lam_gsm_from_item_code_suffix(item_code: str) -> int:
+    """Read lamination GSM from item-code suffix after last '-', for 104 items only."""
+    code = str(item_code or "").strip().upper()
+    if not code or "-" not in code:
+        return 0
+    left, suffix = code.rsplit("-", 1)
+    if _item_process_prefix(left.strip()) != "104":
+        return 0
+    return cint(_LAM_GSM_SUFFIX_MAP.get(suffix.strip(), 0) or 0)
+
+
+def _lam_side_from_sales_order_item(so_item_name: str) -> str:
+    """Fetch lamination side directly from Sales Order Item row."""
+    if not so_item_name or not frappe.db.exists("Sales Order Item", so_item_name):
+        return ""
+    cols = set(frappe.db.get_table_columns("Sales Order Item") or [])
+    for fn in ("custom_lamination_side", "custom_lam_side", "lamination_side"):
+        if fn in cols:
+            try:
+                return str(frappe.db.get_value("Sales Order Item", so_item_name, fn) or "").strip()
+            except Exception:
+                return ""
+    return ""
 
 
 def _ensure_sheet_lamination_order_code(sheet_name):
@@ -296,33 +387,37 @@ def get_fabric_item_from_laminated_item(lam_item_code):
 	Resolve the single fabric FG (item code prefix 100) from the laminated item's active BOM.
 	Returns {"fabric_item_code", "bom_no"}. Raises with a clear message if invalid.
 	"""
-	lam_item_code = (lam_item_code or "").strip()
-	if len(lam_item_code) < 3:
+	return _get_fabric_item_from_process_item(lam_item_code, expected_process="104", process_label="Lamination")
+
+
+def _get_fabric_item_from_process_item(item_code, expected_process, process_label):
+	item_code = (item_code or "").strip()
+	if len(item_code) < 3:
 		frappe.throw(_("Item code is too short to read process prefix (need at least 3 characters)."))
-	if _item_process_prefix(lam_item_code) != "104":
+	if _item_process_prefix(item_code) != expected_process:
 		frappe.throw(
-			_("Lamination item must have process code 104 in item code (first 3 digits). Got: {0}").format(
-				_item_process_prefix(lam_item_code) or "ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â"
+			_("{0} item must have process code {1} in item code (first 3 digits). Got: {2}").format(
+				process_label, expected_process, _item_process_prefix(item_code) or ""
 			)
 		)
-	if not frappe.db.exists("Item", lam_item_code):
-		frappe.throw(_("Item {0} does not exist.").format(lam_item_code))
+	if not frappe.db.exists("Item", item_code):
+		frappe.throw(_("Item {0} does not exist.").format(item_code))
 
 	bom_name = frappe.db.get_value(
 		"BOM",
-		{"item": lam_item_code, "docstatus": 1, "is_active": 1, "is_default": 1},
+		{"item": item_code, "docstatus": 1, "is_active": 1, "is_default": 1},
 		"name",
 		order_by="modified desc",
 	)
 	if not bom_name:
 		bom_name = frappe.db.get_value(
 			"BOM",
-			{"item": lam_item_code, "docstatus": 1, "is_active": 1},
+			{"item": item_code, "docstatus": 1, "is_active": 1},
 			"name",
 			order_by="is_default desc, modified desc",
 		)
 	if not bom_name:
-		frappe.throw(_("No active submitted BOM for laminated item {0}.").format(lam_item_code))
+		frappe.throw(_("No active submitted BOM for {0} item {1}.").format(process_label.lower(), item_code))
 
 	bom = frappe.get_doc("BOM", bom_name)
 	fabric_rows = []
@@ -334,7 +429,7 @@ def get_fabric_item_from_laminated_item(lam_item_code):
 	if len(fabric_rows) == 0:
 		frappe.throw(
 			_("BOM {0} has no fabric FG row (item code must start with 100). Fix BOM for {1}.").format(
-				bom_name, lam_item_code
+				bom_name, item_code
 			)
 		)
 	if len(fabric_rows) > 1:
@@ -348,6 +443,12 @@ def get_fabric_item_from_laminated_item(lam_item_code):
 		frappe.throw(_("Fabric item {0} from BOM does not exist.").format(fabric_item_code))
 
 	return {"fabric_item_code": fabric_item_code, "bom_no": bom_name}
+
+
+@frappe.whitelist()
+def get_fabric_item_from_slitting_item(slitting_item_code):
+	"""Resolve the single 100* fabric child for a slitting 103 item."""
+	return _get_fabric_item_from_process_item(slitting_item_code, expected_process="103", process_label="Slitting")
 
 
 def _fabric_qty_from_bom(bom_name, fabric_item_code, lamination_so_qty):
@@ -379,6 +480,7 @@ def _sync_lamination_fabric_planning_rows(planning_sheet_name):
 		lam_ic = (so_it.item_code or "").strip()
 		if _item_process_prefix(lam_ic) != "104":
 			continue
+		trace_id = _parent_child_trace_id_from_item_code(lam_ic)
 		try:
 			res = get_fabric_item_from_laminated_item(lam_ic)
 		except Exception as e:
@@ -412,14 +514,21 @@ def _sync_lamination_fabric_planning_rows(planning_sheet_name):
 		)
 		lam_pt_name = lam_match[0].get("name") if lam_match else None
 		lam_row = frappe.get_doc("Planning Table", lam_pt_name) if lam_pt_name else None
+		if lam_row and trace_id:
+			_set_trace_id_if_supported(lam_row, trace_id)
 
 		fabric_item_name = frappe.db.get_value("Item", fabric_ic, "item_name") or ""
 		specs = _fabric_row_specs_from_fabric_item(fabric_ic, so_it, lam_row)
-		# Fabric (100*): same as other SO lines ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â white ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ UNASSIGNED, other colours ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ unit by width (not Lamination Unit).
 		fab_color = specs.get("color") or ""
 		fab_width = flt(specs.get("width_inch"))
 		fabric_unit = compute_default_production_unit(fab_color, fab_width)
 		fabric_planned_date = getdate(ps.ordered_date) if _is_white_color(fab_color) else None
+
+		# Pull lam side from SO item
+		so_item_lam_side = ""
+		if frappe.db.has_column("Sales Order Item", "custom_lamination_side"):
+			so_item_lam_side = (getattr(so_it, "custom_lamination_side", None) or "").strip()
+
 		row = {
 			"sales_order_item": "",
 			"item_code": fabric_ic,
@@ -442,8 +551,11 @@ def _sync_lamination_fabric_planning_rows(planning_sheet_name):
 			"planning_sheet": ps.name,
 			"so_item": so_it.name,
 		}
+		_set_trace_id_if_supported(row, trace_id)
 		if lam_pt_name and frappe.db.has_column("Planning Table", "split_from"):
 			row["split_from"] = lam_pt_name
+		if so_item_lam_side:
+			row["custom_lam_side_"] = so_item_lam_side
 
 		row_b = dict(row)
 		if hasattr(ps, "items") or ps.meta.has_field("items"):
@@ -455,6 +567,163 @@ def _sync_lamination_fabric_planning_rows(planning_sheet_name):
 		ps.flags.ignore_permissions = True
 		ps.save()
 		frappe.db.commit()
+
+
+def _sync_slitting_fabric_planning_rows(planning_sheet_name):
+	"""For each SO line with item 103, append one fabric (100) row to legacy items + board table. Idempotent."""
+	if not SLITTING_FLOW_ENABLED or not planning_sheet_name:
+		return
+	if not frappe.db.exists("Planning sheet", planning_sheet_name):
+		return
+	ps = frappe.get_doc("Planning sheet", planning_sheet_name)
+	if not ps.get("sales_order"):
+		return
+	so = frappe.get_doc("Sales Order", ps.sales_order)
+	parent_field = _get_pt_parentfield()
+	changed = False
+	for so_it in so.items or []:
+		sl_ic = (so_it.item_code or "").strip()
+		if _item_process_prefix(sl_ic) != "103":
+			continue
+		trace_id = _parent_child_trace_id_from_item_code(sl_ic)
+		try:
+			res = get_fabric_item_from_slitting_item(sl_ic)
+		except Exception as e:
+			frappe.log_error(
+				title="Slitting fabric BOM",
+				message=f"SO {so.name} line {so_it.name}: {e}\n{frappe.get_traceback()}",
+			)
+			frappe.msgprint(
+				_("Slitting fabric row skipped for {0}: {1}").format(sl_ic, str(e)),
+				indicator="orange",
+			)
+			continue
+
+		fabric_ic = res["fabric_item_code"]
+		bom_no = res["bom_no"]
+		fabric_qty = _fabric_qty_from_bom(bom_no, fabric_ic, flt(so_it.qty))
+
+		existing = frappe.get_all(
+			"Planning Table",
+			filters={"parent": ps.name, "item_code": fabric_ic, "so_item": so_it.name},
+			pluck="name",
+			limit=1,
+		)
+		if existing:
+			continue
+
+		sl_match = frappe.get_all(
+			"Planning Table",
+			filters={"parent": ps.name, "sales_order_item": so_it.name, "item_code": sl_ic},
+			fields=["name"],
+			limit=1,
+		)
+		sl_pt_name = sl_match[0].get("name") if sl_match else None
+		sl_row = frappe.get_doc("Planning Table", sl_pt_name) if sl_pt_name else None
+		if sl_row and trace_id:
+			_set_trace_id_if_supported(sl_row, trace_id)
+
+		fabric_item_name = frappe.db.get_value("Item", fabric_ic, "item_name") or ""
+		specs = _fabric_row_specs_from_fabric_item(fabric_ic, so_it, sl_row)
+		fab_color = specs.get("color") or ""
+		fab_width = flt(specs.get("width_inch"))
+		fabric_unit = compute_default_production_unit(fab_color, fab_width)
+		fabric_planned_date = getdate(ps.ordered_date) if _is_white_color(fab_color) else None
+
+		row = {
+			"sales_order_item": "",
+			"item_code": fabric_ic,
+			"item_name": fabric_item_name,
+			"qty": fabric_qty,
+			"uom": so_it.uom,
+			"gsm": specs["gsm"],
+			"width_inch": specs["width_inch"],
+			"color": specs["color"],
+			"quality": specs["quality"],
+			"custom_quality": specs["custom_quality"],
+			"unit": fabric_unit,
+			"meter": specs["meter"],
+			"meter_per_roll": specs["meter_per_roll"],
+			"no_of_rolls": specs["no_of_rolls"],
+			"weight_per_roll": specs["weight_per_roll"],
+			"planned_date": fabric_planned_date,
+			"plan_name": ps.get("custom_plan_name"),
+			"party_code": ps.party_code,
+			"planning_sheet": ps.name,
+			"so_item": so_it.name,
+		}
+		_set_trace_id_if_supported(row, trace_id)
+		if sl_pt_name and frappe.db.has_column("Planning Table", "split_from"):
+			row["split_from"] = sl_pt_name
+
+		row_b = dict(row)
+		if hasattr(ps, "items") or ps.meta.has_field("items"):
+			ps.append("items", row_b)
+		ps.append(parent_field, dict(row))
+		changed = True
+
+	if changed:
+		ps.flags.ignore_permissions = True
+		ps.save()
+		frappe.db.commit()
+
+
+@frappe.whitelist()
+def backfill_parent_child_trace_ids(planning_sheet_name=None):
+	"""Backfill custom_parent_child_trace_id on parent(103/104) and child(100) rows + legacy table."""
+	if not (frappe.db.has_column("Planning Table", "custom_parent_child_trace_id") or frappe.db.has_column("Planning sheet Item", "custom_parent_child_trace_id")):
+		return {"status": "noop", "updated": 0}
+	sheet_filter = ""
+	params = []
+	if planning_sheet_name:
+		sheet_filter = " AND parent = %s "
+		params.append(planning_sheet_name)
+	parent_rows = frappe.db.sql(
+		f"""
+		SELECT name, parent, item_code, sales_order_item
+		FROM `tabPlanning Table`
+		WHERE item_code REGEXP '^(103|104)' {sheet_filter}
+		""",
+		tuple(params),
+		as_dict=True,
+	)
+	updated = 0
+	for p in parent_rows or []:
+		trace_id = _parent_child_trace_id_from_item_code(p.get("item_code"))
+		if not trace_id:
+			continue
+		frappe.db.sql(
+			"UPDATE `tabPlanning Table` SET custom_parent_child_trace_id = %s WHERE name = %s",
+			(trace_id, p.get("name")),
+		)
+		updated += 1
+		so_item = (p.get("sales_order_item") or "").strip()
+		if so_item:
+			frappe.db.sql(
+				"""
+				UPDATE `tabPlanning Table`
+				SET custom_parent_child_trace_id = %s
+				WHERE parent = %s AND item_code LIKE '100%%' AND IFNULL(so_item, '') = %s
+				""",
+				(trace_id, p.get("parent"), so_item),
+			)
+	if frappe.db.has_column("Planning sheet Item", "custom_parent_child_trace_id"):
+		for p in parent_rows or []:
+			trace_id = _parent_child_trace_id_from_item_code(p.get("item_code"))
+			if not trace_id:
+				continue
+			so_item = (p.get("sales_order_item") or "").strip()
+			if so_item:
+				frappe.db.sql(
+					"""
+					UPDATE `tabPlanning sheet Item`
+					SET custom_parent_child_trace_id = %s
+					WHERE parent = %s AND IFNULL(sales_order_item, '') = %s
+					""",
+					(trace_id, p.get("parent"), so_item),
+				)
+	frappe.db.commit()
+	return {"status": "success", "updated": int(updated)}
 
 
 def _link_board_planned_rows_to_legacy_items(planning_sheet_name):
@@ -660,10 +929,10 @@ def reset_party_code_series(clear_sales_order_mirror_fields=0):
     System Manager only: clear stored party_code on active Planning sheets so the numeric
     series restarts at 001 for the current month prefix when PARTY_CODE_GENERATION_ENABLED is True again.
 
-    Does not enable generation ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â set PARTY_CODE_GENERATION_ENABLED = True in code after reset.
+    Does not enable generation  set PARTY_CODE_GENERATION_ENABLED = True in code after reset.
 
     If clear_sales_order_mirror_fields=1, also clears custom_party_code / party_code / custom_order_code
-    on Sales Order (destructive ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â use only if mirrors were filled by auto-generation).
+    on Sales Order (destructive  use only if mirrors were filled by auto-generation).
     """
     frappe.only_for("System Manager")
     clear_sales_order_mirror_fields = cint(clear_sales_order_mirror_fields)
@@ -831,6 +1100,8 @@ def get_lamination_order_table_data(
     elif has_pt_book_old:
         booking_expr = "IFNULL(pt.custom_lamination_booking_id, '')"
     shift_expr = "IFNULL(pt.custom_lamination_shift, 'DAY')" if has_shift_col else "'DAY'"
+    has_pt_lam_gsm = frappe.db.has_column("Planning Table", "custom_lam_gsm")
+    lam_gsm_expr = "IFNULL(pt.custom_lam_gsm, 0)" if has_pt_lam_gsm else "0"
 
     extra = frappe.db.sql(
         f"""
@@ -839,6 +1110,7 @@ def get_lamination_order_table_data(
             pt.parent as ps_name,
             IFNULL(pt.meter, 0) as planned_meter,
             {booking_expr} as lamination_booking_id,
+            {lam_gsm_expr} as lamination_gsm_value,
             IFNULL(fab.gsm, 0) as fabric_gsm,
             {spr_for_meter_sql},
             {shift_expr} as shift_label
@@ -854,6 +1126,8 @@ def get_lamination_order_table_data(
     )
     by_psi = {e["psi_name"]: e for e in (extra or [])}
 
+    # SPR names: from Planning Table join (extra) AND from color-chart rows (spr_name on each row),
+    # so draft SPR links still aggregate meters even if the join row is missing a match.
     spr_name_set = set()
     for e in extra or []:
         v = (e.get("spr_for_meter") or "").strip()
@@ -875,7 +1149,7 @@ def get_lamination_order_table_data(
         else:
             length_expr = "0"
         sf = ",".join(["%s"] * len(spr_names))
-        for row_m in frappe.db.sql(
+        for r in frappe.db.sql(
                 f"""
                 SELECT parent, SUM({length_expr}) as mtrs
                 FROM `tabShaft Production Run Item`
@@ -885,7 +1159,7 @@ def get_lamination_order_table_data(
                 tuple(spr_names),
                 as_dict=True,
             ):
-                spr_meters[str(row_m.get("parent") or "").strip()] = flt(row_m.get("mtrs"))
+                spr_meters[str(r.get("parent") or "").strip()] = flt(r.get("mtrs"))
         weight_expr = "IFNULL(net_weight, 0)" if "net_weight" in spr_cols else "0"
         for rw in frappe.db.sql(
                 f"""
@@ -1074,7 +1348,12 @@ def get_lamination_order_table_data(
             _row_item_name = str(row.get("item_name") or row.get("itemName") or "")
             _fab_gsm = _fabric_gsm_from_item_name(_row_item_name)
         row["fabric_gsm"] = _fab_gsm
-        row["lamination_gsm"] = int(row.get("gsm") or 0) or 0
+        lam_gsm = int(ex.get("lamination_gsm_value") or 0) if ex else 0
+        if lam_gsm <= 0:
+            lam_gsm = _lam_gsm_from_item_code_suffix(row.get("item_code") or row.get("itemCode"))
+        if lam_gsm <= 0:
+            lam_gsm = int(row.get("gsm") or 0) or 0
+        row["lamination_gsm"] = lam_gsm
         row["planned_meter"] = int(ex.get("planned_meter") or 0) if ex else 0
         row["_achieved_m_spr"] = achieved_m  # resolved later after parent_wo_name is known
         row["achieved_meter"] = achieved_m
@@ -1143,6 +1422,114 @@ def get_lamination_order_table_data(
             if _pwo and rpe_meters_by_wo.get(_pwo):
                 row["achieved_meter"] = flt(rpe_meters_by_wo[_pwo])
         row.pop("_achieved_m_spr", None)
+        out.append(row)
+    return out
+
+
+@frappe.whitelist()
+def get_slitting_order_table_data(
+    date=None,
+    start_date=None,
+    end_date=None,
+    planned_only=1,
+):
+    """
+    103-only rows for Slitting Order Table.
+    Includes parent-child trace id and child fabric readiness date from linked fabric SPR run date.
+    """
+    try:
+        rows = _get_color_chart_data_impl(
+            date=date,
+            start_date=start_date,
+            end_date=end_date,
+            plan_name="__all__",
+            planned_only=cint(planned_only),
+            board_process_scope="slitting_only",
+        )
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "get_slitting_order_table_data")
+        return []
+    if not rows:
+        return []
+
+    psi_names = [r.get("itemName") or r.get("item_name") for r in rows if (r.get("itemName") or r.get("item_name"))]
+    if not psi_names:
+        return rows
+    fmt = ",".join(["%s"] * len(psi_names))
+
+    has_shift = frappe.db.has_column("Planning Table", "custom_slitting_shift")
+    shift_expr = "IFNULL(pt.custom_slitting_shift, 'DAY')" if has_shift else "'DAY'"
+    has_trace = frappe.db.has_column("Planning Table", "custom_parent_child_trace_id")
+    trace_expr = "IFNULL(pt.custom_parent_child_trace_id, '')" if has_trace else "''"
+    child_trace_expr = "IFNULL(fab.custom_parent_child_trace_id, '')" if has_trace else "''"
+    has_pt_spr = frappe.db.has_column("Planning Table", "spr_name")
+    spr_parent_expr = "IFNULL(pt.spr_name, '')" if has_pt_spr else "''"
+    spr_child_expr = "IFNULL(fab.spr_name, '')" if has_pt_spr else "''"
+
+    extra = frappe.db.sql(
+        f"""
+        SELECT
+            pt.name as psi_name,
+            pt.parent as ps_name,
+            {shift_expr} as shift_label,
+            {trace_expr} as parent_trace_id,
+            {child_trace_expr} as child_trace_id,
+            IFNULL(fab.width_inch, 0) as roll_size,
+            IFNULL(pt.width_inch, 0) as slitting_size,
+            {spr_parent_expr} as parent_spr_name,
+            {spr_child_expr} as child_spr_name
+        FROM `tabPlanning Table` pt
+        LEFT JOIN `tabPlanning Table` fab ON fab.parent = pt.parent
+            AND IFNULL(fab.so_item, '') = IFNULL(pt.sales_order_item, '')
+            AND fab.item_code LIKE '100%%'
+        WHERE pt.name IN ({fmt})
+        """,
+        tuple(psi_names),
+        as_dict=True,
+    )
+    by_psi = {e.get("psi_name"): e for e in (extra or [])}
+
+    child_spr_names = list({str((e or {}).get("child_spr_name") or "").strip() for e in (extra or []) if str((e or {}).get("child_spr_name") or "").strip()})
+    run_date_map = {}
+    if child_spr_names and frappe.db.exists("DocType", "Shaft Production Run"):
+        spr_cols = set(frappe.db.get_table_columns("Shaft Production Run") or [])
+        run_col = ""
+        for c in ("run_date", "custom_run_date", "start_date", "posting_date", "creation"):
+            if c in spr_cols:
+                run_col = c
+                break
+        if run_col:
+            sf = ",".join(["%s"] * len(child_spr_names))
+            for rr in frappe.db.sql(
+                f"SELECT name, {run_col} as run_date FROM `tabShaft Production Run` WHERE name IN ({sf})",
+                tuple(child_spr_names),
+                as_dict=True,
+            ):
+                run_date_map[str(rr.get("name") or "").strip()] = rr.get("run_date")
+
+    so_status_cache = {}
+    out = []
+    for r in rows:
+        row = dict(r)
+        nm = row.get("itemName") or row.get("item_name")
+        ex = by_psi.get(nm) if nm else {}
+        row["shift_label"] = str((ex or {}).get("shift_label") or "DAY").upper()
+        row["trace_id"] = (ex or {}).get("parent_trace_id") or (ex or {}).get("child_trace_id") or _parent_child_trace_id_from_item_code(row.get("item_code") or row.get("itemCode"))
+        row["roll_size"] = flt((ex or {}).get("roll_size") or 0)
+        row["slitting_size"] = flt((ex or {}).get("slitting_size") or 0)
+        row["planned_kgs"] = flt(row.get("qty") or 0)
+        row["achieved_kgs"] = flt(row.get("actual_production_weight_kgs") or row.get("total_achieved_weight_kgs") or 0)
+        row["fabric_ready_date"] = run_date_map.get(str((ex or {}).get("child_spr_name") or "").strip()) or ""
+        row["order_sheet"] = "YES" if cint(row.get("pp_docstatus") or 0) == 1 else "NO"
+        so_name = str(row.get("salesOrder") or row.get("sales_order") or "").strip()
+        if so_name:
+            if so_name not in so_status_cache:
+                so_status_cache[so_name] = frappe.db.get_value("Sales Order", so_name, ["status", "docstatus"], as_dict=True) or {}
+            so_status = so_status_cache.get(so_name) or {}
+            so_st = str(so_status.get("status") or "").strip().lower()
+            row["dispatch_status"] = "DESPATCHED" if so_st in {"to deliver and bill", "completed", "closed", "delivered"} or cint(so_status.get("docstatus") or 0) == 1 and so_st == "completed" else "NOT DESPATCHED"
+        else:
+            row["dispatch_status"] = "NOT DESPATCHED"
         out.append(row)
     return out
 
@@ -1389,6 +1776,71 @@ def assign_lamination_shift(shift_date=None, shift_label="DAY", item_name=None):
 
 
 @frappe.whitelist()
+def assign_slitting_shift(shift_date=None, shift_label="DAY", item_name=None):
+    """Assign DAY/NIGHT shift for slitting rows. If item_name is set, moves only that row (date + shift)."""
+    target_date = getdate(shift_date or frappe.utils.nowdate())
+    shift_label = (shift_label or "DAY").strip().upper()
+    if shift_label not in ("DAY", "NIGHT"):
+        frappe.throw(_("Shift must be DAY or NIGHT."))
+    if not frappe.db.has_column("Planning Table", "custom_slitting_shift"):
+        frappe.throw(_("Field custom_slitting_shift is missing on Planning Table. Please migrate."))
+    if is_date_under_maintenance("Slitting Unit", str(target_date)):
+        info = get_maintenance_info_on_date("Slitting Unit", str(target_date)) or {}
+        frappe.throw(
+            _("Cannot place slitting orders on {0}. Machine is off ({1}) from {2} to {3}.").format(
+                target_date,
+                info.get("type") or "Maintenance",
+                info.get("start_date") or target_date,
+                info.get("end_date") or target_date,
+            )
+        )
+
+    pt_date_col = "planned_date" if frappe.db.has_column("Planning Table", "planned_date") else (
+        "custom_item_planned_date" if frappe.db.has_column("Planning Table", "custom_item_planned_date") else None
+    )
+    has_sheet_planned = frappe.db.has_column("Planning sheet", "custom_planned_date")
+    eff_date = (
+        f"CASE WHEN pt.{pt_date_col} IS NOT NULL THEN pt.{pt_date_col} ELSE COALESCE(ps.custom_planned_date, ps.ordered_date) END"
+        if (has_sheet_planned and pt_date_col)
+        else (f"COALESCE(pt.{pt_date_col}, ps.ordered_date)" if pt_date_col else "COALESCE(ps.custom_planned_date, ps.ordered_date)")
+    )
+
+    if item_name:
+        set_parts = ["pt.custom_slitting_shift = %s"]
+        values = [shift_label]
+        if pt_date_col:
+            set_parts.append(f"pt.{pt_date_col} = %s")
+            values.append(target_date)
+        values.append(str(item_name).strip())
+        frappe.db.sql(
+            f"""
+            UPDATE `tabPlanning Table` pt
+            INNER JOIN `tabPlanning sheet` ps ON ps.name = pt.parent
+            SET {", ".join(set_parts)}
+            WHERE ps.docstatus < 2
+              AND pt.item_code LIKE '103%%'
+              AND pt.name = %s
+            """,
+            tuple(values),
+        )
+    else:
+        frappe.db.sql(
+            f"""
+            UPDATE `tabPlanning Table` pt
+            INNER JOIN `tabPlanning sheet` ps ON ps.name = pt.parent
+            SET pt.custom_slitting_shift = %s
+            WHERE ps.docstatus < 2
+              AND pt.item_code LIKE '103%%'
+              AND DATE({eff_date}) = DATE(%s)
+            """,
+            (shift_label, target_date),
+        )
+    updated = frappe.db.sql("SELECT ROW_COUNT() as c", as_dict=True)[0].get("c") or 0
+    frappe.db.commit()
+    return {"status": "ok", "updated_count": int(updated), "date": str(target_date), "shift": shift_label}
+
+
+@frappe.whitelist()
 def add_lamination_machine_off(start_date=None, end_date=None, maintenance_type="Machine Off", notes=None):
     """Create Lamination Unit maintenance window (Machine Off by default)."""
     start_dt = getdate(start_date or frappe.utils.nowdate())
@@ -1440,7 +1892,7 @@ def _resolve_existing_production_plan_for_planning_sheet(sheet_name):
     """
     If this Planning sheet already has a Production Plan, return its name so callers
     do not create duplicate PP rows for the same sheet (repeated "Create Plan" clicks).
-    Order: header link ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ first item-level link ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ PP.custom_planning_sheet / planning_sheet.
+    Order: header link  first item-level link  PP.custom_planning_sheet / planning_sheet.
     """
     if not sheet_name or not frappe.db.exists("Planning sheet", sheet_name):
         return None
@@ -1477,7 +1929,7 @@ def _resolve_existing_production_plan_for_planning_sheet(sheet_name):
             return rows[0].name
 
     # Last resort: exactly one submitted PP for this sheet's Sales Order (e.g. PP created/submitted
-    # from Manufacturing before Planning sheet stored custom_production_plan ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â avoids a second PP on finalize).
+    # from Manufacturing before Planning sheet stored custom_production_plan  avoids a second PP on finalize).
     so = frappe.db.get_value("Planning sheet", sheet_name, "sales_order")
     if so:
         pp_so = _single_submitted_production_plan_for_sales_order_when_unique(so)
@@ -1726,7 +2178,7 @@ def _parse_gsm_width_from_item_text(raw_text):
 
 def _fabric_row_specs_from_fabric_item(fabric_ic, so_it, lam_row):
 	"""
-	GSM, width, colour, quality for the fabric line ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â from fabric Item only (never lamination row).
+	GSM, width, colour, quality for the fabric line  from fabric Item only (never lamination row).
 	Reuses the same extraction rules as _populate_planning_sheet_items for 100* items.
 	"""
 	quality_lookup = list(QUAL_LIST)
@@ -1845,48 +2297,6 @@ def _fabric_row_specs_from_fabric_item(fabric_ic, so_it, lam_row):
 # --------------------------------------------------------------------------------
 # SHARED HELPERS
 # --------------------------------------------------------------------------------
-
-def _gsm_from_lamination_item_code(item_code: str) -> int:
-    """Read laminated GSM from item-code index 9:12 (digits-only code)."""
-    if not item_code:
-        return 0
-    digits = "".join(ch for ch in str(item_code).strip() if ch.isdigit())
-    if len(digits) < 12:
-        return 0
-    try:
-        return cint(digits[9:12])
-    except Exception:
-        return 0
-
-
-# Lamination GSM suffix mapping:
-# 10-A, 12-B, 13-C, 15-D, 20-E, 30-F
-_LAM_GSM_SUFFIX_MAP = {"A": 10, "B": 12, "C": 13, "D": 15, "E": 20, "F": 30}
-
-
-def _lam_gsm_from_item_code_suffix(item_code: str) -> int:
-    """Read lamination GSM from suffix after last '-' for 104 items only."""
-    code = str(item_code or "").strip().upper()
-    if not code or "-" not in code:
-        return 0
-    left, suffix = code.rsplit("-", 1)
-    if _item_process_prefix(left.strip()) != "104":
-        return 0
-    return cint(_LAM_GSM_SUFFIX_MAP.get(suffix.strip(), 0) or 0)
-
-
-def _lam_side_from_sales_order_item(so_item_name: str) -> str:
-    """Fetch lamination side directly from Sales Order Item row."""
-    if not so_item_name or not frappe.db.exists("Sales Order Item", so_item_name):
-        return ""
-    cols = set(frappe.db.get_table_columns("Sales Order Item") or [])
-    for fn in ("custom_lamination_side", "custom_lam_side", "lamination_side"):
-        if fn in cols:
-            try:
-                return str(frappe.db.get_value("Sales Order Item", so_item_name, fn) or "").strip()
-            except Exception:
-                return ""
-    return ""
 
 def _populate_planning_sheet_items(ps, doc):
     """
@@ -2027,6 +2437,7 @@ def _populate_planning_sheet_items(ps, doc):
         if LAMINATION_FLOW_ENABLED and _item_process_prefix(str(it.item_code or "")) == "104":
             lam_gsm = _lam_gsm_from_item_code_suffix(it.item_code)
 
+        # Pull lam_side strictly from Sales Order Item table for 104 rows
         lam_side = ""
         if LAMINATION_FLOW_ENABLED and _item_process_prefix(str(it.item_code or "")) == "104":
             lam_side = _lam_side_from_sales_order_item(getattr(it, "name", None))
@@ -2034,13 +2445,18 @@ def _populate_planning_sheet_items(ps, doc):
                 lam_side = (getattr(it, "custom_lamination_side", None) or "").strip()
 
         unit = compute_default_production_unit(col, width, it.item_code)
-
-        # Planned date for Lamination (104) is order date.
+        
+        # Planned date for Lamination (104) must be order date.
+        # For Fabric (100), white-color logic remains unchanged.
         p_date = None
         if LAMINATION_FLOW_ENABLED and _item_process_prefix(str(it.item_code or "")) == "104":
-            p_date = getdate(doc.transaction_date or ps.ordered_date)
+             p_date = getdate(doc.transaction_date or ps.ordered_date)
+        elif SLITTING_FLOW_ENABLED and _item_process_prefix(str(it.item_code or "")) == "103":
+             p_date = getdate(doc.transaction_date or ps.ordered_date)
         elif _is_white_color(col):
-            p_date = getdate(ps.ordered_date)
+             p_date = getdate(ps.ordered_date)
+
+        trace_id = _parent_child_trace_id_from_item_code(it.item_code)
 
         # Prepare PSI record data for syncing/creation
         psi_data = {
@@ -2072,6 +2488,10 @@ def _populate_planning_sheet_items(ps, doc):
                 psi_data["custom_lam_side_"] = lam_side
             if frappe.db.has_column("Planning sheet Item", "custom_lam_side"):
                 psi_data["custom_lam_side"] = lam_side
+            # Also stamp header
+            if frappe.db.has_column("Planning sheet", "custom_lam_side"):
+                ps.custom_lam_side = lam_side
+        _set_trace_id_if_supported(psi_data, trace_id)
 
         # Fix: Sync logic must be split-aware. Update existing rows without wiping extras.
         if is_existing:
@@ -2093,18 +2513,25 @@ def _populate_planning_sheet_items(ps, doc):
                         existing_psi.custom_lam_side = lam_side
                 # Ensure the link to parent is set
                 existing_psi.planning_sheet = ps.name
-                # 104 rows are always Lamination Unit and use order-date planned date.
+                # 104 rows are always Lamination Unit (ignore existing unit/color).
+                # Non-104 rows: keep prior behavior (only set if unassigned).
                 if LAMINATION_FLOW_ENABLED and _item_process_prefix(str(it.item_code or "")) == "104":
                     existing_psi.unit = "Lamination Unit"
+                    existing_psi.planned_date = p_date
+                elif SLITTING_FLOW_ENABLED and _item_process_prefix(str(it.item_code or "")) == "103":
+                    existing_psi.unit = "Slitting Unit"
                     existing_psi.planned_date = p_date
                 elif not existing_psi.unit or existing_psi.unit == "UNASSIGNED":
                     existing_psi.unit = unit
                     existing_psi.planned_date = p_date
+                _set_trace_id_if_supported(existing_psi, trace_id)
         else:
             pt_data = psi_data.copy()
             pt_data["planned_date"] = p_date
             pt_data["plan_name"] = ps.get("custom_plan_name")
             pt_data["planning_sheet"] = ps.name # For redundancy
+            if lam_gsm > 0 and frappe.db.has_column("Planning sheet Item", "custom_lam_gsm"):
+                pt_data["custom_lam_gsm"] = lam_gsm
             
             # Plan 1: Always fill the legacy 'items' table if it exists
             if hasattr(ps, "items") or ps.meta.has_field("items"):
@@ -2132,10 +2559,13 @@ def _is_white_color(color):
 def compute_default_production_unit(color, width_inch, item_code=None):
     """
     Only white-family colors use UNASSIGNED (pool for that order date).
-    All other colors: pick one of Unit 1ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“4 by minimum width waste (same rule as SO populate).
+    Lamination (104) orders ALWAYS use Lamination Unit.
+    All other colors: pick one of Unit 1-4 by minimum width waste.
     """
     if LAMINATION_FLOW_ENABLED and item_code and _item_process_prefix(str(item_code)) == "104":
         return "Lamination Unit"
+    if SLITTING_FLOW_ENABLED and item_code and _item_process_prefix(str(item_code)) == "103":
+        return "Slitting Unit"
     w = flt(width_inch)
     if _is_white_color(color):
         return "UNASSIGNED"
@@ -4516,7 +4946,9 @@ def _get_color_chart_data_impl(
 ):
     from frappe.utils import getdate
     # When unset, no process-prefix filtering (preserves existing callers).
-    # When set: exclude_104 = main production board; lamination_only = 104 rows only.
+    # When set:
+    # - exclude_104 / exclude_103: hide process from main production board
+    # - lamination_only / slitting_only: dedicated process board rows only.
     bps = (board_process_scope or "").strip() or None
 
     # PULL MODE: Return raw items by ordered_date, exclude items with Work Orders
@@ -4706,10 +5138,16 @@ def _get_color_chart_data_impl(
                 except Exception:
                     pass
             items = [it for it in items if it.planningSheet not in wo_sheets]
-        if items and LAMINATION_FLOW_ENABLED and bps == "lamination_only":
+        if items and bps == "lamination_only":
             items = [it for it in items if _item_process_prefix(it.get("item_code") or "") == "104"]
-        elif items and LAMINATION_FLOW_ENABLED and bps == "exclude_104":
+        elif items and bps == "slitting_only":
+            items = [it for it in items if _item_process_prefix(it.get("item_code") or "") == "103"]
+        elif items and bps == "exclude_104":
             items = [it for it in items if _item_process_prefix(it.get("item_code") or "") != "104"]
+        elif items and bps == "exclude_103":
+            items = [it for it in items if _item_process_prefix(it.get("item_code") or "") != "103"]
+        elif items and bps == "exclude_special":
+            items = [it for it in items if _item_process_prefix(it.get("item_code") or "") not in ("103", "104")]
         return _deduplicate_items(items) if items else []
 
     # Support both single date and range
@@ -5784,7 +6222,13 @@ def _get_color_chart_data_impl(
                 icp = _item_process_prefix(item.get("item_code") or "")
                 if bps == "exclude_104" and icp == "104":
                     continue
+                if bps == "exclude_103" and icp == "103":
+                    continue
+                if bps == "exclude_special" and icp in ("103", "104"):
+                    continue
                 if bps == "lamination_only" and icp != "104":
+                    continue
+                if bps == "slitting_only" and icp != "103":
                     continue
 
             color = (item.get("color") or item.get("colour") or "").strip()
@@ -5828,7 +6272,7 @@ def _get_color_chart_data_impl(
 
             # Production Board special filtering: only show scheduled items if planned_only is requested
             if cint(planned_only):
-                if bps == "lamination_only":
+                if bps in ("lamination_only", "slitting_only"):
                     pass
                 # NON-WHITE items MUST be explicitly pushed (have a planned date)
                 elif not is_white and not item_pdate:
@@ -7908,6 +8352,7 @@ def create_planning_sheet_from_so(doc):
         frappe.db.commit()
         _link_board_planned_rows_to_legacy_items(ps.name)
         _sync_lamination_fabric_planning_rows(ps.name)
+        _sync_slitting_fabric_planning_rows(ps.name)
         final_doc = frappe.get_doc("Planning sheet", ps.name)
         update_sheet_plan_codes(final_doc, include_legacy=True)
         frappe.msgprint(f"ÃƒÆ’Ã†â€™Ãƒâ€¦Ã‚Â½ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â£ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â  Planning Sheet <b>{ps.name}</b> Created!")
@@ -8179,6 +8624,7 @@ def create_planning_sheets_bulk(sales_orders):
             frappe.db.commit()
             _link_board_planned_rows_to_legacy_items(ps.name)
             _sync_lamination_fabric_planning_rows(ps.name)
+            _sync_slitting_fabric_planning_rows(ps.name)
             final_doc = frappe.get_doc("Planning sheet", ps.name)
             update_sheet_plan_codes(final_doc, include_legacy=True)
             created.append(ps.name)
@@ -10188,6 +10634,7 @@ def auto_create_planning_sheet(doc, method=None):
             sheet.save(ignore_permissions=True)
             frappe.db.commit()
             _sync_lamination_fabric_planning_rows(sheet.name)
+            _sync_slitting_fabric_planning_rows(sheet.name)
             sheet.reload()
             ensure_lamination_booking_for_planning_sheet(sheet)
             sheet.save(ignore_permissions=True)
@@ -10225,6 +10672,7 @@ def auto_create_planning_sheet(doc, method=None):
     # 4. Link board rows to legacy rows (source_item), then lamination fabric rows
     _link_board_planned_rows_to_legacy_items(ps.name)
     _sync_lamination_fabric_planning_rows(ps.name)
+    _sync_slitting_fabric_planning_rows(ps.name)
             
     frappe.msgprint(f"Planning Sheet <b>{ps.name}</b> created in unlocked plan <b>{ps.custom_plan_name}</b> and synchronized.")
     
@@ -10294,6 +10742,7 @@ def regenerate_planning_sheet(so_name):
 
     _link_board_planned_rows_to_legacy_items(ps.name)
     _sync_lamination_fabric_planning_rows(ps.name)
+    _sync_slitting_fabric_planning_rows(ps.name)
     ps.reload()
     ensure_lamination_booking_for_planning_sheet(ps)
     ps.save(ignore_permissions=True)
@@ -12012,43 +12461,37 @@ def create_item_spr(pp_id, planning_sheet_item_names):
             f"no_of_shaft={pp_no_of_shaft}, combined_width={pp_combined_width}",
             "SPR_DEBUG_PP_LEVEL"
         )
+        # Also try standard PP FINISHED GOODS table (po_items) for enrichment
+        pp_po_items = pp.get("po_items") or []
+        po_item_data = {}
+        for poi in pp_po_items:
+            # Build a lookup by index for width/weight enrichment
+            idx = cint(poi.get("idx") or 0)
+            po_item_data[idx] = poi
 
         if pp_shafts:
-            for pp_shaft in pp_shafts:
+            for idx, pp_shaft in enumerate(pp_shafts, start=1):
+                matching_poi = po_item_data.get(idx, {})
                 row = spr.append("shaft_jobs", {})
                 row.job_id = pick_value(pp_shaft, ["job_id", "job", "job_no"], str(len(spr.shaft_jobs)))
                 row.gsm = pick_value(pp_shaft, ["gsm"], "")
                 row.combination = pick_value(pp_shaft, ["combination", "combined_width", "shaft", "shaft_details"], "") or pp_combined_width
-                row.total_width = flt(pick_value(pp_shaft, ["total_width", "combined_width", "width", "total_width_inches"], 0) or 0) or flt(pp_combined_width or 0)
-                # Prefer PP shaft meter__roll; fall back to PP-level fields before defaulting
-                row.meter_roll_mtrs = flt(
-                    pick_value(
-                        pp_shaft,
-                        [
-                            "meter__roll",
-                            "meter_roll_mtrs",
-                            "meter_per_roll",
-                            "meter_roll",
-                            "roll_mtrs",
-                            "custom_meter_roll_mtrs",
-                            "custom_meter_per_roll",
-                            "meter_per_roll_mtrs",
-                            "roll",
-                            "meter",
-                        ],
-                        0,
-                    )
-                    or flt(
-                        pp.get("meter__roll")
-                        or pp.get("custom_meter_roll_mtrs")
-                        or pp.get("meter_roll_mtrs")
-                        or pp.get("custom_meter_per_roll")
-                        or pp.get("meter_per_roll")
-                        or pp.get("custom_meter")
-                        or pp.get("meter")
-                        or 500
-                    )
-                )
+                
+                raw_width = flt(pick_value(pp_shaft, ["total_width", "combined_width", "width", "total_width_inches"], 0) or 0)
+                if not raw_width and matching_poi:
+                    raw_width = flt(pick_value(matching_poi, ["total_width", "width", "width_inches"], 0) or 0)
+                if not raw_width:
+                    raw_width = flt(pp_combined_width or 0)
+                row.total_width = raw_width
+
+                # Prefer PP shaft meter__roll; fall back to matching po_item, then PP-level fields before defaulting
+                meter_keys = ["meter__roll", "meter_roll_mtrs", "meter_per_roll", "meter_roll", "roll_mtrs", "custom_meter_roll_mtrs", "custom_meter_per_roll", "custom_meterperroll", "meter_per_roll_mtrs", "roll", "meter", "length_per_roll", "length_roll", "length"]
+                raw_meter = flt(pick_value(pp_shaft, meter_keys, 0))
+                if not raw_meter and matching_poi:
+                    raw_meter = flt(pick_value(matching_poi, meter_keys, 0))
+                if not raw_meter:
+                    raw_meter = flt(pp.get("meter__roll") or pp.get("custom_meter_roll_mtrs") or pp.get("meter_roll_mtrs") or pp.get("custom_meter_per_roll") or pp.get("custom_meterperroll") or pp.get("meter_per_roll") or pp.get("custom_meter") or pp.get("meter") or pp.get("length_per_roll") or pp.get("length_roll") or pp.get("length") or 500)
+                row.meter_roll_mtrs = raw_meter
                 row.no_of_shafts = cint(pick_value(pp_shaft, ["no_of_shafts", "no_of_shaft", "no_of_sh", "no_of_sf"], 0) or 0) or pp_no_of_shaft or 1
                 
                 # Field names confirmed by user: net_weight, total_width (SPR)
@@ -12096,16 +12539,19 @@ def create_item_spr(pp_id, planning_sheet_item_names):
                     row.total_width = 0
                 
                 row.no_of_shafts = 1
-                row.meter_roll_mtrs = flt(
-                    pp.get("meter__roll")
-                    or pp.get("custom_meter_roll_mtrs")
-                    or pp.get("meter_roll_mtrs")
-                    or pp.get("custom_meter_per_roll")
-                    or pp.get("meter_per_roll")
-                    or pp.get("custom_meter")
-                    or pp.get("meter")
-                    or 500
-                )
+                meter_keys = ["meter__roll", "meter_roll_mtrs", "meter_per_roll", "meter_roll", "roll_mtrs", "custom_meter_roll_mtrs", "custom_meter_per_roll", "custom_meterperroll", "meter_per_roll_mtrs", "roll", "meter", "length_per_roll", "length_roll", "length", "planned_length"]
+                raw_meter = flt(pick_value(psi, meter_keys, 0))
+                if not raw_meter and pp_po_items:
+                    for poi in pp_po_items:
+                        if poi.get("item_code") == psi.get("item_code"):
+                            raw_meter = flt(pick_value(poi, meter_keys, 0))
+                            break
+                if not raw_meter and pp_po_items:
+                    raw_meter = flt(pick_value(pp_po_items[0], meter_keys, 0))
+                if not raw_meter:
+                    raw_meter = flt(pp.get("meter__roll") or pp.get("custom_meter_roll_mtrs") or pp.get("meter_roll_mtrs") or pp.get("custom_meter_per_roll") or pp.get("custom_meterperroll") or pp.get("meter_per_roll") or pp.get("custom_meter") or pp.get("meter") or pp.get("length_per_roll") or pp.get("length_roll") or pp.get("length") or 500)
+                
+                row.meter_roll_mtrs = raw_meter
         
         # Store selected Planning Sheet Item names for reference
         if psi_list:
@@ -12249,13 +12695,21 @@ def get_spr_shaft_jobs_from_pp(pp_id):
             if not flt(raw_width) and matching_poi:
                 raw_width = flt(pick_value(matching_poi, ["total_width", "width", "width_inches"], 0) or 0)
 
+            # For meter_roll_mtrs
+            meter_keys = ["meter__roll", "meter_roll_mtrs", "meter_per_roll", "meter_roll", "roll_mtrs", "custom_meter_roll_mtrs", "custom_meter_per_roll", "custom_meterperroll", "meter_per_roll_mtrs", "roll", "meter", "length_per_roll", "length_roll", "length"]
+            raw_meter = flt(pick_value(pp_shaft, meter_keys, 0))
+            if not raw_meter and matching_poi:
+                raw_meter = flt(pick_value(matching_poi, meter_keys, 0))
+            if not raw_meter:
+                raw_meter = flt(pp.get("meter__roll") or pp.get("custom_meter_roll_mtrs") or pp.get("meter_roll_mtrs") or pp.get("custom_meter_per_roll") or pp.get("custom_meterperroll") or pp.get("meter_per_roll") or pp.get("custom_meter") or pp.get("meter") or pp.get("length_per_roll") or pp.get("length_roll") or pp.get("length") or 500)
+
             jobs.append(
                 {
                     "job_id": pick_value(pp_shaft, ["job_id", "job", "job_no"], str(idx)),
                     "gsm": pick_value(pp_shaft, ["gsm"], ""),
                     "combination": pick_value(pp_shaft, ["combination", "combined_width", "shaft", "shaft_details"], "") or pp_combined_width,
                     "total_width": raw_width,
-                    "meter_roll_mtrs": flt(pick_value(pp_shaft, ["meter__roll", "meter_roll_mtrs", "meter_per_roll", "meter_roll", "roll_mtrs", "custom_meter_roll_mtrs", "custom_meter_per_roll", "meter_per_roll_mtrs", "roll", "meter"], 0) or flt(pp.get("meter__roll") or pp.get("custom_meter_roll_mtrs") or pp.get("meter_roll_mtrs") or pp.get("custom_meter_per_roll") or pp.get("meter_per_roll") or pp.get("custom_meter") or pp.get("meter") or 500)),
+                    "meter_roll_mtrs": raw_meter,
                     "no_of_shafts": cint(pick_value(pp_shaft, ["no_of_shafts", "no_of_shaft", "no_of_sh", "no_of_sf"], 0) or 0) or pp_no_of_shaft or 1,
                     "net_weight": raw_net_weight,
                     "net_weight_shaft_kgs": raw_net_weight,
@@ -12629,3 +13083,4 @@ def sync_merge_planned_date(merge_id, new_date):
             updated_count += 1
     
     return {"status": "success", "updated": updated_count}
+
