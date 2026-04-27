@@ -544,6 +544,7 @@ function goToPlan() {
     if (viewScope.value === 'monthly') query.month = filterMonth.value;
     query.scope = viewScope.value;
     if (isLaminationBoard.value) {
+        query.board = "lamination";
         frappe.set_route("lamination-order-table", query);
         return;
     }
