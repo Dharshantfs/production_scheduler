@@ -177,6 +177,7 @@ function load_available_jobs_from_pp(frm, opts = {}) {
                 set_row_value(row, ['total_width', 'width', 'total_width_inches'], flt(job.total_width || 0));
                 set_row_value(row, ['meter_roll_mtrs', 'roll_mtrs', 'meter_roll', 'roll'], flt(job.meter_roll_mtrs || 0));
                 set_row_value(row, ['no_of_shafts', 'no_of_sh', 'no_of_sf'], cint(job.no_of_shafts || 0));
+                set_row_value(row, ['no_of_rolls', 'roll_count_per_shaft'], cint(job.no_of_rolls || 0));
                 set_row_value(row, ['net_weight_shaft_kgs', 'net_weight_shaft', 'net_weight'], job.net_weight_shaft_kgs || '');
                 set_row_value(row, ['total_weight_kgs', 'total_weight', 'weight'], flt(job.total_weight_kgs || 0, 2));
                 set_row_value(row, ['order_code', 'party_code', 'custom_order_code'], job.order_code || '');
