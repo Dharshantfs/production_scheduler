@@ -24,14 +24,20 @@ def _item_process_prefix(item_code):
 
 def _parent_child_trace_id_from_item_code(item_code):
 	"""
-	Readable trace id format requested by operations team:
-	<process>-<parentLast4>-<suffix>-<parentGsm3>
+	Trace ID format: <process>-<colour>-<gsm>-<width>[-suffix]
+	Item code structure: PPP|QQQ|CCC|GGG|WWWW
+	- PPP: Process (103/104)
+	- QQQ: Quality (skipped)
+	- CCC: Colour Code (positions 6-8)
+	- GGG: GSM (positions 9-11)
+	- WWWW: Width in mm (positions 12-15)
 	Examples:
-	- 1041030010231475-B1 -> 104-1475-B1-023
-	- 1041030010700840-C  -> 104-0840-C-070
+	- 1031052210500050 -> 103-221-050-0050
+	- 1031035210500050 -> 103-521-050-0050
+	- 1041030010231475-B1 -> 104-023-147-5-B1
 	"""
 	ic = str(item_code or "").strip()
-	if len(ic) < 12:
+	if len(ic) < 16:
 		return ""
 	process = _item_process_prefix(ic)
 	if process not in ("103", "104"):
@@ -44,13 +50,19 @@ def _parent_child_trace_id_from_item_code(item_code):
 		suffix = str(right or "").strip().upper()
 
 	digits = "".join(ch for ch in left if ch.isdigit())
-	parent_last4 = digits[-4:] if len(digits) >= 4 else ""
-	parent_gsm3 = digits[9:12] if len(digits) >= 12 else ""
-	if not parent_last4 or not parent_gsm3:
+	if len(digits) < 16:
 		return ""
+	
+	colour = digits[6:9]      # positions 6-8: colour code
+	gsm = digits[9:12]        # positions 9-11: gsm
+	width = digits[12:16]     # positions 12-15: width
+	
+	if not colour or not gsm or not width:
+		return ""
+	
 	if suffix:
-		return f"{process}-{parent_last4}-{suffix}-{parent_gsm3}"
-	return f"{process}-{parent_last4}-{parent_gsm3}"
+		return f"{process}-{colour}-{gsm}-{width}-{suffix}"
+	return f"{process}-{colour}-{gsm}-{width}"
 
 
 def _set_trace_id_if_supported(row_dict_or_doc, trace_id):
