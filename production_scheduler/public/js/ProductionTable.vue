@@ -2,8 +2,8 @@
   <div class="cc-container">
     <!-- Filter Bar -->
     <div class="cc-filters">
-      <div v-if="isLaminationBoard || isSlittingBoard" class="cc-filter-item" style="align-self:center;padding:8px 12px;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;font-weight:600;color:#047857;">
-        {{ isSlittingBoard ? "Slitting Board" : "Lamination Board" }} — {{ isSlittingBoard ? SLITTING_UNIT : LAMINATION_UNIT }}
+      <div v-if="isLaminationBoard || isSlittingBoard || isRewindingBoard" class="cc-filter-item" style="align-self:center;padding:8px 12px;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;font-weight:600;color:#047857;">
+        {{ isRewindingBoard ? "Rewinding Board" : isSlittingBoard ? "Slitting Board" : "Lamination Board" }} — {{ isRewindingBoard ? REWINDING_BOARD_SUBTITLE : isSlittingBoard ? SLITTING_UNIT : LAMINATION_UNIT }}
       </div>
       <div class="cc-filter-item">
         <label>View Scope</label>
@@ -790,9 +790,16 @@ function sortItems(unit, items, date) {
 const units = ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"];
 const LAMINATION_UNIT = "Lamination Unit";
 const SLITTING_UNIT = "Slitting Unit";
+const REWINDING_UNIT_L3 = "TSNPL - L3 REWINDING MACHINE";
+const REWINDING_UNIT_L4 = "JSB - L4 REWINDING MACHINE";
+const REWINDING_UNIT_L5 = "JSB - L5 REWINDING MACHINE";
+const REWINDING_UNASSIGNED_UNIT = "Unassigned rewinding machine";
+const REWINDING_BOARD_UNITS = [REWINDING_UNIT_L3, REWINDING_UNIT_L4, REWINDING_UNIT_L5, REWINDING_UNASSIGNED_UNIT];
+const REWINDING_BOARD_SUBTITLE = "L3 / L4 / L5 + Unassigned (102)";
 /** True when opened from Lamination Board (production-table?board=lamination). */
 const isLaminationBoard = ref(false);
 const isSlittingBoard = ref(false);
+const isRewindingBoard = ref(false);
 const filterOrderDate = ref(frappe.datetime.get_today());
 const filterWeek = ref("");
 const filterMonth = ref("");
@@ -1097,7 +1104,15 @@ const canExpandMergedRows = computed(() => {
   return MERGE_EXPAND_ALLOWED_ROLES.some((role) => roles.includes(role.toLowerCase()));
 });
 
-const boardUnits = computed(() => (isLaminationBoard.value ? [LAMINATION_UNIT] : isSlittingBoard.value ? [SLITTING_UNIT] : units));
+const boardUnits = computed(() =>
+  isRewindingBoard.value
+    ? [...REWINDING_BOARD_UNITS]
+    : isLaminationBoard.value
+      ? [LAMINATION_UNIT]
+      : isSlittingBoard.value
+        ? [SLITTING_UNIT]
+        : units
+);
 
 const visibleUnits = computed(() => {
   if (!filterUnit.value) return boardUnits.value;
@@ -2408,8 +2423,15 @@ function goToBoard() {
     query.scope = viewScope.value;
     if (isLaminationBoard.value) query.board = "lamination";
     if (isSlittingBoard.value) query.board = "slitting";
+    if (isRewindingBoard.value) query.board = "rewinding";
     frappe.set_route(
-        isLaminationBoard.value ? "lamination-board" : isSlittingBoard.value ? "slitting-board" : "production-board",
+        isLaminationBoard.value
+          ? "lamination-board"
+          : isSlittingBoard.value
+            ? "slitting-board"
+            : isRewindingBoard.value
+              ? "rewinding-board"
+              : "production-board",
         query
     );
 }
@@ -2476,7 +2498,9 @@ async function fetchData() {
 
         args.plan_name = "__all__";
         args.planned_only = 1;
-        if (isSlittingBoard.value) {
+        if (isRewindingBoard.value) {
+          args.board_process_scope = "rewinding_only";
+        } else if (isSlittingBoard.value) {
           args.board_process_scope = "slitting_only";
         } else if (isLaminationBoard.value) {
           args.board_process_scope = "lamination_only";
@@ -2488,6 +2512,8 @@ async function fetchData() {
               args.board_process_scope = "lamination_only";
             } else if (b === "slitting") {
               args.board_process_scope = "slitting_only";
+            } else if (b === "rewinding") {
+              args.board_process_scope = "rewinding_only";
             } else {
               args.board_process_scope = "exclude_special";
             }
@@ -2617,6 +2643,7 @@ onMounted(async () => {
   const params = new URLSearchParams(window.location.search);
   isLaminationBoard.value = (params.get("board") || "").toLowerCase() === "lamination";
   isSlittingBoard.value = (params.get("board") || "").toLowerCase() === "slitting";
+  isRewindingBoard.value = (params.get("board") || "").toLowerCase() === "rewinding";
   const scopeParam = params.get('scope');
   const dateParam = params.get('date');
   const weekParam = params.get('week');

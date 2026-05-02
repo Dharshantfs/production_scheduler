@@ -35,6 +35,7 @@ import ConfirmedOrder from "./ConfirmedOrder.vue";
 import ProductionTable from "./ProductionTable.vue";
 import LaminationOrderTable from "./LaminationOrderTable.vue";
 import SlittingOrderTable from "./SlittingOrderTable.vue";
+import RewindingOrderTable from "./RewindingOrderTable.vue";
 import SequenceApproval from "./SequenceApproval.vue";
 
 production_scheduler.ConfirmedOrderController = class {
@@ -58,6 +59,12 @@ production_scheduler.LaminationOrderTableController = class {
 production_scheduler.SlittingOrderTableController = class {
     constructor(wrapper) {
         safeMount(SlittingOrderTable, wrapper, "Slitting Order Table");
+    }
+};
+
+production_scheduler.RewindingOrderTableController = class {
+    constructor(wrapper) {
+        safeMount(RewindingOrderTable, wrapper, "Rewinding Order Table");
     }
 };
 

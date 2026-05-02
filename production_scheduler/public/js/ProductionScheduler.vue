@@ -3,8 +3,8 @@
   <div class="cc-container">
     <!-- Filter Bar -->
     <div class="cc-filters">
-      <div v-if="isLaminationBoard || isSlittingBoard" class="cc-filter-item" style="align-self:center;padding:8px 12px;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;font-weight:600;color:#047857;">
-        {{ isSlittingBoard ? "Slitting Board" : "Lamination Board" }} — {{ isSlittingBoard ? SLITTING_UNIT : LAMINATION_UNIT }}
+      <div v-if="isLaminationBoard || isSlittingBoard || isRewindingBoard" class="cc-filter-item" style="align-self:center;padding:8px 12px;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;font-weight:600;color:#047857;">
+        {{ isRewindingBoard ? "Rewinding Board" : isSlittingBoard ? "Slitting Board" : "Lamination Board" }} — {{ isRewindingBoard ? REWINDING_BOARD_SUBTITLE : isSlittingBoard ? SLITTING_UNIT : LAMINATION_UNIT }}
       </div>
       <div class="cc-filter-item">
         <label>View Scope</label>
@@ -319,6 +319,12 @@ const COLOR_GROUPS = [
 const units = ["Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed"];
 const LAMINATION_UNIT = "Lamination Unit";
 const SLITTING_UNIT = "Slitting Unit";
+const REWINDING_UNIT_L3 = "TSNPL - L3 REWINDING MACHINE";
+const REWINDING_UNIT_L4 = "JSB - L4 REWINDING MACHINE";
+const REWINDING_UNIT_L5 = "JSB - L5 REWINDING MACHINE";
+const REWINDING_UNASSIGNED_UNIT = "Unassigned rewinding machine";
+const REWINDING_BOARD_UNITS = [REWINDING_UNIT_L3, REWINDING_UNIT_L4, REWINDING_UNIT_L5, REWINDING_UNASSIGNED_UNIT];
+const REWINDING_BOARD_SUBTITLE = "L3 / L4 / L5 + Unassigned (102)";
 const UNIT_TONNAGE_LIMITS = {
   "Unit 1": 4.4,
   "Unit 2": 12,
@@ -327,6 +333,10 @@ const UNIT_TONNAGE_LIMITS = {
   "Mixed": 999,
   [LAMINATION_UNIT]: 999,
   [SLITTING_UNIT]: 999,
+  [REWINDING_UNIT_L3]: 999,
+  [REWINDING_UNIT_L4]: 999,
+  [REWINDING_UNIT_L5]: 999,
+  [REWINDING_UNASSIGNED_UNIT]: 999,
 };
 const headerColors = {
   "Unit 1": "#3b82f6",
@@ -336,18 +346,34 @@ const headerColors = {
   "Mixed": "#64748b",
   [LAMINATION_UNIT]: "#0d9488",
   [SLITTING_UNIT]: "#0f766e",
+  [REWINDING_UNIT_L3]: "#0369a1",
+  [REWINDING_UNIT_L4]: "#0d9488",
+  [REWINDING_UNIT_L5]: "#059669",
+  [REWINDING_UNASSIGNED_UNIT]: "#64748b",
 };
 
 function normalizeUnitName(rawUnit) {
-  const txt = String(rawUnit || "").trim().toLowerCase();
+  const full = String(rawUnit || "").trim();
+  const txt = full.toLowerCase();
   if (!txt || txt === "unassigned" || txt === "mixed") return "Mixed";
   if (txt === "lamination unit" || txt === "laminationunit") return LAMINATION_UNIT;
   if (txt === "slitting unit" || txt === "slittingunit") return SLITTING_UNIT;
+  const ru = String(rawUnit || "").trim();
+  if (ru === REWINDING_UNIT_L3 || ru === REWINDING_UNIT_L4 || ru === REWINDING_UNIT_L5 || ru === REWINDING_UNASSIGNED_UNIT) {
+    return ru;
+  }
+  const rlow = ru.toLowerCase();
+  if (rlow.includes("rewinding")) {
+    if (rlow.includes("l3") && rlow.includes("tsnpl")) return REWINDING_UNIT_L3;
+    if (rlow.includes("l4") && rlow.includes("jsb")) return REWINDING_UNIT_L4;
+    if (rlow.includes("l5") && rlow.includes("jsb")) return REWINDING_UNIT_L5;
+    if (rlow.includes("unassigned")) return REWINDING_UNASSIGNED_UNIT;
+  }
   if (txt === "unit1" || txt === "unit 1") return "Unit 1";
   if (txt === "unit2" || txt === "unit 2") return "Unit 2";
   if (txt === "unit3" || txt === "unit 3") return "Unit 3";
   if (txt === "unit4" || txt === "unit 4") return "Unit 4";
-  return String(rawUnit || "Mixed").trim() || "Mixed";
+  return full || "Mixed";
 }
 
 function itemProcessPrefix(itemCode) {
@@ -421,6 +447,7 @@ const filterUnit = ref("");
 /** Set in onMounted when Desk route is lamination-board (dedicated lamination Kanban). */
 const isLaminationBoard = ref(false);
 const isSlittingBoard = ref(false);
+const isRewindingBoard = ref(false);
 const filterStatus = ref("");
 const unitSortConfig = ref({});
 // Pre-initialize for all units to prevent reactive loops during render
@@ -429,6 +456,9 @@ units.forEach(u => {
 });
 unitSortConfig.value[LAMINATION_UNIT] = { mode: 'manual', color: 'asc', gsm: 'desc', priority: 'color' };
 unitSortConfig.value[SLITTING_UNIT] = { mode: 'manual', color: 'asc', gsm: 'desc', priority: 'color' };
+REWINDING_BOARD_UNITS.forEach((u) => {
+  unitSortConfig.value[u] = { mode: 'manual', color: 'asc', gsm: 'desc', priority: 'color' };
+});
 
 const rawData = ref([]);
 const selectedItems = ref([]); // Names of Planning Sheet Items selected for bulk actions
@@ -553,6 +583,11 @@ function goToPlan() {
     if (viewScope.value === 'weekly') query.week = filterWeek.value;
     if (viewScope.value === 'monthly') query.month = filterMonth.value;
     query.scope = viewScope.value;
+    if (isRewindingBoard.value) {
+        query.board = "rewinding";
+        frappe.set_route("rewinding-order-table", query);
+        return;
+    }
     if (isSlittingBoard.value) {
         query.board = "slitting";
         frappe.set_route("slitting-order-table", query);
@@ -593,6 +628,7 @@ function toggleViewScope() {
 }
 
 const boardUnits = computed(() => {
+  if (isRewindingBoard.value) return [...REWINDING_BOARD_UNITS];
   if (isSlittingBoard.value) return [SLITTING_UNIT];
   if (isLaminationBoard.value) return [LAMINATION_UNIT];
   return units;
@@ -627,6 +663,15 @@ const filteredData = computed(() => {
       }
       return d;
     });
+  }
+
+  if (isRewindingBoard.value) {
+    data = data
+      .filter((d) => itemProcessPrefix(d.item_code || d.itemCode) === "102")
+      .map((d) => ({
+        ...d,
+        unit: normalizeUnitName(d.unit),
+      }));
   }
 
   // For Production Board ONLY: Show pushed items.
@@ -1092,6 +1137,9 @@ const unitEntriesCache = computed(() => {
   const cache = {};
   for (const unit of boardUnits.value) {
     let unitItems = filteredData.value.filter((d) => {
+      if (isRewindingBoard.value && REWINDING_BOARD_UNITS.includes(unit)) {
+        return itemProcessPrefix(d.item_code || d.itemCode) === "102" && normalizeUnitName(d.unit) === unit;
+      }
       if (isSlittingBoard.value && unit === SLITTING_UNIT) {
         return itemProcessPrefix(d.item_code || d.itemCode) === "103" || (d.unit || "Mixed") === unit;
       }
@@ -1136,7 +1184,7 @@ function getUnitEntries(unit) {
 
 function getUnitProductionTotal(unit) {
   const production = filteredData.value
-    .filter((d) => d.unit === unit)
+    .filter((d) => normalizeUnitName(d.unit) === unit)
     .reduce((sum, d) => sum + d.qty, 0);
   const mixWeight = getMixRollTotalWeight(unit);
   return (production + mixWeight) / 1000;
@@ -1968,6 +2016,7 @@ async function fetchData() {
           const path = String(window.location.pathname || "").toLowerCase();
           if (path.includes("/desk/lamination-board")) isLaminationBoard.value = true;
           if (path.includes("/desk/slitting-board")) isSlittingBoard.value = true;
+          if (path.includes("/desk/rewinding-board")) isRewindingBoard.value = true;
         } catch (e) {}
         if (viewScope.value === "daily" && !String(filterOrderDate.value || "").trim()) {
           filterOrderDate.value = frappe.datetime.get_today();
@@ -2007,7 +2056,9 @@ async function fetchData() {
         // Production Board: fetch ALL plans but ONLY pushed items (custom_planned_date set)
         args.plan_name = "__all__";
         args.planned_only = 1;
-        if (isSlittingBoard.value) {
+        if (isRewindingBoard.value) {
+          args.board_process_scope = "rewinding_only";
+        } else if (isSlittingBoard.value) {
           args.board_process_scope = "slitting_only";
         } else if (isLaminationBoard.value) {
           args.board_process_scope = "lamination_only";
@@ -2019,6 +2070,8 @@ async function fetchData() {
               args.board_process_scope = "lamination_only";
             } else if (b === "slitting") {
               args.board_process_scope = "slitting_only";
+            } else if (b === "rewinding") {
+              args.board_process_scope = "rewinding_only";
             } else {
               args.board_process_scope = "exclude_special";
             }
@@ -2152,12 +2205,14 @@ onMounted(() => {
       const path = String(window.location.pathname || "").toLowerCase();
       if (path.includes("/desk/lamination-board")) isLaminationBoard.value = true;
       if (path.includes("/desk/slitting-board")) isSlittingBoard.value = true;
+      if (path.includes("/desk/rewinding-board")) isRewindingBoard.value = true;
     } catch (e) {}
     try {
       const r = frappe.get_route && frappe.get_route();
       const routeName = String((r && r[0]) || "").toLowerCase().replace(/-/g, " ");
       if (routeName === "lamination board") isLaminationBoard.value = true;
       if (routeName === "slitting board") isSlittingBoard.value = true;
+      if (routeName === "rewinding board") isRewindingBoard.value = true;
     } catch (e) {}
 
     // 1. Load CSS
