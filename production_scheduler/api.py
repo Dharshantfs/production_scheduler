@@ -661,19 +661,35 @@ def _get_bopp_child_items_from_parent_item(parent_item_code):
 
 	bom = frappe.get_doc("BOM", bom_name)
 	fabric_codes = []
-	pb_codes = []
+	pb_short = []
+	pb_long = []
+	# Extract design token from parent item code (e.g. "7499" from "7499-107F101MCC91500")
+	_design_u = ""
+	_m107 = re.match(r"^([A-Z0-9]+)-107", str(item_code or "").strip().upper())
+	if _m107:
+		_design_u = (_m107.group(1) or "").strip().upper()
 	for row in bom.items or []:
 		ic = str(row.item_code or "").strip()
 		ic_u = ic.upper()
 		if len(ic) >= 3 and ic[:3] == "100":
 			fabric_codes.append(ic)
 		if ic_u.startswith("PB-"):
-			pb_codes.append(ic)
+			pb_short.append(ic)
+			continue
+		# Long-form: PRINTED BOPP - <design> - <cylinder> - …
+		if " - " in ic:
+			parts = [p.strip() for p in ic.split(" - ")]
+			head0 = (parts[0] or "").upper().replace(" ", "")
+			if "PRINTED" in head0 and "BOPP" in head0 and len(parts) >= 2:
+				if not _design_u or (parts[1] or "").strip().upper() == _design_u:
+					pb_long.append(ic)
+
+	pb_codes = pb_short if pb_short else pb_long
 
 	if not fabric_codes:
 		frappe.throw(_("BOM {0} has no 100* child item for BOPP parent {1}.").format(bom_name, item_code))
 	if not pb_codes:
-		frappe.throw(_("BOM {0} has no PB-* child item for BOPP parent {1}.").format(bom_name, item_code))
+		frappe.throw(_("BOM {0} has no PB-* or PRINTED BOPP child for BOPP parent {1}.").format(bom_name, item_code))
 
 	return {
 		"bom_no": bom_name,
@@ -706,11 +722,15 @@ def _specs_from_nonfabric_child_item(child_ic, so_it, parent_row):
 			except Exception:
 				pass
 
-	qual = str(
-		frappe.db.get_value("Item", child_ic, "custom_quality")
-		or frappe.db.get_value("Item", child_ic, "quality")
-		or "GENERIC"
-	).strip() or "GENERIC"
+	qual = "GENERIC"
+	for _qcol in ("custom_quality", "quality"):
+		try:
+			_qv = frappe.db.get_value("Item", child_ic, _qcol)
+			if _qv and str(_qv).strip():
+				qual = str(_qv).strip()
+				break
+		except Exception:
+			continue
 	col = resolve_color_name_for_planning_row(child_ic, item_name, existing_color="")
 	m_roll = flt(getattr(so_it, "custom_meter_per_roll", 0) or 0)
 	wt = 0.0
