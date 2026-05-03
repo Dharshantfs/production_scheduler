@@ -93,6 +93,19 @@ CANONICAL_PLANNING_LINE_UNIT_OPTIONS = "\n".join(
 )
 
 
+def _canonical_planning_unit_option_line_set():
+	return frozenset(
+		line.strip()
+		for line in (CANONICAL_PLANNING_LINE_UNIT_OPTIONS or "").split("\n")
+		if line.strip()
+	)
+
+
+def _stored_unit_select_outdated(opts):
+	got = frozenset(line.strip() for line in str(opts or "").split("\n") if line.strip())
+	return got != _canonical_planning_unit_option_line_set()
+
+
 def ensure_planning_line_unit_docfield_options():
 	"""Keep ``tabDocField`` for Planning Table + Planning sheet Item ``unit`` in sync (see production_entry app)."""
 	import frappe
@@ -106,7 +119,7 @@ def ensure_planning_line_unit_docfield_options():
 			)
 		except Exception:
 			continue
-		if opts and REWINDING_UNASSIGNED_UNIT in (opts or ""):
+		if not _stored_unit_select_outdated(opts):
 			continue
 		try:
 			frappe.db.sql(
