@@ -8,6 +8,12 @@ Use these constants anywhere code references the doctype string (no literals lik
 PLANNING_SHEET = "Planning sheet"
 PLANNING_SHEET_ITEM = "Planning sheet Item"
 
+# Must match Planning Table `unit` Select options on sites using these boards.
+REWINDING_UNIT_L3 = "TSNPL - L3 REWINDING MACHINE"
+REWINDING_UNIT_L4 = "JSB - L4 REWINDING MACHINE"
+REWINDING_UNIT_L5 = "JSB - L5 REWINDING MACHINE"
+REWINDING_UNASSIGNED_UNIT = "Unassigned rewinding machine"
+
 
 def normalize_planning_unit_for_select(raw, _depth=0):
     """Map free-text to exact options on Planning Table / Planning sheet Item `unit` (Select)."""
@@ -21,7 +27,21 @@ def normalize_planning_unit_for_select(raw, _depth=0):
         parts = [p.strip() for p in s.split("|")]
         if len(parts) >= 2 and parts[1]:
             return normalize_planning_unit_for_select(parts[1], _depth + 1)
-    allowed = ("UNASSIGNED", "Unit 1", "Unit 2", "Unit 3", "Unit 4", "Mixed", "Lamination Unit")
+    allowed = (
+        "UNASSIGNED",
+        "Unit 1",
+        "Unit 2",
+        "Unit 3",
+        "Unit 4",
+        "Mixed",
+        "Lamination Unit",
+        "Slitting Unit",
+        REWINDING_UNIT_L3,
+        REWINDING_UNIT_L4,
+        REWINDING_UNIT_L5,
+        REWINDING_UNASSIGNED_UNIT,
+        "VR - 1200MM BOPP PRINTING MACHINE",
+    )
     if s in allowed:
         return s
     u = s.upper().replace(" ", "").replace("_", "")
@@ -32,6 +52,19 @@ def normalize_planning_unit_for_select(raw, _depth=0):
         return "Mixed"
     if u == "LAMINATIONUNIT" or s.strip().lower() == "lamination unit":
         return "Lamination Unit"
+    if u == "SLITTINGUNIT" or s.strip().lower() == "slitting unit":
+        return "Slitting Unit"
+    if "REWINDING" in u or "REWINDINGMACHINE" in u.replace(" ", ""):
+        if "L3" in u and "TSNPL" in u:
+            return REWINDING_UNIT_L3
+        if "L4" in u and "JSB" in u:
+            return REWINDING_UNIT_L4
+        if "L5" in u and "JSB" in u:
+            return REWINDING_UNIT_L5
+        if "UNASSIGNED" in u:
+            return REWINDING_UNASSIGNED_UNIT
+    if "VR1200MMBOPPPRINTINGMACHINE" in u or "1200MMBOPP" in u:
+        return "VR - 1200MM BOPP PRINTING MACHINE"
     for i in (1, 2, 3, 4):
         if f"UNIT{i}" in u:
             return f"Unit {i}"

@@ -90,7 +90,7 @@
             <th>QUALITY</th>
             <th>COLOUR</th>
             <th>ROLL SIZE</th>
-            <th>REWIND WIDTH</th>
+            <th>Rewinding length (mtrs)</th>
             <th>PLANNED KGS</th>
             <th>ACHIEVED KGS</th>
             <th>FABRIC READY DATE</th>
@@ -144,7 +144,7 @@
             <td class="cell-center">{{ row.quality || "-" }}</td>
             <td class="cell-center font-bold">{{ row.color || "-" }}</td>
             <td class="cell-center">{{ row.roll_size || "-" }}</td>
-            <td class="cell-center">{{ row.slitting_size || "-" }}</td>
+            <td class="cell-center">{{ formatRewindingLengthMm(row) }}</td>
             <td class="cell-right">{{ formatKg2(row.planned_kgs ?? row.qty) }}</td>
             <td class="cell-right">{{ formatKg2(row.achieved_kgs ?? row.actual_production_weight_kgs) }}</td>
             <td class="cell-center">{{ formatDate(row.fabric_ready_date) || "-" }}</td>
@@ -419,6 +419,13 @@ function formatDate(d) {
   return d;
 }
 
+/** Suffix after last hyphen on 102 item codes (e.g. …-1600 → 1600 mm). */
+function formatRewindingLengthMm(row) {
+  const v = row?.rewinding_length_mm;
+  if (v == null || v === "" || Number.isNaN(Number(v))) return "-";
+  return `${Number(v)} mm`;
+}
+
 function toDateKey(d) {
   if (!d) return "";
   const s = String(d).trim();
@@ -460,7 +467,7 @@ async function fetchMaintenanceRecords() {
   try {
     const { start_date, end_date } = getScopeDateRange();
     const res = await frappe.call({
-      method: "production_entry.production_planning.scheduler_api.get_all_equipment_maintenance",
+      method: "production_scheduler.api.get_all_equipment_maintenance",
       args: { start_date, end_date },
     });
     const rows = (res?.message || []).filter((r) => REWINDING_MAINT_UNITS.has((r.unit || "").trim()));
@@ -500,7 +507,7 @@ async function fetchLaminationSequences() {
   try {
     const { start_date, end_date } = getScopeDateRange();
     const res = await frappe.call({
-      method: "production_entry.production_planning.scheduler_api.get_color_sequences_range",
+      method: "production_scheduler.api.get_color_sequences_range",
       args: {
         start_date,
         end_date,
@@ -623,7 +630,7 @@ async function saveLaminationArrangement() {
     for (const [dateKey, seq] of Object.entries(pendingArrangementUpdates.value || {})) {
       if (!Array.isArray(seq) || !seq.length) continue;
       await frappe.call({
-        method: "production_entry.production_planning.scheduler_api.save_color_sequence",
+        method: "production_scheduler.api.save_color_sequence",
         args: {
           date: dateKey,
           unit: REWINDING_SEQUENCE_UNIT,
@@ -650,7 +657,7 @@ async function restoreLaminationArrangement() {
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       await frappe.call({
-        method: "production_entry.production_planning.scheduler_api.restore_last_color_sequence",
+        method: "production_scheduler.api.restore_last_color_sequence",
         args: { date: dateKey, unit: REWINDING_SEQUENCE_UNIT, plan_name: "Default" },
       });
     }
@@ -759,7 +766,7 @@ async function startParentWO(item) {
   try {
     const submitExisting = item.parent_wo_name && Number(item.parent_wo_docstatus || 0) === 0 && item.parent_wo_warehouse_set;
     const res = await frappe.call({
-      method: "production_entry.production_planning.scheduler_api.start_lamination_parent_wo",
+      method: "production_scheduler.api.start_lamination_parent_wo",
       args: { item_name: item.itemName, submit_existing: submitExisting ? 1 : 0 },
     });
     const msg = res?.message || {};
@@ -830,7 +837,7 @@ async function openProductionPlanView(planningSheetName, salesOrderItem = null, 
   }
   try {
     const res = await frappe.call({
-      method: "production_entry.production_planning.scheduler_api.get_planning_sheet_pp_id",
+      method: "production_scheduler.api.get_planning_sheet_pp_id",
       args: {
         planning_sheet_name: planningSheetName,
         sales_order_item: salesOrderItem,
@@ -890,7 +897,7 @@ async function createItemStockEntry(item) {
   if (!item.pp_id && item.planningSheet) {
     try {
       const ppRes = await frappe.call({
-        method: "production_entry.production_planning.scheduler_api.get_planning_sheet_pp_id",
+        method: "production_scheduler.api.get_planning_sheet_pp_id",
         args: {
           planning_sheet_name: item.planningSheet,
           sales_order_item: item.salesOrderItem || null,
@@ -917,7 +924,7 @@ async function createItemStockEntry(item) {
       item.__creating_spr = true;
       try {
         const res = await frappe.call({
-          method: "production_entry.production_planning.scheduler_api.create_item_spr",
+          method: "production_scheduler.api.create_item_spr",
           args: {
             pp_id: item.pp_id,
             planning_sheet_item_names: JSON.stringify([item.itemName]),
@@ -1050,7 +1057,7 @@ function openMachineOffDialog() {
     primary_action: async (vals) => {
       try {
         const res = await frappe.call({
-          method: "production_entry.production_planning.scheduler_api.add_equipment_maintenance",
+          method: "production_scheduler.api.add_equipment_maintenance",
           args: {
             unit: REWINDING_SEQUENCE_UNIT,
             start_date: vals.start_date,
