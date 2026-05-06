@@ -702,16 +702,53 @@ def _is_bopp_parent_107(item_code: str) -> bool:
 	return False
 
 
-_LAM_GSM_SUFFIX_MAP_SUB = {
-	"A": 9, "B": 12, "C": 15, "D": 18, "E": 21, "F": 24, "G": 27, "H": 30,
+# 107 decoding MUST match production_entry.production_planning.scheduler_api exactly.
+# Otherwise regenerate will show wrong GSMs vs creation (your current issue: C->20, M->30, etc.).
+_LAM_GSM_SUFFIX_MAP_SUB = {"A": 10, "B": 12, "C": 13, "D": 15, "E": 20, "F": 30}
+_LAMINATION_QUALITY_BY_CODE_SUB = {
+	"A": "PREMIUM",
+	"B": "PLATINUM",
+	"C": "SUPER PLATINUM",
+	"D": "GOLD",
+	"E": "SILVER",
+	"F": "BRONZE",
+	"G": "CLASSIC",
+	"H": "SUPER CLASSIC",
+	"I": "LIFE STYLE",
+	"J": "ECO SPECIAL",
+	"K": "ECO GREEN",
+	"L": "SUPER ECO",
+	"M": "ULTRA",
+	"N": "DELUXE",
+	"O": "VIRGIN MIX - GOLD MIX",
+	"P": "MID MIX - CLASSIC MIX",
+	"Q": "ECO MIX",
+	"R": "DELUXE MIX",
 }
-_LAMINATION_QUALITY_BY_CODE_SUB = {}
 _LAMINATION_FABRIC_GSM_BY_CODE_SUB = {
-	"M": 30, "N": 38, "O": 40, "P": 50, "Q": 55, "R": 60, "S": 75, "T": 100,
+	"A": 20,
+	"B": 25,
+	"C": 30,
+	"D": 35,
+	"E": 40,
+	"F": 45,
+	"G": 50,
+	"H": 55,
+	"I": 60,
+	"J": 65,
+	"K": 70,
+	"L": 75,
+	"M": 80,
+	"N": 85,
+	"O": 90,
+	"P": 95,
+	"Q": 100,
+	"R": 105,
+	"S": 110,
+	"T": 115,
+	"U": 120,
 }
-_LAMINATION_BOPP_GSM_BY_CODE_SUB = {
-	"A": 12, "B": 15, "C": 20, "D": 25,
-}
+_LAMINATION_BOPP_GSM_BY_CODE_SUB = {"A": 10, "B": 12, "C": 15, "D": 30}
 
 
 def _parse_107_item_code(item_code):
@@ -727,18 +764,6 @@ def _parse_107_item_code(item_code):
 	code = re.sub(r"\s+", "", str(item_code or "").strip().upper())
 	if not code:
 		return {}
-
-	# Lazily populate quality name map from Quality Master
-	global _LAMINATION_QUALITY_BY_CODE_SUB
-	if not _LAMINATION_QUALITY_BY_CODE_SUB:
-		try:
-			rows = frappe.get_all("Quality Master", fields=["name", "short_code", "code", "quality_code"])
-			for r in rows:
-				sc = (r.get("short_code") or r.get("code") or r.get("quality_code") or "").strip().upper()
-				if sc:
-					_LAMINATION_QUALITY_BY_CODE_SUB[sc] = r.get("name") or sc
-		except Exception:
-			pass
 
 	def _row_from_groups(design, gd):
 		width_code = gd.get("width") or ""
@@ -969,6 +994,24 @@ def _get_bopp_child_items_from_parent_item(parent_item_code):
 def _specs_from_nonfabric_child_item(child_ic, so_it, parent_row):
 	"""Basic planning specs for non-100 children like PB-* rows."""
 	item_name = frappe.db.get_value("Item", child_ic, "item_name") or ""
+	ic_u = str(child_ic or "").strip().upper()
+	# PB child rows must behave like creation flow: PRINTED BOPP quality, no fabric colour, GSM=0, unit=VR.
+	if ic_u.startswith("PB-") or ("PRINTED" in ic_u and "BOPP" in ic_u):
+		p_w = flt(getattr(parent_row, "width_inch", 0) or 0) if parent_row else 0
+		meter = cint(parent_row.meter) if parent_row else 0
+		meter_per_roll = cint(parent_row.meter_per_roll) if parent_row else cint(getattr(so_it, "custom_meter_per_roll", 0) or 0)
+		no_of_rolls = cint(parent_row.no_of_rolls) if parent_row else cint(getattr(so_it, "custom_no_of_rolls", 0) or 0)
+		return {
+			"gsm": 0,
+			"width_inch": p_w,
+			"color": "",
+			"quality": "PRINTED BOPP",
+			"custom_quality": "PRINTED BOPP",
+			"weight_per_roll": 0,
+			"meter": meter,
+			"meter_per_roll": meter_per_roll,
+			"no_of_rolls": no_of_rolls,
+		}
 	raw_txt = f"{child_ic} {item_name}"
 	gsm, width = _parse_gsm_width_from_item_text(raw_txt)
 	for col in ("custom_gsm", "gsm"):
