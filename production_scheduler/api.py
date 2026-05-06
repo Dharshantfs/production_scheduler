@@ -822,6 +822,81 @@ def _parse_107_item_code(item_code):
 	return {}
 
 
+def _pb_design_name_from_sales_order_item(so_item_name):
+	"""Optional human design name from Sales Order Item custom fields (site-specific)."""
+	if not so_item_name or not frappe.db.exists("Sales Order Item", so_item_name):
+		return ""
+	try:
+		meta = frappe.get_meta("Sales Order Item")
+	except Exception:
+		return ""
+	for fn in (
+		"custom_design_name",
+		"custom_pb_design_name",
+		"custom_style_name",
+		"custom_print_design",
+		"design_name",
+	):
+		try:
+			if meta.has_field(fn):
+				v = frappe.db.get_value("Sales Order Item", so_item_name, fn)
+				if (v or "").strip():
+					return (v or "").strip()
+		except Exception:
+			continue
+	return ""
+
+
+def _planning_row_dict_107_lamination_extras(item_code, parsed107_early, sales_order_item_name=None):
+	"""Extras for 107 parent rows: finishing, white tint, BOPP GSM, LAM GSM."""
+	out = {}
+	if not (LAMINATION_FLOW_ENABLED and _is_bopp_parent_107(str(item_code or ""))):
+		return out
+	p107r = parsed107_early or (_parse_107_item_code(item_code) or {})
+	mg = (p107r.get("finish_matte_glossy") or "").strip() or "0"
+	mc = (p107r.get("finish_metallic_cooler") or "").strip() or "0"
+	if frappe.db.has_column("Planning Table", "custom_finishing") or frappe.db.has_column(
+		"Planning sheet Item", "custom_finishing"
+	):
+		out["custom_finishing"] = f"{mg}/{mc}"
+
+	if sales_order_item_name:
+		wt = ""
+		# Match main app behavior (Yes/No) when field exists.
+		try:
+			meta = frappe.get_meta("Sales Order Item")
+			for fn in ("custom_white_tint", "custom_white_tin", "custom_is_white_tint", "white_tint"):
+				if not meta.has_field(fn):
+					continue
+				v = frappe.db.get_value("Sales Order Item", sales_order_item_name, fn)
+				vs = str(v or "").strip()
+				if vs:
+					wt = vs
+					break
+		except Exception:
+			wt = ""
+		if wt and (
+			frappe.db.has_column("Planning Table", "custom_white_tint")
+			or frappe.db.has_column("Planning sheet Item", "custom_white_tint")
+		):
+			out["custom_white_tint"] = wt
+
+	bgv = cint(p107r.get("bopp_gsm") or 0)
+	if bgv > 0 and (
+		frappe.db.has_column("Planning Table", "custom_bopp_gsm")
+		or frappe.db.has_column("Planning sheet Item", "custom_bopp_gsm")
+	):
+		out["custom_bopp_gsm"] = bgv
+
+	lgv = cint(p107r.get("lam_gsm") or 0)
+	if lgv > 0 and (
+		frappe.db.has_column("Planning Table", "custom_lam_gsm")
+		or frappe.db.has_column("Planning sheet Item", "custom_lam_gsm")
+	):
+		out["custom_lam_gsm"] = lgv
+	return out
+
+
 def _get_bopp_child_items_from_parent_item(parent_item_code):
 	"""
 	Resolve required 107-parent BOM children:
@@ -3927,6 +4002,15 @@ def _populate_planning_sheet_items(ps, doc):
             # Also stamp header
             if frappe.db.has_column("Planning sheet", "custom_lam_side"):
                 ps.custom_lam_side = lam_side
+        if LAMINATION_FLOW_ENABLED and _is_107:
+            for k, v in _planning_row_dict_107_lamination_extras(it.item_code, parsed_107_pop, it.name).items():
+                psi_data[k] = v
+            dn = _pb_design_name_from_sales_order_item(it.name)
+            if dn:
+                if frappe.db.has_column("Planning Table", "custom_design_name"):
+                    psi_data["custom_design_name"] = dn
+                if frappe.db.has_column("Planning sheet Item", "custom_design_name"):
+                    psi_data["custom_design_name"] = dn
         _set_trace_id_if_supported(psi_data, trace_id)
 
         # Fix: Sync logic must be split-aware. Update existing rows without wiping extras.
@@ -3959,6 +4043,15 @@ def _populate_planning_sheet_items(ps, doc):
                 elif not existing_psi.unit or existing_psi.unit == "UNASSIGNED":
                     existing_psi.unit = unit
                     existing_psi.planned_date = p_date
+                if LAMINATION_FLOW_ENABLED and _is_107:
+                    for k, v in _planning_row_dict_107_lamination_extras(it.item_code, parsed_107_pop, it.name).items():
+                        try:
+                            setattr(existing_psi, k, v)
+                        except Exception:
+                            pass
+                    dn_e = _pb_design_name_from_sales_order_item(it.name)
+                    if dn_e and hasattr(existing_psi, "custom_design_name"):
+                        existing_psi.custom_design_name = dn_e
                 _set_trace_id_if_supported(existing_psi, trace_id)
         else:
             pt_data = psi_data.copy()
