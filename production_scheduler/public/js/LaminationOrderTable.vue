@@ -91,11 +91,11 @@
             <th>DESIGN</th>
             <th>FABRIC GSM</th>
             <th>LAM GSM</th>
-            <th>PLANNED LENGTH (MTR)</th>
-            <th>ACHIEVED LENGTH (MTR)</th>
-            <th>PRODUCED LAMINATION WEIGHT (KGS)</th>
-            <th>PRODUCED FABRIC WT (KG)</th>
             <th>FABRIC READY DATE</th>
+            <th>PRODUCED LAMINATION WEIGHT (KGS)</th>
+            <th>PLANNED LENGTH (MTRS)</th>
+            <th>ACHIEVED LENGTH (MTRS)</th>
+            <th>produced fabric wt (kgs)</th>
             <th style="min-width:90px;">PRODUCTION PLAN</th>
             <th style="min-width:128px;">SPR / WO</th>
           </tr>
@@ -145,13 +145,13 @@
             <td class="cell-center font-bold">{{ row.color }}</td>
             <td class="cell-center">{{ row.fabric_gsm || "-" }}</td>
             <td class="cell-center">{{ row.lamination_gsm ?? row.gsm }}</td>
+            <td class="cell-center">{{ formatDate(row.fabric_ready_date) || "-" }}</td>
+            <td class="cell-right" :title="`Lamination: produced / planned (${formatKg2(row.planned_lamination_weight_kgs)} kg)`">{{ formatKg2(row.actual_production_weight_kgs) }} / {{ formatKg2(row.planned_lamination_weight_kgs) }}</td>
             <td class="cell-right">{{ row.planned_meter ?? "-" }}</td>
             <td class="cell-right">{{ formatNum(row.achieved_meter) }}</td>
-            <td class="cell-right">{{ formatKg2(row.actual_production_weight_kgs) }}</td>
             <td class="cell-right" :title="`Fabric WO: ${formatKg2(row.child_wo_produced_kg)} produced / ${formatKg2(row.fabric_required_kg)} planned`">
               {{ formatKg2(row.child_wo_produced_kg) }} / {{ formatKg2(row.fabric_required_kg) }}
             </td>
-            <td class="cell-center">{{ formatDate(row.fabric_ready_date) || "-" }}</td>
             <td class="cell-center">
               <button v-if="row.pp_id && Number(row.pp_docstatus) === 1" type="button" @click="openProductionPlanView(row.planningSheet, row.salesOrderItem, row.itemName, row.pp_id || '')" class="cc-pp-btn">View</button>
               <span v-else-if="row.pp_id" class="pt-wo-closed-hint" title="Submit Production Plan to open print/form view">PP Draft</span>
@@ -712,20 +712,20 @@ function formatNum(v) {
 
 function sprPillLabel(item) {
   if (!item?.spr_name) return "";
-  if (Number(item.spr_docstatus) === 0) return "Draft";
+  if (item.spr_docstatus === 0 || item.spr_docstatus === "0") return "Draft";
   if (Number(item.spr_docstatus) === 1) return "Submitted";
   return "SPR";
 }
 function sprPillClass(item) {
   if (!item?.spr_name) return "pt-pill-muted";
-  if (Number(item.spr_docstatus) === 0) return "pt-pill-draft";
+  if (item.spr_docstatus === 0 || item.spr_docstatus === "0") return "pt-pill-draft";
   if (Number(item.spr_docstatus) === 1) return "pt-pill-submitted";
   return "pt-pill-muted";
 }
 function sprPillTitle(item) {
   if (!item?.spr_name) return "";
   const id = item.spr_name || "";
-  if (Number(item.spr_docstatus) === 0) return `Draft SPR ${id}`;
+  if (item.spr_docstatus === 0 || item.spr_docstatus === "0") return `Draft SPR ${id}`;
   if (Number(item.spr_docstatus) === 1) return `Submitted SPR ${id}`;
   return id;
 }
@@ -756,13 +756,13 @@ function itemProductionStatusLine(item) {
 }
 function itemSprPrimaryButtonLabel(item) {
   if (!item?.spr_name) return "";
-  if (Number(item.spr_docstatus) === 0) return "Open draft SPR";
+  if (item.spr_docstatus === 0 || item.spr_docstatus === "0") return "Open draft SPR";
   if (item.wo_terminal) return "View SPR (done)";
   return "View SPR";
 }
 function itemSprPrimaryButtonTitle(item) {
   if (!item?.spr_name) return "";
-  if (Number(item.spr_docstatus) === 0) return "Draft SPR - continue recording rolls.";
+  if (item.spr_docstatus === 0 || item.spr_docstatus === "0") return "Draft SPR - continue recording rolls.";
   if (item.wo_terminal) return "WO terminal - review only.";
   return "Open submitted SPR.";
 }
@@ -818,13 +818,13 @@ async function startParentWO(item) {
 
 function getStockEntryLabel(item) {
   if (!item) return "New SPR";
-  const isDraftSpr = !!item.spr_name && Number(item.spr_docstatus) === 0;
+  const isDraftSpr = !!item.spr_name && (item.spr_docstatus === 0 || item.spr_docstatus === "0");
   return isDraftSpr ? "Continue SPR" : "New SPR";
 }
 
 function getStockEntryTitle(item) {
   if (!item) return "Create Shaft Production Run";
-  const isDraftSpr = !!item.spr_name && Number(item.spr_docstatus) === 0;
+  const isDraftSpr = !!item.spr_name && (item.spr_docstatus === 0 || item.spr_docstatus === "0");
   const pendingQty = Number(item.pending_qty || 0);
   if (isDraftSpr) return `Continue draft SPR. Pending: ${pendingQty.toFixed(0)} Kg`;
   return `New SPR. Pending: ${pendingQty.toFixed(0)} Kg`;
@@ -887,7 +887,7 @@ async function openProductionPlanView(planningSheetName, salesOrderItem = null, 
 
 function handleStockEntryAction(item) {
   if (!item) return;
-  const isDraftSpr = !!item.spr_name && Number(item.spr_docstatus) === 0;
+  const isDraftSpr = !!item.spr_name && (item.spr_docstatus === 0 || item.spr_docstatus === "0");
   if (isDraftSpr) {
     openItemSPR(item.spr_name, item);
     return;

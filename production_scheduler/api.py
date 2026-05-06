@@ -16,6 +16,7 @@ PARTY_CODE_GENERATION_ENABLED = False
 LAMINATION_FLOW_ENABLED = True
 SLITTING_FLOW_ENABLED = True
 REWINDING_FLOW_ENABLED = True
+SHEET_CUTTING_FLOW_ENABLED = True
 REWINDING_UNIT_L3 = "TSNPL - L3 REWINDING MACHINE"
 REWINDING_UNIT_L4 = "JSB - L4 REWINDING MACHINE"
 REWINDING_UNIT_L5 = "JSB - L5 REWINDING MACHINE"
@@ -567,6 +568,21 @@ def _get_fabric_item_from_process_item(item_code, expected_process, process_labe
 			"name",
 			order_by="is_default desc, modified desc",
 		)
+	if not bom_name and frappe.db.exists("Item", item_code):
+		# Variant fallback: sometimes the BOM is on the template item.
+		tmpl = frappe.db.get_value("Item", item_code, "variant_of")
+		if tmpl:
+			bom_name = frappe.db.get_value(
+				"BOM",
+				{"item": tmpl, "docstatus": 1, "is_active": 1, "is_default": 1},
+				"name",
+				order_by="modified desc",
+			) or frappe.db.get_value(
+				"BOM",
+				{"item": tmpl, "docstatus": 1, "is_active": 1},
+				"name",
+				order_by="is_default desc, modified desc",
+			)
 	if not bom_name:
 		frappe.throw(_("No active submitted BOM for {0} item {1}.").format(process_label.lower(), item_code))
 
@@ -619,6 +635,38 @@ def _fabric_qty_from_bom(bom_name, fabric_item_code, lamination_so_qty):
 		if (row.item_code or "").strip() == fabric_item_code:
 			return flt(lamination_so_qty) * flt(row.qty) / fg_qty
 	return lamination_so_qty
+
+
+def _resolve_lamination_bom(item_code):
+	"""Active BOM for the FG item, or for its template item when this line is a variant."""
+	ic = (item_code or "").strip()
+	if not ic:
+		return None
+
+	def _pick_bom_for_item(it_code):
+		bn = frappe.db.get_value(
+			"BOM",
+			{"item": it_code, "docstatus": 1, "is_active": 1, "is_default": 1},
+			"name",
+			order_by="modified desc",
+		)
+		if not bn:
+			bn = frappe.db.get_value(
+				"BOM",
+				{"item": it_code, "docstatus": 1, "is_active": 1},
+				"name",
+				order_by="is_default desc, modified desc",
+			)
+		return bn
+
+	bom_name = _pick_bom_for_item(ic)
+	if not bom_name and frappe.db.exists("Item", ic):
+		tmpl = frappe.db.get_value("Item", ic, "variant_of")
+		if tmpl:
+			bom_name = _pick_bom_for_item(tmpl)
+	if not bom_name:
+		return None
+	return frappe.get_doc("BOM", bom_name)
 
 
 def _child_qty_from_bom(bom_name, child_item_code, parent_so_qty):
@@ -1149,6 +1197,106 @@ def _sync_slitting_fabric_planning_rows(planning_sheet_name):
 		_set_trace_id_if_supported(row, trace_id)
 		if frappe.db.has_column("Planning Table", "split_from"):
 			row["split_from"] = ""
+
+		row_b = dict(row)
+		if hasattr(ps, "items") or ps.meta.has_field("items"):
+			ps.append("items", row_b)
+		ps.append(parent_field, dict(row))
+		changed = True
+
+	if changed:
+		ps.flags.ignore_permissions = True
+		ps.save()
+		frappe.db.commit()
+
+
+def _sync_sheet_cutting_fabric_planning_rows(planning_sheet_name):
+	"""For each SO line with item 251, append one fabric (100) row to legacy items + board table. Idempotent."""
+	if not SHEET_CUTTING_FLOW_ENABLED or not planning_sheet_name:
+		return
+	if not frappe.db.exists("Planning sheet", planning_sheet_name):
+		return
+	ps = frappe.get_doc("Planning sheet", planning_sheet_name)
+	if not ps.get("sales_order"):
+		return
+	so = frappe.get_doc("Sales Order", ps.sales_order)
+	parent_field = _get_pt_parentfield()
+	changed = False
+	for so_it in so.items or []:
+		sc_ic = (so_it.item_code or "").strip()
+		if _item_process_prefix(sc_ic) != "251":
+			continue
+		trace_id = _parent_child_trace_id_from_item_code(sc_ic)
+		try:
+			res = _get_fabric_item_from_process_item(sc_ic, expected_process="251", process_label="Sheet Cutting")
+		except Exception as e:
+			frappe.log_error(
+				title="Sheet Cutting fabric BOM",
+				message=f"SO {so.name} line {so_it.name}: {e}\n{frappe.get_traceback()}",
+			)
+			frappe.msgprint(
+				_("Sheet Cutting fabric row skipped for {0}: {1}").format(sc_ic, str(e)),
+				indicator="orange",
+				title=_("Sheet Cutting BOM skipped"),
+			)
+			continue
+
+		fabric_ic = res["fabric_item_code"]
+		bom_no = res["bom_no"]
+		fabric_qty = _fabric_qty_from_bom(bom_no, fabric_ic, flt(so_it.qty))
+
+		existing = frappe.get_all(
+			"Planning Table",
+			filters={"parent": ps.name, "item_code": fabric_ic, "so_item": so_it.name},
+			pluck="name",
+			limit=1,
+		)
+		if existing:
+			continue
+
+		sc_match = frappe.get_all(
+			"Planning Table",
+			filters={"parent": ps.name, "sales_order_item": so_it.name, "item_code": sc_ic},
+			fields=["name"],
+			limit=1,
+		)
+		sc_pt_name = sc_match[0].get("name") if sc_match else None
+		sc_row = frappe.get_doc("Planning Table", sc_pt_name) if sc_pt_name else None
+		if sc_row and trace_id:
+			_set_trace_id_if_supported(sc_row, trace_id)
+
+		fabric_item_name = frappe.db.get_value("Item", fabric_ic, "item_name") or ""
+		specs = _fabric_row_specs_from_fabric_item(fabric_ic, so_it, sc_row)
+		fab_color = specs.get("color") or ""
+		fab_width = flt(specs.get("width_inch"))
+		fabric_unit = compute_default_production_unit(fab_color, fab_width)
+		fabric_planned_date = getdate(ps.ordered_date) if _is_white_color(fab_color) else None
+
+		row = {
+			"sales_order_item": "",
+			"item_code": fabric_ic,
+			"item_name": fabric_item_name,
+			"qty": fabric_qty,
+			"uom": so_it.uom,
+			"gsm": specs["gsm"],
+			"width_inch": specs["width_inch"],
+			"color": specs["color"],
+			"quality": specs["quality"],
+			"custom_quality": specs["custom_quality"],
+			"unit": fabric_unit,
+			"meter": specs["meter"],
+			"meter_per_roll": specs["meter_per_roll"],
+			"no_of_rolls": specs["no_of_rolls"],
+			"weight_per_roll": specs["weight_per_roll"],
+			"planned_date": fabric_planned_date,
+			"plan_name": ps.get("custom_plan_name"),
+			"party_code": ps.party_code,
+			"planning_sheet": ps.name,
+			"so_item": so_it.name,
+		}
+		_set_trace_id_if_supported(row, trace_id)
+		if sc_pt_name and frappe.db.has_column("Planning Table", "split_from"):
+			row["split_from"] = sc_pt_name
 
 		row_b = dict(row)
 		if hasattr(ps, "items") or ps.meta.has_field("items"):
@@ -11997,6 +12145,7 @@ def regenerate_planning_sheet(so_name):
         _link_board_planned_rows_to_legacy_items(_ps.name)
         _sync_lamination_fabric_planning_rows(_ps.name)
         _sync_slitting_fabric_planning_rows(_ps.name)
+        _sync_sheet_cutting_fabric_planning_rows(_ps.name)
         _sync_bopp_child_planning_rows(_ps.name)
         _force_slitting_unit_on_sheet(_ps.name)
         _sync_rewinding_fabric_planning_rows(_ps.name)
@@ -12044,6 +12193,7 @@ def regenerate_planning_sheet(so_name):
     _link_board_planned_rows_to_legacy_items(ps.name)
     _sync_lamination_fabric_planning_rows(ps.name)
     _sync_slitting_fabric_planning_rows(ps.name)
+    _sync_sheet_cutting_fabric_planning_rows(ps.name)
     _sync_bopp_child_planning_rows(ps.name)
     _force_slitting_unit_on_sheet(ps.name)
     _sync_rewinding_fabric_planning_rows(ps.name)
@@ -12082,6 +12232,7 @@ def sync_bom_children_for_planning_sheet(planning_sheet):
     _link_board_planned_rows_to_legacy_items(ps_name)
     _sync_lamination_fabric_planning_rows(ps_name)
     _sync_slitting_fabric_planning_rows(ps_name)
+    _sync_sheet_cutting_fabric_planning_rows(ps_name)
     _sync_bopp_child_planning_rows(ps_name)
     _force_slitting_unit_on_sheet(ps_name)
     _sync_rewinding_fabric_planning_rows(ps_name)
