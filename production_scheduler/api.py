@@ -1128,6 +1128,13 @@ def _sync_bopp_child_planning_rows(planning_sheet_name):
 					cur_tr = str(frappe.db.get_value("Planning Table", existing[0], "custom_parent_child_trace_id") or "").strip()
 					if not cur_tr:
 						updates["custom_parent_child_trace_id"] = trace_id
+				# PB child should inherit parent design name (same as creation flow).
+				if str(child_ic or "").strip().upper().startswith("PB-") and frappe.db.has_column("Planning Table", "custom_design_name"):
+					cur_dn = str(frappe.db.get_value("Planning Table", existing[0], "custom_design_name") or "").strip()
+					if not cur_dn:
+						dn = _pb_design_name_from_sales_order_item(so_it.name)
+						if dn:
+							updates["custom_design_name"] = dn
 				if updates:
 					frappe.db.set_value("Planning Table", existing[0], updates, update_modified=False)
 				continue
@@ -1162,6 +1169,11 @@ def _sync_bopp_child_planning_rows(planning_sheet_name):
 				"planning_sheet": ps.name,
 				"so_item": so_it.name,
 			}
+			# PB child should inherit design name (same label as parent).
+			if str(child_ic or "").strip().upper().startswith("PB-") and frappe.db.has_column("Planning Table", "custom_design_name"):
+				dn_new = _pb_design_name_from_sales_order_item(so_it.name)
+				if dn_new:
+					row["custom_design_name"] = dn_new
 			_set_trace_id_if_supported(row, trace_id)
 			if frappe.db.has_column("Planning Table", "split_from"):
 				row["split_from"] = ""
