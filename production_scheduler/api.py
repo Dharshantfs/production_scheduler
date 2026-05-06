@@ -702,6 +702,126 @@ def _is_bopp_parent_107(item_code: str) -> bool:
 	return False
 
 
+_LAM_GSM_SUFFIX_MAP_SUB = {
+	"A": 9, "B": 12, "C": 15, "D": 18, "E": 21, "F": 24, "G": 27, "H": 30,
+}
+_LAMINATION_QUALITY_BY_CODE_SUB = {}
+_LAMINATION_FABRIC_GSM_BY_CODE_SUB = {
+	"M": 30, "N": 38, "O": 40, "P": 50, "Q": 55, "R": 60, "S": 75, "T": 100,
+}
+_LAMINATION_BOPP_GSM_BY_CODE_SUB = {
+	"A": 12, "B": 15, "C": 20, "D": 25,
+}
+
+
+def _parse_107_item_code(item_code):
+	"""
+	Parse BOPP (process 107) design-first item codes.
+	e.g. ``7499-107F101MCC91500`` or ``7892-107D101MCC1065M0``
+
+	Returns a dict with keys: design_code, process, quality_code, quality_name,
+	colour_code, fabric_gsm_code, fabric_gsm, bopp_gsm_code, bopp_gsm,
+	lam_gsm_code, lam_gsm, width_code, width_inch, finish_matte_glossy, finish_metallic_cooler.
+	Returns {} when the code does not match any known pattern.
+	"""
+	code = re.sub(r"\s+", "", str(item_code or "").strip().upper())
+	if not code:
+		return {}
+
+	# Lazily populate quality name map from Quality Master
+	global _LAMINATION_QUALITY_BY_CODE_SUB
+	if not _LAMINATION_QUALITY_BY_CODE_SUB:
+		try:
+			rows = frappe.get_all("Quality Master", fields=["name", "short_code", "code", "quality_code"])
+			for r in rows:
+				sc = (r.get("short_code") or r.get("code") or r.get("quality_code") or "").strip().upper()
+				if sc:
+					_LAMINATION_QUALITY_BY_CODE_SUB[sc] = r.get("name") or sc
+		except Exception:
+			pass
+
+	def _row_from_groups(design, gd):
+		width_code = gd.get("width") or ""
+		width_inch = 0.0
+		if width_code.isdigit():
+			wl = len(width_code)
+			if wl == 4:
+				width_inch = flt(width_code) / 25.4
+			elif wl == 3:
+				width_inch = flt(width_code) / 10.0
+		qc = (gd.get("quality") or "").strip().upper()
+		lam_letter = (gd.get("lam") or "").strip().upper()
+		lam_val = cint(_LAM_GSM_SUFFIX_MAP_SUB.get(lam_letter, 0) or 0)
+		fab_letter = (gd.get("fabric") or "").strip().upper()
+		bopp_letter = (gd.get("bopp") or "").strip().upper()
+		return {
+			"design_code": design or "",
+			"process": "107",
+			"quality_code": qc,
+			"quality_name": _LAMINATION_QUALITY_BY_CODE_SUB.get(qc, ""),
+			"colour_code": gd.get("colour") or "",
+			"fabric_gsm_code": fab_letter,
+			"fabric_gsm": cint(_LAMINATION_FABRIC_GSM_BY_CODE_SUB.get(fab_letter, 0) or 0),
+			"bopp_gsm_code": bopp_letter,
+			"bopp_gsm": cint(_LAMINATION_BOPP_GSM_BY_CODE_SUB.get(bopp_letter, 0) or 0),
+			"lam_gsm_code": lam_letter,
+			"lam_gsm": lam_val,
+			"width_code": width_code,
+			"width_inch": width_inch,
+			"finish_matte_glossy": gd.get("finish1") or "0",
+			"finish_metallic_cooler": gd.get("finish2") or "0",
+		}
+
+	m = re.match(
+		r"^(?P<design>[A-Z0-9]+)-(?P<process>107)(?P<quality>[A-Z])(?P<colour>\d{3})(?P<fabric>[A-Z])(?P<bopp>[A-Z])(?P<lam>[A-Z])(?P<width>\d{3})(?P<finish1>\d)(?P<finish2>\d)$",
+		code,
+	)
+	if m:
+		return _row_from_groups((m.group("design") or "").strip().upper(), m.groupdict())
+	mw = re.match(
+		r"^(?P<design>[A-Z0-9]+)-(?P<process>107)(?P<quality>[A-Z])(?P<colour>\d{3})(?P<fabric>[A-Z])(?P<bopp>[A-Z])(?P<lam>[A-Z])(?P<width>\d{4})(?P<finish1>[A-Z0-9])(?P<finish2>[A-Z0-9])$",
+		code,
+	)
+	if mw:
+		return _row_from_groups((mw.group("design") or "").strip().upper(), mw.groupdict())
+	m2 = re.match(r"^(?P<design>[A-Z0-9]+)-(?P<process>107)(?P<body>\d+)$", code)
+	if m2:
+		return {
+			"design_code": m2.group("design") or "",
+			"process": "107",
+			"quality_code": "",
+			"quality_name": "",
+			"colour_code": "",
+			"fabric_gsm_code": "",
+			"fabric_gsm": 0,
+			"bopp_gsm_code": "",
+			"bopp_gsm": 0,
+			"lam_gsm_code": "",
+			"lam_gsm": 0,
+			"width_code": "",
+			"width_inch": 0.0,
+			"finish_matte_glossy": "0",
+			"finish_metallic_cooler": "0",
+		}
+	pos = code.find("-107")
+	if pos > 0:
+		design = re.sub(r"[^A-Z0-9]", "", code[:pos])
+		tail = code[pos + 4:]
+		m3 = re.match(
+			r"^(?P<quality>[A-Z])(?P<colour>\d{3})(?P<fabric>[A-Z])(?P<bopp>[A-Z])(?P<lam>[A-Z])(?P<width>\d{3})(?P<finish1>\d)(?P<finish2>\d)$",
+			tail,
+		)
+		if m3 and design:
+			return _row_from_groups(design, m3.groupdict())
+		m4 = re.match(
+			r"^(?P<quality>[A-Z])(?P<colour>\d{3})(?P<fabric>[A-Z])(?P<bopp>[A-Z])(?P<lam>[A-Z])(?P<width>\d{4})(?P<finish1>[A-Z0-9])(?P<finish2>[A-Z0-9])$",
+			tail,
+		)
+		if m4 and design:
+			return _row_from_groups(design, m4.groupdict())
+	return {}
+
+
 def _get_bopp_child_items_from_parent_item(parent_item_code):
 	"""
 	Resolve required 107-parent BOM children:
@@ -3633,7 +3753,34 @@ def _populate_planning_sheet_items(ps, doc):
         qual = ""
         col = ""
         item_code_str = str(it.item_code or "").strip()
-        if len(item_code_str) >= 9 and _item_process_prefix(item_code_str) in ("100", "103", "104"):
+        # --- 107 BOPP: parse quality/colour/GSM from the design-first item code ---
+        parsed_107_pop = {}
+        if _is_bopp_parent_107(item_code_str):
+            try:
+                parsed_107_pop = _parse_107_item_code(item_code_str) or {}
+            except Exception:
+                parsed_107_pop = {}
+            qname_107 = (parsed_107_pop.get("quality_name") or "").strip()
+            if qname_107:
+                qual = qname_107
+            else:
+                qc_107 = (parsed_107_pop.get("quality_code") or "").strip()
+                if qc_107:
+                    try:
+                        qn = frappe.db.get_value("Quality Master", {"short_code": qc_107}, "name") or \
+                             frappe.db.get_value("Quality Master", {"code": qc_107}, "name") or \
+                             frappe.db.get_value("Quality Master", {"quality_code": qc_107}, "name")
+                        if qn:
+                            qual = qn
+                    except Exception:
+                        pass
+            cc_107 = (parsed_107_pop.get("colour_code") or "").strip()
+            if cc_107:
+                try:
+                    col = _get_color_by_code(cc_107) or col
+                except Exception:
+                    pass
+        elif len(item_code_str) >= 9 and _item_process_prefix(item_code_str) in ("100", "103", "104"):
             q_code = item_code_str[3:6]
             c_code = item_code_str[6:9]
             try:
@@ -3690,34 +3837,54 @@ def _populate_planning_sheet_items(ps, doc):
             line_quality = "GENERIC"
 
         m_roll = flt(it.custom_meter_per_roll)
-        # For laminated FG (process 104), GSM must come from item-code index 9:12.
-        if LAMINATION_FLOW_ENABLED and _item_process_prefix(str(it.item_code or "")) == "104":
+        _proc = _item_process_prefix(str(it.item_code or ""))
+        _is_107 = _is_bopp_parent_107(str(it.item_code or ""))
+        # For laminated FG (104), GSM from item-code index 9:12.
+        # For 107 BOPP, fabric GSM comes from parsed_107_pop.
+        if LAMINATION_FLOW_ENABLED and _proc == "104":
             gsm_from_code = _gsm_from_lamination_item_code(it.item_code)
             if gsm_from_code > 0:
                 gsm = gsm_from_code
+        elif LAMINATION_FLOW_ENABLED and _is_107 and parsed_107_pop:
+            fg_gsm = cint(parsed_107_pop.get("fabric_gsm") or 0)
+            if fg_gsm > 0:
+                gsm = fg_gsm
+            # Width from parsed 107 takes priority over SO item-name parsing
+            p107_w = flt(parsed_107_pop.get("width_inch") or 0)
+            if p107_w > 0:
+                width = p107_w
         wt = 0.0
         if gsm > 0 and width > 0 and m_roll > 0:
             wt = flt(gsm * width * m_roll * 0.0254) / 1000
 
         lam_gsm = 0
-        if LAMINATION_FLOW_ENABLED and _item_process_prefix(str(it.item_code or "")) == "104":
+        if LAMINATION_FLOW_ENABLED and _proc == "104":
             lam_gsm = _lam_gsm_from_item_code_suffix(it.item_code)
+        elif LAMINATION_FLOW_ENABLED and _is_107 and parsed_107_pop:
+            lam_gsm = cint(parsed_107_pop.get("lam_gsm") or 0)
 
-        # Pull lam_side strictly from Sales Order Item table for 104 rows
+        # Pull lam_side strictly from Sales Order Item table for 104/107 rows
         lam_side = ""
-        if LAMINATION_FLOW_ENABLED and _item_process_prefix(str(it.item_code or "")) == "104":
+        if LAMINATION_FLOW_ENABLED and _proc == "104":
+            lam_side = _lam_side_from_sales_order_item(getattr(it, "name", None))
+            if not lam_side:
+                lam_side = (getattr(it, "custom_lamination_side", None) or "").strip()
+        elif LAMINATION_FLOW_ENABLED and _is_107:
             lam_side = _lam_side_from_sales_order_item(getattr(it, "name", None))
             if not lam_side:
                 lam_side = (getattr(it, "custom_lamination_side", None) or "").strip()
 
         unit = compute_default_production_unit(col, width, it.item_code)
-        
-        # Planned date for Lamination (104) must be order date.
+        # 107 BOPP parent always runs on Lamination Unit (same machine as 104).
+        if LAMINATION_FLOW_ENABLED and _is_107:
+            unit = "Lamination Unit"
+
+        # Planned date for Lamination (104/107) must be order date.
         # For Fabric (100), white-color logic remains unchanged.
         p_date = None
-        if LAMINATION_FLOW_ENABLED and _item_process_prefix(str(it.item_code or "")) == "104":
+        if LAMINATION_FLOW_ENABLED and (_proc == "104" or _is_107):
              p_date = getdate(doc.transaction_date or ps.ordered_date)
-        elif SLITTING_FLOW_ENABLED and _item_process_prefix(str(it.item_code or "")) == "103":
+        elif SLITTING_FLOW_ENABLED and _proc == "103":
              p_date = getdate(doc.transaction_date or ps.ordered_date)
         elif _is_white_color(col):
              p_date = getdate(ps.ordered_date)
@@ -3779,12 +3946,11 @@ def _populate_planning_sheet_items(ps, doc):
                         existing_psi.custom_lam_side = lam_side
                 # Ensure the link to parent is set
                 existing_psi.planning_sheet = ps.name
-                # 104 rows are always Lamination Unit (ignore existing unit/color).
-                # Non-104 rows: keep prior behavior (only set if unassigned).
-                if LAMINATION_FLOW_ENABLED and _item_process_prefix(str(it.item_code or "")) == "104":
+                # 104/107 rows always on Lamination Unit; 103 → Slitting Unit.
+                if LAMINATION_FLOW_ENABLED and (_proc == "104" or _is_107):
                     existing_psi.unit = "Lamination Unit"
                     existing_psi.planned_date = p_date
-                elif SLITTING_FLOW_ENABLED and _item_process_prefix(str(it.item_code or "")) == "103":
+                elif SLITTING_FLOW_ENABLED and _proc == "103":
                     existing_psi.unit = "Slitting Unit"
                     existing_psi.planned_date = p_date
                 elif not existing_psi.unit or existing_psi.unit == "UNASSIGNED":
