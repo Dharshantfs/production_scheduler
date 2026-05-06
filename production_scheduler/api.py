@@ -3699,8 +3699,9 @@ def _populate_planning_sheet_items(ps, doc):
     existing_items_map = defaultdict(list)
     raw_list = getattr(ps, target_field, ps.get("items", []))
     for it in raw_list:
-        if it.sales_order_item:
-            existing_items_map[it.sales_order_item].append(it)
+        _so_key = (getattr(it, "sales_order_item", None) or getattr(it, "so_item", None) or "").strip()
+        if _so_key:
+            existing_items_map[_so_key].append(it)
 
     # ... [Quality Lookup Logic] ...
     quality_lookup = list(QUAL_LIST)
@@ -3912,6 +3913,8 @@ def _populate_planning_sheet_items(ps, doc):
             "planned_date": p_date,
             "planning_sheet": ps.name # Explicitly link for grid visibility
         }
+        if frappe.db.has_column("Planning sheet Item", "so_item") or frappe.db.has_column("Planning Table", "so_item"):
+            psi_data["so_item"] = it.name
         if lam_gsm > 0 and frappe.db.has_column("Planning Table", "custom_lam_gsm"):
             psi_data["custom_lam_gsm"] = lam_gsm
         if lam_gsm > 0 and frappe.db.has_column("Planning sheet Item", "custom_lam_gsm"):
