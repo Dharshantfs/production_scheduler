@@ -1252,6 +1252,28 @@ def _sync_sheet_cutting_fabric_planning_rows(planning_sheet_name):
 			limit=1,
 		)
 		if existing:
+			# Keep existing child-100 row linked to its parent SO line and ensure trace id is present.
+			updates = {}
+			if frappe.db.has_column("Planning Table", "sales_order_item"):
+				cur_soi = frappe.db.get_value("Planning Table", existing[0], "sales_order_item")
+				if not cur_soi:
+					updates["sales_order_item"] = so_it.name
+			if trace_id and frappe.db.has_column("Planning Table", "custom_parent_child_trace_id"):
+				cur_tr = str(frappe.db.get_value("Planning Table", existing[0], "custom_parent_child_trace_id") or "").strip()
+				if not cur_tr:
+					updates["custom_parent_child_trace_id"] = trace_id
+			# Child 100 rows must keep independent placement; do not inherit parent source/split lineage.
+			if frappe.db.has_column("Planning Table", "split_from"):
+				cur_sf = str(frappe.db.get_value("Planning Table", existing[0], "split_from") or "").strip()
+				if cur_sf:
+					updates["split_from"] = ""
+			if frappe.db.has_column("Planning Table", "source_item"):
+				cur_src = str(frappe.db.get_value("Planning Table", existing[0], "source_item") or "").strip()
+				if cur_src and frappe.db.exists("Planning Table", cur_src) and not frappe.db.exists("Planning sheet Item", cur_src):
+					updates["source_item"] = ""
+			if updates:
+				frappe.db.set_value("Planning Table", existing[0], updates, update_modified=False)
+				changed = True
 			continue
 
 		sc_match = frappe.get_all(
